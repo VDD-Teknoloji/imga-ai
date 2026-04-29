@@ -200,7 +200,7 @@
       "text": "Ürün çok güzel, hızlı geldi, teşekkürler.",
       "legacy_label": "Pozitif",
       "legacy_score": 0.7818476557731628,
-      "legacy_summary": "📝 güzel, geldi, hızlı",
+      "legacy_summary": "📝 geldi, hızlı, güzel",
       "legacy_company_perspective": "Genel Operasyonel Aksaklık",
       "legacy_risk": "🟢 Pozitif",
       "input_meta": {
@@ -234,7 +234,7 @@
       "text": "Hiç beğenmedim, beklediğim gibi değildi.",
       "legacy_label": "Negatif",
       "legacy_score": -0.9993653893470764,
-      "legacy_summary": "📝 beklediğim, beğenmedim, değildi",
+      "legacy_summary": "📝 beğenmedim, beklediğim, değildi",
       "legacy_company_perspective": "Genel Operasyonel Aksaklık",
       "legacy_risk": "🔴 Negatif",
       "input_meta": {
@@ -556,7 +556,7 @@
       "text": "Bir yetkili ile görüşmek istiyorum, beni arayın lütfen.",
       "legacy_label": "Pozitif",
       "legacy_score": 0.8725243806838989,
-      "legacy_summary": "📝 istiyorum, görüşmek, yetkili, lütfen",
+      "legacy_summary": "📝 istiyorum, görüşmek, yetkili, arayın",
       "legacy_company_perspective": "Genel Operasyonel Aksaklık",
       "legacy_risk": "🟢 Pozitif",
       "input_meta": {
