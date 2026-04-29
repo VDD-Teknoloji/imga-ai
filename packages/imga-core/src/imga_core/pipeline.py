@@ -6,6 +6,7 @@ import logging
 from pathlib import Path
 
 from imga_core.analyzers.base import AnalyzerPrediction, SentimentAnalyzer
+from imga_core.classifiers.base import CategoryClassifier
 from imga_core.config import (
     LABEL_NEGATIVE,
     LABEL_NEUTRAL,
@@ -13,7 +14,7 @@ from imga_core.config import (
     SENTIMENT_NEGATIVE_THRESHOLD,
     SENTIMENT_POSITIVE_THRESHOLD,
 )
-from imga_core.models import AnalysisResult, OverrideHit
+from imga_core.models import AnalysisResult, CategoryClassification, OverrideHit
 from imga_core.overrides import (
     KnowledgeBase,
     SLAParams,
@@ -51,11 +52,13 @@ class AnalysisPipeline:
         knowledge_base_path: Path | str | None = None,
         rules_path: Path | str | None = None,
         sla_params: SLAParams | None = None,
+        classifier: CategoryClassifier | None = None,
     ) -> None:
         self.analyzer = analyzer
         self.kb = KnowledgeBase(knowledge_base_path) if knowledge_base_path else None
         self.rules = RuleEngine(rules_path) if rules_path else None
         self.sla_params = sla_params or SLAParams()
+        self.classifier = classifier
 
     def analyze(self, text: str) -> AnalysisResult:
         return self.analyze_batch([text])[0]
@@ -86,10 +89,24 @@ class AnalysisPipeline:
             for idx, pred in zip(bert_indices, preds, strict=True):
                 bert_predictions[idx] = pred
 
+        # --- category classification (batched, parallel to sentiment) ---
+        categorizations: list[CategoryClassification | None]
+        if self.classifier is not None:
+            categorizations = list(self.classifier.classify_batch(normalized))
+        else:
+            categorizations = [None] * n
+
         # --- assemble final results with post-BERT layers ---
         results: list[AnalysisResult] = []
         for i, text in enumerate(normalized):
-            results.append(self._build_result(text, pre_overrides[i], bert_predictions.get(i)))
+            results.append(
+                self._build_result(
+                    text,
+                    pre_overrides[i],
+                    bert_predictions.get(i),
+                    categorizations[i],
+                )
+            )
         return results
 
     # -- internals ----------------------------------------------------------
@@ -110,6 +127,7 @@ class AnalysisPipeline:
         text: str,
         pre_hit: OverrideHit | None,
         bert_pred: AnalyzerPrediction | None,
+        categorization: CategoryClassification | None,
     ) -> AnalysisResult:
         overrides: list[OverrideHit] = []
         score: float
@@ -159,6 +177,7 @@ class AnalysisPipeline:
             company_perspective=company,
             risk_class=label,  # type: ignore[arg-type]
             sla_detected=sla_detail,
+            categorization=categorization,
         )
 
 
