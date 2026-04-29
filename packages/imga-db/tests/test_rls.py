@@ -165,3 +165,90 @@ async def test_set_current_tenant_outside_transaction_raises(
         # returns False. set_current_tenant must refuse.
         with pytest.raises(RuntimeError, match="active transaction"):
             await set_current_tenant(s, alpha_tenant_id)
+
+
+# --- 5. Defense-in-depth: SET LOCAL does not survive pool reuse ---------
+
+
+@pytest.mark.asyncio
+async def test_pool_reuse_does_not_leak_tenant_setting(
+    alpha_tenant_id: UUID,
+) -> None:
+    """SET LOCAL is transaction-scoped; on commit the setting is discarded.
+
+    A tiny single-connection pool guarantees the second session reuses the
+    exact same DB connection that hosted the first session's transaction.
+    If we accidentally used SET (without LOCAL), the setting would still
+    be visible here — this test catches that regression.
+    """
+    import os
+
+    from sqlalchemy.ext.asyncio import create_async_engine
+
+    from imga_db.session import create_session_factory
+
+    # Use the runtime URL the rest of the suite uses, but with a 1-slot pool.
+    url = os.environ["DATABASE_URL"]
+    engine = create_async_engine(url, pool_size=1, max_overflow=0)
+    factory = create_session_factory(engine)
+    try:
+        # First session: bind tenant inside a transaction, then commit.
+        async with factory() as s, s.begin():
+            await set_current_tenant(s, alpha_tenant_id)
+            # Inside the transaction, current_setting should reflect alpha.
+            result = await s.execute(
+                text("SELECT current_setting('app.current_tenant_id', true)")
+            )
+            assert result.scalar_one() == str(alpha_tenant_id)
+
+        # Second session: same physical connection, fresh transaction.
+        async with factory() as s, s.begin():
+            result = await s.execute(
+                text("SELECT current_setting('app.current_tenant_id', true)")
+            )
+            value = result.scalar_one()
+        assert value in ("", None), f"Tenant leaked across pool reuse: {value!r}"
+    finally:
+        await engine.dispose()
+
+
+# --- 6. Transaction-less SELECT is still RLS-protected ------------------
+
+
+@pytest.mark.asyncio
+async def test_transactionless_select_is_rls_blocked(
+    app_session_factory: async_sessionmaker[AsyncSession],
+    alpha_user_link: UUID,
+) -> None:
+    """Even when the caller forgets `async with s.begin():`, RLS still
+    returns zero rows because current_setting is NULL on a fresh
+    autocommit statement.
+    """
+    async with app_session_factory() as s:
+        # No begin/commit wrapper — asyncpg autocommits each statement.
+        result = await s.execute(text("SELECT count(*) FROM user_tenants"))
+        count = result.scalar_one()
+    assert count == 0, (
+        "FORCE RLS must hide everything in transaction-less mode too "
+        "(current_setting is NULL outside the helper's transaction)"
+    )
+
+
+# --- 7. Helper uses set_config(..., true) — i.e. SET LOCAL semantics ---
+
+
+def test_set_current_tenant_uses_local_scope() -> None:
+    """If a refactor accidentally drops the third `true` argument from
+    set_config(), the helper's binding would survive commit and leak across
+    pool checkouts. This source-level guard catches that regression.
+    """
+    import inspect
+
+    from imga_db.session import set_current_tenant
+
+    src = inspect.getsource(set_current_tenant)
+    assert "set_config" in src, "expected set_config(...) call (parametrizable SET LOCAL)"
+    assert ", true)" in src or ", :is_local" in src, (
+        "expected is_local=true third argument to set_config; without it the "
+        "binding would be SESSION-scope and leak across pool reuse"
+    )
