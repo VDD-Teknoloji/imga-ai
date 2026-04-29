@@ -9,6 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field
 SentimentLabel = Literal["NEGATIF", "NÖTR", "POZITIF"]
 OverrideLayer = Literal["knowledge_base", "critical", "tier1", "sla", "tier2"]
 RiskClass = Literal["NEGATIF", "NÖTR", "POZITIF"]
+ClassificationMethod = Literal["keyword", "llm", "ensemble"]
 
 
 class AnalysisRequest(BaseModel):
@@ -40,6 +41,48 @@ class OverrideHit(BaseModel):
     )
 
 
+class CategoryHit(BaseModel):
+    """A single category match with confidence and matched keywords."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    category: str = Field(..., description="Category code, e.g. 'kargo'")
+    confidence: float = Field(..., ge=0.0, le=1.0)
+    matched_keywords: tuple[str, ...] = Field(default_factory=tuple)
+
+
+class LLMClassificationResult(BaseModel):
+    """Raw output from an LLM provider (Gemini today, others later)."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    primary: str = Field(..., description="Category code chosen by the LLM")
+    confidence: float = Field(..., ge=0.0, le=1.0)
+    reasoning: str = Field(..., description="One- or two-sentence justification")
+    provider: str = Field(..., description="'gemini', 'claude', etc.")
+    model: str = Field(..., description="Specific model name, e.g. 'gemini-2.5-flash'")
+
+
+class CategoryClassification(BaseModel):
+    """Final result of category classification (keyword + optional LLM)."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    primary: str = Field(..., description="Category code, e.g. 'kargo' or 'belirsiz'")
+    primary_confidence: float = Field(..., ge=0.0, le=1.0)
+    primary_matched_keywords: tuple[str, ...] = Field(default_factory=tuple)
+    secondaries: tuple[CategoryHit, ...] = Field(default_factory=tuple)
+    method: ClassificationMethod = "keyword"
+    requires_manual_review: bool = Field(
+        default=False,
+        description="True when no classifier had high enough confidence.",
+    )
+    llm_result: LLMClassificationResult | None = Field(
+        default=None,
+        description="Set when an LLM was consulted (ensemble or llm-only path).",
+    )
+
+
 class AnalysisResult(BaseModel):
     """Full analysis output for a single review."""
 
@@ -56,4 +99,9 @@ class AnalysisResult(BaseModel):
     sla_detected: str | None = Field(
         default=None,
         description="SLA status string when a duration was detected, e.g. 'SLA Aşımı (5 Gün > 3)'.",
+    )
+    categorization: CategoryClassification | None = Field(
+        default=None,
+        description="Business-unit category (Sprint 6); set when a classifier "
+        "is configured on the pipeline.",
     )

@@ -81,3 +81,21 @@ LEGACY_LABEL_MAP: Final[dict[str, str]] = {
     "neutral": LABEL_NEUTRAL,
     "negative": LABEL_NEGATIVE,
 }
+
+# --- Category classification (Sprint 6) -----------------------------------
+# Confidence below which the keyword classifier flags requires_manual_review.
+CATEGORY_KEYWORD_MIN_CONFIDENCE: Final[float] = 0.3
+
+# Threshold above which keyword confidence is "good enough" to skip the LLM.
+# Low confidence (between MIN and FALLBACK) routes to LLM if available.
+CATEGORY_LLM_FALLBACK_THRESHOLD: Final[float] = 0.7
+
+# Hit count is normalised by dividing by this. Cap at 1.0.
+# 5 hits => confidence 1.0; 1 hit => 0.2; 2 hits => 0.4.
+CATEGORY_NORMALIZATION_DIVISOR: Final[float] = 5.0
+
+# How many secondary categories to include in the result.
+CATEGORY_SECONDARY_COUNT: Final[int] = 2
+
+# Code returned when no category matches. Mirrors taxonomy.FALLBACK_CATEGORY_CODE.
+CATEGORY_FALLBACK_CODE: Final[str] = "belirsiz"

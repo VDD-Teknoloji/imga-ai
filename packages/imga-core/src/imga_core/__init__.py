@@ -1,6 +1,7 @@
 """imga-core: headless sentiment analysis pipeline for Turkish customer reviews."""
 
 from imga_core.analyzers import AnalyzerPrediction, BertSentimentAnalyzer, SentimentAnalyzer
+from imga_core.classifiers import CategoryClassifier, KeywordCategoryClassifier
 from imga_core.metrics import (
     ExecutiveMetrics,
     calculate_executive_metrics,
@@ -13,6 +14,10 @@ from imga_core.metrics import (
 from imga_core.models import (
     AnalysisRequest,
     AnalysisResult,
+    CategoryClassification,
+    CategoryHit,
+    ClassificationMethod,
+    LLMClassificationResult,
     OverrideHit,
     OverrideLayer,
     RiskClass,
@@ -30,8 +35,14 @@ __all__ = [
     "AnalysisResult",
     "AnalyzerPrediction",
     "BertSentimentAnalyzer",
+    "CategoryClassification",
+    "CategoryClassifier",
+    "CategoryHit",
+    "ClassificationMethod",
     "ExecutiveMetrics",
+    "KeywordCategoryClassifier",
     "KnowledgeBase",
+    "LLMClassificationResult",
     "OverrideHit",
     "OverrideLayer",
     "RiskClass",
