@@ -1,0 +1,109 @@
+# Local + production stack for the imga project.
+# - core-tests: builds packages/imga-core and runs pytest on demand
+# - legacy-ui:  the Streamlit prototype, exposed on the host
+#
+# Usage:
+#   docker compose up legacy-ui              # run the UI only
+#   docker compose run --rm core-tests       # one-shot test run
+#   docker compose --profile slow run core-tests-slow   # BERT snapshot tests
+#
+# Copy .env.example to .env to override defaults (host port, data path, etc.)
+
+name: imga
+
+services:
+  core-tests:
+    image: imga-core:dev
+    build:
+      context: ./packages/imga-core
+      dockerfile: Dockerfile
+    profiles: ["test"]
+    command: ["python", "-m", "pytest", "tests/", "-v"]
+    volumes:
+      - hf_cache:/cache/huggingface
+
+  core-tests-slow:
+    image: imga-core:dev
+    build:
+      context: ./packages/imga-core
+      dockerfile: Dockerfile
+    profiles: ["slow"]
+    environment:
+      IMGA_RUN_SLOW: "1"
+    command: ["python", "-m", "pytest", "tests/", "-v", "-m", "slow"]
+    volumes:
+      - hf_cache:/cache/huggingface
+
+  api:
+    image: imga-api:latest
+    build:
+      context: .
+      dockerfile: ./packages/imga-api/Dockerfile
+    container_name: imga-api
+    restart: unless-stopped
+    ports:
+      - "${IMGA_API_PORT:-8000}:8000"
+    volumes:
+      - hf_cache:/cache/huggingface
+      - ${IMGA_DATA_PATH:-./data}:/data
+    environment:
+      IMGA_KB_PATH: /data/training_data.csv
+      IMGA_RULES_PATH: /data/cx_rules.json
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 120s
+
+  dashboard:
+    image: imga-dashboard:latest
+    build:
+      context: .
+      dockerfile: ./packages/imga-dashboard/Dockerfile
+    container_name: imga-dashboard
+    restart: unless-stopped
+    ports:
+      - "${IMGA_DASHBOARD_PORT:-8502}:8501"
+    volumes:
+      - hf_cache:/cache/huggingface
+      - ${IMGA_DATA_PATH:-./data}:/data
+    environment:
+      IMGA_DATA_PATH: /data
+      STREAMLIT_BROWSER_GATHER_USAGE_STATS: "false"
+      STREAMLIT_SERVER_HEADLESS: "true"
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8501/_stcore/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 120s
+
+  legacy-ui:
+    image: imga-legacy:latest
+    build:
+      context: ./legacy
+      dockerfile: Dockerfile
+    container_name: imga-legacy-ui
+    profiles: ["legacy"]
+    restart: unless-stopped
+    ports:
+      - "${IMGA_LEGACY_PORT:-8501}:8501"
+    volumes:
+      - hf_cache:/cache/huggingface
+      - ${IMGA_DATA_PATH:-./data}:/data
+    working_dir: /data
+    command: ["streamlit", "run", "/app/app.py"]
+    environment:
+      STREAMLIT_BROWSER_GATHER_USAGE_STATS: "false"
+      STREAMLIT_SERVER_HEADLESS: "true"
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8501/_stcore/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+
+volumes:
+  hf_cache:
+    name: imga_hf_cache
