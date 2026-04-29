@@ -2,6 +2,7 @@
 
 from imga_core.analyzers import AnalyzerPrediction, BertSentimentAnalyzer, SentimentAnalyzer
 from imga_core.classifiers import CategoryClassifier, KeywordCategoryClassifier
+from imga_core.llm import LLMProvider, LLMProviderError, create_llm_provider
 from imga_core.metrics import (
     ExecutiveMetrics,
     calculate_executive_metrics,
@@ -43,6 +44,8 @@ __all__ = [
     "KeywordCategoryClassifier",
     "KnowledgeBase",
     "LLMClassificationResult",
+    "LLMProvider",
+    "LLMProviderError",
     "OverrideHit",
     "OverrideLayer",
     "RiskClass",
@@ -56,6 +59,7 @@ __all__ = [
     "calculate_executive_metrics",
     "calculate_shi",
     "count_crises",
+    "create_llm_provider",
     "is_alert_state",
     "negative_rate",
     "top_bottlenecks",
