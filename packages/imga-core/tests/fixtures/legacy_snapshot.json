@@ -1,0 +1,611 @@
+{
+  "cases": [
+    {
+      "id": "critical_01",
+      "text": "Mağazada hırsızlık iddiasıyla suçlandım, polis çağırdılar.",
+      "legacy_label": "Negatif",
+      "legacy_score": -0.95,
+      "legacy_summary": "📝 🚨 HIRSIZLIK, 🚨 HIRSIZ, 🚨 POLIS",
+      "legacy_company_perspective": "Genel Operasyonel Aksaklık",
+      "legacy_risk": "🔴 Negatif",
+      "input_meta": {
+        "id": "critical_01",
+        "expected_label": "NEGATIF",
+        "expected_score": -0.95,
+        "expected_layer": "critical",
+        "bert_required": false
+      }
+    },
+    {
+      "id": "critical_02",
+      "text": "Bana karşı dava açacaklarmış, tehdit ettiler.",
+      "legacy_label": "Negatif",
+      "legacy_score": -0.95,
+      "legacy_summary": "📝 🚨 DAVA, 🚨 TEHDIT",
+      "legacy_company_perspective": "Genel Operasyonel Aksaklık",
+      "legacy_risk": "🔴 Negatif",
+      "input_meta": {
+        "id": "critical_02",
+        "expected_label": "NEGATIF",
+        "expected_score": -0.95,
+        "expected_layer": "critical",
+        "bert_required": false
+      }
+    },
+    {
+      "id": "critical_03",
+      "text": "Mahkemede görüşürüz dediler, savcılığa şikayet edeceğim.",
+      "legacy_label": "Negatif",
+      "legacy_score": -0.95,
+      "legacy_summary": "📝 🚨 MAHKEME",
+      "legacy_company_perspective": "Genel Operasyonel Aksaklık",
+      "legacy_risk": "🔴 Negatif",
+      "input_meta": {
+        "id": "critical_03",
+        "expected_label": "NEGATIF",
+        "expected_score": -0.95,
+        "expected_layer": "critical",
+        "bert_required": false
+      }
+    },
+    {
+      "id": "tier1_01",
+      "text": "Rezalet bir hizmet aldım, berbat.",
+      "legacy_label": "Negatif",
+      "legacy_score": -0.75,
+      "legacy_summary": "📝 Rezalet, Berbat",
+      "legacy_company_perspective": "Genel Operasyonel Aksaklık",
+      "legacy_risk": "🔴 Negatif",
+      "input_meta": {
+        "id": "tier1_01",
+        "expected_label": "NEGATIF",
+        "expected_score": -0.75,
+        "expected_layer": "tier1",
+        "bert_required": false
+      }
+    },
+    {
+      "id": "tier1_02",
+      "text": "İlgisiz ve saygısız bir personelle muhatap oldum.",
+      "legacy_label": "Negatif",
+      "legacy_score": -0.75,
+      "legacy_summary": "📝 İletişim Sorunu, Saygısız",
+      "legacy_company_perspective": "Personel Davranışı / Eğitim",
+      "legacy_risk": "🔴 Negatif",
+      "input_meta": {
+        "id": "tier1_02",
+        "expected_label": "NEGATIF",
+        "expected_score": -0.75,
+        "expected_layer": "tier1",
+        "bert_required": false
+      }
+    },
+    {
+      "id": "tier1_03",
+      "text": "Ürün iğrenç durumda geldi, profesyonellikten uzak bir paketleme.",
+      "legacy_label": "Negatif",
+      "legacy_score": -0.75,
+      "legacy_summary": "📝 Iğrenç, Profesyonellikten Uzak",
+      "legacy_company_perspective": "Genel Operasyonel Aksaklık",
+      "legacy_risk": "🔴 Negatif",
+      "input_meta": {
+        "id": "tier1_03",
+        "expected_label": "NEGATIF",
+        "expected_score": -0.75,
+        "expected_layer": "tier1",
+        "bert_required": false
+      }
+    },
+    {
+      "id": "sla_breach_shipping_01",
+      "text": "Siparişim 5 gündür kargoda, gelmedi henüz.",
+      "legacy_label": "SLA Aşımı (5 Gün > 3)",
+      "legacy_score": -0.6,
+      "legacy_summary": "📝 Teslimat Gecikmesi, Kargo, Gelmedi",
+      "legacy_company_perspective": "Lojistik / Kargo Firması Hatası",
+      "legacy_risk": "🔴 Negatif",
+      "input_meta": {
+        "id": "sla_breach_shipping_01",
+        "expected_label": "NEGATIF",
+        "expected_score": -0.6,
+        "expected_layer": "sla",
+        "expected_sla_substring": "Aşımı",
+        "bert_required": true
+      }
+    },
+    {
+      "id": "sla_breach_shipping_02",
+      "text": "Kargom 1 hafta oldu, hâlâ bekliyorum.",
+      "legacy_label": "SLA Aşımı (7 Gün > 3)",
+      "legacy_score": -0.6,
+      "legacy_summary": "📝 Teslimat Gecikmesi, Kargo, Bekliyorum",
+      "legacy_company_perspective": "Lojistik / Kargo Firması Hatası",
+      "legacy_risk": "🔴 Negatif",
+      "input_meta": {
+        "id": "sla_breach_shipping_02",
+        "expected_label": "NEGATIF",
+        "expected_score": -0.6,
+        "expected_layer": "sla",
+        "expected_sla_substring": "Aşımı",
+        "bert_required": true
+      }
+    },
+    {
+      "id": "sla_compliant_01",
+      "text": "Kargom 2 gündür yolda, normal süresinde geliyor sanırım.",
+      "legacy_label": "SLA Uyumlu (2 Gün <= 3)",
+      "legacy_score": 0.05,
+      "legacy_summary": "📝 Teslimat Gecikmesi, Kargo",
+      "legacy_company_perspective": "Lojistik / Kargo Firması Hatası",
+      "legacy_risk": "⚪ Nötr",
+      "input_meta": {
+        "id": "sla_compliant_01",
+        "expected_label": "NÖTR",
+        "expected_score": 0.05,
+        "expected_layer": "sla",
+        "expected_sla_substring": "Uyumlu",
+        "bert_required": true
+      }
+    },
+    {
+      "id": "sla_warehouse_breach",
+      "text": "Paket 3 gün depoda bekledi, hazırlanıyor diye yazıyor hâlâ.",
+      "legacy_label": "SLA Aşımı (3 Gün > 2)",
+      "legacy_score": -0.6,
+      "legacy_summary": "📝 hazırlanıyor, bekledi, yazıyor, depoda",
+      "legacy_company_perspective": "Genel Operasyonel Aksaklık",
+      "legacy_risk": "🔴 Negatif",
+      "input_meta": {
+        "id": "sla_warehouse_breach",
+        "expected_label": "NEGATIF",
+        "expected_score": -0.6,
+        "expected_layer": "sla",
+        "bert_required": true
+      }
+    },
+    {
+      "id": "tier2_fallback_01",
+      "text": "İade ettim ama param hâlâ yatmadı, fatura da gelmedi.",
+      "legacy_label": "Negatif",
+      "legacy_score": -0.9990853071212769,
+      "legacy_summary": "📝 İade/Ücret Sorunu, Teslimat Gecikmesi, Para, Fatura, Gelmedi",
+      "legacy_company_perspective": "Genel Operasyonel Aksaklık",
+      "legacy_risk": "🔴 Negatif",
+      "input_meta": {
+        "id": "tier2_fallback_01",
+        "expected_label": "NEGATIF",
+        "expected_score": -0.4,
+        "expected_layer": "tier2",
+        "bert_required": true
+      }
+    },
+    {
+      "id": "tier2_fallback_02",
+      "text": "Ürünü değişim için gönderdim, defolu çıkmıştı.",
+      "legacy_label": "Negatif",
+      "legacy_score": -0.9993544220924377,
+      "legacy_summary": "📝 Defolu, Değişim",
+      "legacy_company_perspective": "Ürün Kalite Kontrol (Defolu Gönderim)",
+      "legacy_risk": "🔴 Negatif",
+      "input_meta": {
+        "id": "tier2_fallback_02",
+        "expected_label": "NEGATIF",
+        "expected_score": -0.4,
+        "expected_layer": "tier2",
+        "bert_required": true
+      }
+    },
+    {
+      "id": "pure_bert_positive_01",
+      "text": "Ürün çok güzel, hızlı geldi, teşekkürler.",
+      "legacy_label": "Pozitif",
+      "legacy_score": 0.7818476557731628,
+      "legacy_summary": "📝 güzel, geldi, hızlı",
+      "legacy_company_perspective": "Genel Operasyonel Aksaklık",
+      "legacy_risk": "🟢 Pozitif",
+      "input_meta": {
+        "id": "pure_bert_positive_01",
+        "expected_label": "POZITIF",
+        "expected_score_min": 0.5,
+        "expected_score_max": 1.0,
+        "expected_layer": null,
+        "bert_required": true
+      }
+    },
+    {
+      "id": "pure_bert_positive_02",
+      "text": "Mükemmel kalite, kesinlikle tavsiye ederim.",
+      "legacy_label": "Negatif",
+      "legacy_score": -0.4,
+      "legacy_summary": "📝 Kalite",
+      "legacy_company_perspective": "Genel Operasyonel Aksaklık",
+      "legacy_risk": "🔴 Negatif",
+      "input_meta": {
+        "id": "pure_bert_positive_02",
+        "expected_label": "POZITIF",
+        "expected_score_min": 0.5,
+        "expected_score_max": 1.0,
+        "expected_layer": null,
+        "bert_required": true
+      }
+    },
+    {
+      "id": "pure_bert_negative_01",
+      "text": "Hiç beğenmedim, beklediğim gibi değildi.",
+      "legacy_label": "Negatif",
+      "legacy_score": -0.9993653893470764,
+      "legacy_summary": "📝 beklediğim, beğenmedim, değildi",
+      "legacy_company_perspective": "Genel Operasyonel Aksaklık",
+      "legacy_risk": "🔴 Negatif",
+      "input_meta": {
+        "id": "pure_bert_negative_01",
+        "expected_label": "NEGATIF",
+        "expected_score_min": -1.0,
+        "expected_score_max": -0.05,
+        "expected_layer": null,
+        "bert_required": true
+      }
+    },
+    {
+      "id": "perspective_iade_request",
+      "text": "İade istiyorum, hakkımı kullanacağım.",
+      "legacy_label": "Negatif",
+      "legacy_score": -0.9002295136451721,
+      "legacy_summary": "📝 kullanacağım, istiyorum, hakkımı",
+      "legacy_company_perspective": "Genel Operasyonel Aksaklık",
+      "legacy_risk": "🔴 Negatif",
+      "input_meta": {
+        "id": "perspective_iade_request",
+        "expected_label": "NEGATIF",
+        "expected_score": -0.4,
+        "expected_layer": "tier2",
+        "expected_customer_perspective": "İade Talebi",
+        "bert_required": true
+      }
+    },
+    {
+      "id": "perspective_complaint",
+      "text": "Şikayetçiyim, müşteri hizmetlerine ulaşamıyorum.",
+      "legacy_label": "Negatif",
+      "legacy_score": -0.9990549683570862,
+      "legacy_summary": "📝 Şikayetçiyim",
+      "legacy_company_perspective": "Genel Operasyonel Aksaklık",
+      "legacy_risk": "🔴 Negatif",
+      "input_meta": {
+        "id": "perspective_complaint",
+        "expected_label": "NEGATIF",
+        "expected_score_min": -1.0,
+        "expected_score_max": 0.0,
+        "expected_customer_perspective": "Resmi Şikayet",
+        "bert_required": true
+      }
+    },
+    {
+      "id": "perspective_company_logistics",
+      "text": "Kargo getirmedi yine, teslimat sorunu yaşıyoruz.",
+      "legacy_label": "Negatif",
+      "legacy_score": -0.9992963075637817,
+      "legacy_summary": "📝 Teslimat Gecikmesi, Teslimat, Kargo",
+      "legacy_company_perspective": "Lojistik / Kargo Firması Hatası",
+      "legacy_risk": "🔴 Negatif",
+      "input_meta": {
+        "id": "perspective_company_logistics",
+        "expected_label": "NEGATIF",
+        "expected_score_min": -1.0,
+        "expected_score_max": 0.0,
+        "expected_company_perspective": "Lojistik / Kargo Firması Hatası",
+        "bert_required": true
+      }
+    },
+    {
+      "id": "perspective_company_quality",
+      "text": "Üründe leke var, ayıplı bir ürün gönderilmiş.",
+      "legacy_label": "Negatif",
+      "legacy_score": -0.9991238713264465,
+      "legacy_summary": "📝 Leke, Ayıplı",
+      "legacy_company_perspective": "Ürün Kalite Kontrol (Defolu Gönderim)",
+      "legacy_risk": "🔴 Negatif",
+      "input_meta": {
+        "id": "perspective_company_quality",
+        "expected_label": "NEGATIF",
+        "expected_score": -0.4,
+        "expected_layer": "tier2",
+        "expected_company_perspective": "Ürün Kalite Kontrol (Defolu Gönderim)",
+        "bert_required": true
+      }
+    },
+    {
+      "id": "neutral_descriptive",
+      "text": "Ürün geldi, kullanıyorum.",
+      "legacy_label": "Negatif",
+      "legacy_score": -0.6750950217247009,
+      "legacy_summary": "📝 kullanıyorum, geldi",
+      "legacy_company_perspective": "Genel Operasyonel Aksaklık",
+      "legacy_risk": "🔴 Negatif",
+      "input_meta": {
+        "id": "neutral_descriptive",
+        "expected_label_options": [
+          "NÖTR",
+          "POZITIF"
+        ],
+        "expected_score_min": -0.05,
+        "expected_score_max": 1.0,
+        "expected_layer": null,
+        "bert_required": true
+      }
+    },
+    {
+      "id": "critical_04",
+      "text": "Saygısızlık etti, küfür etti, hakaret savurdu.",
+      "legacy_label": "Negatif",
+      "legacy_score": -0.95,
+      "legacy_summary": "📝 🚨 HAKARET, 🚨 KÜFÜR, Saygısız",
+      "legacy_company_perspective": "Genel Operasyonel Aksaklık",
+      "legacy_risk": "🔴 Negatif",
+      "input_meta": {
+        "id": "critical_04",
+        "expected_label": "NEGATIF",
+        "expected_score": -0.95,
+        "expected_layer": "critical",
+        "bert_required": false
+      }
+    },
+    {
+      "id": "critical_05",
+      "text": "Etiket yokmuş, alarm çaldı, beni hırsızlıkla suçladılar.",
+      "legacy_label": "Negatif",
+      "legacy_score": -0.95,
+      "legacy_summary": "📝 🚨 HIRSIZLIK, 🚨 HIRSIZ, 🚨 ALARM, 🚨 ETIKET",
+      "legacy_company_perspective": "Genel Operasyonel Aksaklık",
+      "legacy_risk": "🔴 Negatif",
+      "input_meta": {
+        "id": "critical_05",
+        "expected_label": "NEGATIF",
+        "expected_score": -0.95,
+        "expected_layer": "critical",
+        "bert_required": false
+      }
+    },
+    {
+      "id": "tier1_04",
+      "text": "Çözümsüz kaldım, yetersiz bir hizmet, sorumsuz personel.",
+      "legacy_label": "Negatif",
+      "legacy_score": -0.75,
+      "legacy_summary": "📝 Çözümsüz, Yetersiz, Sorumsuz",
+      "legacy_company_perspective": "Genel Operasyonel Aksaklık",
+      "legacy_risk": "🔴 Negatif",
+      "input_meta": {
+        "id": "tier1_04",
+        "expected_label": "NEGATIF",
+        "expected_score": -0.75,
+        "expected_layer": "tier1",
+        "bert_required": false
+      }
+    },
+    {
+      "id": "tier1_05",
+      "text": "Yalancı bir firma, fiyasko bir alışveriş, küstah temsilci.",
+      "legacy_label": "Negatif",
+      "legacy_score": -0.75,
+      "legacy_summary": "📝 Küstah, Yalancı, Fiyasko, Yalan",
+      "legacy_company_perspective": "Genel Operasyonel Aksaklık",
+      "legacy_risk": "🔴 Negatif",
+      "input_meta": {
+        "id": "tier1_05",
+        "expected_label": "NEGATIF",
+        "expected_score": -0.75,
+        "expected_layer": "tier1",
+        "bert_required": false
+      }
+    },
+    {
+      "id": "sla_compliant_warehouse",
+      "text": "Paketim 1 gün depoda hazırlanıyor.",
+      "legacy_label": "SLA Uyumlu (1 Gün <= 2)",
+      "legacy_score": 0.05,
+      "legacy_summary": "📝 hazırlanıyor, Paketim, depoda",
+      "legacy_company_perspective": "Genel Operasyonel Aksaklık",
+      "legacy_risk": "⚪ Nötr",
+      "input_meta": {
+        "id": "sla_compliant_warehouse",
+        "expected_label": "NÖTR",
+        "expected_score": 0.05,
+        "expected_layer": "sla",
+        "expected_sla_substring": "Uyumlu",
+        "bert_required": true
+      }
+    },
+    {
+      "id": "sla_breach_long_shipping",
+      "text": "Siparişim 10 gündür kargoda bekliyorum, gelmedi.",
+      "legacy_label": "SLA Aşımı (10 Gün > 3)",
+      "legacy_score": -0.6,
+      "legacy_summary": "📝 Teslimat Gecikmesi, Kargo, Gelmedi, Bekliyorum",
+      "legacy_company_perspective": "Lojistik / Kargo Firması Hatası",
+      "legacy_risk": "🔴 Negatif",
+      "input_meta": {
+        "id": "sla_breach_long_shipping",
+        "expected_label": "NEGATIF",
+        "expected_score": -0.6,
+        "expected_layer": "sla",
+        "expected_sla_substring": "Aşımı",
+        "bert_required": true
+      }
+    },
+    {
+      "id": "sla_breach_2_weeks",
+      "text": "Kargom 2 hafta oldu hala bekliyorum.",
+      "legacy_label": "SLA Aşımı (14 Gün > 3)",
+      "legacy_score": -0.6,
+      "legacy_summary": "📝 Teslimat Gecikmesi, Kargo, Bekliyorum",
+      "legacy_company_perspective": "Lojistik / Kargo Firması Hatası",
+      "legacy_risk": "🔴 Negatif",
+      "input_meta": {
+        "id": "sla_breach_2_weeks",
+        "expected_label": "NEGATIF",
+        "expected_score": -0.6,
+        "expected_layer": "sla",
+        "expected_sla_substring": "Aşımı",
+        "bert_required": true
+      }
+    },
+    {
+      "id": "tier2_fallback_kargo_gecikme",
+      "text": "Kargom çok geç geldi, paket bozuk durumda.",
+      "legacy_label": "Negatif",
+      "legacy_score": -0.9989756345748901,
+      "legacy_summary": "📝 Teslimat Gecikmesi, Kargo, Bozuk",
+      "legacy_company_perspective": "Lojistik / Kargo Firması Hatası",
+      "legacy_risk": "🔴 Negatif",
+      "input_meta": {
+        "id": "tier2_fallback_kargo_gecikme",
+        "expected_label": "NEGATIF",
+        "expected_score": -0.4,
+        "expected_layer": "tier2",
+        "bert_required": true
+      }
+    },
+    {
+      "id": "tier2_fallback_yanlis_urun",
+      "text": "Yanlış ürün gönderdiniz, eksik gelen parça da var.",
+      "legacy_label": "Negatif",
+      "legacy_score": -0.9900323152542114,
+      "legacy_summary": "📝 Eksik, Yanlış",
+      "legacy_company_perspective": "Genel Operasyonel Aksaklık",
+      "legacy_risk": "🔴 Negatif",
+      "input_meta": {
+        "id": "tier2_fallback_yanlis_urun",
+        "expected_label": "NEGATIF",
+        "expected_score": -0.4,
+        "expected_layer": "tier2",
+        "bert_required": true
+      }
+    },
+    {
+      "id": "pure_bert_positive_03",
+      "text": "Hizmetinizden çok memnunum, harika bir alışveriş deneyimi yaşadım.",
+      "legacy_label": "Pozitif",
+      "legacy_score": 0.9799946546554565,
+      "legacy_summary": "📝 Hizmetinizden, alışveriş, deneyimi, memnunum",
+      "legacy_company_perspective": "Genel Operasyonel Aksaklık",
+      "legacy_risk": "🟢 Pozitif",
+      "input_meta": {
+        "id": "pure_bert_positive_03",
+        "expected_label": "POZITIF",
+        "expected_score_min": 0.5,
+        "expected_score_max": 1.0,
+        "expected_layer": null,
+        "bert_required": true
+      }
+    },
+    {
+      "id": "pure_bert_positive_04",
+      "text": "Hızlı kargo ve kaliteli ürün, teşekkür ederim.",
+      "legacy_label": "Negatif",
+      "legacy_score": -0.4,
+      "legacy_summary": "📝 Teslimat Gecikmesi, Kargo, Kalite",
+      "legacy_company_perspective": "Lojistik / Kargo Firması Hatası",
+      "legacy_risk": "🔴 Negatif",
+      "input_meta": {
+        "id": "pure_bert_positive_04",
+        "expected_label": "POZITIF",
+        "expected_score_min": 0.5,
+        "expected_score_max": 1.0,
+        "expected_layer": null,
+        "bert_required": true
+      }
+    },
+    {
+      "id": "pure_bert_negative_02",
+      "text": "Beklediğim kalitede değildi, hayal kırıklığı.",
+      "legacy_label": "Negatif",
+      "legacy_score": -0.9994872808456421,
+      "legacy_summary": "📝 Kalite, Kırık",
+      "legacy_company_perspective": "Genel Operasyonel Aksaklık",
+      "legacy_risk": "🔴 Negatif",
+      "input_meta": {
+        "id": "pure_bert_negative_02",
+        "expected_label": "NEGATIF",
+        "expected_score_min": -1.0,
+        "expected_score_max": -0.05,
+        "expected_layer": null,
+        "bert_required": true
+      }
+    },
+    {
+      "id": "perspective_cancel_request",
+      "text": "Siparişimi iptal etmeliyim acilen.",
+      "legacy_label": "Negatif",
+      "legacy_score": -0.9971024394035339,
+      "legacy_summary": "📝 Iptal",
+      "legacy_company_perspective": "Genel Operasyonel Aksaklık",
+      "legacy_risk": "🔴 Negatif",
+      "input_meta": {
+        "id": "perspective_cancel_request",
+        "expected_label_options": [
+          "NEGATIF",
+          "NÖTR",
+          "POZITIF"
+        ],
+        "expected_customer_perspective": "İptal Talebi",
+        "bert_required": true
+      }
+    },
+    {
+      "id": "perspective_authority_request",
+      "text": "Bir yetkili ile görüşmek istiyorum, beni arayın lütfen.",
+      "legacy_label": "Pozitif",
+      "legacy_score": 0.8725243806838989,
+      "legacy_summary": "📝 istiyorum, görüşmek, yetkili, lütfen",
+      "legacy_company_perspective": "Genel Operasyonel Aksaklık",
+      "legacy_risk": "🟢 Pozitif",
+      "input_meta": {
+        "id": "perspective_authority_request",
+        "expected_label_options": [
+          "NEGATIF",
+          "NÖTR",
+          "POZITIF"
+        ],
+        "expected_customer_perspective": "Yetkiliyle Görüşme Talebi",
+        "bert_required": true
+      }
+    },
+    {
+      "id": "company_personnel",
+      "text": "Personel kaba davrandı, saygısız bir tutum sergiledi.",
+      "legacy_label": "Negatif",
+      "legacy_score": -0.75,
+      "legacy_summary": "📝 Saygısız, Kaba",
+      "legacy_company_perspective": "Personel Davranışı / Eğitim",
+      "legacy_risk": "🔴 Negatif",
+      "input_meta": {
+        "id": "company_personnel",
+        "expected_label": "NEGATIF",
+        "expected_score": -0.75,
+        "expected_layer": "tier1",
+        "expected_company_perspective": "Personel Davranışı / Eğitim",
+        "bert_required": false
+      }
+    },
+    {
+      "id": "borderline_short_neutral",
+      "text": "Tamam.",
+      "legacy_label": "Pozitif",
+      "legacy_score": 0.9861992597579956,
+      "legacy_summary": "📝 Tamam",
+      "legacy_company_perspective": "Genel Operasyonel Aksaklık",
+      "legacy_risk": "🟢 Pozitif",
+      "input_meta": {
+        "id": "borderline_short_neutral",
+        "expected_label_options": [
+          "NÖTR",
+          "POZITIF",
+          "NEGATIF"
+        ],
+        "expected_score_min": -1.0,
+        "expected_score_max": 1.0,
+        "bert_required": true
+      }
+    }
+  ]
+}

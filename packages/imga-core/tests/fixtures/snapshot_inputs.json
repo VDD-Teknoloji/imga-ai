@@ -177,6 +177,139 @@
       "expected_score_max": 1.0,
       "expected_layer": null,
       "bert_required": true
+    },
+    {
+      "id": "critical_04",
+      "text": "Saygısızlık etti, küfür etti, hakaret savurdu.",
+      "expected_label": "NEGATIF",
+      "expected_score": -0.95,
+      "expected_layer": "critical",
+      "bert_required": false
+    },
+    {
+      "id": "critical_05",
+      "text": "Etiket yokmuş, alarm çaldı, beni hırsızlıkla suçladılar.",
+      "expected_label": "NEGATIF",
+      "expected_score": -0.95,
+      "expected_layer": "critical",
+      "bert_required": false
+    },
+    {
+      "id": "tier1_04",
+      "text": "Çözümsüz kaldım, yetersiz bir hizmet, sorumsuz personel.",
+      "expected_label": "NEGATIF",
+      "expected_score": -0.75,
+      "expected_layer": "tier1",
+      "bert_required": false
+    },
+    {
+      "id": "tier1_05",
+      "text": "Yalancı bir firma, fiyasko bir alışveriş, küstah temsilci.",
+      "expected_label": "NEGATIF",
+      "expected_score": -0.75,
+      "expected_layer": "tier1",
+      "bert_required": false
+    },
+    {
+      "id": "sla_compliant_warehouse",
+      "text": "Paketim 1 gün depoda hazırlanıyor.",
+      "expected_label": "NÖTR",
+      "expected_score": 0.05,
+      "expected_layer": "sla",
+      "expected_sla_substring": "Uyumlu",
+      "bert_required": true
+    },
+    {
+      "id": "sla_breach_long_shipping",
+      "text": "Siparişim 10 gündür kargoda bekliyorum, gelmedi.",
+      "expected_label": "NEGATIF",
+      "expected_score": -0.60,
+      "expected_layer": "sla",
+      "expected_sla_substring": "Aşımı",
+      "bert_required": true
+    },
+    {
+      "id": "sla_breach_2_weeks",
+      "text": "Kargom 2 hafta oldu hala bekliyorum.",
+      "expected_label": "NEGATIF",
+      "expected_score": -0.60,
+      "expected_layer": "sla",
+      "expected_sla_substring": "Aşımı",
+      "bert_required": true
+    },
+    {
+      "id": "tier2_fallback_kargo_gecikme",
+      "text": "Kargom çok geç geldi, paket bozuk durumda.",
+      "expected_label": "NEGATIF",
+      "expected_score": -0.40,
+      "expected_layer": "tier2",
+      "bert_required": true
+    },
+    {
+      "id": "tier2_fallback_yanlis_urun",
+      "text": "Yanlış ürün gönderdiniz, eksik gelen parça da var.",
+      "expected_label": "NEGATIF",
+      "expected_score": -0.40,
+      "expected_layer": "tier2",
+      "bert_required": true
+    },
+    {
+      "id": "pure_bert_positive_03",
+      "text": "Hizmetinizden çok memnunum, harika bir alışveriş deneyimi yaşadım.",
+      "expected_label": "POZITIF",
+      "expected_score_min": 0.5,
+      "expected_score_max": 1.0,
+      "expected_layer": null,
+      "bert_required": true
+    },
+    {
+      "id": "pure_bert_positive_04",
+      "text": "Hızlı kargo ve kaliteli ürün, teşekkür ederim.",
+      "expected_label": "POZITIF",
+      "expected_score_min": 0.5,
+      "expected_score_max": 1.0,
+      "expected_layer": null,
+      "bert_required": true
+    },
+    {
+      "id": "pure_bert_negative_02",
+      "text": "Beklediğim kalitede değildi, hayal kırıklığı.",
+      "expected_label": "NEGATIF",
+      "expected_score_min": -1.0,
+      "expected_score_max": -0.05,
+      "expected_layer": null,
+      "bert_required": true
+    },
+    {
+      "id": "perspective_cancel_request",
+      "text": "Siparişimi iptal etmeliyim acilen.",
+      "expected_label_options": ["NEGATIF", "NÖTR", "POZITIF"],
+      "expected_customer_perspective": "İptal Talebi",
+      "bert_required": true
+    },
+    {
+      "id": "perspective_authority_request",
+      "text": "Bir yetkili ile görüşmek istiyorum, beni arayın lütfen.",
+      "expected_label_options": ["NEGATIF", "NÖTR", "POZITIF"],
+      "expected_customer_perspective": "Yetkiliyle Görüşme Talebi",
+      "bert_required": true
+    },
+    {
+      "id": "company_personnel",
+      "text": "Personel kaba davrandı, saygısız bir tutum sergiledi.",
+      "expected_label": "NEGATIF",
+      "expected_score": -0.75,
+      "expected_layer": "tier1",
+      "expected_company_perspective": "Personel Davranışı / Eğitim",
+      "bert_required": false
+    },
+    {
+      "id": "borderline_short_neutral",
+      "text": "Tamam.",
+      "expected_label_options": ["NÖTR", "POZITIF", "NEGATIF"],
+      "expected_score_min": -1.0,
+      "expected_score_max": 1.0,
+      "bert_required": true
     }
   ]
 }
