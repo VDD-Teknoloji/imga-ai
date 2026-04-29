@@ -91,7 +91,9 @@ def generate_heuristic_summary(text: str) -> str:
             seen.add(item)
             found.append(item)
 
-    for word in CRITICAL_KEYWORDS:
+    # Sorted iteration: frozenset order is non-deterministic across processes
+    # (PYTHONHASHSEED randomization). Sort gives stable summary output.
+    for word in sorted(CRITICAL_KEYWORDS):
         if word in lower:
             _push("🚨 " + word.upper())
 
@@ -99,13 +101,13 @@ def generate_heuristic_summary(text: str) -> str:
         if any(kw in lower for kw in keywords):
             _push(concept)
 
-    for word in TIER1_SENTIMENT:
+    for word in sorted(TIER1_SENTIMENT):
         if word in lower:
             _push(word.title())
-    for word in TIER2_ISSUES:
+    for word in sorted(TIER2_ISSUES):
         if word in lower:
             _push(word.title())
-    for word in TIER3_FAILURES:
+    for word in sorted(TIER3_FAILURES):
         if word in lower:
             _push(word.title())
 
@@ -116,7 +118,8 @@ def generate_heuristic_summary(text: str) -> str:
         w for w in _WORD_PATTERN.findall(cleaned)
         if len(w) > 4 and w.lower() not in _SUMMARY_STOPWORDS
     ]
-    longest = sorted(set(words), key=len, reverse=True)[:4]
+    # Two-key sort: longest first, alphabetic tie-break for stable order.
+    longest = sorted(set(words), key=lambda w: (-len(w), w))[:4]
     return "📝 " + ", ".join(longest) if longest else ""
 
 
