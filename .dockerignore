@@ -1,0 +1,57 @@
+# VCS
+.git
+.gitignore
+.gitattributes
+
+# Python
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+*.so
+*.egg-info
+.eggs
+build
+dist
+.tox
+.coverage
+.pytest_cache
+.mypy_cache
+.ruff_cache
+htmlcov
+
+# Virtualenvs
+.venv
+venv
+env
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Project artifacts
+*.docx
+*.xlsx
+*.csv
+*.log
+docs/
+README.md
+
+# Local secrets / data
+.env
+.env.*
+!.env.example
+data/
+cx_rules.json
+cx_params.json
+training_data.csv
+
+# Don't bundle huge model cache into images
+.cache
+hf_cache

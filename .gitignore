@@ -1,0 +1,69 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+.eggs/
+build/
+dist/
+downloads/
+eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg
+.installed.cfg
+
+# Tests / type-checking / coverage
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+.cache
+coverage.xml
+htmlcov/
+.tox/
+
+# Virtualenvs
+.venv/
+venv/
+env/
+ENV/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Project-specific runtime data
+.env
+.env.local
+data/
+hf_cache/
+training_data.csv
+*.log
+
+# Docker
+docker-compose.override.yml
+
+# Streamlit secrets
+.streamlit/secrets.toml
+
+# Local sample / private docs (large binaries; not for VCS)
+Yemini/
+*.docx
+
+# Snapshot fixtures are version-controlled (snapshot_inputs.json, legacy_snapshot.json)
+# but generated calibration outputs (snapshot_calibrated.json) are not.
+packages/imga-core/tests/fixtures/snapshot_calibrated.json
