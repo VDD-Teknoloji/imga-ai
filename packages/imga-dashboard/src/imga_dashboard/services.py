@@ -11,12 +11,24 @@ from imga_core import (
     AnalysisPipeline,
     AnalysisResult,
     BertSentimentAnalyzer,
+    HybridClassifier,
+    KeywordCategoryClassifier,
     SLAParams,
+    create_llm_provider,
 )
+from imga_core.categories import GLOBAL_CATEGORY_BY_CODE
 
 from imga_dashboard.paths import params_path, rules_path, training_data_path
 
 POSSIBLE_TEXT_COLUMNS = ("Müşteri Yorumu", "Review", "review", "comments", "Yorum")
+
+
+def _build_classifier() -> KeywordCategoryClassifier | HybridClassifier:
+    keyword = KeywordCategoryClassifier()
+    llm = create_llm_provider()
+    if llm is None:
+        return keyword
+    return HybridClassifier(keyword_classifier=keyword, llm_provider=llm)
 
 
 @st.cache_resource(show_spinner="Loading BERT model...")
@@ -28,6 +40,7 @@ def _load_pipeline(
         knowledge_base_path=training_data_path() if training_data_path().exists() else None,
         rules_path=rules_path() if rules_path().exists() else None,
         sla_params=SLAParams(max_shipping_days=sla_shipping, max_warehouse_days=sla_warehouse),
+        classifier=_build_classifier(),
     )
 
 
@@ -67,12 +80,62 @@ def results_to_dataframe(
     enriched["Sentiment"] = [r.sentiment_label for r in results]
     enriched["Score"] = [r.sentiment_score for r in results]
     enriched["Risk"] = [_risk_emoji(r.sentiment_label) for r in results]
+    enriched["Birim"] = [_category_label(r) for r in results]
+    enriched["Güven"] = [_category_confidence(r) for r in results]
+    enriched["Diğer İlgili Birimler"] = [_secondary_labels(r) for r in results]
     enriched["Customer Perspective"] = [r.customer_perspective for r in results]
     enriched["Company Perspective"] = [r.company_perspective for r in results]
     enriched["Summary"] = [r.summary or "" for r in results]
     enriched["SLA"] = [r.sla_detected or "" for r in results]
     enriched = enriched.sort_values(by="Score", ascending=True)
     return enriched
+
+
+def _category_label(result: AnalysisResult) -> str:
+    cat = result.categorization
+    if cat is None:
+        return ""
+    definition = GLOBAL_CATEGORY_BY_CODE.get(cat.primary)
+    name = definition.name if definition else cat.primary
+    if cat.requires_manual_review:
+        return f"⚠️ {name}"
+    return name
+
+
+def _category_confidence(result: AnalysisResult) -> str:
+    cat = result.categorization
+    if cat is None:
+        return ""
+    return f"{cat.primary_confidence * 100:.0f}%"
+
+
+def _secondary_labels(result: AnalysisResult) -> str:
+    cat = result.categorization
+    if cat is None or not cat.secondaries:
+        return ""
+    parts: list[str] = []
+    for hit in cat.secondaries:
+        definition = GLOBAL_CATEGORY_BY_CODE.get(hit.category)
+        name = definition.name if definition else hit.category
+        parts.append(f"{name} ({hit.confidence * 100:.0f}%)")
+    return ", ".join(parts)
+
+
+def category_distribution(results: list[AnalysisResult]) -> pd.DataFrame:
+    """Per-category counts with display names, sorted descending."""
+    counts: dict[str, int] = {}
+    for r in results:
+        if r.categorization is None:
+            continue
+        counts[r.categorization.primary] = counts.get(r.categorization.primary, 0) + 1
+    rows: list[dict[str, str | int]] = []
+    for code, count in counts.items():
+        definition = GLOBAL_CATEGORY_BY_CODE.get(code)
+        name = definition.name if definition else code
+        rows.append({"Birim": name, "Şikayet Sayısı": count})
+    if not rows:
+        return pd.DataFrame(columns=["Birim", "Şikayet Sayısı"])
+    return pd.DataFrame(rows).sort_values(by="Şikayet Sayısı", ascending=False)
 
 
 def _risk_emoji(label: str) -> str:

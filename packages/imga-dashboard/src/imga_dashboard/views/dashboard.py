@@ -10,6 +10,7 @@ from imga_core.metrics import calculate_executive_metrics, is_alert_state
 from imga_dashboard.services import (
     analyze_dataframe,
     append_corrections,
+    category_distribution,
     detect_text_column,
     load_dataframe,
     reset_pipeline_cache,
@@ -88,6 +89,24 @@ def _executive_section(results: list[AnalysisResult]) -> None:
     else:
         st.info("No negative-side bottlenecks detected.")
 
+    # --- Sprint 6: business-unit (category) distribution ----------------
+    st.subheader("🏷️ Şikayet Birimleri Dağılımı")
+    cat_df = category_distribution(results)
+    if cat_df.empty:
+        st.info("Kategori sınıflandırması bu çalıştırmada üretilmedi.")
+    else:
+        st.bar_chart(cat_df.set_index("Birim"), color="#4b9eff")
+        manual_review_count = sum(
+            1
+            for r in results
+            if r.categorization is not None and r.categorization.requires_manual_review
+        )
+        if manual_review_count:
+            st.warning(
+                f"⚠️ {manual_review_count} şikayet düşük güvenle sınıflandırıldı; "
+                "manuel inceleme önerilir."
+            )
+
 
 def _detail_section(results: list[AnalysisResult], original_df: pd.DataFrame) -> None:
     st.header("🔍 Detailed Analysis & Correction")
@@ -97,6 +116,7 @@ def _detail_section(results: list[AnalysisResult], original_df: pd.DataFrame) ->
 
     columns = [
         text_col, "Risk", "Sentiment", "Score",
+        "Birim", "Güven", "Diğer İlgili Birimler",
         "Customer Perspective", "Company Perspective", "Summary", "SLA", "Fix This",
     ]
     columns = [c for c in columns if c in enriched.columns]
