@@ -1,0 +1,182 @@
+{
+  "_meta": {
+    "purpose": "Behavioral parity fixtures for AnalysisPipeline. Each entry pins the expected sentiment_label, bounded sentiment_score, and any required override layer for a representative input.",
+    "label_format": "uppercase NEGATIF/NÖTR/POZITIF (new package); legacy uses titlecase",
+    "score_tolerance": 0.01,
+    "generation": "Hand-curated. Cases that depend on BERT score values are marked bert_required=true and tolerate any negative/positive score in the expected range; non-BERT cases (overrides) pin exact scores.",
+    "next_step": "Run scripts/generate_snapshot.py against legacy/app.py to dump real BERT outputs and replace expected_score with actual values."
+  },
+  "cases": [
+    {
+      "id": "critical_01",
+      "text": "Mağazada hırsızlık iddiasıyla suçlandım, polis çağırdılar.",
+      "expected_label": "NEGATIF",
+      "expected_score": -0.95,
+      "expected_layer": "critical",
+      "bert_required": false
+    },
+    {
+      "id": "critical_02",
+      "text": "Bana karşı dava açacaklarmış, tehdit ettiler.",
+      "expected_label": "NEGATIF",
+      "expected_score": -0.95,
+      "expected_layer": "critical",
+      "bert_required": false
+    },
+    {
+      "id": "critical_03",
+      "text": "Mahkemede görüşürüz dediler, savcılığa şikayet edeceğim.",
+      "expected_label": "NEGATIF",
+      "expected_score": -0.95,
+      "expected_layer": "critical",
+      "bert_required": false
+    },
+    {
+      "id": "tier1_01",
+      "text": "Rezalet bir hizmet aldım, berbat.",
+      "expected_label": "NEGATIF",
+      "expected_score": -0.75,
+      "expected_layer": "tier1",
+      "bert_required": false
+    },
+    {
+      "id": "tier1_02",
+      "text": "İlgisiz ve saygısız bir personelle muhatap oldum.",
+      "expected_label": "NEGATIF",
+      "expected_score": -0.75,
+      "expected_layer": "tier1",
+      "bert_required": false
+    },
+    {
+      "id": "tier1_03",
+      "text": "Ürün iğrenç durumda geldi, profesyonellikten uzak bir paketleme.",
+      "expected_label": "NEGATIF",
+      "expected_score": -0.75,
+      "expected_layer": "tier1",
+      "bert_required": false
+    },
+    {
+      "id": "sla_breach_shipping_01",
+      "text": "Siparişim 5 gündür kargoda, gelmedi henüz.",
+      "expected_label": "NEGATIF",
+      "expected_score": -0.60,
+      "expected_layer": "sla",
+      "expected_sla_substring": "Aşımı",
+      "bert_required": true
+    },
+    {
+      "id": "sla_breach_shipping_02",
+      "text": "Kargom 1 hafta oldu, hâlâ bekliyorum.",
+      "expected_label": "NEGATIF",
+      "expected_score": -0.60,
+      "expected_layer": "sla",
+      "expected_sla_substring": "Aşımı",
+      "bert_required": true
+    },
+    {
+      "id": "sla_compliant_01",
+      "text": "Kargom 2 gündür yolda, normal süresinde geliyor sanırım.",
+      "expected_label": "NÖTR",
+      "expected_score": 0.05,
+      "expected_layer": "sla",
+      "expected_sla_substring": "Uyumlu",
+      "bert_required": true
+    },
+    {
+      "id": "sla_warehouse_breach",
+      "text": "Paket 3 gün depoda bekledi, hazırlanıyor diye yazıyor hâlâ.",
+      "expected_label": "NEGATIF",
+      "expected_score": -0.60,
+      "expected_layer": "sla",
+      "bert_required": true
+    },
+    {
+      "id": "tier2_fallback_01",
+      "text": "İade ettim ama param hâlâ yatmadı, fatura da gelmedi.",
+      "expected_label": "NEGATIF",
+      "expected_score": -0.40,
+      "expected_layer": "tier2",
+      "bert_required": true
+    },
+    {
+      "id": "tier2_fallback_02",
+      "text": "Ürünü değişim için gönderdim, defolu çıkmıştı.",
+      "expected_label": "NEGATIF",
+      "expected_score": -0.40,
+      "expected_layer": "tier2",
+      "bert_required": true
+    },
+    {
+      "id": "pure_bert_positive_01",
+      "text": "Ürün çok güzel, hızlı geldi, teşekkürler.",
+      "expected_label": "POZITIF",
+      "expected_score_min": 0.5,
+      "expected_score_max": 1.0,
+      "expected_layer": null,
+      "bert_required": true
+    },
+    {
+      "id": "pure_bert_positive_02",
+      "text": "Mükemmel kalite, kesinlikle tavsiye ederim.",
+      "expected_label": "POZITIF",
+      "expected_score_min": 0.5,
+      "expected_score_max": 1.0,
+      "expected_layer": null,
+      "bert_required": true
+    },
+    {
+      "id": "pure_bert_negative_01",
+      "text": "Hiç beğenmedim, beklediğim gibi değildi.",
+      "expected_label": "NEGATIF",
+      "expected_score_min": -1.0,
+      "expected_score_max": -0.05,
+      "expected_layer": null,
+      "bert_required": true
+    },
+    {
+      "id": "perspective_iade_request",
+      "text": "İade istiyorum, hakkımı kullanacağım.",
+      "expected_label": "NEGATIF",
+      "expected_score": -0.40,
+      "expected_layer": "tier2",
+      "expected_customer_perspective": "İade Talebi",
+      "bert_required": true
+    },
+    {
+      "id": "perspective_complaint",
+      "text": "Şikayetçiyim, müşteri hizmetlerine ulaşamıyorum.",
+      "expected_label": "NEGATIF",
+      "expected_score_min": -1.0,
+      "expected_score_max": 0.0,
+      "expected_customer_perspective": "Resmi Şikayet",
+      "bert_required": true
+    },
+    {
+      "id": "perspective_company_logistics",
+      "text": "Kargo getirmedi yine, teslimat sorunu yaşıyoruz.",
+      "expected_label": "NEGATIF",
+      "expected_score_min": -1.0,
+      "expected_score_max": 0.0,
+      "expected_company_perspective": "Lojistik / Kargo Firması Hatası",
+      "bert_required": true
+    },
+    {
+      "id": "perspective_company_quality",
+      "text": "Üründe leke var, ayıplı bir ürün gönderilmiş.",
+      "expected_label": "NEGATIF",
+      "expected_score": -0.40,
+      "expected_layer": "tier2",
+      "expected_company_perspective": "Ürün Kalite Kontrol (Defolu Gönderim)",
+      "bert_required": true
+    },
+    {
+      "id": "neutral_descriptive",
+      "text": "Ürün geldi, kullanıyorum.",
+      "expected_label_options": ["NÖTR", "POZITIF"],
+      "expected_score_min": -0.05,
+      "expected_score_max": 1.0,
+      "expected_layer": null,
+      "bert_required": true
+    }
+  ]
+}
