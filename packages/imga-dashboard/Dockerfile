@@ -28,6 +28,14 @@ COPY packages/imga-dashboard/pyproject.toml packages/imga-dashboard/README.md /b
 COPY packages/imga-dashboard/src /build/imga-dashboard/src
 RUN pip install --no-cache-dir /build/imga-dashboard
 
+# Pre-download BERT model (see imga-api/Dockerfile for rationale).
+ENV HF_HOME=/cache/huggingface
+RUN mkdir -p /cache/huggingface \
+ && python -c "from transformers import AutoTokenizer, AutoModelForSequenceClassification; \
+m='savasy/bert-base-turkish-sentiment-cased'; \
+AutoTokenizer.from_pretrained(m); \
+AutoModelForSequenceClassification.from_pretrained(m)"
+
 # ---------------------------------------------------------------------------
 FROM python:${PYTHON_VERSION}-slim AS runtime
 
@@ -50,6 +58,7 @@ WORKDIR /app
 
 COPY --from=builder /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
 COPY --from=builder /usr/local/bin /usr/local/bin
+COPY --from=builder --chown=imga:imga /cache/huggingface /cache/huggingface
 
 USER imga
 
