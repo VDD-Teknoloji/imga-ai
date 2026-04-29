@@ -94,6 +94,18 @@ def _install_streamlit_mock() -> None:
 
 
 def _import_legacy_app() -> Any:
+    """Import legacy/app.py with side-effects sandboxed to a tmp dir.
+
+    Legacy uses CWD-relative paths for cx_rules.json / cx_params.json /
+    training_data.csv. Any branch we fail to mock might write files there;
+    chdir to a tmp dir so accidental writes don't leak into the repo.
+    """
+    import os
+    import tempfile
+
+    sandbox = Path(tempfile.mkdtemp(prefix="legacy_snapshot_sandbox_"))
+    os.chdir(sandbox)
+
     _install_streamlit_mock()
     sys.path.insert(0, str(LEGACY_DIR))
     import importlib

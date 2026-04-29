@@ -52,6 +52,8 @@ Thumbs.db
 data/
 hf_cache/
 training_data.csv
+cx_rules.json
+cx_params.json
 *.log
 
 # Docker
