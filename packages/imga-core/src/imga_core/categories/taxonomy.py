@@ -1,0 +1,124 @@
+"""Global category taxonomy for business-unit routing.
+
+Each complaint is classified into one of nine global categories. The taxonomy
+is intentionally flat (no parent/child) to keep ticket routing simple. Tenants
+can later extend or disable categories at the tenant-config level (Sprint 7).
+"""
+
+from __future__ import annotations
+
+from enum import StrEnum
+from typing import Final
+
+from pydantic import BaseModel, ConfigDict, Field
+
+
+class GlobalCategory(StrEnum):
+    """Default global category taxonomy.
+
+    Available to all tenants by default. Tenants may extend / disable at the
+    tenant configuration level. The string values are the human-readable
+    display names; `code` (in CategoryDefinition) is the stable identifier.
+    """
+
+    KARGO = "Kargo / Lojistik"
+    FATURALAMA = "Faturalama / Ödeme"
+    URUN_KALITESI = "Ürün Kalitesi"
+    MUSTERI_HIZMETLERI = "Müşteri Hizmetleri"
+    IADE = "İade / Değişim"
+    TEKNIK_DESTEK = "Teknik Destek"
+    SIPARIS_SURECI = "Sipariş Süreci"
+    PAZARLAMA = "Pazarlama / İletişim"
+    BELIRSIZ = "Belirsiz - Manuel İnceleme"
+
+
+class CategoryDefinition(BaseModel):
+    """A single category with its keywords and metadata.
+
+    Used for both global default categories and tenant-specific ones.
+    Keywords are matched case-insensitively as substrings against lowercased
+    review text (same convention as the override lexicons).
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    name: str = Field(..., description="Display name shown in UI")
+    code: str = Field(
+        ...,
+        description="Stable identifier for DB / API responses (lowercase, no spaces).",
+    )
+    keywords: frozenset[str] = Field(
+        default_factory=frozenset,
+        description="Substring patterns for keyword-based classification.",
+    )
+    is_fallback: bool = Field(
+        default=False,
+        description="True for the 'Belirsiz' bucket that catches unmatched reviews.",
+    )
+
+
+# Codes are stable identifiers used in the API and DB. Display names come from
+# GlobalCategory.<X>.value. Keyword sets are populated in Stage 2 — left empty
+# here so the scaffolding can land independently of the lexicon work.
+DEFAULT_GLOBAL_CATEGORIES: Final[tuple[CategoryDefinition, ...]] = (
+    CategoryDefinition(
+        name=GlobalCategory.KARGO.value,
+        code="kargo",
+        keywords=frozenset(),
+    ),
+    CategoryDefinition(
+        name=GlobalCategory.FATURALAMA.value,
+        code="faturalama",
+        keywords=frozenset(),
+    ),
+    CategoryDefinition(
+        name=GlobalCategory.URUN_KALITESI.value,
+        code="urun_kalitesi",
+        keywords=frozenset(),
+    ),
+    CategoryDefinition(
+        name=GlobalCategory.MUSTERI_HIZMETLERI.value,
+        code="musteri_hizmetleri",
+        keywords=frozenset(),
+    ),
+    CategoryDefinition(
+        name=GlobalCategory.IADE.value,
+        code="iade",
+        keywords=frozenset(),
+    ),
+    CategoryDefinition(
+        name=GlobalCategory.TEKNIK_DESTEK.value,
+        code="teknik_destek",
+        keywords=frozenset(),
+    ),
+    CategoryDefinition(
+        name=GlobalCategory.SIPARIS_SURECI.value,
+        code="siparis_sureci",
+        keywords=frozenset(),
+    ),
+    CategoryDefinition(
+        name=GlobalCategory.PAZARLAMA.value,
+        code="pazarlama",
+        keywords=frozenset(),
+    ),
+    CategoryDefinition(
+        name=GlobalCategory.BELIRSIZ.value,
+        code="belirsiz",
+        keywords=frozenset(),
+        is_fallback=True,
+    ),
+)
+
+
+# Convenience lookups used by the classifier and API layer.
+GLOBAL_CATEGORY_BY_CODE: Final[dict[str, CategoryDefinition]] = {
+    c.code: c for c in DEFAULT_GLOBAL_CATEGORIES
+}
+
+GLOBAL_CATEGORY_CODES: Final[tuple[str, ...]] = tuple(
+    c.code for c in DEFAULT_GLOBAL_CATEGORIES
+)
+
+FALLBACK_CATEGORY_CODE: Final[str] = next(
+    c.code for c in DEFAULT_GLOBAL_CATEGORIES if c.is_fallback
+)
