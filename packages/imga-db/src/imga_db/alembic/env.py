@@ -17,6 +17,7 @@ from sqlalchemy.ext.asyncio import async_engine_from_config
 from imga_db.base import Base
 from imga_db.models import (  # noqa: F401  (register tables on Base.metadata)
     AuditLog,
+    Invitation,
     Tenant,
     User,
     UserTenantLink,
