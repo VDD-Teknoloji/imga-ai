@@ -8,11 +8,22 @@ from contextlib import asynccontextmanager
 from typing import Annotated
 
 from fastapi import Depends, FastAPI
-from imga_core import AnalysisPipeline, AnalysisResult
+from imga_core import (
+    AnalysisPipeline,
+    AnalysisResult,
+    CategoryClassification,
+    CategoryClassifier,
+    HybridClassifier,
+)
 from imga_core.metrics import calculate_executive_metrics, is_alert_state
 
 from imga_api import __version__
-from imga_api.dependencies import build_pipeline, get_pipeline, get_settings
+from imga_api.dependencies import (
+    build_pipeline,
+    get_classifier,
+    get_pipeline,
+    get_settings,
+)
 from imga_api.schemas import (
     AnalyzeRequest,
     BatchAnalyzeRequest,
@@ -39,14 +50,26 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 app = FastAPI(
     title="imga-api",
     version=__version__,
-    description="HTTP wrapper around imga-core sentiment pipeline.",
+    description="HTTP wrapper around imga-core sentiment + categorization pipeline.",
     lifespan=lifespan,
 )
 
 
 @app.get("/health", response_model=HealthResponse)
-def health(settings: Annotated[Settings, Depends(get_settings)]) -> HealthResponse:
-    return HealthResponse(status="ok", version=__version__, model=settings.bert_model)
+def health(
+    settings: Annotated[Settings, Depends(get_settings)],
+    pipeline: Annotated[AnalysisPipeline, Depends(get_pipeline)],
+) -> HealthResponse:
+    classifier = pipeline.classifier
+    classifier_kind = "hybrid" if isinstance(classifier, HybridClassifier) else "keyword"
+    llm_available = isinstance(classifier, HybridClassifier) and classifier.llm is not None
+    return HealthResponse(
+        status="ok",
+        version=__version__,
+        model=settings.bert_model,
+        classifier=classifier_kind,
+        llm_available=llm_available,
+    )
 
 
 @app.post("/analyze", response_model=AnalysisResult)
@@ -63,6 +86,15 @@ def analyze_batch(
     pipeline: Annotated[AnalysisPipeline, Depends(get_pipeline)],
 ) -> list[AnalysisResult]:
     return pipeline.analyze_batch(body.texts)
+
+
+@app.post("/classify", response_model=CategoryClassification)
+def classify(
+    body: AnalyzeRequest,
+    classifier: Annotated[CategoryClassifier, Depends(get_classifier)],
+) -> CategoryClassification:
+    """Category-only path. Skips BERT sentiment, ~10x faster than /analyze."""
+    return classifier.classify(body.text)
 
 
 @app.post("/metrics", response_model=MetricsResponse)

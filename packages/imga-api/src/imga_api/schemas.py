@@ -25,6 +25,13 @@ class HealthResponse(BaseModel):
     status: str
     version: str
     model: str
+    classifier: str = Field(
+        ..., description="'keyword' or 'hybrid' depending on whether an LLM is wired."
+    )
+    llm_available: bool = Field(
+        ...,
+        description="True when an LLM provider was constructed (keyword-only stack returns False).",
+    )
 
 
 class MetricsResponse(BaseModel):

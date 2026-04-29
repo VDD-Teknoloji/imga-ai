@@ -6,9 +6,14 @@ from collections.abc import Iterator
 
 import pytest
 from fastapi.testclient import TestClient
-from imga_core import AnalysisPipeline, AnalyzerPrediction, SentimentAnalyzer
+from imga_core import (
+    AnalysisPipeline,
+    AnalyzerPrediction,
+    KeywordCategoryClassifier,
+    SentimentAnalyzer,
+)
 
-from imga_api.dependencies import get_pipeline, get_settings
+from imga_api.dependencies import get_classifier, get_pipeline, get_settings
 from imga_api.main import app
 from imga_api.settings import Settings
 
@@ -34,18 +39,30 @@ class StubAnalyzer(SentimentAnalyzer):
 
 
 @pytest.fixture
-def stub_pipeline() -> AnalysisPipeline:
-    return AnalysisPipeline(analyzer=StubAnalyzer())
+def stub_classifier() -> KeywordCategoryClassifier:
+    """Real keyword classifier — no LLM, fully deterministic for tests."""
+    return KeywordCategoryClassifier()
 
 
 @pytest.fixture
-def client(stub_pipeline: AnalysisPipeline) -> Iterator[TestClient]:
+def stub_pipeline(stub_classifier: KeywordCategoryClassifier) -> AnalysisPipeline:
+    return AnalysisPipeline(
+        analyzer=StubAnalyzer(),
+        classifier=stub_classifier,
+    )
+
+
+@pytest.fixture
+def client(
+    stub_pipeline: AnalysisPipeline,
+    stub_classifier: KeywordCategoryClassifier,
+) -> Iterator[TestClient]:
     """TestClient with dependencies overridden — lifespan not triggered."""
     settings = Settings()  # defaults, no env reads
     app.dependency_overrides[get_pipeline] = lambda: stub_pipeline
     app.dependency_overrides[get_settings] = lambda: settings
+    app.dependency_overrides[get_classifier] = lambda: stub_classifier
     try:
-        # Avoid the lifespan by NOT entering it as a context manager.
         c = TestClient(app)
         yield c
     finally:

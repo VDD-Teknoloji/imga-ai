@@ -12,6 +12,39 @@ def test_health_endpoint(client: TestClient) -> None:
     assert payload["status"] == "ok"
     assert "version" in payload
     assert "model" in payload
+    # Sprint 6: classifier visibility
+    assert payload["classifier"] == "keyword"  # stub uses KeywordCategoryClassifier
+    assert payload["llm_available"] is False
+
+
+def test_classify_endpoint_returns_category(client: TestClient) -> None:
+    r = client.post("/classify", json={"text": "Kargom 5 gündür gelmedi"})
+    assert r.status_code == 200
+    payload = r.json()
+    assert payload["primary"] == "kargo"
+    assert payload["method"] == "keyword"
+    assert "kargo" in payload["primary_matched_keywords"]
+
+
+def test_classify_endpoint_belirsiz_for_unrelated_text(client: TestClient) -> None:
+    r = client.post("/classify", json={"text": "merhaba nasılsınız"})
+    assert r.status_code == 200
+    payload = r.json()
+    assert payload["primary"] == "belirsiz"
+    assert payload["requires_manual_review"] is True
+
+
+def test_analyze_response_includes_categorization(client: TestClient) -> None:
+    r = client.post("/analyze", json={"text": "Kargom gelmedi, kuryem ulaşmadı"})
+    assert r.status_code == 200
+    payload = r.json()
+    assert payload["categorization"] is not None
+    assert payload["categorization"]["primary"] == "kargo"
+
+
+def test_classify_validation_empty_text(client: TestClient) -> None:
+    r = client.post("/classify", json={"text": ""})
+    assert r.status_code == 422
 
 
 def test_analyze_returns_full_result(client: TestClient) -> None:

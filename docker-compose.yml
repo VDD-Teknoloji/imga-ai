@@ -49,6 +49,11 @@ services:
     environment:
       IMGA_KB_PATH: /data/training_data.csv
       IMGA_RULES_PATH: /data/cx_rules.json
+      # Sprint 6 — category classification LLM fallback (off by default)
+      IMGA_LLM_FALLBACK_ENABLED: "${IMGA_LLM_FALLBACK_ENABLED:-false}"
+      IMGA_LLM_PROVIDER: "${IMGA_LLM_PROVIDER:-gemini}"
+      GEMINI_API_KEY: "${GEMINI_API_KEY:-}"
+      IMGA_GEMINI_MODEL: "${IMGA_GEMINI_MODEL:-gemini-2.5-flash}"
     healthcheck:
       test: ["CMD", "curl", "--fail", "http://localhost:8000/health"]
       interval: 30s
