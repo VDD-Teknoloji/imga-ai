@@ -12,6 +12,27 @@
 name: imga
 
 services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: imga-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: imga
+      POSTGRES_USER: imga_owner
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-imga_dev_password}
+      IMGA_APP_PASSWORD: ${IMGA_APP_PASSWORD:-imga_app_password}
+      IMGA_ADMIN_PASSWORD: ${IMGA_ADMIN_PASSWORD:-imga_admin_password}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./packages/imga-db/sql:/docker-entrypoint-initdb.d:ro
+    ports:
+      - "${IMGA_POSTGRES_PORT:-5432}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U imga_owner -d imga"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
   core-tests:
     image: imga-core:dev
     build:
@@ -112,3 +133,5 @@ services:
 volumes:
   hf_cache:
     name: imga_hf_cache
+  postgres_data:
+    name: imga_postgres_data
