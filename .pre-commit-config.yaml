@@ -1,0 +1,61 @@
+# Pre-commit hooks for imga monorepo.
+# Install:  pip install pre-commit && pre-commit install
+# Manual:   pre-commit run --all-files
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.6.0
+    hooks:
+      - id: trailing-whitespace
+        exclude: ^legacy/|\.csv$
+      - id: end-of-file-fixer
+        exclude: ^legacy/|\.csv$
+      - id: check-yaml
+      - id: check-toml
+      - id: check-json
+        exclude: ^packages/.+/tests/fixtures/
+      - id: check-merge-conflict
+      - id: check-added-large-files
+        args: ["--maxkb=500"]
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.6.9
+    hooks:
+      - id: ruff
+        name: ruff (imga-core)
+        files: ^packages/imga-core/(src|tests)/
+        args: [--fix, --config=packages/imga-core/pyproject.toml]
+      - id: ruff
+        name: ruff (imga-api)
+        files: ^packages/imga-api/(src|tests)/
+        args: [--fix, --config=packages/imga-api/pyproject.toml]
+      - id: ruff
+        name: ruff (imga-dashboard)
+        files: ^packages/imga-dashboard/(src|tests)/
+        args: [--fix, --config=packages/imga-dashboard/pyproject.toml]
+      - id: ruff-format
+        name: ruff-format (all packages)
+        files: ^packages/.+/(src|tests)/
+
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v1.11.2
+    hooks:
+      - id: mypy
+        name: mypy (imga-core)
+        files: ^packages/imga-core/src/
+        args: [--config-file=packages/imga-core/pyproject.toml]
+        additional_dependencies:
+          - pydantic>=2.0
+      - id: mypy
+        name: mypy (imga-api)
+        files: ^packages/imga-api/src/
+        args: [--config-file=packages/imga-api/pyproject.toml]
+        additional_dependencies:
+          - pydantic>=2.0
+          - fastapi>=0.110
+      - id: mypy
+        name: mypy (imga-dashboard)
+        files: ^packages/imga-dashboard/src/
+        args: [--config-file=packages/imga-dashboard/pyproject.toml]
+        additional_dependencies:
+          - pydantic>=2.0
