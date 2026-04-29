@@ -15,6 +15,7 @@ from imga_core.config import (
     SLA_WAREHOUSE_CONTEXT_KEYWORDS,
 )
 from imga_core.models import OverrideHit
+from imga_core.text_utils import normalize_turkish
 
 # Verbatim from legacy/app.py:410.
 DURATION_PATTERN: Final[re.Pattern[str]] = re.compile(
@@ -41,7 +42,7 @@ def apply_sla_override(text: str, params: SLAParams | None = None) -> OverrideHi
         return None
     params = params or SLAParams()
 
-    lowered = text.lower()
+    lowered = normalize_turkish(text)
     match = DURATION_PATTERN.search(lowered)
     if match is None:
         return None

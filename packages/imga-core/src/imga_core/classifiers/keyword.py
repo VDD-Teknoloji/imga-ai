@@ -18,6 +18,7 @@ from imga_core.config import (
     CATEGORY_SECONDARY_COUNT,
 )
 from imga_core.models import CategoryClassification, CategoryHit
+from imga_core.text_utils import normalize_turkish
 
 
 class KeywordCategoryClassifier(CategoryClassifier):
@@ -44,7 +45,7 @@ class KeywordCategoryClassifier(CategoryClassifier):
         if not text or not text.strip():
             return self._fallback(reason_for_review=True)
 
-        text_lower = text.lower()
+        text_lower = normalize_turkish(text)
         scores: dict[str, list[str]] = {}
         for category_code, keywords in self._lexicons.items():
             matched = sorted(kw for kw in keywords if kw in text_lower)

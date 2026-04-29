@@ -21,12 +21,14 @@ SNAPSHOT_INPUTS = (
 
 # Expected primary category per fixture id.
 #
-# Important caveat: Turkish capital "İ" lowercases to "i" + COMBINING DOT
-# (U+0307) in Python — so a substring like "iade" never matches in a string
-# that begins with "İade". Legacy/app.py shares this limitation and several
-# fixtures begin with "İ"; we pin those to 'belirsiz' to match observed
-# behaviour. Fixing it requires Turkish-aware case folding which is out of
-# scope here (would break legacy parity and need a separate sprint).
+# Sprint 6.10 fixed the Turkish capital "İ" -> combining-dot bug via
+# imga_core.text_utils.normalize_turkish, so 'iade' substring now matches
+# inside "İade". perspective_iade_request was previously pinned to
+# 'belirsiz' for that reason; now correctly returns 'iade'.
+# tier1_02, tier1_04, perspective_authority_request still resolve to
+# 'belirsiz' but for a different reason: their salient words ('personel',
+# 'yetkili') are not in the per-category lexicons (only fully-formed
+# phrases like 'personel kaba' or 'yetkili istedim' are).
 EXPECTED_CATEGORY_BY_ID: dict[str, str] = {
     # Generic crisis texts — no business unit clear from words alone.
     "critical_01": "belirsiz",
@@ -63,7 +65,7 @@ EXPECTED_CATEGORY_BY_ID: dict[str, str] = {
     "neutral_descriptive": "belirsiz",
     "borderline_short_neutral": "belirsiz",
     # Perspective-flagged
-    "perspective_iade_request": "belirsiz",  # 'İade' starts with İ → lower bug
+    "perspective_iade_request": "iade",  # Sprint 6.10 fix: İade now matches
     "perspective_complaint": "musteri_hizmetleri",
     "perspective_company_logistics": "kargo",
     "perspective_company_quality": "urun_kalitesi",

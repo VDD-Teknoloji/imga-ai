@@ -24,6 +24,8 @@ import logging
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from imga_core.text_utils import normalize_turkish
+
 _logger = logging.getLogger(__name__)
 
 
@@ -43,7 +45,11 @@ class Rule:
         if not isinstance(label, str) or not label.strip():
             raise ValueError("label must be a non-empty string")
         return cls(
-            keywords=tuple(str(k).strip().lower() for k in raw_keywords if str(k).strip()),
+            keywords=tuple(
+                normalize_turkish(str(k).strip())
+                for k in raw_keywords
+                if str(k).strip()
+            ),
             label=label,
         )
 
@@ -93,7 +99,7 @@ class RuleEngine:
     def _classify(self, text: str, rules: tuple[Rule, ...]) -> str | None:
         if not text or not rules:
             return None
-        lowered = text.lower()
+        lowered = normalize_turkish(text)
         for rule in rules:
             if rule.matches(lowered):
                 return rule.label

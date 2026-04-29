@@ -6,6 +6,8 @@ JSON engine (cx_rules.json) is intentionally omitted from this sprint.
 
 from __future__ import annotations
 
+from imga_core.text_utils import normalize_turkish
+
 CUSTOMER_DEFAULT = "Memnuniyetsizlik / Bilgi Talebi"
 COMPANY_DEFAULT = "Genel Operasyonel Aksaklık"
 
@@ -14,7 +16,7 @@ def classify_customer_perspective(text: str) -> str:
     """Return the customer-side intent label."""
     if not text:
         return "-"
-    t = text.lower()
+    t = normalize_turkish(text)
 
     if "iade" in t and ("istiyorum" in t or "talep" in t or "hakkım" in t):
         return "İade Talebi"
@@ -39,7 +41,7 @@ def classify_company_perspective(text: str) -> str:
     """Return the company-side root-cause label."""
     if not text:
         return "-"
-    t = text.lower()
+    t = normalize_turkish(text)
 
     if "değişim" in t and ("yok" in t or "red" in t or "kabul" in t or "yapılmadı" in t):
         return "Değişim Prosedürü / Stok"

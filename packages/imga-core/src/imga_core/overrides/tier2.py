@@ -5,6 +5,7 @@ from __future__ import annotations
 from imga_core.config import TIER2_FALLBACK_SCORE, TIER2_FALLBACK_TRIGGER_THRESHOLD
 from imga_core.lexicons import TIER2_ISSUES
 from imga_core.models import OverrideHit
+from imga_core.text_utils import normalize_turkish
 
 
 def apply_tier2_fallback(text: str, current_score: float) -> OverrideHit | None:
@@ -23,7 +24,7 @@ def apply_tier2_fallback(text: str, current_score: float) -> OverrideHit | None:
     if current_score <= TIER2_FALLBACK_TRIGGER_THRESHOLD:
         return None
 
-    lowered = text.lower()
+    lowered = normalize_turkish(text)
     matched = sorted(kw for kw in TIER2_ISSUES if kw in lowered)
     if not matched:
         return None
