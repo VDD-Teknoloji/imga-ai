@@ -35,8 +35,7 @@ FROM python:${PYTHON_VERSION}-slim AS runtime
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    HF_HOME=/cache/huggingface \
-    TRANSFORMERS_CACHE=/cache/huggingface/transformers
+    HF_HOME=/cache/huggingface
 
 RUN apt-get update \
  && apt-get install -y --no-install-recommends curl \

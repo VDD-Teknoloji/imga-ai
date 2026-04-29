@@ -35,8 +35,7 @@ FROM python:${PYTHON_VERSION}-slim AS runtime
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    HF_HOME=/cache/huggingface \
-    TRANSFORMERS_CACHE=/cache/huggingface/transformers
+    HF_HOME=/cache/huggingface
 
 RUN useradd --create-home --uid 1000 imga \
  && mkdir -p /cache/huggingface /data /app \
