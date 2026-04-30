@@ -17,12 +17,12 @@ export default function DashboardPage() {
     <main className="mx-auto flex w-full max-w-3xl flex-col gap-6 p-8">
       <header className="flex flex-col gap-1">
         <h1 className="text-3xl font-semibold tracking-tight">imga.ai</h1>
-        <p className="text-sm text-muted-foreground">
+        <p className="text-muted-foreground text-sm">
           Sprint 7.6.1 — auth foundation. Dashboard 7.6.3&apos;te.
         </p>
       </header>
 
-      <section className="rounded-lg border bg-card p-6">
+      <section className="bg-card rounded-lg border p-6">
         <h2 className="text-lg font-medium">Aktif oturum</h2>
         <dl className="mt-4 grid grid-cols-[max-content_1fr] gap-x-6 gap-y-2 text-sm">
           <dt className="text-muted-foreground">Kullanıcı</dt>

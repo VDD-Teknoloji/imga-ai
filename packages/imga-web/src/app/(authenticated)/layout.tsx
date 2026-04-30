@@ -1,12 +1,16 @@
+import { AppShell } from "@/components/layout/app-shell";
 import { ProtectedRoute } from "@/components/auth/protected-route";
 
 /**
  * Route-group layout for every page that requires a logged-in user.
- * The full app shell (sidebar + topbar + tenant switcher) is wired
- * up in Sprint 7.6.2; for now the layout just gates with
- * ProtectedRoute so the placeholder dashboard cannot be reached
- * without a session.
+ * ProtectedRoute redirects to /login if the auth store settles
+ * user-less; AppShell paints the sidebar + mobile topbar + main
+ * content frame around whatever the page renders.
  */
 export default function AuthenticatedLayout({ children }: { children: React.ReactNode }) {
-  return <ProtectedRoute>{children}</ProtectedRoute>;
+  return (
+    <ProtectedRoute>
+      <AppShell>{children}</AppShell>
+    </ProtectedRoute>
+  );
 }
