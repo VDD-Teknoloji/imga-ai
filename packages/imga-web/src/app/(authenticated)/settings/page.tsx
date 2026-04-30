@@ -1,6 +1,9 @@
 "use client";
 
+import { useMemo } from "react";
+
 import { AutomationModeForm } from "@/components/settings/automation-mode-form";
+import { CategoryToggleList } from "@/components/settings/category-toggle-list";
 import { ForbiddenNotice } from "@/components/settings/forbidden-notice";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useTenantConfig } from "@/hooks/use-tenant-config";
@@ -10,13 +13,20 @@ import type { AutomationMode } from "@/lib/types";
 /**
  * Tenant settings page. Single column, sections stack vertically.
  * Tenant_admin (and super_admin) only — analyst / viewer hit
- * ForbiddenNotice. Other sections (kategori toggle, custom CRUD)
- * land in the next two commits.
+ * ForbiddenNotice. The custom CRUD section lands in the next commit.
  */
 export default function SettingsPage() {
   const role = useAuthStore((s) => s.activeContext?.role);
   const isSuperAdmin = useAuthStore((s) => s.user?.is_super_admin ?? false);
   const config = useTenantConfig();
+
+  const globals = useMemo(
+    () =>
+      (config.data?.categories ?? [])
+        .filter((c) => c.is_global && !c.is_archived)
+        .sort((a, b) => a.code.localeCompare(b.code)),
+    [config.data],
+  );
 
   const isAdmin = role === "tenant_admin" || isSuperAdmin;
   if (!isAdmin) return <ForbiddenNotice />;
@@ -31,11 +41,17 @@ export default function SettingsPage() {
       </header>
 
       {config.isLoading ? (
-        <Skeleton className="h-64" />
+        <div className="space-y-6">
+          <Skeleton className="h-64" />
+          <Skeleton className="h-72" />
+        </div>
       ) : config.isError ? (
         <p className="text-destructive py-12 text-center text-sm">Ayarlar yüklenemedi.</p>
       ) : config.data ? (
-        <AutomationModeForm current={config.data.automation_mode as AutomationMode} />
+        <>
+          <AutomationModeForm current={config.data.automation_mode as AutomationMode} />
+          <CategoryToggleList categories={globals} />
+        </>
       ) : null}
     </main>
   );
