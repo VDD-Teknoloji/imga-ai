@@ -39,6 +39,12 @@ class User(Base, TimestampMixin, SoftDeleteMixin):
     last_login_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    # Used to invalidate access tokens issued before a password change without
+    # tracking individual access-token jtis. An access token whose iat <
+    # password_changed_at is rejected by the auth dependency.
+    password_changed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
 
 
 class UserTenantLink(Base, TimestampMixin):

@@ -18,6 +18,7 @@ from imga_db.base import Base
 from imga_db.models import (  # noqa: F401  (register tables on Base.metadata)
     AuditLog,
     Invitation,
+    RefreshTokenRecord,
     Tenant,
     User,
     UserTenantLink,
