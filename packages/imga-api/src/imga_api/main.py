@@ -24,6 +24,7 @@ from imga_api.dependencies import (
     get_pipeline,
     get_settings,
 )
+from imga_api.routes import auth as auth_routes
 from imga_api.schemas import (
     AnalyzeRequest,
     BatchAnalyzeRequest,
@@ -53,6 +54,8 @@ app = FastAPI(
     description="HTTP wrapper around imga-core sentiment + categorization pipeline.",
     lifespan=lifespan,
 )
+
+app.include_router(auth_routes.router)
 
 
 @app.get("/health", response_model=HealthResponse)
