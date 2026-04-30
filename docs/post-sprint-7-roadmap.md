@@ -57,17 +57,26 @@ Sprint 7 sonu itibariyle backend konsolide ve canlıda çalışıyor: 6 alembic 
 - **Süre**: 1 gün (planlanan 1 gün, gerçekleşen 1 gün).
 - **Frontend cleanup notu** (Sprint 7.7+): Mevcut anonim `/analyze` panel preview'i için kaldı; tenant context'i olan ekranlar (gelecek "Yorum Analiz Et" / batch ingestion UI) `POST /tenants/me/analyze` kullanmalı — ticket_id non-null dönerse "Bilet açıldı" toast'ı + ticket detail link, `skipped_*` dönerse ilgili sebebi (mod/eşik/belirsiz/dedup) inline gösterilmeli.
 
-### A4. Comments tablosu + endpoint + timeline integration
+### A4. Comments + timeline integration ✅ SHIPPED (Sprint 7.5.5 / Alt-Faz 4)
 
-- **Durum**: 7.5 design review'da role matrisinde geçti ama tablo + endpoint deferral kararıyla ertelendi (kullanıcı: "VIEWER yorum: ✓ ama sadece internal note, customer-facing reply yasak"). Hiçbir kod yok.
-- **Eksik**:
-  - **Migration 0007**: `ticket_comments` (id, tenant_id, ticket_id, author_user_id, body, kind ∈ {internal_note, customer_reply}, created_at, updated_at, deleted_at) + RLS+FORCE + index.
-  - **Model**: `TicketComment` + `TicketCommentKind` enum.
-  - **CommentService**: `create` (role check: VIEWER yalnızca `internal_note`, ANALYST/ADMIN her ikisi), `list_for_ticket`, `soft_delete`. State'le orthogonal — comment her state'te eklenebilir, hatta CLOSED/CANCELLED'da bile (sadece `customer_reply` CLOSED/CANCELLED'da yasak).
-  - **Routes**: `POST /tickets/{id}/comments` (body `{body, kind}`), `GET /tickets/{id}/comments`, `DELETE /tickets/{id}/comments/{cid}` (yazar veya admin).
-  - **Timeline integration**: Mevcut `GET /tickets/{id}/transitions` yerine `GET /tickets/{id}/timeline` — events polymorphic: `state_transition` veya `comment`. Eski endpoint backwards-compat için kalabilir veya direkt rename.
-- **Bağımlılık**: Yok.
-- **Süre**: ~1.5-2 gün.
+- **Durum**: ✅ Sprint 7.5.5 / Alt-Faz 4'te teslim edildi.
+  - **Migration 0009**: `ticket_comments` tablosu — author_user_id (SET NULL), body Text, kind VARCHAR(16), archived_by_user_id, deleted_at (archive flag). 3 CHECK constraint (kind enum, body length 1..8000), 3 index — composite (tenant + ticket + created_at) for timeline render, (tenant + author) for "my comments", deleted_at for archive sweep. RLS+FORCE policy.
+  - **`TicketComment` modeli + `TicketCommentKind` StrEnum** (internal_note / customer_reply). `is_archived` + `archived_at` property accessors over `deleted_at`.
+  - **Hard delete YOK, sadece archive**: deleted_at NOT NULL = archived. archived_by_user_id audit pointer. Timeline'da hâlâ görünüyor `is_archived: true` flag'iyle — historical record bozulamaz.
+  - **`CommentService.create / list_for_ticket / archive`**:
+    - **Role matrix** (Sprint 7.5 design review locked-in): VIEWER → only `internal_note`; ANALYST + TENANT_ADMIN → both kinds.
+    - **State guard**: `customer_reply` forbidden when ticket is CLOSED / CANCELLED. `internal_note` state-orthogonal (allowed in every state, including terminals — post-mortem notes survive).
+    - **Archive guard**: author OR TENANT_ADMIN; double-archive returns 409.
+    - **Audit log**: `comment.create` + `comment.archive` actions, details payload includes ticket_id + kind/state at decision time.
+  - **Routes** (4 yeni endpoint, hepsi /tickets prefix'i altında):
+    - `POST /tickets/{id}/comments` — 201 body, role + state matrix enforced.
+    - `GET /tickets/{id}/comments?include_archived=true` — chronological list, default includes archived rows.
+    - `POST /tickets/{id}/comments/{cid}/archive` — soft-delete; 200 returns the archived comment view.
+    - `GET /tickets/{id}/timeline` — polymorphic merged stream (state_transition + comment), sorted by occurred_at ASC. Eski `/transitions` endpoint backwards-compat için kaldı; yeni client'lar timeline'a geçmeli.
+  - **Tests**: 16 yeni integration test (`test_comments.py`) — role matrix (viewer/analyst paths), state guard (CLOSED ticket internal_note allowed but customer_reply 403), archive (author + admin paths, non-author 403, double-archive 409), body length 8001 → 422, list include_archived toggle, /timeline merge order + archived events still surface, RLS isolation iki tenant ile, audit log shape, soft-delete persistence (row not physically deleted), state-orthogonality (internal_note for all 6 states via direct service call).
+- **Bağımlılık**: ✅ kapandı.
+- **Süre**: 1 gün (planlanan 1.5-2, tek günde shipped çünkü modeli + service + routes paralel yazıldı).
+- **Frontend cleanup notu** (Sprint 7.7+): Ticket detail sayfasında ek bir "Comments" sekmesi açılmalı; üst kısmına `kind` switch (Internal Note / Customer Reply) + body textarea + send butonu. VIEWER rolünde Customer Reply seçeneği grayed-out. Timeline view'i `/tickets/{id}/transitions`'tan `/tickets/{id}/timeline`'a geçirilmeli — polymorphic event renderer (`type === 'comment'` ile `type === 'state_transition'` ayrı kart varyantları). Archived comment'ler yarı-saydam görünmeli + "kim arşivledi" hover tooltip'i.
 
 ### A5. Ticket aggregation + filter endpoints ✅ SHIPPED (Sprint 7.5.5 / Alt-Faz 2)
 
@@ -89,13 +98,16 @@ Sprint 7 sonu itibariyle backend konsolide ve canlıda çalışıyor: 6 alembic 
 - **Bağımlılık**: ✅ kapandı. C5 pagination'a kadar offset paging max 500.
 - **Süre**: 1 gün (planlanan 0.5-1 gün, EXPLAIN doğrulaması + 19 test ile gerçekleşen).
 
-### A7. Tenant directory (assignee picker / member list)
+### A7. Tenant directory ✅ SHIPPED (Sprint 7.5.5 / Alt-Faz 4)
 
-- **Durum**: `GET /tenants/me/users` veya benzer "bu tenant'taki kullanıcı listesi" endpoint'i yok. `UserService.attach_to_tenant` + `user_tenants` tablosu var ama liste read endpoint'i yok.
-- **Eksik**: `GET /tenants/me/users` — tenant üyelerini `{id, full_name, email, role, last_login_at}` formatında döner. `require_role(TENANT_ADMIN, ANALYST, VIEWER)` ile herkes okuyabilir; e-mail veya isim filtresi opsiyonel olarak kabul eder.
-- **Etki**: Sprint 7.6.4'te ticket detail sayfasında atanan kullanıcı yalnızca "Sana / Atanmamış / Başka" şeklinde gösterilebiliyor — gerçek isim lookup'ı yok. Tenant_admin "Atayı değiştir" butonuyla kullanıcı seçemiyor (sadece kendine alıp bırakabiliyor). A7 ile tam atayıcı dropdown gelecek.
-- **Bağımlılık**: Yok.
-- **Süre**: ~0.5 gün (read endpoint + UI dropdown).
+- **Durum**: ✅ Sprint 7.5.5 / Alt-Faz 4'te teslim edildi.
+  - **`UserService.list_for_tenant(tenant_id, search=None)`** — `User` ⨯ `UserTenantLink` JOIN, soft-deleted users excluded, opsiyonel case-insensitive ILIKE substring filter on email OR full_name. Returns frozen `TenantMember` dataclass list (user_id, email, full_name, role, is_active, last_login_at, invitation_accepted_at). Sorted by full_name ASC.
+  - **`GET /tenants/me/users`** — `routes/tenant_directory.py`, ayrı router file (clean separation from tenant_config). Auth: TENANT_ADMIN / ANALYST / VIEWER (her tenant member okuyabilir — A7 spec). Query param: `search` (max 200 chars).
+  - **OpenAPI tag**: yeni "Tenant Directory" tag (assignee picker / etc.).
+  - **Tests**: 8 yeni integration test (`test_tenant_directory.py`) — 3 rol için read access, search by email substring, search by full_name (case-insensitive), no-match → empty, soft-deleted user hidden, RLS isolation iki tenant ile, last_login_at + invitation_accepted_at surface eden test.
+- **Frontend cleanup notu** (Sprint 7.7+): Ticket detail "Atayı değiştir" dropdown'ı bu endpoint'i çağırmalı (`useTenantMembers()` hook). Mevcut "Sana / Atanmamış / Başka" placeholder kaldırılıp tam isim/email gösteren dropdown geliyor. Timeline'daki actor_user_id'ler de bu directory'yi cache'leyerek isim resolve etmeli (paralel fetch, prefetch'le shadcn dropdown'a feed).
+- **Bağımlılık**: ✅ kapandı.
+- **Süre**: 0.5 gün (planlanan 0.5).
 
 ### A6. Tenant-aggregate analysis metrics (SHI / kriz / kategori dağılımı)
 
