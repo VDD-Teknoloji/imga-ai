@@ -52,14 +52,24 @@ from imga_api.services import (
     WindowExpiredError,
 )
 
-router = APIRouter(prefix="/tickets", tags=["tickets"])
+router = APIRouter(prefix="/tickets", tags=["Tickets"])
 
 
 # --- request/response models -------------------------------------------
 
 
 class TicketCreateRequest(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={
+            "example": {
+                "category_id": "9c45a2f1-bd5c-4c81-9f1b-7b1a04d1e0c0",
+                "title": "Kargom 5 gündür gelmedi",
+                "summary": "Sipariş #A123, takip numarası yanıt vermiyor.",
+                "priority": "high",
+            }
+        },
+    )
     category_id: UUID
     title: str = Field(..., min_length=1, max_length=4000)
     summary: str | None = None
@@ -68,7 +78,16 @@ class TicketCreateRequest(BaseModel):
 
 
 class TicketTransitionBody(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={
+            "examples": [
+                {"to_state": "in_progress", "reason": "claiming for triage"},
+                {"to_state": "cancelled", "cancellation_reason": "spam"},
+                {"to_state": "open", "reason": "regression — customer not happy"},
+            ]
+        },
+    )
     to_state: TicketState
     reason: str | None = Field(default=None, max_length=2000)
     cancellation_reason: CancellationReason | None = None
@@ -188,7 +207,17 @@ _AnalystOrAdmin = Depends(require_role(
 # --- endpoints ---------------------------------------------------------
 
 
-@router.post("", response_model=TicketResponse, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "",
+    response_model=TicketResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Create a ticket manually.",
+    description=(
+        "Creates a ticket in OPEN. The auto-create path from /analyze "
+        "(Sprint 7.5.5 / 8) will use the same service entry point with "
+        "created_by_user_id=None to flag the ticket as system-generated."
+    ),
+)
 async def create_ticket(
     body: TicketCreateRequest,
     current: Annotated[CurrentUser, _AnalystOrAdmin],
@@ -214,7 +243,11 @@ async def create_ticket(
     return view
 
 
-@router.get("", response_model=TicketListResponse)
+@router.get(
+    "",
+    response_model=TicketListResponse,
+    summary="List tickets in the active tenant; default sort by latest state change.",
+)
 async def list_tickets(
     current: Annotated[CurrentUser, _AnyMember],
     app_session: Annotated[AsyncSession, Depends(get_app_session)],
@@ -238,7 +271,12 @@ async def list_tickets(
     return TicketListResponse(tickets=[_ticket_view(t) for t in rows])
 
 
-@router.get("/{ticket_id}", response_model=TicketResponse)
+@router.get(
+    "/{ticket_id}",
+    response_model=TicketResponse,
+    summary="Fetch a single ticket by id.",
+    responses={404: {"description": "Ticket not found or hidden by RLS."}},
+)
 async def get_ticket(
     ticket_id: UUID,
     current: Annotated[CurrentUser, _AnyMember],
@@ -256,7 +294,11 @@ async def get_ticket(
     return view
 
 
-@router.get("/{ticket_id}/transitions", response_model=TransitionsResponse)
+@router.get(
+    "/{ticket_id}/transitions",
+    response_model=TransitionsResponse,
+    summary="Append-only timeline of every state change for the ticket.",
+)
 async def list_transitions(
     ticket_id: UUID,
     current: Annotated[CurrentUser, _AnyMember],
@@ -286,7 +328,26 @@ async def list_transitions(
     )
 
 
-@router.post("/{ticket_id}/transition", response_model=TicketResponse)
+@router.post(
+    "/{ticket_id}/transition",
+    response_model=TicketResponse,
+    summary="Move the ticket to a new state.",
+    description=(
+        "State machine: OPEN ↔ IN_PROGRESS ↔ PENDING_CUSTOMER → "
+        "RESOLVED → CLOSED, plus CANCELLED branch and admin-only reopen "
+        "/ uncancel back to OPEN. Reopen and uncancel are bounded by "
+        "per-tenant windows (default 30d). RESOLVED → IN_PROGRESS is "
+        "bounded by resolved_regression_window_days (default 7d). "
+        "Past either window, callers get 409 with a hint to create a "
+        "linked ticket (Sprint 8 feature)."
+    ),
+    responses={
+        403: {"description": "Role not authorized for this transition."},
+        404: {"description": "Ticket not found."},
+        409: {"description": "Graph rejection or per-tenant window expired."},
+        422: {"description": "cancellation_reason missing for to_state=cancelled."},
+    },
+)
 async def transition_ticket(
     ticket_id: UUID,
     body: TicketTransitionBody,
@@ -318,7 +379,17 @@ async def transition_ticket(
     return view
 
 
-@router.post("/{ticket_id}/quick-resolve", response_model=TicketResponse)
+@router.post(
+    "/{ticket_id}/quick-resolve",
+    response_model=TicketResponse,
+    summary="OPEN → IN_PROGRESS → RESOLVED in one call (two timeline rows).",
+    description=(
+        "Convenience for trivially-answerable tickets where the analyst "
+        "doesn't need to claim and walk away first. Two transitions are "
+        "recorded in the timeline + audit log so the history is "
+        "unambiguous about what happened."
+    ),
+)
 async def quick_resolve(
     ticket_id: UUID,
     current: Annotated[CurrentUser, _AnalystOrAdmin],
@@ -347,7 +418,11 @@ async def quick_resolve(
     return view
 
 
-@router.post("/{ticket_id}/assign", response_model=TicketResponse)
+@router.post(
+    "/{ticket_id}/assign",
+    response_model=TicketResponse,
+    summary="Reassign or unassign a ticket. Metadata-only, no state change.",
+)
 async def assign_ticket(
     ticket_id: UUID,
     body: TicketAssignBody,
@@ -374,6 +449,13 @@ async def assign_ticket(
 @router.post(
     "/{ticket_id}/customer-inbound",
     response_model=TicketResponse,
+    summary="Stamp customer-inbound metadata. Does not change state.",
+    description=(
+        "Records that the customer replied. State stays the same so "
+        "spam / bounce / bot replies cannot auto-resume "
+        "PENDING_CUSTOMER tickets. The analyst decides whether to call "
+        "/transition with to_state=in_progress next."
+    ),
 )
 async def record_customer_inbound(
     ticket_id: UUID,

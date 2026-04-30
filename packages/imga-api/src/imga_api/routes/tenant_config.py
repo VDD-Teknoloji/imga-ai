@@ -29,7 +29,7 @@ from imga_api.services import (
     TenantConfigService,
 )
 
-router = APIRouter(prefix="/tenants/me", tags=["tenant-config"])
+router = APIRouter(prefix="/tenants/me", tags=["Tenant Config"])
 
 
 # --- request / response models ------------------------------------------
@@ -57,7 +57,10 @@ class CategoriesResponse(BaseModel):
 
 
 class AutomationModeUpdate(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={"example": {"automation_mode": "semi_auto"}},
+    )
     automation_mode: AutomationMode
 
 
@@ -67,7 +70,17 @@ class CategoryToggleRequest(BaseModel):
 
 
 class CustomCategoryCreate(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={
+            "example": {
+                "code": "vip_complaint",
+                "label_tr": "VIP Müşteri Şikayeti",
+                "label_en": "VIP Customer Complaint",
+                "description": "Tickets opened from accounts on the VIP plan.",
+            }
+        },
+    )
     code: str = Field(..., min_length=1, max_length=64)
     label_tr: str = Field(..., min_length=1, max_length=255)
     label_en: str | None = Field(default=None, max_length=255)
@@ -105,7 +118,17 @@ _TenantAdmin = Depends(require_role(UserTenantRole.TENANT_ADMIN))
 # --- endpoints ----------------------------------------------------------
 
 
-@router.get("/config", response_model=TenantConfigResponse)
+@router.get(
+    "/config",
+    response_model=TenantConfigResponse,
+    summary="Full config snapshot for the active tenant.",
+    description=(
+        "Returns automation_mode + the complete category list (globals + "
+        "this tenant's customs, including archived ones with "
+        "is_archived=true). Cached server-side per tenant for 5 minutes; "
+        "any mutation invalidates the entry."
+    ),
+)
 async def get_config(
     current: Annotated[CurrentUser, Depends(require_role(
         UserTenantRole.TENANT_ADMIN,
@@ -130,7 +153,11 @@ async def get_config(
     )
 
 
-@router.get("/categories", response_model=CategoriesResponse)
+@router.get(
+    "/categories",
+    response_model=CategoriesResponse,
+    summary="List visible categories (globals + this tenant's customs).",
+)
 async def list_categories(
     current: Annotated[CurrentUser, Depends(require_role(
         UserTenantRole.TENANT_ADMIN,
@@ -147,7 +174,17 @@ async def list_categories(
     return CategoriesResponse(categories=_categories_view(snapshot))
 
 
-@router.patch("/automation-mode", status_code=status.HTTP_204_NO_CONTENT, response_model=None)
+@router.patch(
+    "/automation-mode",
+    status_code=status.HTTP_204_NO_CONTENT,
+    response_model=None,
+    summary="Switch the tenant's auto-ticket policy.",
+    description=(
+        "Three modes: `manual` (no auto-create, only suggest), "
+        "`semi_auto` (auto-create on confidence > 0.7 AND sentiment < -0.5), "
+        "`full_auto` (every classified-NEGATIF complaint becomes a ticket)."
+    ),
+)
 async def update_automation_mode(
     body: AutomationModeUpdate,
     current: Annotated[CurrentUser, _TenantAdmin],
@@ -171,6 +208,7 @@ async def update_automation_mode(
     "/categories/{category_id}",
     status_code=status.HTTP_204_NO_CONTENT,
     response_model=None,
+    summary="Enable / disable a category for the active tenant.",
 )
 async def toggle_category(
     category_id: UUID,
@@ -199,6 +237,15 @@ async def toggle_category(
     "/custom-categories",
     status_code=status.HTTP_201_CREATED,
     response_model=CategoryView,
+    summary="Create a tenant-scoped custom category.",
+    description=(
+        "Code must not collide with a global (reserved) code or with an "
+        "existing custom code for this tenant. The new row is enabled "
+        "by default."
+    ),
+    responses={
+        409: {"description": "Code collides with a global or an existing custom."},
+    },
 )
 async def create_custom_category(
     body: CustomCategoryCreate,
@@ -241,6 +288,7 @@ async def create_custom_category(
 @router.patch(
     "/custom-categories/{category_id}",
     response_model=CategoryView,
+    summary="Edit a custom category's labels / description.",
 )
 async def update_custom_category(
     category_id: UUID,
@@ -281,6 +329,12 @@ async def update_custom_category(
     "/custom-categories/{category_id}",
     status_code=status.HTTP_204_NO_CONTENT,
     response_model=None,
+    summary="Archive (soft-delete) a custom category.",
+    description=(
+        "The row stays so historic ticket views can still render the "
+        "label, but is_archived flips to true and the category becomes "
+        "ineligible for new tickets. Globals cannot be archived."
+    ),
 )
 async def archive_custom_category(
     category_id: UUID,

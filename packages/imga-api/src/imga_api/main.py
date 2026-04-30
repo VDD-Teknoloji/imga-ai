@@ -56,10 +56,41 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     log.info("Shutting down imga-api")
 
 
+# OpenAPI tag metadata. Order here drives the order in Swagger UI.
+# "Admin: Tenants" and "Admin: Users" are reserved for Sprint 7.5.5
+# (super-admin tenant + invitation HTTP routes); they appear in the
+# spec without endpoints today so the frontend has a stable contract
+# to plan against.
+_OPENAPI_TAGS = [
+    {"name": "Auth", "description": "Authentication, JWT rotation, password change."},
+    {"name": "Admin: Tenants", "description": "Super-admin tenant CRUD (Sprint 7.5.5)."},
+    {"name": "Admin: Users", "description": "Super-admin user CRUD + invitations (Sprint 7.5.5)."},
+    {"name": "Tenant Config", "description": "Per-tenant settings, taxonomy, automation mode."},
+    {"name": "Analyze", "description": "Sentiment + categorization pipeline."},
+    {"name": "Tickets", "description": "Ticket CRUD and lifecycle transitions."},
+    {"name": "Health", "description": "Service health and readiness probes."},
+]
+
+_API_DESCRIPTION = """
+HTTP API for imga.AI — Turkish customer-review sentiment platform.
+
+Authentication: send `Authorization: Bearer <access_token>` on every
+non-public endpoint. Tokens are issued by `POST /auth/login` and
+rotated through `POST /auth/refresh`. The refresh token is single-use:
+each rotation invalidates the previous one. Replaying a consumed
+refresh token revokes the entire session family.
+
+Tenant context: tenant-scoped endpoints read `active_tenant_id` from
+the JWT and enforce row-level security against
+`current_setting('app.current_tenant_id')`. To switch tenants, call
+`POST /auth/switch-tenant`.
+""".strip()
+
 app = FastAPI(
-    title="imga-api",
+    title="imga.AI API",
     version=__version__,
-    description="HTTP wrapper around imga-core sentiment + categorization pipeline.",
+    description=_API_DESCRIPTION,
+    openapi_tags=_OPENAPI_TAGS,
     lifespan=lifespan,
 )
 
@@ -68,7 +99,12 @@ app.include_router(tenant_config_routes.router)
 app.include_router(tickets_routes.router)
 
 
-@app.get("/health", response_model=HealthResponse)
+@app.get(
+    "/health",
+    response_model=HealthResponse,
+    tags=["Health"],
+    summary="Service health probe (no auth required).",
+)
 def health(
     settings: Annotated[Settings, Depends(get_settings)],
     pipeline: Annotated[AnalysisPipeline, Depends(get_pipeline)],
@@ -85,7 +121,19 @@ def health(
     )
 
 
-@app.post("/analyze", response_model=AnalysisResult)
+@app.post(
+    "/analyze",
+    response_model=AnalysisResult,
+    tags=["Analyze"],
+    summary="Run sentiment + categorization on a single text.",
+    description=(
+        "Returns sentiment label (POZITIF / NEGATIF / NÖTR), confidence, "
+        "primary category, secondary categories, and any rule hits "
+        "(e.g. SLA breach signals). The auto-ticket bridge that writes "
+        "the result back as a ticket is Sprint 7.5.5 / Sprint 8 work; "
+        "today the call is read-only."
+    ),
+)
 def analyze(
     body: AnalyzeRequest,
     pipeline: Annotated[AnalysisPipeline, Depends(get_pipeline)],
@@ -93,7 +141,12 @@ def analyze(
     return pipeline.analyze(body.text)
 
 
-@app.post("/analyze/batch", response_model=list[AnalysisResult])
+@app.post(
+    "/analyze/batch",
+    response_model=list[AnalysisResult],
+    tags=["Analyze"],
+    summary="Batch variant of /analyze.",
+)
 def analyze_batch(
     body: BatchAnalyzeRequest,
     pipeline: Annotated[AnalysisPipeline, Depends(get_pipeline)],
@@ -101,16 +154,25 @@ def analyze_batch(
     return pipeline.analyze_batch(body.texts)
 
 
-@app.post("/classify", response_model=CategoryClassification)
+@app.post(
+    "/classify",
+    response_model=CategoryClassification,
+    tags=["Analyze"],
+    summary="Category-only path. Skips BERT sentiment, ~10x faster than /analyze.",
+)
 def classify(
     body: AnalyzeRequest,
     classifier: Annotated[CategoryClassifier, Depends(get_classifier)],
 ) -> CategoryClassification:
-    """Category-only path. Skips BERT sentiment, ~10x faster than /analyze."""
     return classifier.classify(body.text)
 
 
-@app.post("/metrics", response_model=MetricsResponse)
+@app.post(
+    "/metrics",
+    response_model=MetricsResponse,
+    tags=["Analyze"],
+    summary="Executive metrics (SHI score, crisis count, negative rate) over a result set.",
+)
 def metrics(body: MetricsRequest) -> MetricsResponse:
     m = calculate_executive_metrics(body.results)
     return MetricsResponse(

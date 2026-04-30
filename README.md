@@ -58,7 +58,38 @@ docker compose --profile legacy up -d                       # legacy Streamlit U
 
 See `.env.example` for host port + data path overrides.
 
+## API Reference
+
+Local development (with `docker compose up -d`):
+
+| Endpoint | URL |
+|---|---|
+| Swagger UI (interactive) | http://localhost:8003/docs |
+| ReDoc (read-only) | http://localhost:8003/redoc |
+| OpenAPI JSON | http://localhost:8003/openapi.json |
+
+Authentication: send `Authorization: Bearer <access_token>` on every
+non-public endpoint. Tokens come from `POST /auth/login` and are
+rotated by `POST /auth/refresh`. The refresh token is single-use —
+replaying a consumed token revokes the entire session family.
+
+Initial bootstrap: the super-admin user is seeded by migration `0001`
+from the `SUPER_ADMIN_EMAIL` and `SUPER_ADMIN_INITIAL_PASSWORD`
+environment variables. After first login, change the password via
+`POST /auth/change-password` (this also invalidates every live access
+token issued before the change).
+
+Tag groups in Swagger UI:
+
+- **Auth** — login, refresh rotation, switch-tenant, password change
+- **Admin: Tenants** / **Admin: Users** — Sprint 7.5.5 (placeholders)
+- **Tenant Config** — automation mode, category taxonomy
+- **Analyze** — sentiment + categorization pipeline
+- **Tickets** — ticket CRUD + state machine transitions
+- **Health** — `/health` probe
+
 ## Documentation
 
 - `docs/legacy-analysis.md` — original prototype code review
 - `docs/git-workflow.md` — branching + commit conventions
+- `docs/sprint-8-backlog.md` — Sprint 7.5.5 + 8 deferred work (production prep)

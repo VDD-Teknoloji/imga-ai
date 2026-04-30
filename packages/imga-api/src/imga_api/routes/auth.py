@@ -18,14 +18,23 @@ from imga_api.auth_deps import (
 from imga_api.db_deps import get_admin_session
 from imga_api.services import AuthError, AuthService, TokenReuseDetectedError
 
-router = APIRouter(prefix="/auth", tags=["auth"])
+router = APIRouter(prefix="/auth", tags=["Auth"])
 
 
 # --- request / response models ------------------------------------------
 
 
 class LoginRequest(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={
+            "example": {
+                "email": "alice@acme.com",
+                "password": "Alice-Secure-Pwd-123!",
+                "active_tenant_id": "550e8400-e29b-41d4-a716-446655440000",
+            }
+        },
+    )
     email: EmailStr
     password: str = Field(..., min_length=1, max_length=256)
     # Optional: choose tenant at login time. If omitted, the first
@@ -34,7 +43,12 @@ class LoginRequest(BaseModel):
 
 
 class RefreshRequest(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={
+            "example": {"refresh_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6..."}
+        },
+    )
     refresh_token: str = Field(..., min_length=1)
 
 
@@ -44,7 +58,15 @@ class LogoutRequest(BaseModel):
 
 
 class ChangePasswordRequest(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={
+            "example": {
+                "current_password": "Alice-Secure-Pwd-123!",
+                "new_password": "Alice-Even-Better-Pwd-456!",
+            }
+        },
+    )
     current_password: str = Field(..., min_length=1)
     new_password: str = Field(..., min_length=8, max_length=256)
 
@@ -90,7 +112,20 @@ class MeResponse(BaseModel):
 # --- endpoints ----------------------------------------------------------
 
 
-@router.post("/login", response_model=TokenPairResponse)
+@router.post(
+    "/login",
+    response_model=TokenPairResponse,
+    summary="Authenticate with email + password.",
+    description=(
+        "Returns an access token (15 min TTL) and a refresh token (7 day "
+        "TTL). The refresh token is single-use: each call to /auth/refresh "
+        "rotates it. Replaying a consumed refresh token triggers chain "
+        "compromise detection and revokes every session in that family."
+    ),
+    responses={
+        401: {"description": "Invalid credentials or inactive user."},
+    },
+)
 async def login(
     body: LoginRequest,
     request: Request,
@@ -147,7 +182,23 @@ async def login(
     )
 
 
-@router.post("/refresh", response_model=TokenPairResponse)
+@router.post(
+    "/refresh",
+    response_model=TokenPairResponse,
+    summary="Rotate the refresh token (single-use chain).",
+    description=(
+        "Consumes the supplied refresh token and issues a new access + "
+        "refresh pair in the same family. Replaying a token that has "
+        "already been rotated revokes the entire family — both the "
+        "legitimate user's current session and any attacker's stolen copy "
+        "are forced to log in again."
+    ),
+    responses={
+        401: {
+            "description": "Token unknown, expired, revoked, or chain compromised."
+        },
+    },
+)
 async def refresh(
     body: RefreshRequest,
     auth: Annotated[AuthService, Depends(get_auth_service)],
@@ -169,7 +220,17 @@ async def refresh(
     )
 
 
-@router.post("/logout", status_code=status.HTTP_204_NO_CONTENT, response_model=None)
+@router.post(
+    "/logout",
+    status_code=status.HTTP_204_NO_CONTENT,
+    response_model=None,
+    summary="Revoke the refresh token's family. Idempotent.",
+    description=(
+        "Idempotent: unknown / expired tokens still return 204. After "
+        "logout the entire refresh chain is dead — the user must log in "
+        "again to obtain new tokens."
+    ),
+)
 async def logout(
     body: LogoutRequest,
     auth: Annotated[AuthService, Depends(get_auth_service)],
@@ -177,7 +238,18 @@ async def logout(
     await auth.logout(body.refresh_token)
 
 
-@router.post("/switch-tenant", response_model=TokenPairResponse)
+@router.post(
+    "/switch-tenant",
+    response_model=TokenPairResponse,
+    summary="Re-issue tokens scoped to a different tenant.",
+    description=(
+        "The user must already be a member of the target tenant (or be a "
+        "super-admin). Returns a fresh access + refresh pair in a new "
+        "family. The previous family is left intact — call /auth/logout "
+        "on it explicitly if you want to retire it."
+    ),
+    responses={403: {"description": "User is not a member of the requested tenant."}},
+)
 async def switch_tenant(
     body: SwitchTenantRequest,
     current: Annotated[CurrentUser, Depends(get_current_user)],
@@ -214,7 +286,16 @@ async def switch_tenant(
     )
 
 
-@router.get("/me", response_model=MeResponse)
+@router.get(
+    "/me",
+    response_model=MeResponse,
+    summary="Current user, active tenant context, and available tenants.",
+    description=(
+        "The active context comes from the JWT's active_tenant_id + "
+        "active_role claims; available_tenants is the full list of "
+        "tenants the user can switch to via /auth/switch-tenant."
+    ),
+)
 async def me(
     current: Annotated[CurrentUser, Depends(get_current_user)],
     auth: Annotated[AuthService, Depends(get_auth_service)],
@@ -261,6 +342,15 @@ async def me(
     "/change-password",
     status_code=status.HTTP_204_NO_CONTENT,
     response_model=None,
+    summary="Change the current user's password.",
+    description=(
+        "Verifies current_password, hashes the new one with argon2, and "
+        "bumps users.password_changed_at. Every refresh-token family the "
+        "user owns is revoked AND any access token issued before this "
+        "moment is rejected by the auth dependency on its next request — "
+        "even if its 15-minute expiry has not yet hit."
+    ),
+    responses={400: {"description": "Current password does not match."}},
 )
 async def change_password(
     body: ChangePasswordRequest,
