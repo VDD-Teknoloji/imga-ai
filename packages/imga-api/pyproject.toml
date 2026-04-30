@@ -19,6 +19,7 @@ dependencies = [
     "pyjwt[crypto]>=2.8,<3.0",
     "email-validator>=2.1,<3.0",
     "python-multipart>=0.0.9",
+    "cachetools>=5.3,<6.0",
 ]
 
 [project.optional-dependencies]
@@ -47,7 +48,7 @@ disallow_untyped_defs = true
 warn_unused_ignores = true
 
 [[tool.mypy.overrides]]
-module = ["uvicorn.*", "argon2.*", "asyncpg.*"]
+module = ["uvicorn.*", "argon2.*", "asyncpg.*", "cachetools.*"]
 ignore_missing_imports = true
 
 [tool.ruff]

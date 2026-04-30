@@ -12,6 +12,12 @@ from imga_api.services.invitation_service import (
     InvitationAcceptanceError,
     InvitationService,
 )
+from imga_api.services.tenant_config_service import (
+    CategoryCodeConflictError,
+    CategoryNotFoundError,
+    TenantConfigError,
+    TenantConfigService,
+)
 from imga_api.services.tenant_service import TenantService
 from imga_api.services.user_service import UserService
 
@@ -20,8 +26,12 @@ __all__ = [
     "AuditService",
     "AuthError",
     "AuthService",
+    "CategoryCodeConflictError",
+    "CategoryNotFoundError",
     "InvitationAcceptanceError",
     "InvitationService",
+    "TenantConfigError",
+    "TenantConfigService",
     "TenantService",
     "TokenPair",
     "TokenReuseDetected",
