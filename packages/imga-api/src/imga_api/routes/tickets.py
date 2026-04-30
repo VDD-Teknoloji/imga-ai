@@ -24,7 +24,7 @@ from datetime import datetime
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from imga_db.models import (
     CancellationReason,
     Ticket,
@@ -33,7 +33,7 @@ from imga_db.models import (
     TicketStateTransition,
     UserTenantRole,
 )
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -43,10 +43,15 @@ from imga_api.dependencies import get_ticket_service
 from imga_api.services import (
     CancellationReasonRequiredError,
     ForbiddenTransitionError,
+    GroupBy,
     InvalidTransitionError,
+    OrderBy,
+    OrderDirection,
+    TicketFilters,
     TicketNotFoundError,
     TicketService,
     TicketServiceError,
+    TicketStatsResult,
     TransitionRequest,
     UnclaimByOthersError,
     WindowExpiredError,
@@ -122,7 +127,29 @@ class TicketResponse(BaseModel):
 
 
 class TicketListResponse(BaseModel):
+    """Response for GET /tickets. ``total`` ignores limit/offset so the
+    UI can render "X / Y" counters without a second request."""
+
     tickets: list[TicketResponse]
+    total: int
+    limit: int
+    offset: int
+
+
+class StatsBucketView(BaseModel):
+    key: str
+    label: str
+    count: int
+
+
+class StatsResponse(BaseModel):
+    """Response for GET /tickets/stats. ``total`` is the count over the
+    filtered set before grouping; ``results`` are the per-group buckets
+    sorted by count desc."""
+
+    group_by: str
+    total: int
+    results: list[StatsBucketView]
 
 
 class TransitionView(BaseModel):
@@ -204,6 +231,57 @@ _AnalystOrAdmin = Depends(require_role(
 ))
 
 
+def _filters_validation_error(exc: ValidationError) -> HTTPException:
+    """Surface Pydantic 422 errors with the same shape FastAPI uses for
+    request-body validation. Keeps the wire contract consistent with the
+    rest of the API (single ``detail`` list of field errors)."""
+    return HTTPException(
+        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+        detail=exc.errors(include_url=False, include_input=False),
+    )
+
+
+def get_ticket_filters(
+    state: Annotated[str | None, Query(description="CSV of state codes; empty allowed")] = None,
+    priority: Annotated[str | None, Query(description="CSV of priority codes")] = None,
+    category_id: Annotated[str | None, Query(description="CSV of category UUIDs")] = None,
+    opened_after: Annotated[datetime | None, Query()] = None,
+    opened_before: Annotated[datetime | None, Query()] = None,
+    assignee: Annotated[
+        str | None,
+        Query(description='"me" / "unassigned" / a user UUID', max_length=64),
+    ] = None,
+    search: Annotated[str | None, Query(max_length=200)] = None,
+    limit: Annotated[int, Query(ge=1, le=500)] = 100,
+    offset: Annotated[int, Query(ge=0)] = 0,
+    order_by: Annotated[OrderBy, Query()] = "last_state_change_at",
+    order: Annotated[OrderDirection, Query()] = "desc",
+) -> TicketFilters:
+    """Depends factory that runs raw query params through TicketFilters.
+
+    The CSV-string params (``state``, ``priority``, ``category_id``)
+    are parsed by the model's field_validator(mode="before"), so an
+    empty string yields ``[]`` rather than a 422. Unknown enum values
+    still raise — the validator just splits, the enum coercion still
+    happens after."""
+    try:
+        return TicketFilters(
+            state=state,  # type: ignore[arg-type]
+            priority=priority,  # type: ignore[arg-type]
+            category_id=category_id,  # type: ignore[arg-type]
+            opened_after=opened_after,
+            opened_before=opened_before,
+            assignee=assignee,
+            search=search,
+            limit=limit,
+            offset=offset,
+            order_by=order_by,
+            order=order,
+        )
+    except ValidationError as exc:
+        raise _filters_validation_error(exc) from exc
+
+
 # --- endpoints ---------------------------------------------------------
 
 
@@ -246,29 +324,85 @@ async def create_ticket(
 @router.get(
     "",
     response_model=TicketListResponse,
-    summary="List tickets in the active tenant; default sort by latest state change.",
+    summary="List tickets with multi-value filter, search, sort, and offset paging.",
+    description=(
+        "Multi-value filters (``state``, ``priority``, ``category_id``) "
+        "accept comma-separated values: ``?state=open,in_progress``. "
+        "Empty strings are treated as 'no filter' rather than an error. "
+        "Sort: ``order_by`` is a fixed Literal (opened_at / "
+        "last_state_change_at / priority) so SQL injection / unknown-"
+        "column errors are impossible at the route layer. Offset paging "
+        "is capped at ``limit=500``; cursor pagination lands in Sprint 8."
+    ),
+    responses={
+        422: {"description": "Filter validation failed (unknown enum value etc.)."},
+    },
 )
 async def list_tickets(
     current: Annotated[CurrentUser, _AnyMember],
     app_session: Annotated[AsyncSession, Depends(get_app_session)],
-    state: TicketState | None = None,
+    tickets: Annotated[TicketService, Depends(get_ticket_service)],
+    filters: Annotated[TicketFilters, Depends(get_ticket_filters)],
 ) -> TicketListResponse:
-    """List tickets in the active tenant. Filtered by state when given.
-    Default sort: most-recent state change first (matches the UI's
-    default queue ordering)."""
-    _require_active_tenant(current)
+    """Filtered + paginated list. Tenant scoping is enforced by RLS on
+    the bound app session, so the service stays oblivious to the active
+    tenant beyond the explicit ``tenant_id`` filter (defence in depth)."""
+    tenant_id = _require_active_tenant(current)
     async with app_session.begin():
         await bind_tenant(app_session, current)
-        stmt = (
-            select(Ticket)
-            .where(Ticket.deleted_at.is_(None))
-            .order_by(Ticket.last_state_change_at.desc())
+        rows, total = await tickets.list_filtered(
+            tenant_id=tenant_id,
+            filters=filters,
+            actor_user_id=current.user_id,
         )
-        if state is not None:
-            stmt = stmt.where(Ticket.state == state)
-        result = await app_session.execute(stmt)
-        rows = list(result.scalars())
-    return TicketListResponse(tickets=[_ticket_view(t) for t in rows])
+    return TicketListResponse(
+        tickets=[_ticket_view(t) for t in rows],
+        total=total,
+        limit=filters.limit,
+        offset=filters.offset,
+    )
+
+
+@router.get(
+    "/stats",
+    response_model=StatsResponse,
+    summary="Aggregate ticket counts by state / priority / category / assignee.",
+    description=(
+        "Same filter surface as GET /tickets, plus ``group_by`` "
+        "(state / priority / category / assignee). Categories are "
+        "resolved to their ``label_tr`` via LEFT JOIN; assignee buckets "
+        "show the user UUID until the tenant directory endpoint lands "
+        "in Alt-Faz 4 (frontend currently maps me / unassigned only). "
+        "Unassigned tickets surface as a single ``unassigned`` bucket."
+    ),
+)
+async def get_ticket_stats(
+    current: Annotated[CurrentUser, _AnyMember],
+    app_session: Annotated[AsyncSession, Depends(get_app_session)],
+    tickets: Annotated[TicketService, Depends(get_ticket_service)],
+    filters: Annotated[TicketFilters, Depends(get_ticket_filters)],
+    group_by: Annotated[GroupBy, Query()] = "state",
+) -> StatsResponse:
+    """RLS-bound aggregation. The /stats path runs inside the same
+    ``app_session.begin()`` + ``bind_tenant`` block as /tickets so
+    cross-tenant counts cannot leak even with a malformed filter."""
+    tenant_id = _require_active_tenant(current)
+    async with app_session.begin():
+        await bind_tenant(app_session, current)
+        result: TicketStatsResult = await tickets.stats(
+            tenant_id=tenant_id,
+            group_by=group_by,
+            filters=filters,
+            actor_user_id=current.user_id,
+        )
+    return StatsResponse(
+        group_by=result.group_by,
+        total=result.total,
+        results=[
+            StatsBucketView(key=b.key, label=b.label, count=b.count)
+            for b in result.results
+        ],
+    )
 
 
 @router.get(
