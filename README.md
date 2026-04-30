@@ -79,6 +79,11 @@ environment variables. After first login, change the password via
 `POST /auth/change-password` (this also invalidates every live access
 token issued before the change).
 
+For frontend dev work, populate a realistic tenant (Acme Inc + 3 users
++ 18 sample tickets) with `make seed-dev`. The script is idempotent;
+`make seed-dev-reset` drops + reseeds. Login as `alice@acme.com /
+dev123` to see all four dashboard cards lit up.
+
 Tag groups in Swagger UI:
 
 - **Auth** — login, refresh rotation, switch-tenant, password change
