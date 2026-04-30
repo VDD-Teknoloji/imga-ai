@@ -7,6 +7,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import Annotated
 
+from cachetools import TTLCache
 from fastapi import Depends, FastAPI
 from imga_core import (
     AnalysisPipeline,
@@ -25,6 +26,7 @@ from imga_api.dependencies import (
     get_settings,
 )
 from imga_api.routes import auth as auth_routes
+from imga_api.routes import tenant_config as tenant_config_routes
 from imga_api.schemas import (
     AnalyzeRequest,
     BatchAnalyzeRequest,
@@ -44,6 +46,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     log.info("Booting imga-api %s with model=%s", __version__, settings.bert_model)
     app.state.settings = settings
     app.state.pipeline = build_pipeline(settings)
+    # Per-tenant config cache (Sprint 7.4). Single-process for now;
+    # Sprint 8 swaps to Redis behind the same get_tenant_config_cache
+    # dependency. 5-minute TTL is short enough that audit/observability
+    # gaps from out-of-band tenant edits stay bounded.
+    app.state.tenant_config_cache = TTLCache(maxsize=1000, ttl=300)
     yield
     log.info("Shutting down imga-api")
 
@@ -56,6 +63,7 @@ app = FastAPI(
 )
 
 app.include_router(auth_routes.router)
+app.include_router(tenant_config_routes.router)
 
 
 @app.get("/health", response_model=HealthResponse)
