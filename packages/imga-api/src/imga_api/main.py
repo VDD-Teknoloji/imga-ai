@@ -27,6 +27,7 @@ from imga_api.dependencies import (
 )
 from imga_api.routes import auth as auth_routes
 from imga_api.routes import tenant_config as tenant_config_routes
+from imga_api.routes import tickets as tickets_routes
 from imga_api.schemas import (
     AnalyzeRequest,
     BatchAnalyzeRequest,
@@ -64,6 +65,7 @@ app = FastAPI(
 
 app.include_router(auth_routes.router)
 app.include_router(tenant_config_routes.router)
+app.include_router(tickets_routes.router)
 
 
 @app.get("/health", response_model=HealthResponse)
