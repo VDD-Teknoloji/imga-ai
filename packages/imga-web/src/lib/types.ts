@@ -56,3 +56,49 @@ export interface MeResponse {
 export interface ApiErrorBody {
   detail: string;
 }
+
+// --- Tickets (mirrors imga-api routes/tickets.py:TicketResponse) -----
+
+export interface Ticket {
+  id: string;
+  tenant_id: string;
+  review_id: string | null;
+  category_id: string;
+  state: TicketState;
+  priority: TicketPriority;
+  title: string;
+  summary: string | null;
+  assigned_to_user_id: string | null;
+  created_by_user_id: string | null;
+  cancellation_reason: CancellationReason | null;
+  parent_ticket_id: string | null;
+  opened_at: string;
+  claimed_at: string | null;
+  pending_since: string | null;
+  resolved_at: string | null;
+  closed_at: string | null;
+  cancelled_at: string | null;
+  customer_inbound_received_at: string | null;
+  last_state_change_at: string;
+}
+
+export interface TicketListResponse {
+  tickets: Ticket[];
+}
+
+// --- Tenant categories (mirrors routes/tenant_config.py:CategoryView) -
+
+export interface CategoryView {
+  id: string;
+  code: string;
+  label_tr: string;
+  label_en: string | null;
+  description: string | null;
+  is_global: boolean;
+  is_enabled: boolean;
+  is_archived: boolean;
+}
+
+export interface CategoriesResponse {
+  categories: CategoryView[];
+}
