@@ -75,6 +75,14 @@ Sprint 7 sonu itibariyle backend konsolide ve canlıda çalışıyor: 6 alembic 
 - **Bağımlılık**: Yok. C5 pagination ile birlikte tek migration'da inebilir.
 - **Süre**: ~0.5-1 gün (read-only stats endpoint, mevcut RLS'in altında basit aggregate sorgular).
 
+### A7. Tenant directory (assignee picker / member list)
+
+- **Durum**: `GET /tenants/me/users` veya benzer "bu tenant'taki kullanıcı listesi" endpoint'i yok. `UserService.attach_to_tenant` + `user_tenants` tablosu var ama liste read endpoint'i yok.
+- **Eksik**: `GET /tenants/me/users` — tenant üyelerini `{id, full_name, email, role, last_login_at}` formatında döner. `require_role(TENANT_ADMIN, ANALYST, VIEWER)` ile herkes okuyabilir; e-mail veya isim filtresi opsiyonel olarak kabul eder.
+- **Etki**: Sprint 7.6.4'te ticket detail sayfasında atanan kullanıcı yalnızca "Sana / Atanmamış / Başka" şeklinde gösterilebiliyor — gerçek isim lookup'ı yok. Tenant_admin "Atayı değiştir" butonuyla kullanıcı seçemiyor (sadece kendine alıp bırakabiliyor). A7 ile tam atayıcı dropdown gelecek.
+- **Bağımlılık**: Yok.
+- **Süre**: ~0.5 gün (read endpoint + UI dropdown).
+
 ### A6. Tenant-aggregate analysis metrics (SHI / kriz / kategori dağılımı)
 
 - **Durum**: `POST /metrics` mevcut, ama stateless: çağıran taraf `AnalysisResult[]` gönderir, sonuç dönülür. Tenant'ın saklı analiz verisi için aggregate döndüren bir endpoint yok. Sebep: review tablosu + analize-arşivlemesi yok (Sprint 8 ingestion pipeline).
