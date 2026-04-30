@@ -41,16 +41,21 @@ Sprint 7 sonu itibariyle backend konsolide ve canlıda çalışıyor: 6 alembic 
 - **Bağımlılık**: D7 (mail server) ile birlikte düşün — şimdi log-only ile shipple, mail teslimi entegre edildiğinde davet teslim hattı çalışmaya başlar.
 - **Süre**: ~0.5 gün.
 
-### A3. /analyze → auto-ticket bridge
+### A3. /analyze → auto-ticket bridge ✅ SHIPPED (Sprint 7.5.5 / Alt-Faz 3)
 
-- **Durum**: `TicketService.create + decide_auto_create_state` (3 mod) + `find_open_for_review` (review_id dedup helper) hazır. `/analyze` endpoint salt sentiment+kategorizasyon döner; tenant context'i bile yok (anonim).
-- **Eksik (4 tasarım kararı önce)**:
-  1. **Authentication**: `/analyze` artık tenant-scoped mu olacak? (a) Bearer JWT zorunlu, tenant context JWT'den (b) `X-Tenant-Id` header (c) ayrı endpoint `/tenants/me/analyze`.
-  2. **review_id**: (a) Caller verir + UUID validate edilir (b) Server üretir, response'a koyar (c) İdempotency key (`Idempotency-Key` header) → server hash'i review_id olarak kullanır.
-  3. **Dedup**: aynı `review_id` için açık ticket varsa (`OPEN | IN_PROGRESS | PENDING_CUSTOMER | RESOLVED`) yeni yaratma; mevcut ticket'a referans ile dön. `find_open_for_review` zaten var.
-  4. **Hata davranışı**: ticket create fail olursa (DB error, RLS reject, vs.) analiz sonucu yine 200 dönsün mü? Önerim: Evet, ticket create best-effort; response'a `ticket_id: null` + `ticket_create_error: "..."` koy. Kullanıcı analiz sonucunu kaybetmesin.
-- **Bağımlılık**: 4 karar onayı.
-- **Süre**: 1 gün (tasarım onayı sonrası impl + test).
+- **Durum**: ✅ Sprint 7.5.5 / Alt-Faz 3'te teslim edildi.
+  - **Migration 0008**: `reviews` tablosu — text + text_hash (CHAR(64)), sentiment + categorization snapshot, automation_mode snapshot, decision enum, ticket_id FK (SET NULL), submitted_by_user_id, analyzed_at. RLS+FORCE policy. 4 index — tenant_id, partial composite (tenant + text_hash + analyzed_at) WHERE ticket_id IS NOT NULL, (tenant + analyzed_at DESC) for paging, ticket_id, deleted_at.
+  - **`Review` modeli + `ReviewDecision` enum** (5 değer): `create`, `skipped_belirsiz`, `skipped_mode`, `skipped_threshold`, `skipped_dedup`.
+  - **`review_text_hash` util** (`imga_core.text_utils`): `sha256_hex(normalize_turkish(text).strip())`. Sprint 6.10'daki `normalize_turkish` reuse — yeni Türkçe normalizasyon eklenmedi. Casing + outer-whitespace farkı dedup'ı bozmuyor.
+  - **`ReviewService.record_and_decide`**: 5-branch karar ağacı sırayla (belirsiz → mode → threshold → dedup → create) — her branch ayrı bir decision_reason taşır. `automation_mode` review row'a snapshotlandı (TenantConfigService TTL cache okunuyor, live FK değil); böylece tenant mode'u sonradan flip etse de audit log'lar self-explanatory kalır.
+  - **`POST /tenants/me/analyze`**: bearer + tenant-scoped + RLS-bound endpoint. Response: `{review_id, decision, decision_reason, ticket_id?, analyzed_at, analysis: AnalysisResult}`. Mevcut anonim `/analyze` SDK preview için olduğu gibi kalıyor.
+  - **Dedup logic**: 24-saatlik pencere içinde aynı `text_hash` + non-null `ticket_id` varsa yeni review row yine yazılıyor (audit) ama `decision=skipped_dedup` + olan ticket'a pointer. Pencere dışında yeni ticket açılıyor (önceki muhtemelen kapanmış olabilir).
+  - **Audit log**: Her analyze çağrısında `action="review.analyzed"` + `details={decision, review_id, ticket_id}` payload. Stable shape — log aggregation `details->>'decision'` ile gruplanabilir.
+  - **Tests**: 10 yeni integration tests (`test_tenant_analyze.py`) — 5 decision branch × dedup TTL boundary (24h+1h yeni ticket) + casing/whitespace dedup invariance + audit log shape + RLS isolation iki tenant arasında. Plus 7 yeni `review_text_hash` unit tests (`test_text_utils.py`) — casing collapse, whitespace strip, sha256 spec match.
+  - **decide_auto_create_state pure kaldı**: belirsiz branch ReviewService'te uygulanıyor (decide_auto_create_state mode + sentiment + confidence pure foksiyonu olarak duruyor). Daha temiz separation.
+- **Bağımlılık**: ✅ kapandı.
+- **Süre**: 1 gün (planlanan 1 gün, gerçekleşen 1 gün).
+- **Frontend cleanup notu** (Sprint 7.7+): Mevcut anonim `/analyze` panel preview'i için kaldı; tenant context'i olan ekranlar (gelecek "Yorum Analiz Et" / batch ingestion UI) `POST /tenants/me/analyze` kullanmalı — ticket_id non-null dönerse "Bilet açıldı" toast'ı + ticket detail link, `skipped_*` dönerse ilgili sebebi (mod/eşik/belirsiz/dedup) inline gösterilmeli.
 
 ### A4. Comments tablosu + endpoint + timeline integration
 
