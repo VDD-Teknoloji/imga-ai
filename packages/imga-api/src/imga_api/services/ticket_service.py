@@ -22,11 +22,13 @@ from __future__ import annotations
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from typing import TYPE_CHECKING
 from uuid import UUID
 
 from imga_db.models import (
     AutomationMode,
     CancellationReason,
+    Category,
     Tenant,
     Ticket,
     TicketPriority,
@@ -34,10 +36,10 @@ from imga_db.models import (
     TicketStateTransition,
     UserTenantRole,
 )
-from sqlalchemy import func, select
+from sqlalchemy import asc, desc, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import InstrumentedAttribute
-from sqlalchemy.sql import ColumnElement
+from sqlalchemy.sql import ColumnElement, Select
 
 from imga_api.services.audit_service import AuditService
 from imga_api.services.ticket_state_machine import (
@@ -45,6 +47,25 @@ from imga_api.services.ticket_state_machine import (
     assert_within_reopen_window,
     validate_transition,
 )
+
+if TYPE_CHECKING:
+    from imga_api.services.ticket_filters import GroupBy, TicketFilters
+
+
+@dataclass(frozen=True, slots=True)
+class TicketStatsBucket:
+    """Single row of a /tickets/stats response."""
+
+    key: str  # state code, priority code, UUID string, or "unassigned"
+    label: str  # human-readable label_tr or fallback display string
+    count: int
+
+
+@dataclass(frozen=True, slots=True)
+class TicketStatsResult:
+    group_by: str
+    total: int
+    results: list[TicketStatsBucket]
 
 
 class TicketServiceError(Exception):
@@ -214,6 +235,208 @@ class TicketService:
             )
         )
         return result.scalar_one_or_none()
+
+    # --- filtered list + stats (Sprint 7.5.5 / Alt-Faz 2) ---------------
+
+    async def list_filtered(
+        self,
+        *,
+        tenant_id: UUID,
+        filters: TicketFilters,
+        actor_user_id: UUID,
+    ) -> tuple[list[Ticket], int]:
+        """Return (rows, total). ``total`` ignores limit/offset so the
+        UI can render "X / Y" summaries without a second query.
+
+        ``actor_user_id`` is consumed by the assignee="me" branch."""
+        base = self._apply_filter_clauses(
+            select(Ticket).where(Ticket.tenant_id == tenant_id),
+            filters=filters,
+            actor_user_id=actor_user_id,
+        )
+        # Total count over the filtered set.
+        total_stmt = select(func.count()).select_from(base.subquery())
+        total = (await self._session.execute(total_stmt)).scalar_one()
+
+        # Then the actual page slice with order + limit + offset.
+        ordered = self._apply_order(base, filters=filters)
+        ordered = ordered.limit(filters.limit).offset(filters.offset)
+        rows = (await self._session.execute(ordered)).scalars().all()
+        return list(rows), int(total)
+
+    async def stats(
+        self,
+        *,
+        tenant_id: UUID,
+        group_by: GroupBy,
+        filters: TicketFilters,
+        actor_user_id: UUID,
+    ) -> TicketStatsResult:
+        """``GROUP BY`` aggregation over the filtered set. Categories
+        are LEFT JOIN-resolved to their label_tr; states / priorities
+        carry their enum value as the label; assignee returns the user
+        UUID as the label (resolution to a display name is the frontend's
+        job once the tenant directory endpoint lands in Alt-Faz 4)."""
+        from imga_api.services.ticket_filters import TicketFilters as _Filters  # noqa: F401
+
+        # Build a base SELECT that already has the WHERE chain attached;
+        # the GROUP BY changes per group_by axis.
+        base_where = self._apply_filter_clauses(
+            select(Ticket).where(Ticket.tenant_id == tenant_id),
+            filters=filters,
+            actor_user_id=actor_user_id,
+        )
+        # Total over the filtered set, before group-by.
+        total = int(
+            (
+                await self._session.execute(
+                    select(func.count()).select_from(base_where.subquery())
+                )
+            ).scalar_one()
+        )
+
+        buckets: list[TicketStatsBucket]
+        if group_by == "state":
+            state_stmt = (
+                base_where.with_only_columns(
+                    Ticket.state.label("key"), func.count().label("cnt")
+                )
+                .group_by(Ticket.state)
+                .order_by(func.count().desc())
+            )
+            state_rows = (await self._session.execute(state_stmt)).all()
+            buckets = [
+                TicketStatsBucket(key=str(r.key), label=str(r.key), count=int(r.cnt))
+                for r in state_rows
+            ]
+        elif group_by == "priority":
+            prio_stmt = (
+                base_where.with_only_columns(
+                    Ticket.priority.label("key"), func.count().label("cnt")
+                )
+                .group_by(Ticket.priority)
+                .order_by(func.count().desc())
+            )
+            prio_rows = (await self._session.execute(prio_stmt)).all()
+            buckets = [
+                TicketStatsBucket(key=str(r.key), label=str(r.key), count=int(r.cnt))
+                for r in prio_rows
+            ]
+        elif group_by == "category":
+            cat_stmt = (
+                base_where.with_only_columns(
+                    Ticket.category_id.label("key"),
+                    Category.code.label("code"),
+                    Category.label_tr.label("label"),
+                    func.count().label("cnt"),
+                )
+                .join(Category, Category.id == Ticket.category_id, isouter=True)
+                .group_by(Ticket.category_id, Category.code, Category.label_tr)
+                .order_by(func.count().desc())
+            )
+            cat_rows = (await self._session.execute(cat_stmt)).all()
+            buckets = [
+                TicketStatsBucket(
+                    key=str(r.key),
+                    label=str(r.label) if r.label else (r.code or str(r.key)[:8]),
+                    count=int(r.cnt),
+                )
+                for r in cat_rows
+            ]
+        elif group_by == "assignee":
+            asg_stmt = (
+                base_where.with_only_columns(
+                    Ticket.assigned_to_user_id.label("key"),
+                    func.count().label("cnt"),
+                )
+                .group_by(Ticket.assigned_to_user_id)
+                .order_by(func.count().desc())
+            )
+            asg_rows = (await self._session.execute(asg_stmt)).all()
+            buckets = []
+            for r in asg_rows:
+                if r.key is None:
+                    buckets.append(
+                        TicketStatsBucket(
+                            key="unassigned", label="unassigned", count=int(r.cnt)
+                        )
+                    )
+                else:
+                    buckets.append(
+                        TicketStatsBucket(
+                            key=str(r.key), label=str(r.key), count=int(r.cnt)
+                        )
+                    )
+        else:  # pragma: no cover — Literal type already constrains
+            raise ValueError(f"unknown group_by {group_by!r}")
+
+        return TicketStatsResult(group_by=group_by, total=total, results=buckets)
+
+    def _apply_filter_clauses(
+        self,
+        stmt: Select[tuple[Ticket]],
+        *,
+        filters: TicketFilters,
+        actor_user_id: UUID,
+    ) -> Select[tuple[Ticket]]:
+        """Common WHERE chain shared by list_filtered + stats. Soft-
+        deleted rows always excluded; tenant scoping is the caller's
+        responsibility (RLS does that anyway)."""
+        stmt = stmt.where(Ticket.deleted_at.is_(None))
+
+        if filters.state:
+            stmt = stmt.where(Ticket.state.in_(filters.state))
+        if filters.priority:
+            stmt = stmt.where(Ticket.priority.in_(filters.priority))
+        if filters.category_id:
+            stmt = stmt.where(Ticket.category_id.in_(filters.category_id))
+
+        if filters.opened_after is not None:
+            stmt = stmt.where(Ticket.opened_at >= filters.opened_after)
+        if filters.opened_before is not None:
+            stmt = stmt.where(Ticket.opened_at <= filters.opened_before)
+
+        if filters.assignee == "me":
+            stmt = stmt.where(Ticket.assigned_to_user_id == actor_user_id)
+        elif filters.assignee == "unassigned":
+            stmt = stmt.where(Ticket.assigned_to_user_id.is_(None))
+        elif filters.assignee:
+            # Specific user id; if it's not a parsable UUID we let the
+            # DB reject it (caller already validates via Pydantic UUID
+            # for the "specific" branch in a future enhancement).
+            try:
+                user_uuid = UUID(filters.assignee)
+            except ValueError:
+                # Unknown sentinel — yield empty result rather than
+                # crashing. Common when frontend sends a stale id.
+                stmt = stmt.where(Ticket.id == UUID(int=0))
+            else:
+                stmt = stmt.where(Ticket.assigned_to_user_id == user_uuid)
+
+        if filters.search:
+            pattern = f"%{filters.search}%"
+            stmt = stmt.where(
+                or_(
+                    Ticket.title.ilike(pattern),
+                    Ticket.summary.ilike(pattern),
+                )
+            )
+
+        return stmt
+
+    def _apply_order(
+        self,
+        stmt: Select[tuple[Ticket]],
+        *,
+        filters: TicketFilters,
+    ) -> Select[tuple[Ticket]]:
+        column = {
+            "opened_at": Ticket.opened_at,
+            "last_state_change_at": Ticket.last_state_change_at,
+            "priority": Ticket.priority,
+        }[filters.order_by]
+        ordering = desc(column) if filters.order == "desc" else asc(column)
+        return stmt.order_by(ordering)
 
     # --- transition ------------------------------------------------------
 
