@@ -291,6 +291,41 @@ def test_logout_with_unknown_token_is_idempotent(client: TestClient) -> None:
     assert out.status_code == 204
 
 
+def test_logout_revokes_entire_family_including_rotated_successors(
+    client: TestClient,
+    seeded_user_and_tenant: tuple[User, UUID, str],
+) -> None:
+    """Logout must revoke every live token in the family, not just the
+    one presented. Build a chain (login -> refresh) so the family has
+    two records, log out with the latest token, and confirm both rows
+    are dead."""
+    user, _tid, password = seeded_user_and_tenant
+    login = client.post(
+        "/auth/login", json={"email": user.email, "password": password}
+    ).json()
+    rotated = client.post(
+        "/auth/refresh", json={"refresh_token": login["refresh_token"]}
+    ).json()
+    # Rotated successor exists in the same family as the login token.
+    out = client.post(
+        "/auth/logout", json={"refresh_token": rotated["refresh_token"]}
+    )
+    assert out.status_code == 204
+    # The original (already-rotated) token was used_at-set; replaying it
+    # would normally trigger chain_compromise, but the family is already
+    # revoked — either way it must fail.
+    r_orig = client.post(
+        "/auth/refresh", json={"refresh_token": login["refresh_token"]}
+    )
+    assert r_orig.status_code == 401
+    # And the rotated successor — the very token we logged out with —
+    # is also dead.
+    r_rotated = client.post(
+        "/auth/refresh", json={"refresh_token": rotated["refresh_token"]}
+    )
+    assert r_rotated.status_code == 401
+
+
 # --- switch-tenant -------------------------------------------------------
 
 
