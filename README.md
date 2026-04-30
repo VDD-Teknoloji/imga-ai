@@ -92,4 +92,4 @@ Tag groups in Swagger UI:
 
 - `docs/legacy-analysis.md` — original prototype code review
 - `docs/git-workflow.md` — branching + commit conventions
-- `docs/sprint-8-backlog.md` — Sprint 7.5.5 + 8 deferred work (production prep)
+- `docs/post-sprint-7-roadmap.md` — 4-grup borç roadmap'i (7.5.5, API consistency, Sprint 8, sonrası)
