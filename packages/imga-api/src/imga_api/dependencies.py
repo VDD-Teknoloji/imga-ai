@@ -21,6 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from imga_api.db_deps import get_app_session
 from imga_api.services import (
     AuditService,
+    CommentService,
     ReviewService,
     TenantConfigService,
     TicketService,
@@ -110,6 +111,15 @@ def get_ticket_service(
     bind_tenant contract as TenantConfigService."""
     audit = AuditService(app_session)
     return TicketService(app_session, audit)
+
+
+def get_comment_service(
+    app_session: Annotated[AsyncSession, Depends(get_app_session)],
+) -> CommentService:
+    """CommentService bound to the RLS-enforced app session. Same
+    bind_tenant contract as TicketService."""
+    audit = AuditService(app_session)
+    return CommentService(app_session, audit)
 
 
 def get_review_service(

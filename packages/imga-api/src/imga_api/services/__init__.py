@@ -7,6 +7,16 @@ from imga_api.services.auth_service import (
     TokenPair,
     TokenReuseDetectedError,
 )
+from imga_api.services.comment_service import (
+    MAX_BODY_LENGTH as COMMENT_MAX_BODY_LENGTH,
+)
+from imga_api.services.comment_service import (
+    CommentForbiddenError,
+    CommentNotFoundError,
+    CommentService,
+    CommentServiceError,
+    TicketNotFoundForCommentError,
+)
 from imga_api.services.invitation_service import (
     INVITATION_TTL,
     InvitationAcceptanceError,
@@ -59,9 +69,10 @@ from imga_api.services.ticket_state_machine import (
     InvalidTransitionError,
     WindowExpiredError,
 )
-from imga_api.services.user_service import UserService
+from imga_api.services.user_service import TenantMember, UserService
 
 __all__ = [
+    "COMMENT_MAX_BODY_LENGTH",
     "DEDUP_WINDOW",
     "INVITATION_TTL",
     "AuditService",
@@ -72,6 +83,10 @@ __all__ = [
     "CategoryCodeConflictError",
     "CategoryNotConfiguredError",
     "CategoryNotFoundError",
+    "CommentForbiddenError",
+    "CommentNotFoundError",
+    "CommentService",
+    "CommentServiceError",
     "DuplicateTicketError",
     "ForbiddenTransitionError",
     "GroupBy",
@@ -90,11 +105,13 @@ __all__ = [
     "StatsRequest",
     "TenantConfigError",
     "TenantConfigService",
+    "TenantMember",
     "TenantNotFoundError",
     "TenantService",
     "TenantSlugTakenError",
     "TicketFilters",
     "TicketNotFoundError",
+    "TicketNotFoundForCommentError",
     "TicketService",
     "TicketServiceError",
     "TicketStatsBucket",

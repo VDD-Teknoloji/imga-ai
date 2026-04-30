@@ -28,6 +28,8 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from imga_db.models import (
     CancellationReason,
     Ticket,
+    TicketComment,
+    TicketCommentKind,
     TicketPriority,
     TicketState,
     TicketStateTransition,
@@ -39,9 +41,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from imga_api.auth_deps import CurrentUser, bind_tenant, require_role
 from imga_api.db_deps import get_app_session
-from imga_api.dependencies import get_ticket_service
+from imga_api.dependencies import get_comment_service, get_ticket_service
 from imga_api.services import (
+    COMMENT_MAX_BODY_LENGTH,
     CancellationReasonRequiredError,
+    CommentForbiddenError,
+    CommentNotFoundError,
+    CommentService,
+    CommentServiceError,
     ForbiddenTransitionError,
     GroupBy,
     InvalidTransitionError,
@@ -49,6 +56,7 @@ from imga_api.services import (
     OrderDirection,
     TicketFilters,
     TicketNotFoundError,
+    TicketNotFoundForCommentError,
     TicketService,
     TicketServiceError,
     TicketStatsResult,
@@ -163,6 +171,72 @@ class TransitionView(BaseModel):
 
 class TransitionsResponse(BaseModel):
     transitions: list[TransitionView]
+
+
+class CommentCreateRequest(BaseModel):
+    """Body for POST /tickets/{id}/comments."""
+
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={
+            "examples": [
+                {"body": "Müşteri kargo adresini değiştirdi.", "kind": "internal_note"},
+                {"body": "Sayın müşterimiz, talebiniz alınmıştır...", "kind": "customer_reply"},
+            ]
+        },
+    )
+    body: str = Field(..., min_length=1, max_length=COMMENT_MAX_BODY_LENGTH)
+    kind: TicketCommentKind
+
+
+class CommentView(BaseModel):
+    id: UUID
+    ticket_id: UUID
+    author_user_id: UUID | None
+    body: str
+    kind: str
+    created_at: datetime
+    is_archived: bool
+    archived_at: datetime | None
+    archived_by_user_id: UUID | None
+
+
+class CommentsResponse(BaseModel):
+    """List response. ``include_archived=false`` filters live-only."""
+
+    comments: list[CommentView]
+
+
+# --- timeline (transitions + comments merged chronologically) -----------
+
+
+class TimelineEvent(BaseModel):
+    """Polymorphic timeline row. ``type`` discriminates the payload —
+    'state_transition' carries from_state/to_state/reason; 'comment'
+    carries body/kind/is_archived. The merged ordering is ascending
+    by ``occurred_at`` so the UI can render top-down without sorting
+    client-side."""
+
+    type: str  # "state_transition" | "comment"
+    id: UUID
+    occurred_at: datetime
+    actor_user_id: UUID | None
+
+    # state_transition fields
+    from_state: str | None = None
+    to_state: str | None = None
+    reason: str | None = None
+
+    # comment fields
+    body: str | None = None
+    kind: str | None = None
+    is_archived: bool | None = None
+    archived_at: datetime | None = None
+    archived_by_user_id: UUID | None = None
+
+
+class TimelineResponse(BaseModel):
+    events: list[TimelineEvent]
 
 
 # --- helpers ------------------------------------------------------------
@@ -460,6 +534,230 @@ async def list_transitions(
             for r in rows
         ]
     )
+
+
+# --- comments + timeline (Sprint 7.5.5 / Alt-Faz 4) -------------------
+
+
+def _comment_view(c: TicketComment) -> CommentView:
+    return CommentView(
+        id=c.id,
+        ticket_id=c.ticket_id,
+        author_user_id=c.author_user_id,
+        body=c.body,
+        kind=str(c.kind),
+        created_at=c.created_at,
+        is_archived=c.is_archived,
+        archived_at=c.archived_at,
+        archived_by_user_id=c.archived_by_user_id,
+    )
+
+
+def _map_comment_error(exc: Exception) -> HTTPException:
+    if isinstance(exc, CommentNotFoundError | TicketNotFoundForCommentError):
+        return HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
+    if isinstance(exc, CommentForbiddenError):
+        # "already archived" is the only 409 path; everything else is 403.
+        if "already archived" in str(exc):
+            return HTTPException(
+                status_code=status.HTTP_409_CONFLICT, detail=str(exc)
+            )
+        return HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc))
+    if isinstance(exc, CommentServiceError):
+        return HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+    raise exc
+
+
+@router.post(
+    "/{ticket_id}/comments",
+    response_model=CommentView,
+    status_code=status.HTTP_201_CREATED,
+    summary="Append a comment to the ticket (internal note or customer reply).",
+    description=(
+        "Role matrix: VIEWER can only post ``internal_note``; ANALYST "
+        "and TENANT_ADMIN can post both kinds. State guard: "
+        "``customer_reply`` is forbidden when the ticket is CLOSED or "
+        "CANCELLED — internal notes remain allowed in every state so "
+        "post-mortem notes survive."
+    ),
+    responses={
+        403: {"description": "Role / state matrix rejected the kind."},
+        404: {"description": "Ticket not found."},
+        422: {"description": "Body empty or exceeds 8000-char cap."},
+    },
+)
+async def create_comment(
+    ticket_id: UUID,
+    body: CommentCreateRequest,
+    current: Annotated[CurrentUser, _AnyMember],
+    app_session: Annotated[AsyncSession, Depends(get_app_session)],
+    comments: Annotated[CommentService, Depends(get_comment_service)],
+) -> CommentView:
+    _require_active_tenant(current)
+    role = _role_for_state_machine(current)
+    # Super-admin without a chosen tenant role still posts as the
+    # most-privileged tenant role so the matrix reads consistently.
+    effective_role = role if role is not None else UserTenantRole.TENANT_ADMIN
+    tenant_id = current.active_tenant_id
+    assert tenant_id is not None  # guarded by _require_active_tenant
+    async with app_session.begin():
+        await bind_tenant(app_session, current)
+        try:
+            comment = await comments.create(
+                tenant_id=tenant_id,
+                ticket_id=ticket_id,
+                author_user_id=current.user_id,
+                author_role=effective_role,
+                body=body.body,
+                kind=body.kind,
+            )
+        except Exception as exc:
+            raise _map_comment_error(exc) from exc
+        view = _comment_view(comment)
+    return view
+
+
+@router.get(
+    "/{ticket_id}/comments",
+    response_model=CommentsResponse,
+    summary="List comments on a ticket; archived rows included by default.",
+    description=(
+        "Returns comments in chronological order (oldest first). "
+        "``include_archived`` defaults to true so the UI can show the "
+        "whole history with archived rows greyed out; pass ``false`` "
+        "for a live-only list."
+    ),
+)
+async def list_comments(
+    ticket_id: UUID,
+    current: Annotated[CurrentUser, _AnyMember],
+    app_session: Annotated[AsyncSession, Depends(get_app_session)],
+    comments: Annotated[CommentService, Depends(get_comment_service)],
+    include_archived: Annotated[bool, Query()] = True,
+) -> CommentsResponse:
+    _require_active_tenant(current)
+    tenant_id = current.active_tenant_id
+    assert tenant_id is not None
+    async with app_session.begin():
+        await bind_tenant(app_session, current)
+        rows = await comments.list_for_ticket(
+            tenant_id=tenant_id,
+            ticket_id=ticket_id,
+            include_archived=include_archived,
+        )
+    return CommentsResponse(comments=[_comment_view(c) for c in rows])
+
+
+@router.post(
+    "/{ticket_id}/comments/{comment_id}/archive",
+    response_model=CommentView,
+    summary="Soft-delete (archive) a comment. Author or admin only.",
+    description=(
+        "Archives the comment by setting ``deleted_at`` + "
+        "``archived_by_user_id``. The row remains in the timeline with "
+        "``is_archived=true`` so the historical record stays intact. "
+        "Hard delete is intentionally absent."
+    ),
+    responses={
+        403: {"description": "Not the author and not a tenant admin."},
+        404: {"description": "Comment not found."},
+        409: {"description": "Comment is already archived."},
+    },
+)
+async def archive_comment(
+    ticket_id: UUID,
+    comment_id: UUID,
+    current: Annotated[CurrentUser, _AnyMember],
+    app_session: Annotated[AsyncSession, Depends(get_app_session)],
+    comments: Annotated[CommentService, Depends(get_comment_service)],
+) -> CommentView:
+    _require_active_tenant(current)
+    role = _role_for_state_machine(current)
+    effective_role = role if role is not None else UserTenantRole.TENANT_ADMIN
+    async with app_session.begin():
+        await bind_tenant(app_session, current)
+        try:
+            archived = await comments.archive(
+                comment_id=comment_id,
+                actor_user_id=current.user_id,
+                actor_role=effective_role,
+                actor_is_super_admin=current.is_super_admin,
+            )
+        except Exception as exc:
+            raise _map_comment_error(exc) from exc
+        view = _comment_view(archived)
+    return view
+
+
+@router.get(
+    "/{ticket_id}/timeline",
+    response_model=TimelineResponse,
+    summary="Merged chronological timeline (state transitions + comments).",
+    description=(
+        "Same data as /transitions plus all comments (archived and live), "
+        "interleaved by timestamp ascending. ``type`` discriminates the "
+        "payload shape per row. Existing /transitions endpoint stays "
+        "available for backwards compatibility; new clients should "
+        "prefer /timeline."
+    ),
+)
+async def get_timeline(
+    ticket_id: UUID,
+    current: Annotated[CurrentUser, _AnyMember],
+    app_session: Annotated[AsyncSession, Depends(get_app_session)],
+    comments: Annotated[CommentService, Depends(get_comment_service)],
+) -> TimelineResponse:
+    _require_active_tenant(current)
+    tenant_id = current.active_tenant_id
+    assert tenant_id is not None
+    async with app_session.begin():
+        await bind_tenant(app_session, current)
+        # Two queries are simpler than a UNION here — the row counts are
+        # bounded (one ticket's worth) and PostgreSQL's planner can't
+        # easily merge two unrelated tables on a polymorphic timestamp
+        # without losing per-table column types. We sort in Python,
+        # which is also where the polymorphic shape is built.
+        trans_stmt = (
+            select(TicketStateTransition)
+            .where(TicketStateTransition.ticket_id == ticket_id)
+            .order_by(TicketStateTransition.occurred_at.asc())
+        )
+        trans_rows = list((await app_session.execute(trans_stmt)).scalars())
+        comment_rows = await comments.list_for_ticket(
+            tenant_id=tenant_id,
+            ticket_id=ticket_id,
+            include_archived=True,
+        )
+
+    events: list[TimelineEvent] = []
+    for r in trans_rows:
+        events.append(
+            TimelineEvent(
+                type="state_transition",
+                id=r.id,
+                occurred_at=r.occurred_at,
+                actor_user_id=r.actor_user_id,
+                from_state=str(r.from_state),
+                to_state=str(r.to_state),
+                reason=r.reason,
+            )
+        )
+    for c in comment_rows:
+        events.append(
+            TimelineEvent(
+                type="comment",
+                id=c.id,
+                occurred_at=c.created_at,
+                actor_user_id=c.author_user_id,
+                body=c.body,
+                kind=str(c.kind),
+                is_archived=c.is_archived,
+                archived_at=c.archived_at,
+                archived_by_user_id=c.archived_by_user_id,
+            )
+        )
+    events.sort(key=lambda e: e.occurred_at)
+    return TimelineResponse(events=events)
 
 
 @router.post(
