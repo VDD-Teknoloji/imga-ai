@@ -10,6 +10,10 @@ from imga_api.services.auth_service import (
 from imga_api.services.invitation_service import (
     INVITATION_TTL,
     InvitationAcceptanceError,
+    InvitationEmailExistsError,
+    InvitationEmailMismatchError,
+    InvitationPreview,
+    InvitationReauthFailedError,
     InvitationService,
 )
 from imga_api.services.tenant_config_service import (
@@ -18,7 +22,11 @@ from imga_api.services.tenant_config_service import (
     TenantConfigError,
     TenantConfigService,
 )
-from imga_api.services.tenant_service import TenantService
+from imga_api.services.tenant_service import (
+    TenantNotFoundError,
+    TenantService,
+    TenantSlugTakenError,
+)
 from imga_api.services.ticket_service import (
     AutoCreateDecision,
     CancellationReasonRequiredError,
@@ -50,10 +58,16 @@ __all__ = [
     "ForbiddenTransitionError",
     "InvalidTransitionError",
     "InvitationAcceptanceError",
+    "InvitationEmailExistsError",
+    "InvitationEmailMismatchError",
+    "InvitationPreview",
+    "InvitationReauthFailedError",
     "InvitationService",
     "TenantConfigError",
     "TenantConfigService",
+    "TenantNotFoundError",
     "TenantService",
+    "TenantSlugTakenError",
     "TicketNotFoundError",
     "TicketService",
     "TicketServiceError",
