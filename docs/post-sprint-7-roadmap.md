@@ -64,16 +64,25 @@ Sprint 7 sonu itibariyle backend konsolide ve canlıda çalışıyor: 6 alembic 
 - **Bağımlılık**: Yok.
 - **Süre**: ~1.5-2 gün.
 
-### A5. Ticket aggregation + filter endpoints (Sprint 7.6.3 dashboard tarafından açığa çıkardı)
+### A5. Ticket aggregation + filter endpoints ✅ SHIPPED (Sprint 7.5.5 / Alt-Faz 2)
 
-- **Durum**: `GET /tickets` yalnızca tek-değerli `state` filtresi destekliyor; date-range, multi-state, priority filter, group-by aggregation yok. Dashboard 7.6.3 tüm metric'leri client-side derive etmek zorunda kaldı (full ticket fetch + JS reduce).
-- **Eksik (öncelik sırası)**:
-  - `GET /tickets/stats?period=today|7d|30d&group_by=state|category|priority` — dashboard kartları + chart için aggregator. Tek çağrıda count/sum döner, müşteri büyüdükçe N+1 fetch'i önler.
-  - `GET /tickets` üzerinde `state` parametresinin multi-value alması (`?state=open&state=in_progress`) ya da `?states=open,in_progress,pending_customer` formatı.
-  - `GET /tickets` üzerinde `opened_after`, `opened_before`, `closed_after`, `priority` filtreleri.
-  - Cursor-based pagination (zaten C5 olarak listelendi; bu paragraf da onu çağırıyor).
-- **Bağımlılık**: Yok. C5 pagination ile birlikte tek migration'da inebilir.
-- **Süre**: ~0.5-1 gün (read-only stats endpoint, mevcut RLS'in altında basit aggregate sorgular).
+- **Durum**: ✅ Sprint 7.5.5 / Alt-Faz 2'de teslim edildi.
+  - **Migration 0007**: `ix_tickets_tenant_state_priority` (composite), `ix_tickets_tenant_opened_at DESC` (composite), `ix_tickets_tenant_assignee` (partial index, `assigned_to_user_id IS NOT NULL`).
+  - **TicketFilters Pydantic modeli** (`services/ticket_filters.py`): `state` / `priority` / `category_id` CSV multi-value (field_validator(mode="before") boş string'i `[]`'e çevirir, unknown enum 422), `opened_after` / `opened_before` ISO8601 datetime, `assignee` ∈ `me | unassigned | UUID`, `search` LIKE on title+summary, `order_by` Literal[opened_at, last_state_change_at, priority] + `order` Literal[asc, desc] (SQL injection imkansız), `limit` Field(ge=1, le=500), `offset` Field(ge=0).
+  - **Service**: `TicketService.list_filtered` `(rows, total)` döner — total filtre sonrası pre-pagination. `TicketService.stats(group_by)` 4 axis (state/priority/category/assignee), kategoriler `LEFT JOIN categories` ile `label_tr` resolve eder.
+  - **Routes**: `GET /tickets` artık tüm filtre setini accept ediyor + envelope `{tickets, total, limit, offset}` döner. Yeni `GET /tickets/stats` endpoint'i RLS-bound (aynı `app_session.begin()` + `bind_tenant` bloğu).
+  - **EXPLAIN ANALYZE doğrulaması** (30k synth row üzerinde):
+    - Q2 `tenant_id + opened_at >= cutoff + ORDER BY opened_at DESC LIMIT 100` → **Index Scan using ix_tickets_tenant_opened_at** ✅ (designed shape).
+    - Q1 `tenant_id + state IN + priority IN + ORDER BY last_state_change_at DESC LIMIT 100` → planner `ix_tickets_last_state_change_at` (mevcut single-col) ile sorted-then-filter yapıyor; new composite index üretim ölçeğinde "filtre cardinality % 1'in altında" senaryosunda devreye girer (insurance index — şu anki distribution'da seçilmiyor ama varlığı doğru, kost azalınca planner geçer).
+    - Q3 `tenant_id + assigned_to_user_id` → planner `ix_tickets_assigned_to_user_id` ile çalışıyor; partial composite multi-tenant ölçeğinde tenant_id'yi de leading-column olarak kullandığında devreye girecek.
+  - **Tests**: 19 yeni test `test_ticket_filters.py`'de (CSV edge cases: empty / commas-only / multi-value / unknown enum, combined filters, search ILIKE, date range, limit le=500 enforcement, order_by injection guard, /stats 4 group_by axis, RLS isolation iki ayrı tenant ile, assignee="me" + "unassigned").
+- **Frontend cleanup notları** (Sprint 7.7+'da `useTickets` hook'u backend'e push):
+  - **Şu an client-side derive ediliyor** (Sprint 7.6.4 ticket list URL-bound filters): state filter localde array tutuluyor, fetch'te `?state=` tek-değerli olarak gönderiliyor. → Yeni endpoint'e CSV bind: `state.join(',')` URLSearchParam olarak.
+  - **Dashboard 7.6.3 metric kartları**: full ticket fetch + JS reduce ile sayılıyor (Açık / Bugün / Yüksek / Son 7d). → `/tickets/stats?group_by=state` 4 kartı tek istekle besler. Trend chart için `?opened_after=` ile son 7 günü çekip group_by=state ile state breakdown gösterilebilir.
+  - **Sayfalama**: artık `total` döndüğü için "X ticket / Y total" sayacı UI'a doğal eklenir. C5 cursor pagination'a kadar offset paging max 500'le sınırlı (zaten frontend default 25 kullanıyor).
+  - **Backend filter pass-through alanları** (`useTickets` hook'unda exposed olmalı): `state[]`, `priority[]`, `category_id[]`, `opened_after`, `opened_before`, `assignee` (`"me"` / `"unassigned"` / userId), `search`, `order_by`, `order`. Default sort `last_state_change_at desc` zaten frontend default'uyla aynı.
+- **Bağımlılık**: ✅ kapandı. C5 pagination'a kadar offset paging max 500.
+- **Süre**: 1 gün (planlanan 0.5-1 gün, EXPLAIN doğrulaması + 19 test ile gerçekleşen).
 
 ### A7. Tenant directory (assignee picker / member list)
 
