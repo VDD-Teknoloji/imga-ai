@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import logging
+import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import Annotated
 
 from cachetools import TTLCache
 from fastapi import Depends, FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from imga_core import (
     AnalysisPipeline,
     AnalysisResult,
@@ -35,7 +37,19 @@ from imga_api.schemas import (
     MetricsRequest,
     MetricsResponse,
 )
-from imga_api.settings import Settings
+from imga_api.settings import Settings, _load_dotenv
+
+# Load .env (and .env.local override) at module import time so CORS
+# origins below pick up dev defaults without a shell prefix.
+_load_dotenv()
+
+
+def _parse_cors_origins() -> list[str]:
+    """Comma-separated IMGA_CORS_ORIGINS, or sensible dev defaults."""
+    raw = os.environ.get("IMGA_CORS_ORIGINS", "").strip()
+    if not raw:
+        return ["http://localhost:3000", "http://127.0.0.1:3000"]
+    return [origin.strip() for origin in raw.split(",") if origin.strip()]
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 log = logging.getLogger("imga-api")
@@ -92,6 +106,19 @@ app = FastAPI(
     description=_API_DESCRIPTION,
     openapi_tags=_OPENAPI_TAGS,
     lifespan=lifespan,
+)
+
+# CORS — dev frontend lives on a different origin (:3000 vs :8003).
+# Production uses the same origin (proxied by Caddy in Sprint 8) so
+# this middleware is largely a no-op in prod, but the explicit allow-
+# list keeps the security boundary visible.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=_parse_cors_origins(),
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "PATCH", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=["*"],
+    expose_headers=["*"],
 )
 
 app.include_router(auth_routes.router)
