@@ -3,6 +3,11 @@
 Note: `tenants` is a global table (no RLS), so slug uniqueness is
 enforced at the DB level. Tenant deletion is soft (deleted_at), not
 hard, so audit history remains intact.
+
+Tenant creation also seeds ``tenant_categories`` with the eight
+globals that exist at creation time (Sprint 7.4 opt-in semantic):
+new globals added by future migrations do NOT auto-enable for
+existing tenants — they have to opt in via the config API.
 """
 
 from __future__ import annotations
@@ -10,7 +15,7 @@ from __future__ import annotations
 from typing import Any
 from uuid import UUID
 
-from imga_db.models import AutomationMode, Tenant, TenantPlanTier
+from imga_db.models import AutomationMode, Category, Tenant, TenantCategory, TenantPlanTier
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -51,13 +56,40 @@ class TenantService:
             # transaction context unexpectedly.
             raise TenantSlugTakenError(f"slug {slug!r} already in use") from exc
 
+        # Seed tenant_categories with the globals that exist *now*. New
+        # globals added by a future migration are intentionally not auto-
+        # enabled for already-existing tenants (opt-in by design).
+        global_ids = (
+            await self._session.execute(
+                select(Category.id).where(
+                    Category.tenant_id.is_(None),
+                    Category.deleted_at.is_(None),
+                )
+            )
+        ).scalars().all()
+        for cat_id in global_ids:
+            self._session.add(
+                TenantCategory(
+                    tenant_id=tenant.id,
+                    category_id=cat_id,
+                    is_enabled=True,
+                )
+            )
+        if global_ids:
+            await self._session.flush()
+
         await self._audit.log(
             action="tenant.create",
             resource_type="tenant",
             resource_id=tenant.id,
             tenant_id=tenant.id,
             actor_user_id=actor_user_id,
-            details={"name": name, "slug": slug, "plan_tier": str(plan_tier)},
+            details={
+                "name": name,
+                "slug": slug,
+                "plan_tier": str(plan_tier),
+                "seeded_categories": len(global_ids),
+            },
         )
         return tenant
 
@@ -76,7 +108,6 @@ class TenantService:
         *,
         settings: dict[str, Any] | None = None,
         automation_mode: AutomationMode | None = None,
-        category_overrides: dict[str, Any] | None = None,
         actor_user_id: UUID | None = None,
     ) -> Tenant:
         tenant = await self._session.get(Tenant, tenant_id)
@@ -90,9 +121,6 @@ class TenantService:
         if automation_mode is not None:
             tenant.automation_mode = automation_mode
             changes["automation_mode"] = str(automation_mode)
-        if category_overrides is not None:
-            tenant.category_overrides = category_overrides
-            changes["category_overrides"] = "updated"
 
         if changes:
             await self._audit.log(
