@@ -64,6 +64,27 @@ Sprint 7 sonu itibariyle backend konsolide ve canlıda çalışıyor: 6 alembic 
 - **Bağımlılık**: Yok.
 - **Süre**: ~1.5-2 gün.
 
+### A5. Ticket aggregation + filter endpoints (Sprint 7.6.3 dashboard tarafından açığa çıkardı)
+
+- **Durum**: `GET /tickets` yalnızca tek-değerli `state` filtresi destekliyor; date-range, multi-state, priority filter, group-by aggregation yok. Dashboard 7.6.3 tüm metric'leri client-side derive etmek zorunda kaldı (full ticket fetch + JS reduce).
+- **Eksik (öncelik sırası)**:
+  - `GET /tickets/stats?period=today|7d|30d&group_by=state|category|priority` — dashboard kartları + chart için aggregator. Tek çağrıda count/sum döner, müşteri büyüdükçe N+1 fetch'i önler.
+  - `GET /tickets` üzerinde `state` parametresinin multi-value alması (`?state=open&state=in_progress`) ya da `?states=open,in_progress,pending_customer` formatı.
+  - `GET /tickets` üzerinde `opened_after`, `opened_before`, `closed_after`, `priority` filtreleri.
+  - Cursor-based pagination (zaten C5 olarak listelendi; bu paragraf da onu çağırıyor).
+- **Bağımlılık**: Yok. C5 pagination ile birlikte tek migration'da inebilir.
+- **Süre**: ~0.5-1 gün (read-only stats endpoint, mevcut RLS'in altında basit aggregate sorgular).
+
+### A6. Tenant-aggregate analysis metrics (SHI / kriz / kategori dağılımı)
+
+- **Durum**: `POST /metrics` mevcut, ama stateless: çağıran taraf `AnalysisResult[]` gönderir, sonuç dönülür. Tenant'ın saklı analiz verisi için aggregate döndüren bir endpoint yok. Sebep: review tablosu + analize-arşivlemesi yok (Sprint 8 ingestion pipeline).
+- **Eksik**:
+  - Önce A3 (`/analyze → ticket bridge`) ya da paralel bir review storage tablosu lazım.
+  - Sonra `GET /tenants/me/metrics?period=...` — SHI, crisis count, negative rate, top bottlenecks.
+- **Bağımlılık**: A3 (analyze→ticket bridge) ya da bağımsız review storage.
+- **Süre**: A3 ile birleşik 1 gün.
+- **Etki**: Bu endpoint olana kadar dashboard'un SHI/kriz kartları "ticket-derived" alternatiflerle ikame edildi (Açık, Bugün Açılan, Yüksek Öncelik, Son 7 Gün Çözülen).
+
 ---
 
 ## Grup B — API Consistency (Sprint 7.6 frontend kararlarıyla birlikte)
