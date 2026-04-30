@@ -31,6 +31,7 @@ from imga_core.models import (
 from imga_core.overrides import KnowledgeBase, SLAParams
 from imga_core.pipeline import AnalysisPipeline
 from imga_core.rules import Rule, RuleEngine, RuleSet
+from imga_core.text_utils import normalize_turkish, review_text_hash
 
 __version__ = "0.1.0"
 
@@ -67,5 +68,7 @@ __all__ = [
     "create_llm_provider",
     "is_alert_state",
     "negative_rate",
+    "normalize_turkish",
+    "review_text_hash",
     "top_bottlenecks",
 ]

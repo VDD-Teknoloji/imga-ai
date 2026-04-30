@@ -7,10 +7,18 @@ which breaks substring matching against expected lowercase keywords.
 normalize_turkish() applies Turkish-specific I/İ → i/ı mapping before
 lowercasing and NFC-composes the result so the output is suitable for
 substring matching against pre-lowercased keyword frozensets.
+
+review_text_hash() reuses the same normalization to produce a
+content-stable sha256 hex digest. The auto-ticket bridge (Sprint
+7.5.5 / Alt-Faz 3) uses it as the dedup key — two submissions that
+differ only in casing or trailing whitespace collapse to the same
+hash and the second one is rerouted to the existing ticket instead
+of opening a duplicate.
 """
 
 from __future__ import annotations
 
+import hashlib
 import unicodedata
 from typing import Final
 
@@ -37,3 +45,16 @@ def normalize_turkish(text: str) -> str:
         text = text.replace(upper, lower)
     text = text.lower()
     return unicodedata.normalize("NFC", text)
+
+
+def review_text_hash(text: str) -> str:
+    """Content-stable sha256 hex over ``normalize_turkish(text).strip()``.
+
+    Used by the auto-ticket bridge as a dedup key. Two submissions that
+    differ only in casing or surrounding whitespace produce the same
+    digest, so the bridge's 24-hour window collapses them to a single
+    ticket. Returns 64 hex characters (matches the ``CHAR(64)`` column
+    on ``reviews.text_hash``).
+    """
+    canonical = normalize_turkish(text).strip()
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
