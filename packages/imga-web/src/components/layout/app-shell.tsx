@@ -1,0 +1,57 @@
+"use client";
+
+import { Menu } from "lucide-react";
+import { useState } from "react";
+
+import { Sidebar } from "@/components/layout/sidebar";
+import { Button } from "@/components/ui/button";
+import { Sheet, SheetContent, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
+
+interface AppShellProps {
+  children: React.ReactNode;
+}
+
+/**
+ * Frame for every authenticated page. On md+ screens the desktop
+ * sidebar sits as a fixed left rail; on smaller screens an icon
+ * button opens the same sidebar in a Sheet.
+ *
+ * The topbar in the desktop view stays minimal — page titles and
+ * per-page actions live inside each page's content area. A future
+ * sprint can expand the topbar (search, notifications, breadcrumbs)
+ * without touching this layout.
+ */
+export function AppShell({ children }: AppShellProps) {
+  const [mobileOpen, setMobileOpen] = useState(false);
+
+  return (
+    <div className="flex min-h-screen w-full">
+      {/* Desktop sidebar — hidden below md. */}
+      <div className="hidden md:flex">
+        <Sidebar variant="desktop" />
+      </div>
+
+      <div className="flex min-w-0 flex-1 flex-col">
+        {/* Mobile-only topbar (visible below md). */}
+        <header className="bg-background flex h-12 shrink-0 items-center gap-2 border-b px-3 md:hidden">
+          <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
+            <SheetTrigger
+              render={
+                <Button variant="ghost" size="icon" aria-label="Menüyü aç" className="size-9">
+                  <Menu className="size-5" aria-hidden />
+                </Button>
+              }
+            />
+            <SheetContent side="left" className="w-[260px] p-0">
+              <SheetTitle className="sr-only">Kenar çubuğu</SheetTitle>
+              <Sidebar variant="mobile" onNavigate={() => setMobileOpen(false)} />
+            </SheetContent>
+          </Sheet>
+          <span className="text-sm font-semibold tracking-tight">imga.ai</span>
+        </header>
+
+        <main className="min-w-0 flex-1">{children}</main>
+      </div>
+    </div>
+  );
+}

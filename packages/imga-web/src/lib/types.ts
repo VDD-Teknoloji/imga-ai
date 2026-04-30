@@ -16,12 +16,7 @@ export type TicketState =
 
 export type TicketPriority = "low" | "normal" | "high" | "urgent";
 
-export type CancellationReason =
-  | "false_positive"
-  | "duplicate"
-  | "spam"
-  | "off_topic"
-  | "other";
+export type CancellationReason = "false_positive" | "duplicate" | "spam" | "off_topic" | "other";
 
 export type AutomationMode = "manual" | "semi_auto" | "full_auto";
 

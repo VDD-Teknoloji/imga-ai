@@ -24,7 +24,7 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
 
   if (!isInitialized) {
     return (
-      <div className="flex min-h-screen items-center justify-center text-sm text-muted-foreground">
+      <div className="text-muted-foreground flex min-h-screen items-center justify-center text-sm">
         Yükleniyor...
       </div>
     );
