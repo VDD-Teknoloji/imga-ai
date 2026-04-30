@@ -11,6 +11,7 @@ dist/
 downloads/
 eggs/
 lib/
+!packages/imga-web/src/lib/
 lib64/
 parts/
 sdist/
