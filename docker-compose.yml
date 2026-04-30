@@ -105,6 +105,31 @@ services:
       retries: 3
       start_period: 120s
 
+  web:
+    image: imga-web:latest
+    build:
+      context: ./packages/imga-web
+      dockerfile: Dockerfile
+    container_name: imga-web
+    restart: unless-stopped
+    ports:
+      - "${IMGA_WEB_PORT:-3000}:3000"
+    environment:
+      # Public URL the browser uses to talk to the API. Inside the
+      # docker network the api hostname resolves to the api service;
+      # for direct host browsing you'll override this in .env to
+      # http://localhost:${IMGA_API_PORT:-8000}.
+      NEXT_PUBLIC_API_URL: ${IMGA_WEB_API_URL:-http://localhost:8000}
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/login >/dev/null || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
   legacy-ui:
     image: imga-legacy:latest
     build:
