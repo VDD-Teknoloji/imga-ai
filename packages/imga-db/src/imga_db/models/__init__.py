@@ -6,11 +6,19 @@ from imga_db.models.invitation import Invitation
 from imga_db.models.mixins import SoftDeleteMixin, TenantOwnedMixin, TimestampMixin
 from imga_db.models.refresh_token import RefreshTokenRecord
 from imga_db.models.tenant import AutomationMode, Tenant, TenantPlanTier
+from imga_db.models.ticket import (
+    CancellationReason,
+    Ticket,
+    TicketPriority,
+    TicketState,
+    TicketStateTransition,
+)
 from imga_db.models.user import User, UserTenantLink, UserTenantRole
 
 __all__ = [
     "AuditLog",
     "AutomationMode",
+    "CancellationReason",
     "Category",
     "Invitation",
     "RefreshTokenRecord",
@@ -19,6 +27,10 @@ __all__ = [
     "TenantCategory",
     "TenantOwnedMixin",
     "TenantPlanTier",
+    "Ticket",
+    "TicketPriority",
+    "TicketState",
+    "TicketStateTransition",
     "TimestampMixin",
     "User",
     "UserTenantLink",

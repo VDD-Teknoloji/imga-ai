@@ -6,7 +6,7 @@ from enum import StrEnum
 from typing import Any
 from uuid import UUID, uuid4
 
-from sqlalchemy import JSON, String
+from sqlalchemy import JSON, Integer, String
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -53,3 +53,20 @@ class Tenant(Base, TimestampMixin, SoftDeleteMixin):
 
     # Free-form misc settings (notification prefs, branding, etc).
     settings: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict, nullable=False)
+
+    # --- Sprint 7.5 ticket-lifecycle timer windows ----------------------
+    # Dedicated INTEGER columns (not JSON) so per-tenant timer queries
+    # can be indexed and joined cheaply. Defaults are the platform-wide
+    # recommendations from the 7.5 design review.
+    auto_close_resolved_days: Mapped[int] = mapped_column(
+        Integer, default=7, nullable=False
+    )
+    auto_close_pending_days: Mapped[int] = mapped_column(
+        Integer, default=14, nullable=False
+    )
+    resolved_regression_window_days: Mapped[int] = mapped_column(
+        Integer, default=7, nullable=False
+    )
+    ticket_reopen_window_days: Mapped[int] = mapped_column(
+        Integer, default=30, nullable=False
+    )
