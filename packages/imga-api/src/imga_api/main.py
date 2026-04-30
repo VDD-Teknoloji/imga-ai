@@ -28,8 +28,11 @@ from imga_api.dependencies import (
     get_settings,
 )
 from imga_api.routes import auth as auth_routes
+from imga_api.routes import invitations as public_invitation_routes
 from imga_api.routes import tenant_config as tenant_config_routes
 from imga_api.routes import tickets as tickets_routes
+from imga_api.routes.admin import invitations as admin_invitation_routes
+from imga_api.routes.admin import tenants as admin_tenant_routes
 from imga_api.schemas import (
     AnalyzeRequest,
     BatchAnalyzeRequest,
@@ -108,6 +111,12 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+# Rate limiting is applied via FastAPI Depends on individual routes
+# (see imga_api/rate_limit.py + routes/invitations.py). We don't use
+# slowapi's decorator pattern because functools.wraps over the route
+# handler breaks FastAPI's Annotated-Depends introspection; the
+# Depends-based limiter sidesteps that and stays in pure FastAPI idiom.
+
 # CORS — dev frontend lives on a different origin (:3000 vs :8003).
 # Production uses the same origin (proxied by Caddy in Sprint 8) so
 # this middleware is largely a no-op in prod, but the explicit allow-
@@ -124,6 +133,9 @@ app.add_middleware(
 app.include_router(auth_routes.router)
 app.include_router(tenant_config_routes.router)
 app.include_router(tickets_routes.router)
+app.include_router(admin_tenant_routes.router)
+app.include_router(admin_invitation_routes.router)
+app.include_router(public_invitation_routes.router)
 
 
 @app.get(
