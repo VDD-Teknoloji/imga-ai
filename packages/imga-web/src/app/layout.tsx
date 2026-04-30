@@ -1,18 +1,17 @@
+import { GeistMono } from "geist/font/mono";
+import { GeistSans } from "geist/font/sans";
 import type { Metadata } from "next";
-import { Inter } from "next/font/google";
 
 import { Providers } from "@/components/providers";
 
 import "./globals.css";
 
-// Inter is the default until the design palette is finalised. The
-// CSS variable name (--font-sans) matches the @theme inline binding
-// shadcn already wired up in globals.css, so swapping fonts later
-// is a single-import change.
-const inter = Inter({
-  variable: "--font-sans",
-  subsets: ["latin"],
-});
+// Geist Sans + Geist Mono via the official `geist` package. Both
+// expose `.variable` strings ready to drop on <html>; globals.css
+// binds --font-sans / --font-mono in @theme inline so Tailwind
+// utilities (font-sans, font-mono) resolve through these CSS vars
+// without further config. The Geist family ships full Latin coverage
+// including Turkish glyphs (İ, ı, ç, ş, ğ, ü, ö).
 
 export const metadata: Metadata = {
   title: "imga.ai",
@@ -25,8 +24,8 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="tr" className={`${inter.variable} h-full antialiased`}>
-      <body className="flex min-h-full flex-col bg-background text-foreground">
+    <html lang="tr" className={`${GeistSans.variable} ${GeistMono.variable} h-full antialiased`}>
+      <body className="bg-background text-foreground flex min-h-full flex-col">
         <Providers>{children}</Providers>
       </body>
     </html>
