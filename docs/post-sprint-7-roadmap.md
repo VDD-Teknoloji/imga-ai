@@ -299,3 +299,45 @@ C5 (pagination) ───▶ B2'ye dependent
 3. **B1, B2, B3** — frontend ergonomy feedback'iyle birlikte refactor (Sprint 7.6 sonu).
 4. **Sprint 8**: C2 (backup) → C3 (deploy) → C4 (monitoring) → C1 (auto-close worker) → C5 (pagination).
 5. **Sprint 9+**: D'den sırayla, en gerekenden başlayarak (D5 + D2 erken; D8 kod gelince; D3 Redis multi-instance scaling olunca).
+
+## Frontend teknik notları (Sprint 7.7+ referansı)
+
+### React 19 / Next 16 — `react-hooks/set-state-in-effect`
+
+Next.js 16'nın varsayılan ESLint config'i `react-hooks/set-state-in-effect` kuralını **error** seviyesine çekti. Klasik "prop'tan state sync" patternini (useEffect içinde setState) ban'ladı, çünkü cascading re-render üretiyor:
+
+```tsx
+// ❌ Hatalı: React 19'da error
+useEffect(() => {
+  setSelected(prop);
+}, [prop]);
+```
+
+Doğru pattern (React 19 docs): "previous prop tracking" — render içinde conditional setState. React bu özel durumda re-render'ı bail-out eder, ekstra cascade olmaz:
+
+```tsx
+// ✅ Doğru
+const [selected, setSelected] = useState(prop);
+const [lastProp, setLastProp] = useState(prop);
+if (lastProp !== prop) {
+  setLastProp(prop);
+  setSelected(prop);
+}
+```
+
+Sprint 7.6.5'te 3 component'te uygulandı (`automation-mode-form`, `category-toggle-list`, `custom-category-dialog`). Yeni form / sync-with-prop component yazılırken bu pattern kullanılmalı; aksi takdirde lint kuralı build'i kırar. Alternatif (state'i tamamen reset etmek istiyorsan): parent'ta `key={someValue}` ile component'i remount et.
+
+### Diğer Next 16 davranış değişiklikleri
+
+- **Turbopack default**: `next dev` ve `next build` Turbopack ile çalışır. Webpack'e dönmek için `--webpack` flag'i gerekir.
+- **Async request APIs**: `params`, `searchParams`, `cookies()`, `headers()` artık Promise dönüyor — `await` zorunlu (zaten yeni kod awaited). Eski sync usage Sprint 16'da tamamen kaldırıldı.
+- **Base UI primitives in shadcn**: shadcn/ui'nin yeni versiyonu Radix yerine `@base-ui/react` kullanıyor; trigger component'leri `asChild` yerine `render` prop'u alır:
+
+  ```tsx
+  // ❌ Eski Radix pattern
+  <PopoverTrigger asChild><Button>...</Button></PopoverTrigger>
+  // ✅ Base UI render prop
+  <PopoverTrigger render={<Button>...</Button>} />
+  ```
+
+  TooltipTrigger button-only render eder (anchor wrap'lemiyor); link tooltip'leri için native `title` attribute kullan.
