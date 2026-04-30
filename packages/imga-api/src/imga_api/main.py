@@ -29,6 +29,7 @@ from imga_api.dependencies import (
 )
 from imga_api.routes import auth as auth_routes
 from imga_api.routes import invitations as public_invitation_routes
+from imga_api.routes import tenant_analyze as tenant_analyze_routes
 from imga_api.routes import tenant_config as tenant_config_routes
 from imga_api.routes import tickets as tickets_routes
 from imga_api.routes.admin import invitations as admin_invitation_routes
@@ -132,6 +133,7 @@ app.add_middleware(
 
 app.include_router(auth_routes.router)
 app.include_router(tenant_config_routes.router)
+app.include_router(tenant_analyze_routes.router)
 app.include_router(tickets_routes.router)
 app.include_router(admin_tenant_routes.router)
 app.include_router(admin_invitation_routes.router)

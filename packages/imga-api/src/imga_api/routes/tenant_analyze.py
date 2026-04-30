@@ -1,0 +1,144 @@
+"""``POST /tenants/me/analyze`` — tenant-scoped analyze + auto-ticket bridge.
+
+The anonymous ``/analyze`` endpoint stays as-is for panel preview /
+SDK use. This route is the production ingestion path: bearer auth,
+tenant-bound RLS session, every call lands a row in ``reviews`` and
+(on the CREATE branch) mints a ticket.
+
+Five decision branches are surfaced verbatim to the client so the
+frontend can show "ticket created" vs "skipped (mode/threshold/
+belirsiz/dedup)" without inferring from heuristics. The decision is
+also written to the audit log via ReviewService — see Sprint 7.5.5
+Alt-Faz 3 design notes.
+"""
+
+from __future__ import annotations
+
+from datetime import datetime
+from typing import Annotated
+from uuid import UUID
+
+from fastapi import APIRouter, Depends, HTTPException, status
+from imga_core import AnalysisPipeline, AnalysisResult
+from imga_db.models import UserTenantRole
+from pydantic import BaseModel, ConfigDict, Field
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from imga_api.auth_deps import CurrentUser, bind_tenant, require_role
+from imga_api.db_deps import get_app_session
+from imga_api.dependencies import get_pipeline, get_review_service
+from imga_api.services import (
+    CategoryNotConfiguredError,
+    ReviewService,
+)
+
+router = APIRouter(prefix="/tenants/me", tags=["Analyze"])
+
+_AnyMember = Depends(require_role(
+    UserTenantRole.TENANT_ADMIN,
+    UserTenantRole.ANALYST,
+    UserTenantRole.VIEWER,
+))
+
+
+# --- request / response models -----------------------------------------
+
+
+class TenantAnalyzeRequest(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={
+            "example": {
+                "text": "Kargom 5 gündür gelmedi, takip numarası da çalışmıyor.",
+            }
+        },
+    )
+    text: str = Field(..., min_length=1, max_length=10_000)
+
+
+class TenantAnalyzeResponse(BaseModel):
+    """Wire shape for /tenants/me/analyze.
+
+    ``decision`` is one of: ``create`` / ``skipped_belirsiz`` /
+    ``skipped_mode`` / ``skipped_threshold`` / ``skipped_dedup``.
+    ``ticket_id`` is set on ``create`` (newly minted) and
+    ``skipped_dedup`` (the existing ticket the dedup window pointed
+    at); other branches leave it null.
+    """
+
+    review_id: UUID
+    decision: str
+    decision_reason: str | None
+    ticket_id: UUID | None
+    analyzed_at: datetime
+    analysis: AnalysisResult
+
+
+def _require_active_tenant(current: CurrentUser) -> UUID:
+    if current.active_tenant_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="active tenant context required for this endpoint",
+        )
+    return current.active_tenant_id
+
+
+# --- endpoint ----------------------------------------------------------
+
+
+@router.post(
+    "/analyze",
+    response_model=TenantAnalyzeResponse,
+    summary="Analyze a review and apply the auto-ticket bridge.",
+    description=(
+        "Runs the analysis pipeline against ``text`` and writes a row "
+        "to ``reviews`` capturing the result + bridge decision. The "
+        "decision is one of five branches — see the response schema "
+        "for the enum. ``ticket_id`` is non-null on ``create`` (new "
+        "ticket) and on ``skipped_dedup`` (pointer to the ticket the "
+        "earlier identical text already produced within 24h)."
+    ),
+    responses={
+        500: {"description": "Classifier returned an unconfigured category."},
+    },
+)
+async def tenant_analyze(
+    body: TenantAnalyzeRequest,
+    current: Annotated[CurrentUser, _AnyMember],
+    app_session: Annotated[AsyncSession, Depends(get_app_session)],
+    pipeline: Annotated[AnalysisPipeline, Depends(get_pipeline)],
+    reviews: Annotated[ReviewService, Depends(get_review_service)],
+) -> TenantAnalyzeResponse:
+    """Tenant-scoped analyze with bridge wired.
+
+    The pipeline runs synchronously inside the transaction so a
+    classifier exception rolls back the (not-yet-persisted) review
+    row. The bridge then evaluates the five decision branches in
+    fixed order and persists exactly one review row.
+    """
+    tenant_id = _require_active_tenant(current)
+    analysis = pipeline.analyze(body.text)
+
+    async with app_session.begin():
+        await bind_tenant(app_session, current)
+        try:
+            result = await reviews.record_and_decide(
+                tenant_id=tenant_id,
+                text=body.text,
+                analysis=analysis,
+                actor_user_id=current.user_id,
+            )
+        except CategoryNotConfiguredError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=str(exc),
+            ) from exc
+
+    return TenantAnalyzeResponse(
+        review_id=result.review_id,
+        decision=str(result.decision),
+        decision_reason=result.decision_reason,
+        ticket_id=result.ticket_id,
+        analyzed_at=result.analyzed_at,
+        analysis=analysis,
+    )

@@ -16,6 +16,13 @@ from imga_api.services.invitation_service import (
     InvitationReauthFailedError,
     InvitationService,
 )
+from imga_api.services.review_service import (
+    DEDUP_WINDOW,
+    CategoryNotConfiguredError,
+    ReviewBridgeResult,
+    ReviewService,
+    ReviewServiceError,
+)
 from imga_api.services.tenant_config_service import (
     CategoryCodeConflictError,
     CategoryNotFoundError,
@@ -55,6 +62,7 @@ from imga_api.services.ticket_state_machine import (
 from imga_api.services.user_service import UserService
 
 __all__ = [
+    "DEDUP_WINDOW",
     "INVITATION_TTL",
     "AuditService",
     "AuthError",
@@ -62,6 +70,7 @@ __all__ = [
     "AutoCreateDecision",
     "CancellationReasonRequiredError",
     "CategoryCodeConflictError",
+    "CategoryNotConfiguredError",
     "CategoryNotFoundError",
     "DuplicateTicketError",
     "ForbiddenTransitionError",
@@ -75,6 +84,9 @@ __all__ = [
     "InvitationService",
     "OrderBy",
     "OrderDirection",
+    "ReviewBridgeResult",
+    "ReviewService",
+    "ReviewServiceError",
     "StatsRequest",
     "TenantConfigError",
     "TenantConfigService",

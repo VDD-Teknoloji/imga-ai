@@ -1,0 +1,311 @@
+"""ReviewService — analyze→ticket bridge with five decision branches.
+
+Sprint 7.5.5 / Alt-Faz 3. ``record_and_decide`` is the only entry
+point: it persists one ``reviews`` row per call and (on the CREATE
+branch) mints one ticket. The five decision branches are evaluated
+in this fixed order so audit traces stay deterministic:
+
+  1. ``skipped_belirsiz``  — primary category is "belirsiz". No mode
+     auto-creates from this; user must triage manually if they want.
+  2. ``skipped_mode``      — tenant is in ``manual`` automation_mode.
+  3. ``skipped_threshold`` — ``decide_auto_create_state`` returned
+     ``should_create=False`` (semi_auto under threshold or full_auto
+     non-negative sentiment).
+  4. ``skipped_dedup``     — same text_hash already produced a ticket
+     within ``DEDUP_WINDOW`` (24 hours). The new review row is still
+     written (audit) and points at the existing ticket via
+     ``ticket_id``.
+  5. ``create``            — all guards passed; new ticket created.
+
+Why this order: each guard is "cheaper" than the next. ``belirsiz``
+and ``mode`` are read-from-snapshot checks; ``threshold`` is pure
+math; ``dedup`` is the only DB lookup; ``create`` is the most
+expensive (ticket insert + audit write). Falling through guards
+in this order keeps the no-op path (manual mode + neutral text)
+free of database round-trips beyond the one mandatory review row.
+
+Tenant config is read via ``TenantConfigService.get_config`` which
+is cache-backed (5-min TTL, invalidated on automation_mode update).
+The ``automation_mode`` value is **snapshotted** onto the review
+row at decision time so historical audits remain self-explanatory
+even after the tenant flips modes.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
+from uuid import UUID
+
+from imga_core import AnalysisResult, review_text_hash
+from imga_db.models import (
+    AutomationMode,
+    Category,
+    Review,
+    ReviewDecision,
+    Ticket,
+    TicketPriority,
+)
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from imga_api.services.audit_service import AuditService
+from imga_api.services.tenant_config_service import TenantConfigService
+from imga_api.services.ticket_service import (
+    TicketService,
+    decide_auto_create_state,
+)
+
+# 24-hour dedup window. Same text submitted twice in this window
+# collapses to a single ticket; outside the window it's a fresh ticket
+# (the original might have been cancelled / closed already).
+DEDUP_WINDOW = timedelta(hours=24)
+
+# Length cap for ticket title; the full text always lands in summary.
+_TITLE_MAX_LEN = 200
+
+
+class ReviewServiceError(Exception):
+    """Generic ReviewService failure."""
+
+
+class CategoryNotConfiguredError(ReviewServiceError):
+    """The classifier returned a category code that's not present in
+    this tenant's visible category set. Should be unreachable in
+    practice — categories are seeded globally — but we raise loudly
+    rather than silently dropping a ticket on the floor."""
+
+
+@dataclass(frozen=True, slots=True)
+class ReviewBridgeResult:
+    """Wire-shape return value from record_and_decide.
+
+    ``ticket_id`` is set on ``CREATE`` (newly minted) and
+    ``SKIPPED_DEDUP`` (pointer to existing). All other branches
+    leave it None.
+    """
+
+    review_id: UUID
+    decision: ReviewDecision
+    decision_reason: str | None
+    ticket_id: UUID | None
+    analyzed_at: datetime
+
+
+class ReviewService:
+    """Bridges /tenants/me/analyze output into the tickets table.
+
+    Lives on the imga_app session (RLS-bound). Session must already
+    have ``app.current_tenant_id`` SET via ``bind_tenant`` before
+    record_and_decide runs — we don't bind in the service so the
+    transaction boundary stays in the route.
+    """
+
+    def __init__(
+        self,
+        session: AsyncSession,
+        audit: AuditService,
+        ticket_service: TicketService,
+        config_service: TenantConfigService,
+    ) -> None:
+        self._session = session
+        self._audit = audit
+        self._tickets = ticket_service
+        self._config = config_service
+
+    async def record_and_decide(
+        self,
+        *,
+        tenant_id: UUID,
+        text: str,
+        analysis: AnalysisResult,
+        actor_user_id: UUID,
+        now: datetime | None = None,
+    ) -> ReviewBridgeResult:
+        moment = now or datetime.now(UTC)
+        text_hash = review_text_hash(text)
+
+        # Tenant config snapshot. The cache absorbs the cost across
+        # repeat /analyze calls within the 5-min TTL; the snapshot
+        # is intentionally read once here so the decision below uses
+        # a consistent automation_mode for the duration of the call.
+        config = await self._config.get_config(tenant_id)
+        mode_str = str(config["automation_mode"])
+        automation_mode = AutomationMode(mode_str)
+
+        primary_code, primary_confidence = _extract_primary(analysis)
+
+        # --- decision tree (order matters; see module docstring) ---
+        decision: ReviewDecision
+        decision_reason: str | None
+        ticket_id: UUID | None = None
+
+        if primary_code == "belirsiz":
+            decision = ReviewDecision.SKIPPED_BELIRSIZ
+            decision_reason = "primary_category_belirsiz"
+        elif automation_mode == AutomationMode.MANUAL:
+            decision = ReviewDecision.SKIPPED_MODE
+            decision_reason = "manual_mode"
+        else:
+            threshold = decide_auto_create_state(
+                automation_mode=automation_mode,
+                sentiment_score=analysis.sentiment_score,
+                confidence=primary_confidence,
+            )
+            if not threshold.should_create:
+                decision = ReviewDecision.SKIPPED_THRESHOLD
+                decision_reason = threshold.reason
+            else:
+                existing_ticket_id = await self._find_dedup_ticket(
+                    tenant_id=tenant_id,
+                    text_hash=text_hash,
+                    now=moment,
+                )
+                if existing_ticket_id is not None:
+                    decision = ReviewDecision.SKIPPED_DEDUP
+                    decision_reason = "text_hash_within_24h"
+                    ticket_id = existing_ticket_id
+                else:
+                    category_id = await self._resolve_category_id(primary_code)
+                    title, summary = _split_title_summary(text)
+                    ticket = await self._tickets.create(
+                        tenant_id=tenant_id,
+                        category_id=category_id,
+                        title=title,
+                        summary=summary,
+                        priority=TicketPriority.NORMAL,
+                        review_id=None,  # back-pointed below once review.id exists
+                        created_by_user_id=None,  # system-generated
+                        opened_at=moment,
+                    )
+                    ticket_id = ticket.id
+                    decision = ReviewDecision.CREATE
+                    decision_reason = threshold.reason
+
+        # Persist the review row regardless of branch — every analyze
+        # call leaves an audit trail.
+        review = Review(
+            tenant_id=tenant_id,
+            text=text,
+            text_hash=text_hash,
+            sentiment_label=analysis.sentiment_label,
+            sentiment_score=float(analysis.sentiment_score),
+            primary_category=primary_code,
+            primary_confidence=float(primary_confidence),
+            automation_mode=mode_str,
+            decision=decision,
+            decision_reason=decision_reason,
+            ticket_id=ticket_id,
+            submitted_by_user_id=actor_user_id,
+            analyzed_at=moment,
+        )
+        self._session.add(review)
+        await self._session.flush()
+
+        # Wire review.id back onto the freshly-minted ticket so the
+        # ticket detail page can fetch the full review payload (and so
+        # Sprint 8 dedup analytics can join cleanly). The migration
+        # 0006 deliberately left review_id without an FK precisely so
+        # we could set it from this direction without an additional
+        # constraint round-trip.
+        if decision == ReviewDecision.CREATE and ticket_id is not None:
+            ticket_obj = await self._session.get(Ticket, ticket_id)
+            if ticket_obj is not None:
+                ticket_obj.review_id = review.id
+                await self._session.flush()
+
+        # Audit log every decision branch with a stable shape so
+        # log-aggregation can group by `details->>'decision'`.
+        await self._audit.log(
+            action="review.analyzed",
+            resource_type="review",
+            resource_id=review.id,
+            tenant_id=tenant_id,
+            actor_user_id=actor_user_id,
+            details={
+                "decision": str(decision),
+                "review_id": str(review.id),
+                "ticket_id": str(ticket_id) if ticket_id else None,
+            },
+        )
+
+        return ReviewBridgeResult(
+            review_id=review.id,
+            decision=decision,
+            decision_reason=decision_reason,
+            ticket_id=ticket_id,
+            analyzed_at=moment,
+        )
+
+    # --- helpers --------------------------------------------------------
+
+    async def _find_dedup_ticket(
+        self,
+        *,
+        tenant_id: UUID,
+        text_hash: str,
+        now: datetime,
+    ) -> UUID | None:
+        """Return the most recent ticket_id for this text_hash within
+        the 24-hour window, or None if no prior review reached/shared
+        a ticket. The partial index ``ix_reviews_tenant_dedup`` already
+        filters on ``ticket_id IS NOT NULL`` so this lookup is cheap."""
+        cutoff = now - DEDUP_WINDOW
+        stmt = (
+            select(Review.ticket_id)
+            .where(Review.tenant_id == tenant_id)
+            .where(Review.text_hash == text_hash)
+            .where(Review.ticket_id.is_not(None))
+            .where(Review.analyzed_at >= cutoff)
+            .order_by(Review.analyzed_at.desc())
+            .limit(1)
+        )
+        return (await self._session.execute(stmt)).scalar_one_or_none()
+
+    async def _resolve_category_id(self, code: str) -> UUID:
+        """Find the category id for a code visible to the bound tenant.
+
+        RLS already restricts the result set to globals + own customs.
+        Tenant custom codes are forbidden from clashing with globals
+        (TenantConfigService.create_custom_category guards that), so
+        any code returned by the classifier resolves to a single row.
+        """
+        stmt = (
+            select(Category.id)
+            .where(Category.code == code)
+            .where(Category.deleted_at.is_(None))
+            .limit(1)
+        )
+        cat_id = (await self._session.execute(stmt)).scalar_one_or_none()
+        if cat_id is None:
+            raise CategoryNotConfiguredError(
+                f"category {code!r} is not configured for this tenant"
+            )
+        return cat_id
+
+
+def _extract_primary(analysis: AnalysisResult) -> tuple[str, float]:
+    """Pull the primary category code + confidence off the analysis
+    payload, handling the rare case where the classifier was disabled
+    on the pipeline (categorization=None → treat as belirsiz)."""
+    cat = analysis.categorization
+    if cat is None:
+        return "belirsiz", 0.0
+    return cat.primary, float(cat.primary_confidence)
+
+
+def _split_title_summary(text: str) -> tuple[str, str | None]:
+    """Title is the first 200 chars (no ellipsis — keeps it greppable);
+    summary holds the full text iff the text was longer."""
+    if len(text) <= _TITLE_MAX_LEN:
+        return text, None
+    return text[:_TITLE_MAX_LEN], text
+
+
+__all__ = [
+    "DEDUP_WINDOW",
+    "CategoryNotConfiguredError",
+    "ReviewBridgeResult",
+    "ReviewService",
+    "ReviewServiceError",
+]

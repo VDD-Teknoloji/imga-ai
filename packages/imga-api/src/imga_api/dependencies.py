@@ -19,7 +19,12 @@ from imga_core import (
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from imga_api.db_deps import get_app_session
-from imga_api.services import AuditService, TenantConfigService, TicketService
+from imga_api.services import (
+    AuditService,
+    ReviewService,
+    TenantConfigService,
+    TicketService,
+)
 from imga_api.settings import Settings
 
 
@@ -105,3 +110,21 @@ def get_ticket_service(
     bind_tenant contract as TenantConfigService."""
     audit = AuditService(app_session)
     return TicketService(app_session, audit)
+
+
+def get_review_service(
+    app_session: Annotated[AsyncSession, Depends(get_app_session)],
+    cache: Annotated[TTLCache[UUID, dict[str, Any]], Depends(get_tenant_config_cache)],
+) -> ReviewService:
+    """ReviewService for the analyze→ticket bridge.
+
+    Composes AuditService, TicketService, and TenantConfigService over
+    a single RLS-bound app session so the route layer doesn't have to
+    juggle dependencies manually. As with the other tenant-scoped
+    services, the route is responsible for ``bind_tenant`` inside the
+    transaction block.
+    """
+    audit = AuditService(app_session)
+    ticket_service = TicketService(app_session, audit)
+    config_service = TenantConfigService(app_session, audit, cache)
+    return ReviewService(app_session, audit, ticket_service, config_service)
