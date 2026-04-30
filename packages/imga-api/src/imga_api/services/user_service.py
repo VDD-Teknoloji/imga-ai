@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from uuid import UUID
 
 from imga_db.models import User, UserTenantLink, UserTenantRole
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -16,6 +17,25 @@ from imga_api.services.audit_service import AuditService
 
 class EmailTakenError(ValueError):
     """Raised when create() is called with an email already on file."""
+
+
+@dataclass(frozen=True, slots=True)
+class TenantMember:
+    """Wire-shape view of a tenant member for the directory endpoint.
+
+    A flat dataclass (rather than a dict or two-row tuple) so callers
+    get type-checked field access and the route's response_model maps
+    cleanly. ``last_login_at`` is None for users who have never logged
+    in (e.g. accepted-invite-but-never-clicked-after) — the UI should
+    show a dash, not a fake timestamp."""
+
+    user_id: UUID
+    email: str
+    full_name: str
+    role: UserTenantRole
+    is_active: bool
+    last_login_at: datetime | None
+    invitation_accepted_at: datetime | None
 
 
 class UserService:
@@ -111,6 +131,50 @@ class UserService:
         user.last_login_at = datetime.now(UTC)
 
     # --- tenant membership ---------------------------------------------
+
+    async def list_for_tenant(
+        self,
+        tenant_id: UUID,
+        *,
+        search: str | None = None,
+    ) -> list[TenantMember]:
+        """Return active members of the tenant.
+
+        Sprint 7.5.5 / Alt-Faz 4 (A7). The frontend ticket-detail
+        assignee picker reads this; the route auth allows any tenant
+        member to read so VIEWER can also see "who else is here".
+
+        Soft-deleted users are excluded. ``search`` filters on
+        case-insensitive email or full_name substring.
+        """
+        stmt = (
+            select(User, UserTenantLink)
+            .join(UserTenantLink, UserTenantLink.user_id == User.id)
+            .where(UserTenantLink.tenant_id == tenant_id)
+            .where(User.deleted_at.is_(None))
+            .order_by(User.full_name.asc())
+        )
+        if search:
+            pattern = f"%{search.strip()}%"
+            stmt = stmt.where(
+                or_(
+                    User.email.ilike(pattern),
+                    User.full_name.ilike(pattern),
+                )
+            )
+        rows = (await self._session.execute(stmt)).all()
+        return [
+            TenantMember(
+                user_id=user.id,
+                email=user.email,
+                full_name=user.full_name,
+                role=link.role,
+                is_active=user.is_active,
+                last_login_at=user.last_login_at,
+                invitation_accepted_at=link.invitation_accepted_at,
+            )
+            for user, link in rows
+        ]
 
     async def attach_to_tenant(
         self,

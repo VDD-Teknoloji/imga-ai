@@ -31,6 +31,7 @@ from imga_api.routes import auth as auth_routes
 from imga_api.routes import invitations as public_invitation_routes
 from imga_api.routes import tenant_analyze as tenant_analyze_routes
 from imga_api.routes import tenant_config as tenant_config_routes
+from imga_api.routes import tenant_directory as tenant_directory_routes
 from imga_api.routes import tickets as tickets_routes
 from imga_api.routes.admin import invitations as admin_invitation_routes
 from imga_api.routes.admin import tenants as admin_tenant_routes
@@ -84,6 +85,7 @@ _OPENAPI_TAGS = [
     {"name": "Admin: Tenants", "description": "Super-admin tenant CRUD (Sprint 7.5.5)."},
     {"name": "Admin: Users", "description": "Super-admin user CRUD + invitations (Sprint 7.5.5)."},
     {"name": "Tenant Config", "description": "Per-tenant settings, taxonomy, automation mode."},
+    {"name": "Tenant Directory", "description": "Active members of the current tenant (assignee picker, etc.)."},
     {"name": "Analyze", "description": "Sentiment + categorization pipeline."},
     {"name": "Tickets", "description": "Ticket CRUD and lifecycle transitions."},
     {"name": "Health", "description": "Service health and readiness probes."},
@@ -134,6 +136,7 @@ app.add_middleware(
 app.include_router(auth_routes.router)
 app.include_router(tenant_config_routes.router)
 app.include_router(tenant_analyze_routes.router)
+app.include_router(tenant_directory_routes.router)
 app.include_router(tickets_routes.router)
 app.include_router(admin_tenant_routes.router)
 app.include_router(admin_invitation_routes.router)
