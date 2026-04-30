@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Annotated, Any
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
@@ -16,7 +16,7 @@ from imga_api.auth_deps import (
     get_current_user,
 )
 from imga_api.db_deps import get_admin_session
-from imga_api.services import AuthError, AuthService, TokenReuseDetected
+from imga_api.services import AuthError, AuthService, TokenReuseDetectedError
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -94,7 +94,7 @@ class MeResponse(BaseModel):
 async def login(
     body: LoginRequest,
     request: Request,
-    auth: AuthService = Depends(get_auth_service),
+    auth: Annotated[AuthService, Depends(get_auth_service)],
 ) -> TokenPairResponse:
     """Email + password login. Returns access + refresh token pair."""
     try:
@@ -150,11 +150,11 @@ async def login(
 @router.post("/refresh", response_model=TokenPairResponse)
 async def refresh(
     body: RefreshRequest,
-    auth: AuthService = Depends(get_auth_service),
+    auth: Annotated[AuthService, Depends(get_auth_service)],
 ) -> TokenPairResponse:
     try:
         _user, pair = await auth.refresh(body.refresh_token)
-    except TokenReuseDetected as exc:
+    except TokenReuseDetectedError as exc:
         # Same status as a generic invalid token — don't leak detection.
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="invalid refresh token"
@@ -172,7 +172,7 @@ async def refresh(
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT, response_model=None)
 async def logout(
     body: LogoutRequest,
-    auth: AuthService = Depends(get_auth_service),
+    auth: Annotated[AuthService, Depends(get_auth_service)],
 ) -> None:
     await auth.logout(body.refresh_token)
 
@@ -180,9 +180,9 @@ async def logout(
 @router.post("/switch-tenant", response_model=TokenPairResponse)
 async def switch_tenant(
     body: SwitchTenantRequest,
-    current: CurrentUser = Depends(get_current_user),
-    auth: AuthService = Depends(get_auth_service),
-    admin_session: AsyncSession = Depends(get_admin_session),
+    current: Annotated[CurrentUser, Depends(get_current_user)],
+    auth: Annotated[AuthService, Depends(get_auth_service)],
+    admin_session: Annotated[AsyncSession, Depends(get_admin_session)],
 ) -> TokenPairResponse:
     """Re-issue tokens with a different active tenant. The user must
     already belong to the target tenant (or be a super-admin)."""
@@ -203,7 +203,7 @@ async def switch_tenant(
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="user not found"
         )
-    pair = await auth._issue_token_pair(  # type: ignore[attr-defined]
+    pair = await auth._issue_token_pair(
         user=user,
         active_tenant_id=body.tenant_id,
         active_role=role,
@@ -216,9 +216,9 @@ async def switch_tenant(
 
 @router.get("/me", response_model=MeResponse)
 async def me(
-    current: CurrentUser = Depends(get_current_user),
-    auth: AuthService = Depends(get_auth_service),
-    admin_session: AsyncSession = Depends(get_admin_session),
+    current: Annotated[CurrentUser, Depends(get_current_user)],
+    auth: Annotated[AuthService, Depends(get_auth_service)],
+    admin_session: Annotated[AsyncSession, Depends(get_admin_session)],
 ) -> MeResponse:
     user = await admin_session.get(User, current.user_id)
     if user is None:
@@ -264,8 +264,8 @@ async def me(
 )
 async def change_password(
     body: ChangePasswordRequest,
-    current: CurrentUser = Depends(get_current_user),
-    auth: AuthService = Depends(get_auth_service),
+    current: Annotated[CurrentUser, Depends(get_current_user)],
+    auth: Annotated[AuthService, Depends(get_auth_service)],
 ) -> None:
     try:
         await auth.change_password(

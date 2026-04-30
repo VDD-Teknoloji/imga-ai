@@ -19,6 +19,7 @@ from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
+from typing import Annotated
 from uuid import UUID
 
 from fastapi import Depends, HTTPException, Request, status
@@ -53,16 +54,16 @@ def get_settings(request: Request) -> Settings:
     return settings
 
 
-def get_jwt_settings(settings: Settings = Depends(get_settings)) -> JWTSettings:
+def get_jwt_settings(settings: Annotated[Settings, Depends(get_settings)]) -> JWTSettings:
     return settings.jwt
 
 
 async def get_current_user(
     request: Request,
-    creds: HTTPAuthorizationCredentials | None = Depends(_bearer_scheme),
-    settings: Settings = Depends(get_settings),
-    admin_session: AsyncSession = Depends(get_admin_session),
-    app_session: AsyncSession = Depends(get_app_session),
+    creds: Annotated[HTTPAuthorizationCredentials | None, Depends(_bearer_scheme)],
+    settings: Annotated[Settings, Depends(get_settings)],
+    admin_session: Annotated[AsyncSession, Depends(get_admin_session)],
+    app_session: Annotated[AsyncSession, Depends(get_app_session)],
 ) -> CurrentUser:
     """Decode Bearer JWT, check freshness, bind RLS context.
 
@@ -143,7 +144,7 @@ def require_role(
     allowed_str = {str(r) for r in allowed}
 
     async def _checker(
-        user: CurrentUser = Depends(get_current_user),
+        user: Annotated[CurrentUser, Depends(get_current_user)],
     ) -> CurrentUser:
         if user.is_super_admin:
             return user
@@ -158,7 +159,7 @@ def require_role(
 
 
 async def require_super_admin(
-    user: CurrentUser = Depends(get_current_user),
+    user: Annotated[CurrentUser, Depends(get_current_user)],
 ) -> CurrentUser:
     if not user.is_super_admin:
         raise HTTPException(
@@ -169,8 +170,8 @@ async def require_super_admin(
 
 
 def get_auth_service(
-    admin_session: AsyncSession = Depends(get_admin_session),
-    settings_jwt: JWTSettings = Depends(get_jwt_settings),
+    admin_session: Annotated[AsyncSession, Depends(get_admin_session)],
+    settings_jwt: Annotated[JWTSettings, Depends(get_jwt_settings)],
 ) -> AuthService:
     """Auth uses the admin (BYPASSRLS) session because
     refresh_token_records is global and tenant context isn't established

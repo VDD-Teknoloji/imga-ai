@@ -20,11 +20,10 @@ from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 
 from imga_api.main import app
-from imga_api.security import create_access_token, decode_access_token
+from imga_api.security import decode_access_token
 from imga_api.services import (
     AuditService,
     AuthService,
-    InvitationService,
     TenantService,
     UserService,
 )
@@ -440,7 +439,7 @@ async def test_refresh_token_records_carry_family_and_parent_links(
     async with admin_session.begin():
         _u, pair1 = await auth.login(email=user.email, password=_pw)
     async with admin_session.begin():
-        _u, pair2 = await auth.refresh(pair1.refresh_token)
+        _u, _pair2 = await auth.refresh(pair1.refresh_token)
 
     # Two rows in the same family; second has parent_jti = first jti.
     async with admin_session.begin():

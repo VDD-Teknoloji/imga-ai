@@ -46,7 +46,7 @@ class AuthError(Exception):
     """Generic auth failure — credentials, expired, replayed, etc."""
 
 
-class TokenReuseDetected(AuthError):
+class TokenReuseDetectedError(AuthError):
     """A refresh token marked used was presented again. The family was just revoked."""
 
 
@@ -154,7 +154,7 @@ class AuthService:
             # caller's exception-rollback would undo the family revoke
             # and the attacker would still hold a valid token.
             await self._session.commit()
-            raise TokenReuseDetected(
+            raise TokenReuseDetectedError(
                 "refresh token reuse detected; family revoked"
             )
 

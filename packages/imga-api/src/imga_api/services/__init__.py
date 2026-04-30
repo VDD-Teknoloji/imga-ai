@@ -5,7 +5,7 @@ from imga_api.services.auth_service import (
     AuthError,
     AuthService,
     TokenPair,
-    TokenReuseDetected,
+    TokenReuseDetectedError,
 )
 from imga_api.services.invitation_service import (
     INVITATION_TTL,
@@ -34,6 +34,6 @@ __all__ = [
     "TenantConfigService",
     "TenantService",
     "TokenPair",
-    "TokenReuseDetected",
+    "TokenReuseDetectedError",
     "UserService",
 ]

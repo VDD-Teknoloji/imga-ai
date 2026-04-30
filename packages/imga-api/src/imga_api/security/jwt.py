@@ -95,7 +95,7 @@ def create_access_token(
         "exp": int(exp.timestamp()),
     }
     token = pyjwt.encode(raw_payload, settings.secret_key, algorithm=settings.algorithm)
-    return token, AccessTokenPayload(**raw_payload)
+    return token, AccessTokenPayload.model_validate(raw_payload)
 
 
 def create_refresh_token(
@@ -119,7 +119,7 @@ def create_refresh_token(
         "exp": int(exp.timestamp()),
     }
     token = pyjwt.encode(raw_payload, settings.secret_key, algorithm=settings.algorithm)
-    return token, RefreshTokenPayload(**raw_payload)
+    return token, RefreshTokenPayload.model_validate(raw_payload)
 
 
 # --- decoders ------------------------------------------------------------
