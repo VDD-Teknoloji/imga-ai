@@ -13,6 +13,10 @@ from sqlalchemy.orm import Mapped, mapped_column
 from imga_db.base import Base
 from imga_db.models.mixins import SoftDeleteMixin, TimestampMixin
 
+# NOTE: A ``category_overrides`` JSON column existed on this table from
+# migration 0001 as a 7.4 placeholder. It was dropped in migration 0005
+# in favour of normalized ``categories`` + ``tenant_categories`` tables.
+
 
 class TenantPlanTier(StrEnum):
     TRIAL = "trial"
@@ -45,12 +49,6 @@ class Tenant(Base, TimestampMixin, SoftDeleteMixin):
         String(32),
         default=AutomationMode.SEMI_AUTO,
         nullable=False,
-    )
-
-    # Per-tenant taxonomy overrides; populated in Sprint 7.4.
-    # Shape: {"enabled": [...], "disabled": [...], "custom": [{...}]}
-    category_overrides: Mapped[dict[str, Any]] = mapped_column(
-        JSON, default=dict, nullable=False
     )
 
     # Free-form misc settings (notification prefs, branding, etc).

@@ -83,8 +83,8 @@ async def alpha_tenant_id(owner_engine: AsyncEngine) -> AsyncIterator[UUID]:
         await s.execute(
             text(
                 "INSERT INTO tenants (id, name, slug, plan_tier, automation_mode, "
-                "category_overrides, settings) VALUES (:id, 'Alpha', :slug, 'trial', "
-                "'semi_auto', '{}'::json, '{}'::json)"
+                "settings) VALUES (:id, 'Alpha', :slug, 'trial', "
+                "'semi_auto', '{}'::json)"
             ),
             {"id": str(tid), "slug": f"alpha-{tid.hex[:8]}"},
         )
@@ -101,8 +101,8 @@ async def beta_tenant_id(owner_engine: AsyncEngine) -> AsyncIterator[UUID]:
         await s.execute(
             text(
                 "INSERT INTO tenants (id, name, slug, plan_tier, automation_mode, "
-                "category_overrides, settings) VALUES (:id, 'Beta', :slug, 'trial', "
-                "'semi_auto', '{}'::json, '{}'::json)"
+                "settings) VALUES (:id, 'Beta', :slug, 'trial', "
+                "'semi_auto', '{}'::json)"
             ),
             {"id": str(tid), "slug": f"beta-{tid.hex[:8]}"},
         )
