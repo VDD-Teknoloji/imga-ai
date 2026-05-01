@@ -84,6 +84,50 @@ export interface Ticket {
 
 export interface TicketListResponse {
   tickets: Ticket[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+// --- Backend filter surface for GET /tickets and /tickets/stats ------
+// Mirrors imga_api.services.ticket_filters.TicketFilters. CSV-shaped
+// fields are arrays here; the query-string builder joins them.
+
+export type TicketSortField = "opened_at" | "last_state_change_at" | "priority";
+export type SortDirection = "asc" | "desc";
+
+/** "me" / "unassigned" are resolved server-side. UUID for a specific
+ * user (Sprint 7.7.2 assignee dropdown will pass this). */
+export type AssigneeFilterValue = "me" | "unassigned" | string;
+
+export interface TicketBackendFilters {
+  states?: ReadonlyArray<TicketState>;
+  priorities?: ReadonlyArray<TicketPriority>;
+  category_ids?: ReadonlyArray<string>;
+  opened_after?: string;       // ISO 8601
+  opened_before?: string;      // ISO 8601
+  assignee?: AssigneeFilterValue;
+  search?: string;
+  order_by?: TicketSortField;
+  order?: SortDirection;
+  limit?: number;
+  offset?: number;
+}
+
+// --- Stats (mirrors routes/tickets.py:StatsResponse) -----------------
+
+export type TicketStatsGroupBy = "state" | "priority" | "category" | "assignee";
+
+export interface StatsBucket {
+  key: string;
+  label: string;
+  count: number;
+}
+
+export interface TicketStatsResponse {
+  group_by: string;
+  total: number;
+  results: StatsBucket[];
 }
 
 // --- Tenant categories (mirrors routes/tenant_config.py:CategoryView) -
