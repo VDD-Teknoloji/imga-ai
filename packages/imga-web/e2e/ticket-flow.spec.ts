@@ -27,10 +27,21 @@ test.describe("tickets", () => {
     // URL reflects the filter; CSV multi-value (single value here).
     await expect(page).toHaveURL(/\?state=open(\b|&)/);
 
-    // Header summary shows "5 ticket / toplam 18" — five OPEN rows
-    // in the seed. Use a substring rather than the exact string in
-    // case the layout reformats whitespace.
-    await expect(page.getByText(/5 ticket \/ toplam 18/i)).toBeVisible();
+    // Header summary shape "X ticket gösteriliyor / toplam X" — the
+    // two numbers must match (`total` is now filter-aware after
+    // Sprint 7.7.1, so a fully-paginated single page yields N/N).
+    // We don't lock the absolute number because other tests in the
+    // suite (analyze, claim) can drift the open-ticket count.
+    const summary = page.locator("p", {
+      hasText: /\d+ ticket gösteriliyor \/ toplam \d+/i,
+    });
+    await expect(summary).toBeVisible();
+    const summaryText = (await summary.textContent()) ?? "";
+    const match = /(\d+) ticket gösteriliyor \/ toplam (\d+)/.exec(
+      summaryText,
+    );
+    expect(match, `summary text didn't match: ${summaryText}`).not.toBeNull();
+    expect(match![1]).toBe(match![2]);
   });
 
   test("alice claims a fresh OPEN ticket → state badge becomes İşlemde", async ({
@@ -56,10 +67,13 @@ test.describe("tickets", () => {
     await page.getByRole("button", { name: /^üstlen$/i }).click();
 
     // Toast confirms; state badge in the side panel flips to
-    // "İşlemde". The badge text occurs both in the side panel and
-    // in the timeline event we just created — first match is fine.
+    // "İlerlemekte" (TICKET_STATE_LABELS["in_progress"]). The badge
+    // text appears in the side panel and in the timeline event we
+    // just created — first match is fine.
     await expect(page.getByText(/üstlen işlemi tamamlandı/i)).toBeVisible();
-    await expect(page.getByText(/İşlemde/).first()).toBeVisible({ timeout: 8_000 });
+    await expect(page.getByText(/İlerlemekte/).first()).toBeVisible({
+      timeout: 8_000,
+    });
   });
 
   test("a viewer cannot reach settings — Yetkiniz yok renders", async ({ page }) => {
