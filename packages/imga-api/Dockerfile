@@ -21,10 +21,19 @@ RUN pip install --no-cache-dir \
     --extra-index-url https://download.pytorch.org/whl/cpu \
     "torch>=2.0,<3.0"
 
-# Install imga-core first (path dep), then imga-api.
+# Install path deps in dependency order: imga-core (no internal
+# deps) → imga-db (no internal deps) → imga-api (depends on both).
+# If imga-db install is skipped, `pip install /build/imga-api` tries
+# to resolve the "imga-db" requirement from PyPI and fails with
+# "No matching distribution found" — there is no PyPI-published
+# package by that name; it lives in this monorepo.
 COPY packages/imga-core/pyproject.toml packages/imga-core/README.md /build/imga-core/
 COPY packages/imga-core/src /build/imga-core/src
 RUN pip install --no-cache-dir /build/imga-core
+
+COPY packages/imga-db/pyproject.toml packages/imga-db/README.md /build/imga-db/
+COPY packages/imga-db/src /build/imga-db/src
+RUN pip install --no-cache-dir /build/imga-db
 
 COPY packages/imga-api/pyproject.toml packages/imga-api/README.md /build/imga-api/
 COPY packages/imga-api/src /build/imga-api/src
