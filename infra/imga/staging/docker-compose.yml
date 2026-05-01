@@ -1,0 +1,104 @@
+# İmga.AI — staging stack
+#
+# Yer: /opt/imga/infra/imga/staging/docker-compose.yml (sunucuda)
+#
+# Production stack'in aynısı, ama:
+#   * Container isimleri imga-staging-* prefix'i
+#   * Postgres kendi ayrı volume'unda (imga-staging-postgres-data)
+#   * Internal network ayrı (imga-staging-internal)
+#   * NEXT_PUBLIC_API_URL=https://api-staging.imga.ai (build arg)
+#   * Caddy config staging.imga.ai + api-staging.imga.ai'a yönlendirir
+#
+# Komut: cd /opt/imga/infra/imga/staging && sudo docker compose up -d
+
+name: imga-staging
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: imga-staging-postgres
+    restart: unless-stopped
+    env_file: /etc/imga/staging/postgres.env
+    environment:
+      POSTGRES_DB: imga
+      POSTGRES_USER: imga_owner
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ../../../packages/imga-db/sql:/docker-entrypoint-initdb.d:ro
+    networks:
+      - imga-staging-internal
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U imga_owner -d imga"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          # Staging trafiği düşük; production'ın yarısı yeterli.
+          memory: 512M
+          cpus: '1'
+
+  api:
+    image: imga-api:staging
+    build:
+      context: ../../..
+      dockerfile: packages/imga-api/Dockerfile
+    container_name: imga-staging-api
+    restart: unless-stopped
+    env_file: /etc/imga/staging/api.env
+    networks:
+      - imga-staging-internal
+      - caddy-public
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 120s
+    deploy:
+      resources:
+        limits:
+          # BERT modelinin RAM'i tek kopya kalsın diye production ile
+          # aynı; ikisi paralel ayakta kalsa toplam ~6 GB RAM tüketir.
+          memory: 2G
+          cpus: '2'
+
+  web:
+    image: imga-web:staging
+    build:
+      context: ../../../packages/imga-web
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: https://api-staging.imga.ai
+    container_name: imga-staging-web
+    restart: unless-stopped
+    networks:
+      - caddy-public
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/login >/dev/null || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '1'
+
+networks:
+  imga-staging-internal:
+    name: imga-staging-internal
+  caddy-public:
+    external: true
+
+volumes:
+  postgres_data:
+    name: imga-staging-postgres-data

@@ -17,6 +17,12 @@ WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 ENV NEXT_TELEMETRY_DISABLED=1
+# NEXT_PUBLIC_API_URL is baked into the bundle at build time —
+# Next.js inlines `process.env.NEXT_PUBLIC_*` references during
+# `next build`. Production and staging therefore need separate
+# image builds with different values for this arg.
+ARG NEXT_PUBLIC_API_URL=http://localhost:8000
+ENV NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
 RUN npm run build
 
 FROM node:22-alpine AS runner

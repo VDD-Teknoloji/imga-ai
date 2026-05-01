@@ -1,0 +1,113 @@
+# İmga.AI — production stack
+#
+# Yer: /opt/imga/infra/imga/production/docker-compose.yml (sunucuda)
+#
+# Bu compose 3 container ayağa kaldırır:
+#   * postgres    — kendi kalıcı volume'u, sadece imga-prod-internal'da
+#   * api         — FastAPI, hem internal (DB için) hem caddy-public'te
+#   * web         — Next.js, sadece caddy-public'te
+#
+# /opt/shared/caddy stack'i ayrı; bu compose Caddy'yi değiştirmez.
+# Caddy reverse proxy config'i /opt/shared/caddy/conf.d/imga-production.conf
+# üzerinden gelir (`infra/imga/caddy/imga-production.conf` şablonundan
+# kopyalanır).
+#
+# Komut: cd /opt/imga/infra/imga/production && sudo docker compose up -d
+# (sudo çünkü env dosyaları /etc/imga/production/ altında root-only.)
+
+name: imga-production
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: imga-prod-postgres
+    restart: unless-stopped
+    env_file: /etc/imga/production/postgres.env
+    environment:
+      POSTGRES_DB: imga
+      POSTGRES_USER: imga_owner
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      # imga-db init script (3 rolü ilk başlatmada yaratır: owner / app / admin)
+      - ../../../packages/imga-db/sql:/docker-entrypoint-initdb.d:ro
+    networks:
+      - imga-prod-internal
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U imga_owner -d imga"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '2'
+
+  api:
+    image: imga-api:production
+    build:
+      context: ../../..
+      dockerfile: packages/imga-api/Dockerfile
+    container_name: imga-prod-api
+    restart: unless-stopped
+    env_file: /etc/imga/production/api.env
+    networks:
+      - imga-prod-internal
+      - caddy-public
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 120s
+    deploy:
+      resources:
+        limits:
+          memory: 3G
+          cpus: '2'
+
+  web:
+    image: imga-web:production
+    build:
+      context: ../../../packages/imga-web
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: https://api.imga.ai
+    container_name: imga-prod-web
+    restart: unless-stopped
+    networks:
+      - caddy-public
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/login >/dev/null || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '1'
+
+networks:
+  # Sadece bu projenin container'larının paylaştığı network. Postgres'i
+  # dış dünyaya açmadan api'nin DB'ye ulaşmasına izin verir.
+  imga-prod-internal:
+    name: imga-prod-internal
+  # Shared Caddy'nin gördüğü network — /opt/shared/caddy stack'i tarafından
+  # önceden oluşturulmuş. api + web bu network'e join eder ki Caddy onlara
+  # `imga-prod-api:8000` ve `imga-prod-web:3000` olarak ulaşabilsin.
+  caddy-public:
+    external: true
+
+volumes:
+  # Üretimden gelen veri — disk-only, tenant tickets / users / reviews
+  # buradan okunur. Backup'taki tek doğruluk kaynağı.
+  postgres_data:
+    name: imga-prod-postgres-data
