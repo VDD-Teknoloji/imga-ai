@@ -225,6 +225,23 @@ Sprint 7 sonu itibariyle backend konsolide ve canlıda çalışıyor: 6 alembic 
 - **Bağımlılık**: Hesap açma.
 - **Süre**: 0.5 gün.
 
+### C6. Comment edit endpoint (Sprint 7.7.2 Gap 1 — düşük öncelik)
+
+- **Durum**: Sprint 7.5.5 / Alt-Faz 4'te ``POST /tickets/{id}/comments`` (create) + ``GET`` (list) + ``POST .../archive`` (soft delete) shipped. PATCH endpoint yok. Sprint 7.7.2 frontend spec'inde "5dk içinde Düzenle butonu" vardı; backend yokluğu nedeniyle UI bu iterasyonda eklenmedi.
+- **Eksik**:
+  - Backend: ``PATCH /tickets/{ticket_id}/comments/{cid}`` body `{body}`. Service-level guard:
+    - Author + 5dk pencere (created_at + 5min < now), VEYA
+    - TENANT_ADMIN (zaman penceresi yok),
+    - Diğer hâllerde 403.
+    - ``kind`` immutable (state guard internal_note/customer_reply geçişini engellemeli).
+    - Archived comment edit edilemez (409).
+  - Audit log: ``comment.update`` action, details `{ticket_id, body_length_before, body_length_after}` — body içeriği audit'e yazılmasın (PII riski).
+  - Frontend: TicketComments component'inde `canEditOwnInternalNote` mantığı (author + 5dk pencere veya admin). Edit butonu → inline textarea swap → save/cancel.
+- **Etki**: Şu an typo / yanlış yazım için tek seçenek arşivle + yeniden yaz. Workaround kabul edilebilir; ürün vaadini etkilemez.
+- **Bağımlılık**: Yok.
+- **Süre**: 0.5 gün (backend + frontend).
+- **Aciliyet**: Düşük. Ürün gemişiyle yarışan bir ihtiyaç yok.
+
 ### C5. Pagination
 
 - **Durum**: `GET /tickets`, `GET /tenants/me/categories`, `GET /tickets/{id}/transitions` tüm row'ları döner. Liste büyürse memory + transfer pahalanır, frontend yavaşlar.
