@@ -5,6 +5,7 @@ import Link from "next/link";
 import { notFound, useParams } from "next/navigation";
 
 import { TicketActionBar } from "@/components/tickets/ticket-action-bar";
+import { TicketComments } from "@/components/tickets/ticket-comments";
 import { TicketSidePanel } from "@/components/tickets/ticket-side-panel";
 import { TicketTimeline } from "@/components/tickets/ticket-timeline";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -70,6 +71,8 @@ export default function TicketDetailPage() {
             <TicketActionBar ticket={data} />
 
             <TicketTimeline ticketId={data.id} />
+
+            <TicketComments ticketId={data.id} ticketState={data.state} />
           </div>
 
           <TicketSidePanel ticket={data} categoryLabel={categoryLabel} />
