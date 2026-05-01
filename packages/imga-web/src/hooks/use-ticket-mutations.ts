@@ -25,11 +25,24 @@ interface ActionInput {
   cancellationReason?: CancellationReason;
 }
 
-/** Centralised cache invalidation — bumps every ticket-bound query. */
-function invalidateTicketCaches(qc: ReturnType<typeof useQueryClient>, ticketId: string): void {
-  qc.invalidateQueries({ queryKey: ["tickets", "all"] }); // dashboard + list
+/** Centralised cache invalidation — bumps every ticket-bound query.
+ *
+ * Sprint 7.7.1+ changed the query-key scheme: list/stats/infinite each
+ * have a top-level prefix string. Invalidating by the prefix alone
+ * matches every variation (different filter blobs, different
+ * group_by axes). The detail + timeline + comments hooks key by
+ * ticket id so we still pass the id through.
+ */
+function invalidateTicketCaches(
+  qc: ReturnType<typeof useQueryClient>,
+  ticketId: string,
+): void {
+  qc.invalidateQueries({ queryKey: ["tickets-list"] });
+  qc.invalidateQueries({ queryKey: ["tickets-infinite"] });
+  qc.invalidateQueries({ queryKey: ["tickets-stats"] });
   qc.invalidateQueries({ queryKey: ["tickets", "detail", ticketId] });
-  qc.invalidateQueries({ queryKey: ["tickets", "timeline", ticketId] });
+  qc.invalidateQueries({ queryKey: ["tickets-timeline", ticketId] });
+  qc.invalidateQueries({ queryKey: ["tickets-comments", ticketId] });
 }
 
 /** Map the helper-thrown ApiError to a Turkish toast string. */

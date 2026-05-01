@@ -3,29 +3,27 @@
 import { useQuery } from "@tanstack/react-query";
 
 import { apiRequest } from "@/lib/api-client";
-import type { TicketState } from "@/lib/types";
+import type { TimelineEvent, TimelineResponse } from "@/lib/types";
 
-export interface TicketTransition {
-  id: string;
-  from_state: TicketState;
-  to_state: TicketState;
-  actor_user_id: string | null;
-  reason: string | null;
-  occurred_at: string;
-}
-
-interface TransitionsResponse {
-  transitions: TicketTransition[];
-}
+/**
+ * Sprint 7.7.2: switched from GET /tickets/{id}/transitions to the
+ * polymorphic GET /tickets/{id}/timeline (Sprint 7.5.5 / Alt-Faz 4).
+ * The endpoint merges state transitions and comments into a single
+ * chronologically-sorted stream; consumers discriminate by ``type``.
+ *
+ * Existing /transitions endpoint is still around for backwards compat,
+ * but no frontend code uses it after this commit.
+ */
+export type { TimelineEvent } from "@/lib/types";
 
 export function useTicketTimeline(ticketId: string | undefined) {
   return useQuery({
-    queryKey: ["tickets", "timeline", ticketId],
-    queryFn: async () => {
-      const data = await apiRequest<TransitionsResponse>(
-        `/tickets/${ticketId}/transitions`,
+    queryKey: ["tickets-timeline", ticketId],
+    queryFn: async (): Promise<TimelineEvent[]> => {
+      const data = await apiRequest<TimelineResponse>(
+        `/tickets/${ticketId}/timeline`,
       );
-      return data.transitions;
+      return data.events;
     },
     enabled: typeof ticketId === "string" && ticketId.length > 0,
   });

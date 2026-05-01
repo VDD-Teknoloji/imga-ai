@@ -130,6 +130,67 @@ export interface TicketStatsResponse {
   results: StatsBucket[];
 }
 
+// --- Ticket comments (mirrors routes/tickets.py:CommentView) ---------
+
+export type TicketCommentKind = "internal_note" | "customer_reply";
+
+export interface TicketComment {
+  id: string;
+  ticket_id: string;
+  author_user_id: string | null;
+  body: string;
+  kind: TicketCommentKind;
+  created_at: string;
+  is_archived: boolean;
+  archived_at: string | null;
+  archived_by_user_id: string | null;
+}
+
+export interface TicketCommentsResponse {
+  comments: TicketComment[];
+}
+
+// --- Polymorphic timeline (mirrors routes/tickets.py:TimelineEvent) ---
+
+export type TimelineEventType = "state_transition" | "comment";
+
+export interface TimelineEvent {
+  type: TimelineEventType;
+  id: string;
+  occurred_at: string;
+  actor_user_id: string | null;
+  // state_transition fields
+  from_state?: TicketState | null;
+  to_state?: TicketState | null;
+  reason?: string | null;
+  // comment fields
+  body?: string | null;
+  kind?: TicketCommentKind | null;
+  is_archived?: boolean | null;
+  archived_at?: string | null;
+  archived_by_user_id?: string | null;
+}
+
+export interface TimelineResponse {
+  events: TimelineEvent[];
+}
+
+// --- Tenant directory (mirrors routes/tenant_directory.py:TenantMemberView) -
+
+export interface TenantMember {
+  user_id: string;
+  email: string;
+  full_name: string;
+  role: UserTenantRole;
+  is_active: boolean;
+  last_login_at: string | null;
+  invitation_accepted_at: string | null;
+}
+
+export interface TenantMembersResponse {
+  members: TenantMember[];
+}
+
 // --- Tenant categories (mirrors routes/tenant_config.py:CategoryView) -
 
 export interface CategoryView {
