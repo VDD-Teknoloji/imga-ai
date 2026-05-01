@@ -60,6 +60,12 @@ class InvitationPreviewResponse(BaseModel):
     invited_email: str
     role: str
     expires_at: datetime
+    # Sprint 7.5.5 amendment — true when the invited email already
+    # belongs to a registered user. The frontend uses this to pick
+    # between the new-account form (false) and the existing-user
+    # re-auth form (true) on first paint, avoiding the round-trip
+    # via /accept's 409 response.
+    email_exists: bool
 
 
 class InvitationAcceptRequest(BaseModel):
@@ -118,6 +124,7 @@ async def preview_invitation(
         invited_email=preview.invited_email,
         role=str(preview.role),
         expires_at=preview.expires_at,
+        email_exists=preview.email_exists,
     )
 
 

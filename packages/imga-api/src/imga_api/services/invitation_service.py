@@ -62,13 +62,27 @@ class InvitationReauthFailedError(InvitationAcceptanceError):
 class InvitationPreview:
     """Read-only snapshot of an invitation for the preview endpoint.
     Carries no token or hash — callers display tenant + role to the
-    invitee before they fill out the accept form."""
+    invitee before they fill out the accept form.
+
+    ``email_exists`` (Sprint 7.5.5 amendment) tells the frontend
+    whether the invited email already belongs to a registered user,
+    so it can render the right form on first paint:
+
+      * False → the "new account" path (full_name + password).
+      * True  → the "existing user" path (re-auth password only;
+                requires bearer auth on /accept-existing).
+
+    Knowing this server-side avoids the round-trip via /accept's
+    409 response, which would otherwise force the user to type the
+    password twice.
+    """
 
     tenant_id: UUID
     tenant_name: str
     invited_email: str
     role: UserTenantRole
     expires_at: datetime
+    email_exists: bool
 
 
 @dataclass(frozen=True, slots=True)
@@ -183,12 +197,20 @@ class InvitationService:
         _invitation_id, tenant_id, email, role, expires_at, accepted_at, tenant_name = row
         if accepted_at is not None or expires_at <= now:
             raise InvitationAcceptanceError("invitation invalid, expired, or already accepted")
+
+        # email_exists lookup — one extra SELECT against users by email.
+        # Cheap (unique index on User.email) and only on the preview
+        # path, so total request cost is still two indexed reads.
+        existing = await self._users.get_by_email(email)
+        email_exists = existing is not None
+
         return InvitationPreview(
             tenant_id=tenant_id,
             tenant_name=tenant_name,
             invited_email=email,
             role=UserTenantRole(role),
             expires_at=expires_at,
+            email_exists=email_exists,
         )
 
     # --- revoke ---------------------------------------------------------

@@ -225,6 +225,18 @@ Sprint 7 sonu itibariyle backend konsolide ve canlıda çalışıyor: 6 alembic 
 - **Bağımlılık**: Hesap açma.
 - **Süre**: 0.5 gün.
 
+### C7. Review source field — webhook ingestion ile birlikte tasarlanacak
+
+- **Durum**: Sprint 7.7.3'te manual /analyze sayfasına "kanal / kaynak" dropdown eklemesi düşünüldü ("Manuel", "Email", "Sosyal Medya", "Form") — ama backend'de `reviews.source` sütunu yok ve `TenantAnalyzeRequest` `text`'ten başka bir field kabul etmiyor. Bu sprint'te dropdown skip edildi (cosmetic-only ekran kullanıcıyı yanıltırdı).
+- **Eksik (Sprint 8 webhook iş paketinde tasarlanacak)**:
+  - **DB**: `reviews` tablosuna `source VARCHAR(16) NOT NULL DEFAULT 'manual'` + `source_metadata JSONB NULL` (channel-specific payload — Twitter status_id, email message-id, form id, vs.). Migration ~0012 + index `(tenant_id, source, analyzed_at DESC)`.
+  - **Enum**: `manual` / `email` / `twitter` / `instagram` / `form` / `webhook_other`. CHECK constraint.
+  - **Backend**: `TenantAnalyzeRequest` opsiyonel `source` + `source_metadata`; webhook ingestion endpoint (D2) source'u kendi tarafından doldurur.
+  - **Frontend**: Manual analyze sayfasına dropdown + `/tickets/stats?group_by=source` ile dashboard kanal dağılımı kartı (gelecek).
+- **Bağımlılık**: D2 (customer-inbound webhook bridge) ve D8 (Twitter botu) ile birlikte. Tek başına sahipsiz bir alan yaratmak yerine ilk gerçek webhook entegrasyonu ile aynı patch'te shipple.
+- **Süre**: 0.5-1 gün (webhook patch'inin parçası olarak).
+- **Aciliyet**: Düşük. Manual ingestion'da kanal bilgisi henüz hiçbir yere yansımıyor (review row'a yazılmıyor, dashboard'da yok); shipple gerekçesi gerçek bir kanal ihtiyacı doğunca oluşur.
+
 ### C6. Comment edit endpoint (Sprint 7.7.2 Gap 1 — düşük öncelik)
 
 - **Durum**: Sprint 7.5.5 / Alt-Faz 4'te ``POST /tickets/{id}/comments`` (create) + ``GET`` (list) + ``POST .../archive`` (soft delete) shipped. PATCH endpoint yok. Sprint 7.7.2 frontend spec'inde "5dk içinde Düzenle butonu" vardı; backend yokluğu nedeniyle UI bu iterasyonda eklenmedi.

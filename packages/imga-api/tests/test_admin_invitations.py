@@ -404,6 +404,47 @@ async def test_invitation_preview_returns_tenant_name(
     body = r.json()
     assert body["invited_email"] == invitee
     assert body["role"] == "analyst"
+    # email_exists is False — invitee is a fresh email, no User row.
+    assert body["email_exists"] is False
+
+
+@pytest.mark.asyncio
+async def test_invitation_preview_email_exists_true_for_registered_user(
+    client: TestClient,
+    admin_session: AsyncSession,
+    acme_tenant: tuple[UUID, User, str],
+) -> None:
+    """Sprint 7.5.5 amendment: when the invited email already belongs
+    to a registered user, preview returns email_exists=True so the
+    frontend renders the 're-auth' form instead of the new-account
+    form on first paint."""
+    tid, alice, pw = acme_tenant
+    admin_token = _login(client, alice.email, pw, tenant_id=tid)
+
+    # Pre-create a user with the email we'll invite — that's the
+    # "existing user joining a new tenant" scenario.
+    audit = AuditService(admin_session)
+    usvc = UserService(admin_session, audit)
+    invitee_email = f"existing-{uuid4().hex[:6]}@example.com"
+    async with admin_session.begin():
+        await usvc.create(
+            email=invitee_email,
+            password="Existing-User-Pwd-1!",
+            full_name="Existing User",
+        )
+
+    create = client.post(
+        f"/admin/tenants/{tid}/invitations",
+        headers={"Authorization": f"Bearer {admin_token}"},
+        json={"email": invitee_email, "role": "analyst"},
+    )
+    plaintext_token = create.json()["token"]
+
+    r = client.post(f"/invitations/{plaintext_token}/preview")
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["invited_email"] == invitee_email
+    assert body["email_exists"] is True
 
 
 def test_invitation_preview_invalid_token_404(client: TestClient) -> None:
