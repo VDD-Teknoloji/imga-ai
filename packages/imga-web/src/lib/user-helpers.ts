@@ -1,7 +1,12 @@
 // Display helpers for tenant users (Sprint 7.7.2 — assignee dropdown,
-// comment author block, timeline actor resolution).
+// comment author block, timeline actor resolution) plus tenant
+// plan / automation labels (Sprint 7.7.4 — admin tenant CRUD).
 
-import type { TicketCommentKind, UserTenantRole } from "@/lib/types";
+import type {
+  AutomationMode,
+  TicketCommentKind,
+  UserTenantRole,
+} from "@/lib/types";
 
 export const USER_ROLE_LABELS: Record<UserTenantRole, string> = {
   tenant_admin: "Yönetici",
@@ -12,6 +17,19 @@ export const USER_ROLE_LABELS: Record<UserTenantRole, string> = {
 export const COMMENT_KIND_LABELS: Record<TicketCommentKind, string> = {
   internal_note: "İç not",
   customer_reply: "Müşteri yanıtı",
+};
+
+export const AUTOMATION_MODE_LABELS: Record<AutomationMode, string> = {
+  manual: "Manuel",
+  semi_auto: "Yarı otomatik",
+  full_auto: "Tam otomatik",
+};
+
+export const PLAN_TIER_LABELS: Record<string, string> = {
+  trial: "Deneme",
+  starter: "Başlangıç",
+  business: "Kurumsal",
+  enterprise: "Enterprise",
 };
 
 /**

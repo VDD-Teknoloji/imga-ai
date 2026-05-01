@@ -1,4 +1,10 @@
-import { LayoutDashboard, Settings, Sparkles, Ticket } from "lucide-react";
+import {
+  Building2,
+  LayoutDashboard,
+  Settings,
+  Sparkles,
+  Ticket,
+} from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
 /**
@@ -17,4 +23,14 @@ export const NAV_ITEMS: ReadonlyArray<NavItem> = [
   { label: "Ticket'lar", href: "/tickets", icon: Ticket },
   { label: "Analiz", href: "/analyze", icon: Sparkles },
   { label: "Ayarlar", href: "/settings", icon: Settings },
+];
+
+/**
+ * Sprint 7.7.4 — admin-only nav. Rendered as a separate "YÖNETİM"
+ * section under the main NAV_ITEMS, gated entirely behind
+ * `user.is_super_admin === true` so non-admins never see the
+ * heading at all.
+ */
+export const ADMIN_NAV_ITEMS: ReadonlyArray<NavItem> = [
+  { label: "Tenant'lar", href: "/admin/tenants", icon: Building2 },
 ];

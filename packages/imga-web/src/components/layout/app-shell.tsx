@@ -50,7 +50,10 @@ export function AppShell({ children }: AppShellProps) {
           <span className="text-sm font-semibold tracking-tight">imga.ai</span>
         </header>
 
-        <main className="min-w-0 flex-1">{children}</main>
+        {/* Each route page renders its own <main>; the shell's
+            wrapper stays a <div> so we don't have two `main`
+            landmarks on the same page (a11y guard). */}
+        <div className="min-w-0 flex-1">{children}</div>
       </div>
     </div>
   );

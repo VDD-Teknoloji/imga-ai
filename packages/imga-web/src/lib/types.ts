@@ -182,6 +182,63 @@ export interface TimelineResponse {
   events: TimelineEvent[];
 }
 
+// --- Admin tenant CRUD (mirrors routes/admin/tenants.py) -------------
+
+export type TenantPlanTier = "trial" | "starter" | "business" | "enterprise";
+
+export interface AdminTenantSummary {
+  id: string;
+  name: string;
+  slug: string;
+  plan_tier: TenantPlanTier;
+  automation_mode: AutomationMode;
+  created_at: string;
+  deleted_at: string | null;
+}
+
+export interface AdminTenantListResponse {
+  tenants: AdminTenantSummary[];
+}
+
+export interface AdminTenantCreateRequest {
+  name: string;
+  slug: string;
+  plan_tier?: TenantPlanTier;
+  automation_mode?: AutomationMode;
+  initial_admin?: {
+    email: string;
+    full_name: string;
+  };
+}
+
+export interface AdminTenantCreateResponse {
+  tenant: AdminTenantSummary;
+  /** Plaintext invitation token, returned exactly once when
+   * `initial_admin` was set. Show then forget. */
+  initial_invitation_token: string | null;
+}
+
+export interface AdminTenantUpdateRequest {
+  name?: string;
+  plan_tier?: TenantPlanTier;
+  automation_mode?: AutomationMode;
+}
+
+// --- Admin invitation create (mirrors routes/admin/invitations.py) ---
+
+export interface AdminInvitationCreateRequest {
+  email: string;
+  role: UserTenantRole;
+}
+
+export interface AdminInvitationCreateResponse {
+  invitation_id: string;
+  token: string;
+  email: string;
+  role: string;
+  expires_at: string;
+}
+
 // --- Invitation flow (mirrors routes/invitations.py) -----------------
 
 export interface InvitationPreview {
