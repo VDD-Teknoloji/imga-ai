@@ -31,6 +31,7 @@ from imga_db.models import (
     Category,
     Tenant,
     Ticket,
+    TicketAssignmentEvent,
     TicketPriority,
     TicketState,
     TicketStateTransition,
@@ -634,9 +635,17 @@ class TicketService:
         ticket_id: UUID,
         new_assignee_id: UUID | None,
         actor_user_id: UUID,
+        now: datetime | None = None,
     ) -> Ticket:
         """Set / clear the ticket assignee. Does not change state.
         Allowed in any non-terminal state; routes enforce role.
+
+        Sprint 7.7.2 patch: each actual change writes an append-only
+        row to ``ticket_assignment_history`` so the polymorphic
+        timeline endpoint can surface "Alice → Bob" events alongside
+        state transitions and comments. No-op assigns (same → same)
+        skip BOTH the history row and the audit log to keep the
+        timeline clean.
         """
         ticket = await self._session.get(Ticket, ticket_id)
         if ticket is None or ticket.deleted_at is not None:
@@ -646,7 +655,24 @@ class TicketService:
                 f"cannot reassign a {ticket.state} ticket; reopen first"
             )
         previous = ticket.assigned_to_user_id
+        if previous == new_assignee_id:
+            # No-op. Don't pollute audit/timeline with same → same rows.
+            return ticket
+
+        moment = now or datetime.now(UTC)
         ticket.assigned_to_user_id = new_assignee_id
+
+        self._session.add(
+            TicketAssignmentEvent(
+                tenant_id=ticket.tenant_id,
+                ticket_id=ticket.id,
+                from_user_id=previous,
+                to_user_id=new_assignee_id,
+                actor_user_id=actor_user_id,
+                occurred_at=moment,
+                created_at=moment,
+            )
+        )
         await self._audit.log(
             action="ticket.assign",
             resource_type="ticket",

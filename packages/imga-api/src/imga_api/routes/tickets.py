@@ -28,6 +28,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from imga_db.models import (
     CancellationReason,
     Ticket,
+    TicketAssignmentEvent,
     TicketComment,
     TicketCommentKind,
     TicketPriority,
@@ -213,11 +214,12 @@ class CommentsResponse(BaseModel):
 class TimelineEvent(BaseModel):
     """Polymorphic timeline row. ``type`` discriminates the payload —
     'state_transition' carries from_state/to_state/reason; 'comment'
-    carries body/kind/is_archived. The merged ordering is ascending
-    by ``occurred_at`` so the UI can render top-down without sorting
-    client-side."""
+    carries body/kind/is_archived; 'assignment_changed' (Sprint 7.7.2
+    patch) carries from_user_id/to_user_id. The merged ordering is
+    ascending by ``occurred_at`` so the UI can render top-down without
+    sorting client-side."""
 
-    type: str  # "state_transition" | "comment"
+    type: str  # "state_transition" | "comment" | "assignment_changed"
     id: UUID
     occurred_at: datetime
     actor_user_id: UUID | None
@@ -233,6 +235,12 @@ class TimelineEvent(BaseModel):
     is_archived: bool | None = None
     archived_at: datetime | None = None
     archived_by_user_id: UUID | None = None
+
+    # assignment_changed fields. Either side may be NULL (was/became
+    # unassigned), but never both — service enforces "no-op skip" and
+    # the DB CHECK biconditional rejects same-user rows.
+    from_user_id: UUID | None = None
+    to_user_id: UUID | None = None
 
 
 class TimelineResponse(BaseModel):
@@ -692,13 +700,14 @@ async def archive_comment(
 @router.get(
     "/{ticket_id}/timeline",
     response_model=TimelineResponse,
-    summary="Merged chronological timeline (state transitions + comments).",
+    summary="Merged chronological timeline (transitions + comments + assignments).",
     description=(
-        "Same data as /transitions plus all comments (archived and live), "
-        "interleaved by timestamp ascending. ``type`` discriminates the "
-        "payload shape per row. Existing /transitions endpoint stays "
-        "available for backwards compatibility; new clients should "
-        "prefer /timeline."
+        "Polymorphic event stream: state transitions, comments (archived "
+        "rows included with is_archived=true), and assignment changes "
+        "(Sprint 7.7.2). ``type`` discriminates the payload shape per "
+        "row. Sorted ascending by occurred_at so the UI can render "
+        "top-down without sorting client-side. The legacy /transitions "
+        "endpoint remains for backwards compatibility."
     ),
 )
 async def get_timeline(
@@ -712,17 +721,28 @@ async def get_timeline(
     assert tenant_id is not None
     async with app_session.begin():
         await bind_tenant(app_session, current)
-        # Two queries are simpler than a UNION here — the row counts are
-        # bounded (one ticket's worth) and PostgreSQL's planner can't
-        # easily merge two unrelated tables on a polymorphic timestamp
-        # without losing per-table column types. We sort in Python,
-        # which is also where the polymorphic shape is built.
+        # Three independent queries (transitions, comments, assignments)
+        # are simpler than a UNION here — the row counts are bounded
+        # (one ticket's worth) and PostgreSQL's planner can't easily
+        # merge three unrelated tables on a polymorphic timestamp
+        # without losing per-table column types. We merge in Python,
+        # where the polymorphic shape is also built.
         trans_stmt = (
             select(TicketStateTransition)
             .where(TicketStateTransition.ticket_id == ticket_id)
             .order_by(TicketStateTransition.occurred_at.asc())
         )
         trans_rows = list((await app_session.execute(trans_stmt)).scalars())
+
+        assignment_stmt = (
+            select(TicketAssignmentEvent)
+            .where(TicketAssignmentEvent.ticket_id == ticket_id)
+            .order_by(TicketAssignmentEvent.occurred_at.asc())
+        )
+        assignment_rows = list(
+            (await app_session.execute(assignment_stmt)).scalars()
+        )
+
         comment_rows = await comments.list_for_ticket(
             tenant_id=tenant_id,
             ticket_id=ticket_id,
@@ -740,6 +760,17 @@ async def get_timeline(
                 from_state=str(r.from_state),
                 to_state=str(r.to_state),
                 reason=r.reason,
+            )
+        )
+    for a in assignment_rows:
+        events.append(
+            TimelineEvent(
+                type="assignment_changed",
+                id=a.id,
+                occurred_at=a.occurred_at,
+                actor_user_id=a.actor_user_id,
+                from_user_id=a.from_user_id,
+                to_user_id=a.to_user_id,
             )
         )
     for c in comment_rows:
