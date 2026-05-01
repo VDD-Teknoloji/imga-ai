@@ -13,7 +13,6 @@ import {
 } from "recharts";
 
 import { Skeleton } from "@/components/ui/skeleton";
-import { useCategoryLabelMap } from "@/hooks/use-categories";
 import { useCategoryDistribution } from "@/hooks/use-tickets";
 
 /**
@@ -38,19 +37,20 @@ interface ChartDatum {
 
 export function CategoryChart() {
   const distribution = useCategoryDistribution();
-  const labelMap = useCategoryLabelMap();
 
-  // Join: replace category_id with the human label and clip to top 5.
+  // /tickets/stats?group_by=category already LEFT-JOINs the categories
+  // label, so the bucket comes back with a ready-to-render label —
+  // no useCategoryLabelMap merge needed (Sprint 7.7.1).
   const data = useMemo<ChartDatum[]>(() => {
-    if (!distribution.data || !labelMap.data) return [];
+    if (!distribution.data) return [];
     return distribution.data.slice(0, 5).map((entry) => ({
-      name: labelMap.data?.get(entry.categoryId) ?? entry.categoryId.slice(0, 8),
+      name: entry.label,
       count: entry.count,
     }));
-  }, [distribution.data, labelMap.data]);
+  }, [distribution.data]);
 
-  const isLoading = distribution.isLoading || labelMap.isLoading;
-  const isError = distribution.isError || labelMap.isError;
+  const isLoading = distribution.isLoading;
+  const isError = distribution.isError;
 
   return (
     <section className="bg-card rounded-lg border p-5">

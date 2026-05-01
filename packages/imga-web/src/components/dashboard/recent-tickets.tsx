@@ -13,22 +13,21 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { useCategoryLabelMap } from "@/hooks/use-categories";
-import { useTicketsList } from "@/hooks/use-tickets";
+import { useTickets } from "@/hooks/use-tickets";
 
 /**
  * Recent tickets table — first five rows of the tenant's ticket list,
  * default-sorted (last_state_change_at desc, set by the backend).
  *
- * Backend doesn't yet expose a `?limit=5` knob (Sprint 7.5.5
- * pagination), so we slice client-side. With small tenants this is
- * fine; once tenant size grows we either ship limit on the API or
- * switch to a dedicated /tickets/recent endpoint.
+ * Sprint 7.7.1: switched to backend `?limit=5` (Sprint 7.5.5 added
+ * offset paging). The server total still flows through so the
+ * "Tümünü gör" link could grow a counter later if we want.
  */
 export function RecentTicketsTable() {
-  const tickets = useTicketsList();
+  const tickets = useTickets({ limit: 5 });
   const labelMap = useCategoryLabelMap();
 
-  const rows = tickets.data?.slice(0, 5) ?? [];
+  const rows = tickets.data?.tickets ?? [];
 
   return (
     <section className="bg-card rounded-lg border p-5">
