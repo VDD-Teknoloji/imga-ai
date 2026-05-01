@@ -1,5 +1,6 @@
 """SQLAlchemy 2.0 models for the imga platform."""
 
+from imga_db.models.assignment_history import TicketAssignmentEvent
 from imga_db.models.audit import AuditLog
 from imga_db.models.category import Category, TenantCategory
 from imga_db.models.comment import TicketComment, TicketCommentKind
@@ -32,6 +33,7 @@ __all__ = [
     "TenantOwnedMixin",
     "TenantPlanTier",
     "Ticket",
+    "TicketAssignmentEvent",
     "TicketComment",
     "TicketCommentKind",
     "TicketPriority",
