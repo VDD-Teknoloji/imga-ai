@@ -1,4 +1,4 @@
-import { LayoutDashboard, Settings, Ticket } from "lucide-react";
+import { LayoutDashboard, Settings, Sparkles, Ticket } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
 /**
@@ -15,5 +15,6 @@ export interface NavItem {
 export const NAV_ITEMS: ReadonlyArray<NavItem> = [
   { label: "Panel", href: "/", icon: LayoutDashboard },
   { label: "Ticket'lar", href: "/tickets", icon: Ticket },
+  { label: "Analiz", href: "/analyze", icon: Sparkles },
   { label: "Ayarlar", href: "/settings", icon: Settings },
 ];

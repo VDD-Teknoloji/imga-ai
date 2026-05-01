@@ -182,6 +182,65 @@ export interface TimelineResponse {
   events: TimelineEvent[];
 }
 
+// --- Invitation flow (mirrors routes/invitations.py) -----------------
+
+export interface InvitationPreview {
+  tenant_id: string;
+  tenant_name: string;
+  invited_email: string;
+  role: UserTenantRole;
+  expires_at: string;
+  /** Sprint 7.5.5 amendment — true when the invited email already
+   * belongs to a registered user. The frontend uses this to choose
+   * between the new-account and re-auth forms. */
+  email_exists: boolean;
+}
+
+export interface AcceptInvitationNewRequest {
+  full_name: string;
+  password: string;
+}
+
+export interface AcceptInvitationExistingRequest {
+  password: string;
+}
+
+export type InvitationAcceptResponse = TokenPair;
+
+// --- /tenants/me/analyze (mirrors routes/tenant_analyze.py) -----------
+
+export type ReviewDecision =
+  | "create"
+  | "skipped_belirsiz"
+  | "skipped_mode"
+  | "skipped_threshold"
+  | "skipped_dedup";
+
+export interface AnalysisResult {
+  text: string;
+  sentiment_label: "POZITIF" | "NEGATIF" | "NÖTR";
+  sentiment_score: number;
+  summary: string | null;
+  customer_perspective: string | null;
+  company_perspective: string | null;
+  risk_class: "POZITIF" | "NEGATIF" | "NÖTR" | null;
+  sla_detected: string | null;
+  categorization: {
+    primary: string;
+    primary_confidence: number;
+    requires_manual_review: boolean;
+  } | null;
+}
+
+export interface TenantAnalyzeResponse {
+  review_id: string;
+  decision: ReviewDecision;
+  decision_reason: string | null;
+  ticket_id: string | null;
+  analyzed_at: string;
+  analysis: AnalysisResult;
+}
+
 // --- Tenant directory (mirrors routes/tenant_directory.py:TenantMemberView) -
 
 export interface TenantMember {
