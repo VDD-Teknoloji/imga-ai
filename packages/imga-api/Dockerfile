@@ -71,6 +71,13 @@ COPY --from=builder /usr/local/bin /usr/local/bin
 # disk-to-memory load, not an HF download.
 COPY --from=builder --chown=imga:imga /cache/huggingface /cache/huggingface
 
+# Runtime alembic.ini — points script_location at the installed
+# imga_db package's alembic dir (absolute path, since WORKDIR /app
+# can't reach the dev-only relative path). `alembic upgrade head`
+# from /app picks this up automatically (alembic looks for
+# alembic.ini in CWD by default).
+COPY --chown=imga:imga packages/imga-api/alembic.ini /app/alembic.ini
+
 USER imga
 
 EXPOSE 8000
