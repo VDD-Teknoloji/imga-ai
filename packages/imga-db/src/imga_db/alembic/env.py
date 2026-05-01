@@ -29,7 +29,18 @@ config = context.config
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-config.set_main_option("sqlalchemy.url", get_database_url("owner"))
+# Alembic'in altındaki configparser BasicInterpolation `%` karakterini
+# `%(key)s` referansı olarak yorumlar. URL-encoded parolalar (örn.
+# `openssl rand -base64` çıktısındaki `+`, `/`, `=` karakterleri
+# DATABASE_URL'de `%2B`, `%2F`, `%3D` olarak encode edilir) bu yüzden
+# `set_main_option` çağrısında ValueError fırlatır. `%` → `%%` ile
+# escape: configparser depolarken çift, okurken tek `%` döndürür, net
+# URL'imiz korunur. Plain (encode'suz) URL'lerde `%%` yok, bu replace
+# zararsız no-op.
+config.set_main_option(
+    "sqlalchemy.url",
+    get_database_url("owner").replace("%", "%%"),
+)
 target_metadata = Base.metadata
 
 
