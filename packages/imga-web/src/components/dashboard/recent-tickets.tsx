@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/table";
 import { useCategoryLabelMap } from "@/hooks/use-categories";
 import { useTickets } from "@/hooks/use-tickets";
+import { formatRelativeDate } from "@/lib/date-format";
 
 /**
  * Recent tickets table — first five rows of the tenant's ticket list,
@@ -105,17 +106,3 @@ function SkeletonRows() {
   );
 }
 
-function formatRelativeDate(iso: string): string {
-  const date = new Date(iso);
-  const diffMs = Date.now() - date.getTime();
-  const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
-  if (diffHours < 1) return "az önce";
-  if (diffHours < 24) return `${diffHours} sa önce`;
-  const diffDays = Math.floor(diffHours / 24);
-  if (diffDays < 7) return `${diffDays} gün önce`;
-  return date.toLocaleDateString("tr-TR", {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-  });
-}

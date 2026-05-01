@@ -13,6 +13,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { useAuthStore } from "@/lib/auth-store";
+import { formatRelativeDate } from "@/lib/date-format";
 import type { Ticket } from "@/lib/types";
 
 interface TicketListTableProps {
@@ -80,15 +81,4 @@ function assigneeLabel(assigneeId: string | null, currentUserId: string | undefi
   if (assigneeId === null) return "Atanmamış";
   if (currentUserId && assigneeId === currentUserId) return "Sana";
   return "Başka";
-}
-
-function formatRelativeDate(iso: string): string {
-  const date = new Date(iso);
-  const diffMs = Date.now() - date.getTime();
-  const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
-  if (diffHours < 1) return "az önce";
-  if (diffHours < 24) return `${diffHours} sa önce`;
-  const diffDays = Math.floor(diffHours / 24);
-  if (diffDays < 7) return `${diffDays} gün önce`;
-  return date.toLocaleDateString("tr-TR", { year: "numeric", month: "short", day: "numeric" });
 }
