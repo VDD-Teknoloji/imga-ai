@@ -152,7 +152,10 @@ export interface TicketCommentsResponse {
 
 // --- Polymorphic timeline (mirrors routes/tickets.py:TimelineEvent) ---
 
-export type TimelineEventType = "state_transition" | "comment";
+export type TimelineEventType =
+  | "state_transition"
+  | "comment"
+  | "assignment_changed";
 
 export interface TimelineEvent {
   type: TimelineEventType;
@@ -169,6 +172,10 @@ export interface TimelineEvent {
   is_archived?: boolean | null;
   archived_at?: string | null;
   archived_by_user_id?: string | null;
+  // assignment_changed fields (Sprint 7.7.2 patch). Either side may
+  // be null (was/became unassigned), but never both.
+  from_user_id?: string | null;
+  to_user_id?: string | null;
 }
 
 export interface TimelineResponse {

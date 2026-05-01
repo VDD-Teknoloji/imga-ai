@@ -5,6 +5,9 @@ import {
   CirclePlay,
   MessageSquare,
   MessageSquareReply,
+  UserMinus,
+  UserPlus,
+  UserRoundCog,
 } from "lucide-react";
 import { useMemo } from "react";
 
@@ -78,6 +81,16 @@ export function TicketTimeline({ ticketId }: TicketTimelineProps) {
                   ? memberMap.get(event.actor_user_id)
                   : undefined
               }
+              fromMember={
+                event.from_user_id
+                  ? memberMap.get(event.from_user_id)
+                  : undefined
+              }
+              toMember={
+                event.to_user_id
+                  ? memberMap.get(event.to_user_id)
+                  : undefined
+              }
             />
           ))}
         </ol>
@@ -89,13 +102,27 @@ export function TicketTimeline({ ticketId }: TicketTimelineProps) {
 interface TimelineRowProps {
   event: TimelineEvent;
   actor: TenantMember | undefined;
+  /** Resolved from event.from_user_id (assignment_changed branch). */
+  fromMember?: TenantMember | undefined;
+  /** Resolved from event.to_user_id (assignment_changed branch). */
+  toMember?: TenantMember | undefined;
 }
 
-function TimelineRow({ event, actor }: TimelineRowProps) {
+function TimelineRow({ event, actor, fromMember, toMember }: TimelineRowProps) {
   if (event.type === "state_transition") {
     return <TransitionRow event={event} actor={actor} />;
   }
-  return <CommentRow event={event} actor={actor} />;
+  if (event.type === "comment") {
+    return <CommentRow event={event} actor={actor} />;
+  }
+  return (
+    <AssignmentRow
+      event={event}
+      actor={actor}
+      fromMember={fromMember}
+      toMember={toMember}
+    />
+  );
 }
 
 // --- state_transition ---------------------------------------------------
@@ -144,6 +171,70 @@ function TransitionRow({ event, actor }: TimelineRowProps) {
 }
 
 // --- comment ------------------------------------------------------------
+
+// --- assignment_changed (Sprint 7.7.2 patch) ----------------------------
+
+interface AssignmentRowProps {
+  event: TimelineEvent;
+  actor: TenantMember | undefined;
+  fromMember: TenantMember | undefined;
+  toMember: TenantMember | undefined;
+}
+
+function AssignmentRow({
+  event,
+  actor,
+  fromMember,
+  toMember,
+}: AssignmentRowProps) {
+  const isAssign = event.from_user_id == null && event.to_user_id != null;
+  const isUnassign = event.from_user_id != null && event.to_user_id == null;
+  const Icon = isAssign ? UserPlus : isUnassign ? UserMinus : UserRoundCog;
+
+  // Friendly labels for either side. Falls through to "Atanmamış" when
+  // null and to "Bilinmeyen kullanıcı" for users that the directory
+  // can't resolve (e.g. soft-deleted member; FK is SET NULL).
+  const fromLabel =
+    event.from_user_id == null
+      ? "Atanmamış"
+      : (fromMember?.full_name ?? "Bilinmeyen kullanıcı");
+  const toLabel =
+    event.to_user_id == null
+      ? "Atanmamış"
+      : (toMember?.full_name ?? "Bilinmeyen kullanıcı");
+
+  return (
+    <li className="relative">
+      <span
+        className="bg-secondary-foreground/40 absolute -left-[1.4rem] top-2 size-2 rounded-full"
+        aria-hidden
+      />
+      <div className="bg-card rounded-md border p-3">
+        <div className="flex items-center justify-between gap-2">
+          <span className="flex items-center gap-2 text-sm font-medium">
+            <Icon className="text-muted-foreground size-3.5" aria-hidden />
+            {fromLabel}
+            <ArrowRight
+              className="text-muted-foreground size-3.5"
+              aria-hidden
+            />
+            {toLabel}
+          </span>
+          <span className="text-muted-foreground text-xs">
+            {formatTimelineDate(event.occurred_at)}
+          </span>
+        </div>
+        <p className="text-muted-foreground mt-1 text-xs">
+          {actor
+            ? `${actor.full_name} atadı`
+            : event.actor_user_id
+              ? "Kullanıcı atadı"
+              : "Sistem atadı"}
+        </p>
+      </div>
+    </li>
+  );
+}
 
 function CommentRow({ event, actor }: TimelineRowProps) {
   const kind = event.kind ?? "internal_note";
