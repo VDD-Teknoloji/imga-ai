@@ -70,3 +70,6 @@ Yemini/
 # Snapshot fixtures are version-controlled (snapshot_inputs.json, legacy_snapshot.json)
 # but generated calibration outputs (snapshot_calibrated.json) are not.
 packages/imga-core/tests/fixtures/snapshot_calibrated.json
+
+# Claude Code per-server config (deploy-server-specific permissions)
+.claude/settings.local.json
