@@ -93,6 +93,15 @@ class Review(Base, TimestampMixin, SoftDeleteMixin):
         nullable=True,
     )
 
+    # Sprint 8.3.1 batch upload back-reference. NULL for /tenants/me/analyze
+    # rows; populated for rows the batch worker writes. ``ix_reviews_batch``
+    # is a partial index so the dominant non-batch case stays cheap.
+    batch_job_id: Mapped[UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("analyze_batch_jobs.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+
     analyzed_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False
     )
