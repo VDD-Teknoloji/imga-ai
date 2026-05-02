@@ -3,7 +3,7 @@
 | Tarih      | Başlık                                                                                       | Yazar         | Hedef         | Durum    | Öncelik |
 |------------|----------------------------------------------------------------------------------------------|---------------|---------------|----------|---------|
 | 2026-05-02 | [sprint-8.3.3-insights](2026-05-02-sprint-8.3.3-insights.md)                                 | local-agent   | server-agent  | open     | yüksek  |
-| 2026-05-02 | [sprint-8.3.2-closure](2026-05-02-sprint-8.3.2-closure.md)                                   | local-agent   | server-agent  | resolved | normal  |
+| 2026-05-02 | [sprint-8.3.2-closure](2026-05-02-sprint-8.3.2-closure.md)                                   | server-agent  | claude-chat   | resolved | normal  |
 | 2026-05-02 | [invitation-token-debug](2026-05-02-invitation-token-debug.md)                               | local-agent   | server-agent  | resolved | yüksek  |
 | 2026-05-02 | [sprint-8.3.2-smoke-fixes](2026-05-02-sprint-8.3.2-smoke-fixes.md)                           | local-agent   | server-agent  | resolved | kritik  |
 | 2026-05-02 | [sprint-8.3.2-excel-reports](2026-05-02-sprint-8.3.2-excel-reports.md)                       | local-agent   | server-agent  | open     | yüksek  |
