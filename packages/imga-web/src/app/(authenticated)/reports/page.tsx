@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  ArrowRight,
   CheckCircle2,
   Download,
   FileBarChart,
@@ -26,13 +27,16 @@ import {
 } from "@/components/ui/table";
 import {
   useDeleteReport,
+  useEstimateReport,
   useGenerateReport,
   useReportJob,
   useReports,
 } from "@/hooks/use-reports";
 import { ApiError } from "@/lib/api-client";
+import { tokenStorage } from "@/lib/token-storage";
 import type {
   GenerateReportRequest,
+  ReportEstimateResponse,
   ReportFormat,
   ReportJobView,
   ReportStatus,
@@ -235,13 +239,22 @@ function StatusBadge({
 }
 
 function downloadReport(reportId: string): void {
-  // Direct anchor click with auth header injected via fetch; falls back
-  // to opening the URL if fetch fails (browser will surface the 401).
+  // Browser-native <a download> can't carry the bearer header — every
+  // request hit /reports/{id}/download as anonymous and got 401. We
+  // fetch the bytes ourselves with the token from `tokenStorage`
+  // (canonical key `imga_access_token`; the previous attempt used
+  // `imga.access_token` and silently sent an empty Authorization
+  // header), then trigger a synthetic anchor-click against an
+  // ObjectURL so Chrome / Firefox / Safari all save the file with
+  // the right content-disposition filename.
   const path = `/tenants/me/reports/${reportId}/download`;
+  const accessToken = tokenStorage.getAccessToken();
+  if (!accessToken) {
+    toast.error("Oturum süresi dolmuş, lütfen tekrar giriş yapın.");
+    return;
+  }
   fetch(`${API_BASE}${path}`, {
-    headers: {
-      Authorization: `Bearer ${localStorage.getItem("imga.access_token") ?? ""}`,
-    },
+    headers: { Authorization: `Bearer ${accessToken}` },
   })
     .then(async (res) => {
       if (!res.ok) {
@@ -272,8 +285,10 @@ function formatBytes(n: number): string {
 }
 
 // --------------------------------------------------------------------------
-// New Report modal (3 steps)
+// New Report modal — 3 steps: type → filters → preview/confirm.
 // --------------------------------------------------------------------------
+
+type ModalStep = 1 | 2 | 3;
 
 function NewReportModal({
   onClose,
@@ -282,11 +297,15 @@ function NewReportModal({
   onClose: () => void;
   onQueued: (id: string) => void;
 }) {
+  const [step, setStep] = useState<ModalStep>(1);
   const [reportType, setReportType] = useState<ReportType>("comprehensive");
   const [format, setFormat] = useState<ReportFormat>("xlsx");
   const [dateFrom, setDateFrom] = useState<string>("");
   const [dateTo, setDateTo] = useState<string>("");
+  const [estimate, setEstimate] = useState<ReportEstimateResponse | null>(null);
+  const [estimateError, setEstimateError] = useState<string | null>(null);
 
+  const estimateMut = useEstimateReport();
   const generate = useGenerateReport();
 
   function quickRange(rangeKey: "this-month" | "last-month" | "this-quarter") {
@@ -315,18 +334,39 @@ function NewReportModal({
       : 0;
   const overLimit = dayDiff > 90;
 
-  function handleSubmit() {
-    const body: GenerateReportRequest = {
+  function buildBody(): GenerateReportRequest {
+    return {
       report_type: reportType,
       format,
       filters: {
         date_from: dateFrom ? new Date(dateFrom).toISOString() : undefined,
-        date_to: dateTo
-          ? new Date(`${dateTo}T23:59:59`).toISOString()
-          : undefined,
+        date_to: dateTo ? new Date(`${dateTo}T23:59:59`).toISOString() : undefined,
       },
     };
-    generate.mutate(body, {
+  }
+
+  function goToPreview() {
+    setEstimateError(null);
+    setEstimate(null);
+    estimateMut.mutate(buildBody(), {
+      onSuccess: (data) => {
+        setEstimate(data);
+        setStep(3);
+      },
+      onError: (err) => {
+        // Stay on Step 2 with the inline error so the user can fix
+        // filters without losing their inputs.
+        if (err instanceof ApiError) {
+          setEstimateError(err.detail);
+        } else {
+          setEstimateError("Tahmin alınamadı.");
+        }
+      },
+    });
+  }
+
+  function handleSubmit() {
+    generate.mutate(buildBody(), {
       onSuccess: (data) => {
         toast.success("Rapor sıraya alındı.");
         onQueued(data.report_id);
@@ -345,7 +385,7 @@ function NewReportModal({
     <div className="bg-foreground/40 fixed inset-0 z-50 flex items-center justify-center p-4">
       <Card className="w-full max-w-lg">
         <CardHeader className="flex items-center justify-between">
-          <CardTitle>Yeni Rapor</CardTitle>
+          <CardTitle>Yeni Rapor — Adım {step}/3</CardTitle>
           <button
             type="button"
             onClick={onClose}
@@ -356,123 +396,78 @@ function NewReportModal({
           </button>
         </CardHeader>
         <CardContent className="space-y-5">
-          <div>
-            <Label className="text-xs">Rapor Tipi</Label>
-            <div className="mt-2 space-y-2">
-              {(["comprehensive", "reviews_only", "tickets_only"] as ReportType[]).map(
-                (t) => (
-                  <label
-                    key={t}
-                    className="flex cursor-pointer items-center gap-2 text-sm"
-                  >
-                    <input
-                      type="radio"
-                      name="report-type"
-                      checked={reportType === t}
-                      onChange={() => setReportType(t)}
-                    />
-                    {TYPE_LABELS[t]}
-                  </label>
-                ),
-              )}
-            </div>
-          </div>
+          {step === 1 && (
+            <Step1Type
+              reportType={reportType}
+              format={format}
+              setReportType={setReportType}
+              setFormat={setFormat}
+            />
+          )}
+          {step === 2 && (
+            <Step2Filters
+              dateFrom={dateFrom}
+              dateTo={dateTo}
+              setDateFrom={setDateFrom}
+              setDateTo={setDateTo}
+              quickRange={quickRange}
+              dayDiff={dayDiff}
+              overLimit={overLimit}
+              estimateError={estimateError}
+            />
+          )}
+          {step === 3 && estimate && (
+            <Step3Preview
+              estimate={estimate}
+              reportType={reportType}
+              format={format}
+              dateFrom={dateFrom}
+              dateTo={dateTo}
+            />
+          )}
 
-          <div>
-            <Label className="text-xs">Tarih Aralığı</Label>
-            <div className="mt-2 flex flex-wrap gap-2">
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => quickRange("this-month")}
-              >
-                Bu ay
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => quickRange("last-month")}
-              >
-                Geçen ay
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => quickRange("this-quarter")}
-              >
-                Bu çeyrek
-              </Button>
-            </div>
-            <div className="mt-2 grid grid-cols-2 gap-2">
-              <input
-                type="date"
-                value={dateFrom}
-                onChange={(e) => setDateFrom(e.target.value)}
-                className="border-input bg-background rounded-md border px-3 py-2 text-sm"
-              />
-              <input
-                type="date"
-                value={dateTo}
-                onChange={(e) => setDateTo(e.target.value)}
-                className="border-input bg-background rounded-md border px-3 py-2 text-sm"
-              />
-            </div>
-            {dayDiff > 0 && (
-              <p
-                className={cn(
-                  "mt-1 text-xs",
-                  overLimit ? "text-red-600" : "text-muted-foreground",
-                )}
-              >
-                Aralık: {dayDiff} gün
-                {overLimit && " — 90 gün limitini aşıyor."}
-              </p>
-            )}
-          </div>
-
-          <div>
-            <Label className="text-xs">Format</Label>
-            <div className="mt-2 flex gap-4 text-sm">
-              <label className="flex cursor-pointer items-center gap-2">
-                <input
-                  type="radio"
-                  name="format"
-                  checked={format === "xlsx"}
-                  onChange={() => setFormat("xlsx")}
-                />
-                Excel (.xlsx)
-              </label>
-              <label className="flex cursor-pointer items-center gap-2">
-                <input
-                  type="radio"
-                  name="format"
-                  checked={format === "csv"}
-                  onChange={() => setFormat("csv")}
-                />
-                CSV (.zip)
-              </label>
-            </div>
-          </div>
-
-          <div className="flex justify-end gap-2 pt-2">
-            <Button variant="outline" type="button" onClick={onClose}>
-              İptal
-            </Button>
+          <div className="flex justify-between gap-2 pt-2">
             <Button
+              variant="outline"
               type="button"
-              onClick={handleSubmit}
-              disabled={overLimit || generate.isPending}
+              onClick={step === 1 ? onClose : () => setStep((step - 1) as ModalStep)}
+              disabled={generate.isPending}
             >
-              {generate.isPending ? (
-                <Loader2 className="size-4 animate-spin" />
-              ) : (
-                <Plus className="size-4" />
-              )}
-              Üret
+              {step === 1 ? "İptal" : "Geri"}
             </Button>
+            {step === 1 && (
+              <Button type="button" onClick={() => setStep(2)}>
+                Devam <ArrowRight className="size-4" aria-hidden />
+              </Button>
+            )}
+            {step === 2 && (
+              <Button
+                type="button"
+                onClick={goToPreview}
+                disabled={overLimit || estimateMut.isPending}
+              >
+                {estimateMut.isPending ? (
+                  <Loader2 className="size-4 animate-spin" />
+                ) : (
+                  <ArrowRight className="size-4" />
+                )}
+                Önizleme
+              </Button>
+            )}
+            {step === 3 && estimate && (
+              <Button
+                type="button"
+                onClick={handleSubmit}
+                disabled={generate.isPending}
+              >
+                {generate.isPending ? (
+                  <Loader2 className="size-4 animate-spin" />
+                ) : (
+                  <Plus className="size-4" />
+                )}
+                Üret
+              </Button>
+            )}
           </div>
 
           <Badge variant="outline" className="text-xs font-normal">
@@ -480,6 +475,199 @@ function NewReportModal({
           </Badge>
         </CardContent>
       </Card>
+    </div>
+  );
+}
+
+// --- modal step components -----------------------------------------------
+
+function Step1Type({
+  reportType,
+  format,
+  setReportType,
+  setFormat,
+}: {
+  reportType: ReportType;
+  format: ReportFormat;
+  setReportType: (t: ReportType) => void;
+  setFormat: (f: ReportFormat) => void;
+}) {
+  return (
+    <div className="space-y-5">
+      <div>
+        <Label className="text-xs">Rapor Tipi</Label>
+        <div className="mt-2 space-y-2">
+          {(["comprehensive", "reviews_only", "tickets_only"] as ReportType[]).map(
+            (t) => (
+              <label
+                key={t}
+                className="flex cursor-pointer items-center gap-2 text-sm"
+              >
+                <input
+                  type="radio"
+                  name="report-type"
+                  checked={reportType === t}
+                  onChange={() => setReportType(t)}
+                />
+                {TYPE_LABELS[t]}
+              </label>
+            ),
+          )}
+        </div>
+      </div>
+      <div>
+        <Label className="text-xs">Format</Label>
+        <div className="mt-2 flex gap-4 text-sm">
+          <label className="flex cursor-pointer items-center gap-2">
+            <input
+              type="radio"
+              name="format"
+              checked={format === "xlsx"}
+              onChange={() => setFormat("xlsx")}
+            />
+            Excel (.xlsx)
+          </label>
+          <label className="flex cursor-pointer items-center gap-2">
+            <input
+              type="radio"
+              name="format"
+              checked={format === "csv"}
+              onChange={() => setFormat("csv")}
+            />
+            CSV (.zip)
+          </label>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Step2Filters({
+  dateFrom,
+  dateTo,
+  setDateFrom,
+  setDateTo,
+  quickRange,
+  dayDiff,
+  overLimit,
+  estimateError,
+}: {
+  dateFrom: string;
+  dateTo: string;
+  setDateFrom: (v: string) => void;
+  setDateTo: (v: string) => void;
+  quickRange: (k: "this-month" | "last-month" | "this-quarter") => void;
+  dayDiff: number;
+  overLimit: boolean;
+  estimateError: string | null;
+}) {
+  return (
+    <div>
+      <Label className="text-xs">Tarih Aralığı</Label>
+      <div className="mt-2 flex flex-wrap gap-2">
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={() => quickRange("this-month")}
+        >
+          Bu ay
+        </Button>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={() => quickRange("last-month")}
+        >
+          Geçen ay
+        </Button>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={() => quickRange("this-quarter")}
+        >
+          Bu çeyrek
+        </Button>
+      </div>
+      <div className="mt-2 grid grid-cols-2 gap-2">
+        <input
+          type="date"
+          value={dateFrom}
+          onChange={(e) => setDateFrom(e.target.value)}
+          className="border-input bg-background rounded-md border px-3 py-2 text-sm"
+        />
+        <input
+          type="date"
+          value={dateTo}
+          onChange={(e) => setDateTo(e.target.value)}
+          className="border-input bg-background rounded-md border px-3 py-2 text-sm"
+        />
+      </div>
+      {dayDiff > 0 && (
+        <p
+          className={cn(
+            "mt-1 text-xs",
+            overLimit ? "text-red-600" : "text-muted-foreground",
+          )}
+        >
+          Aralık: {dayDiff} gün
+          {overLimit && " — 90 gün limitini aşıyor."}
+        </p>
+      )}
+      {estimateError && (
+        <p className="text-destructive mt-2 text-xs">{estimateError}</p>
+      )}
+    </div>
+  );
+}
+
+function Step3Preview({
+  estimate,
+  reportType,
+  format,
+  dateFrom,
+  dateTo,
+}: {
+  estimate: ReportEstimateResponse;
+  reportType: ReportType;
+  format: ReportFormat;
+  dateFrom: string;
+  dateTo: string;
+}) {
+  return (
+    <div className="bg-muted/30 space-y-3 rounded-md border p-4 text-sm">
+      <p className="font-medium">Önizleme</p>
+      <dl className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
+        <dt className="text-muted-foreground">Tahmini satır:</dt>
+        <dd className="tabular-nums">{estimate.row_count_estimate.toLocaleString("tr-TR")}</dd>
+        <dt className="text-muted-foreground">Tahmini süre:</dt>
+        <dd>~{estimate.estimated_seconds} saniye</dd>
+        <dt className="text-muted-foreground">Tip:</dt>
+        <dd>{TYPE_LABELS[reportType]}</dd>
+        <dt className="text-muted-foreground">Format:</dt>
+        <dd>{format === "xlsx" ? "Excel (.xlsx)" : "CSV (.zip)"}</dd>
+        {dateFrom && dateTo && (
+          <>
+            <dt className="text-muted-foreground">Tarih aralığı:</dt>
+            <dd>
+              {dateFrom} – {dateTo}
+            </dd>
+          </>
+        )}
+        {estimate.review_rows > 0 && (
+          <>
+            <dt className="text-muted-foreground">Analiz satırı:</dt>
+            <dd className="tabular-nums">{estimate.review_rows.toLocaleString("tr-TR")}</dd>
+          </>
+        )}
+        {estimate.ticket_rows > 0 && (
+          <>
+            <dt className="text-muted-foreground">Bilet satırı:</dt>
+            <dd className="tabular-nums">{estimate.ticket_rows.toLocaleString("tr-TR")}</dd>
+          </>
+        )}
+      </dl>
     </div>
   );
 }
