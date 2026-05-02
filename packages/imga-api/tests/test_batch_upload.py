@@ -369,8 +369,16 @@ async def test_auto_create_enabled_in_semi_auto_creates_tickets_for_negatives(
         tmp_path / "neg.csv",
         ["yorum"],
         [
-            # Strong negative + classifier-friendly cargo keyword:
-            ["kargom kötü ve 5 gündür gelmedi"],
+            # Strong negative AND high-confidence kargo classification.
+            # KeywordCategoryClassifier divides hit count by 5; semi_auto
+            # threshold needs confidence > 0.7, so we need ≥ 4 kargo
+            # keyword hits. "kargom kötü ve gelmedi" only had 2 hits
+            # (0.4 confidence) which fails the threshold check and the
+            # bridge falls through to SKIPPED_THRESHOLD instead of CREATE.
+            [
+                "kargom kargocu gelmedi, teslimat ulaşmadı, "
+                "takip kodu yanlış, çok kötü hizmet"
+            ],
             # Neutral "iyi" — POZITIF, no ticket in semi_auto.
             ["iyi bir gün"],
         ],

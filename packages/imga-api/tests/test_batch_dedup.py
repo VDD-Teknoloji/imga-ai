@@ -97,7 +97,14 @@ async def test_cross_batch_dedup_24h_window_links_to_existing_ticket(
     user, tid, pw = semi_auto_tenant
     token = login_token(batch_client, user.email, pw, tid)
 
-    repeat_text = "kargom kötü ve gelmedi"
+    # Needs 4+ kargo keyword hits so the semi_auto threshold
+    # (confidence > 0.7) is met and the first batch actually mints a
+    # ticket — the dedup assertion depends on that. KeywordClassifier
+    # divides by 5, so 4 hits = 0.8.
+    repeat_text = (
+        "kargom kargocu gelmedi, teslimat ulaşmadı, "
+        "takip kodu yanlış, çok kötü hizmet"
+    )
 
     # Batch 1 — creates a review + (auto_create_tickets=True) a ticket.
     csv1 = write_csv(tmp_path / "first.csv", ["yorum"], [[repeat_text]])
@@ -153,7 +160,14 @@ async def test_cross_batch_dedup_outside_24h_window_creates_fresh_ticket(
     user, tid, pw = semi_auto_tenant
     token = login_token(batch_client, user.email, pw, tid)
 
-    repeat_text = "kargom kötü ve gelmedi"
+    # Needs 4+ kargo keyword hits so the semi_auto threshold
+    # (confidence > 0.7) is met and the first batch actually mints a
+    # ticket — the dedup assertion depends on that. KeywordClassifier
+    # divides by 5, so 4 hits = 0.8.
+    repeat_text = (
+        "kargom kargocu gelmedi, teslimat ulaşmadı, "
+        "takip kodu yanlış, çok kötü hizmet"
+    )
 
     csv1 = write_csv(tmp_path / "first.csv", ["yorum"], [[repeat_text]])
     r1 = upload_csv(

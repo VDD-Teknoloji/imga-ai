@@ -97,6 +97,7 @@ services:
           tests/test_batch_concurrency.py \
           tests/test_reviews_list.py \
           tests/test_orphan_recovery.py \
+          tests/test_review_manual_ticket.py \
           -v --tb=short
 
 networks:
