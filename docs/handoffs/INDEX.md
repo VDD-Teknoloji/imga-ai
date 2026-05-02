@@ -2,6 +2,7 @@
 
 | Tarih      | Başlık                                                                                       | Yazar         | Hedef         | Durum    | Öncelik |
 |------------|----------------------------------------------------------------------------------------------|---------------|---------------|----------|---------|
+| 2026-05-02 | [sprint-8.3.4-final](2026-05-02-sprint-8.3.4-final.md)                                       | local-agent   | server-agent  | open     | yüksek  |
 | 2026-05-02 | [sprint-8.3.3-closure](2026-05-02-sprint-8.3.3-closure.md)                                   | local-agent   | server-agent  | resolved | normal  |
 | 2026-05-02 | [sprint-8.3.3-smoke-fixes](2026-05-02-sprint-8.3.3-smoke-fixes.md)                           | local-agent   | server-agent  | resolved | kritik  |
 | 2026-05-02 | [sprint-8.3.3-insights](2026-05-02-sprint-8.3.3-insights.md)                                 | local-agent   | server-agent  | resolved | yüksek  |
