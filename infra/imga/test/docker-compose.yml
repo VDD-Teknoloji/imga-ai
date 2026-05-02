@@ -1,0 +1,104 @@
+# İmga.AI — server-side integration test stack
+#
+# Yer: /opt/imga/infra/imga/test/docker-compose.yml (sunucuda)
+#
+# Amaç: Sprint 8.3.1+ entegrasyon testlerini canlı Postgres karşı koşturmak,
+# prod/staging stack'lerine dokunmadan. Production runtime image'ı yeniden
+# kullanılır; pytest deps runtime'da pip ile kurulur (Dockerfile'a "test"
+# stage eklemek yerine — minimal cerrahi). CI çıkana kadar (Sprint 8.4)
+# geçici çözüm.
+#
+# Komut:
+#   sudo docker compose -f /opt/imga/infra/imga/test/docker-compose.yml \
+#     up --build --abort-on-container-exit --exit-code-from api-test
+#
+# api-test container'ı pytest exit code'u ile sonlanır → compose o code'la
+# döner → CI/script entegrasyonu kolay. Volume yok, port expose yok,
+# init script konteynır ile başlar → tek shot, sıfır kalıcı durum.
+
+name: imga-test
+
+services:
+  postgres-test:
+    image: postgres:17-alpine
+    container_name: imga-test-postgres
+    # Test conftest'i hard-coded parolaları bekler (imga_dev_password /
+    # imga_app_password / imga_admin_password). Init script POSTGRES_USER
+    # rolünü POSTGRES_PASSWORD'le, app + admin'i IMGA_*_PASSWORD env'leri
+    # boşsa default'larla yaratır — burada POSTGRES_PASSWORD'ü conftest'in
+    # owner default'una eşitliyoruz, app/admin için env vermiyoruz ki
+    # default'lar devreye girsin.
+    environment:
+      POSTGRES_USER: imga_owner
+      POSTGRES_PASSWORD: imga_dev_password
+      POSTGRES_DB: imga
+    volumes:
+      - ../../../packages/imga-db/sql:/docker-entrypoint-initdb.d:ro
+    networks:
+      - imga-test-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U imga_owner -d imga"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  api-test:
+    # Production image'ını yeniden kullanırız — pytest + plugin'leri
+    # runtime'da kurulur. Image build edilmemişse :latest tag'inden
+    # düşer, build context production ile aynı.
+    image: imga-api:test
+    build:
+      context: ../../..
+      dockerfile: packages/imga-api/Dockerfile
+    container_name: imga-test-api
+    networks:
+      - imga-test-net
+    depends_on:
+      postgres-test:
+        condition: service_healthy
+    environment:
+      # Conftest bu iki var'ı okur; defaultlar (localhost:5433) yerine
+      # docker network'teki postgres-test:5432'yi gösterir.
+      IMGA_TEST_PG_HOST: postgres-test
+      IMGA_POSTGRES_PORT: "5432"
+      # E2E tests bunu okur (e2e_env fixture override etse de güvenlik
+      # ağı). Test-only secret, gerçek bir şey değil.
+      JWT_SECRET_KEY: test-secret-key-32-bytes-min-padding-xyz
+      # Alembic migration'ları test postgres'e koşturmak için (E2E
+      # fixture create_engine("admin") etkisini kullanır; tablolar
+      # önce alembic upgrade head ile yaratılmalı — entrypoint command
+      # bunu yapar).
+      DATABASE_URL_OWNER: postgresql+asyncpg://imga_owner:imga_dev_password@postgres-test:5432/imga
+      DATABASE_URL: postgresql+asyncpg://imga_app:imga_app_password@postgres-test:5432/imga
+      DATABASE_URL_ADMIN: postgresql+asyncpg://imga_admin:imga_admin_password@postgres-test:5432/imga
+    # Pytest deps pip install için root gerekir (runtime image USER imga,
+    # site-packages owner root). Test'ler tmp_path'e yazar, root sorun değil.
+    user: root
+    # Tests + pyproject ro mount; src değil — production'a giden code
+    # path'i test edilir, lokal değişiklik testleri etkilemez.
+    volumes:
+      - ../../../packages/imga-api/tests:/app/tests:ro
+      - ../../../packages/imga-api/pyproject.toml:/app/pyproject.toml:ro
+    working_dir: /app
+    command:
+      - sh
+      - -ec
+      - |
+        echo "[test-stack] installing pytest deps"
+        pip install --no-cache-dir --quiet \
+          pytest pytest-asyncio pytest-timeout pytest-cov \
+          factory-boy httpx
+        echo "[test-stack] migrating test postgres to head"
+        alembic upgrade head
+        echo "[test-stack] running pytest"
+        python -m pytest \
+          tests/test_batch_upload.py \
+          tests/test_batch_dedup.py \
+          tests/test_batch_concurrency.py \
+          tests/test_reviews_list.py \
+          tests/test_orphan_recovery.py \
+          -v --tb=short
+
+networks:
+  imga-test-net:
+    name: imga-test-net
