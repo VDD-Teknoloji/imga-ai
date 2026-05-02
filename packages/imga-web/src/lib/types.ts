@@ -287,6 +287,7 @@ export interface AnalysisResult {
     primary_confidence: number;
     requires_manual_review: boolean;
   } | null;
+  overrides_applied: OverrideHit[];
 }
 
 export interface TenantAnalyzeResponse {
@@ -372,6 +373,31 @@ export interface BatchJobListResponse {
 
 export type ReviewSourceType = "manual" | "batch" | "api";
 
+// Sprint 8.3.4 — five known override layer codes. Server may emit
+// any one of these in `overrides_applied[].layer`; the UI maps them
+// to Türkçe labels via OVERRIDE_LAYER_LABELS_TR below.
+export type OverrideLayer =
+  | "knowledge_base"
+  | "critical"
+  | "tier1"
+  | "sla"
+  | "tier2";
+
+export const OVERRIDE_LAYER_LABELS_TR: Record<OverrideLayer, string> = {
+  knowledge_base: "Bilgi Tabanı Kuralı",
+  critical: "Kritik Anahtar Kelime",
+  tier1: "Güçlü Negatif Sıfat",
+  sla: "SLA Tetikleyicisi",
+  tier2: "İkincil Tetikleyici",
+};
+
+export interface OverrideHit {
+  layer: OverrideLayer;
+  matched_keywords: string[];
+  score: number;
+  detail: string | null;
+}
+
 export interface ReviewListItem {
   id: string;
   text: string;
@@ -386,6 +412,7 @@ export interface ReviewListItem {
   source_type: ReviewSourceType;
   analyzed_at: string;
   submitted_by_user_id: string | null;
+  override_count: number;
 }
 
 export interface ReviewListResponse {
@@ -412,7 +439,7 @@ export interface ReviewDetail {
     primary: string;
     primary_confidence: number;
   };
-  overrides_applied: Array<Record<string, unknown>>;
+  overrides_applied: OverrideHit[];
   ticket_id: string | null;
   auto_ticket_decision: ReviewDecision;
   auto_ticket_decision_reason: string | null;
