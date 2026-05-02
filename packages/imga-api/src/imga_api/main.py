@@ -122,6 +122,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     finally:
         log.info("Shutting down imga-api")
         scheduler.shutdown(wait=False)
+        # Dispose batch worker engines so asyncpg pools close cleanly.
+        # In prod this is end-of-process (a no-op for behaviour); in
+        # tests it's mandatory — the next test's lifespan must start
+        # with no connections bound to the previous event loop.
+        await worker_context.dispose()
 
 
 # OpenAPI tag metadata. Order here drives the order in Swagger UI.

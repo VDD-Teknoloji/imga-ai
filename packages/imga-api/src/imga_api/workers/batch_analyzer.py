@@ -49,7 +49,7 @@ from imga_db.models import (
     ReviewDecision,
 )
 from sqlalchemy import select, update
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from imga_api.services.audit_service import AuditService
 from imga_api.services.batch_service import (
@@ -102,33 +102,31 @@ def _tenant_lock(tenant_id: UUID) -> asyncio.Lock:
 
 @dataclass(slots=True)
 class WorkerContext:
-    """Plumbing the worker grabs from app state once per job."""
+    """Plumbing the worker grabs from app state once per job.
+
+    Engines are owned by the context (not module-level singletons) so
+    each lifespan gets its own pool and ``dispose()`` cleanly shuts
+    them down. Production wires one context per app process via the
+    FastAPI lifespan; tests build a fresh one per test so asyncpg
+    connections never bleed across event loops.
+    """
 
     pipeline: AnalysisPipeline
+    admin_engine: AsyncEngine
+    app_engine: AsyncEngine
     admin_session_factory: async_sessionmaker[AsyncSession]
     app_session_factory: async_sessionmaker[AsyncSession]
     tenant_config_cache: TTLCache[UUID, dict[str, Any]]
     settings: BatchSettings
 
-
-_app_engine_singleton: Any = None
-_admin_engine_singleton: Any = None
-
-
-async def _admin_factory() -> async_sessionmaker[AsyncSession]:
-    """Worker uses its own engine handle (separate from FastAPI request
-    DI) so a long-running batch doesn't block request connections."""
-    global _admin_engine_singleton
-    if _admin_engine_singleton is None:
-        _admin_engine_singleton = create_engine("admin")
-    return create_session_factory(_admin_engine_singleton)
-
-
-async def _app_factory() -> async_sessionmaker[AsyncSession]:
-    global _app_engine_singleton
-    if _app_engine_singleton is None:
-        _app_engine_singleton = create_engine("app")
-    return create_session_factory(_app_engine_singleton)
+    async def dispose(self) -> None:
+        """Close both engines' connection pools. Lifespan calls this
+        on shutdown; tests call it on fixture teardown so the next
+        test's event loop starts with no asyncpg connections bound to
+        a dead loop. Safe to call twice (engine.dispose is idempotent
+        on disposed engines)."""
+        await self.admin_engine.dispose()
+        await self.app_engine.dispose()
 
 
 async def build_worker_context(
@@ -137,10 +135,23 @@ async def build_worker_context(
     tenant_config_cache: TTLCache[UUID, dict[str, Any]],
     settings: BatchSettings,
 ) -> WorkerContext:
+    """Build a fresh WorkerContext, including its own engine pair.
+
+    Both engines bind to the asyncpg event loop active at construction
+    time. That's exactly what we want — the lifespan's loop in prod,
+    the test's loop in pytest. Module-level singletons used to live
+    here and broke pytest isolation: the first test's loop owned the
+    pool, every subsequent test got 'another operation is in progress'
+    once that loop closed.
+    """
+    admin_engine = create_engine("admin")
+    app_engine = create_engine("app")
     return WorkerContext(
         pipeline=pipeline,
-        admin_session_factory=await _admin_factory(),
-        app_session_factory=await _app_factory(),
+        admin_engine=admin_engine,
+        app_engine=app_engine,
+        admin_session_factory=create_session_factory(admin_engine),
+        app_session_factory=create_session_factory(app_engine),
         tenant_config_cache=tenant_config_cache,
         settings=settings,
     )

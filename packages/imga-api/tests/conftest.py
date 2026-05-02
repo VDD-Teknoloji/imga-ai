@@ -347,12 +347,18 @@ def batch_client(
         application.state.tenant_config_cache = TTLCache(maxsize=1000, ttl=300)
         application.state.batch_scheduler = RecordingScheduler()
         s.batch.upload_dir.mkdir(parents=True, exist_ok=True)
-        application.state.batch_worker_context = await build_worker_context(
+        worker_ctx = await build_worker_context(
             pipeline=stub_batch_pipeline,
             tenant_config_cache=application.state.tenant_config_cache,
             settings=s.batch,
         )
-        yield
+        application.state.batch_worker_context = worker_ctx
+        try:
+            yield
+        finally:
+            # Dispose the worker engines so the next test's event loop
+            # doesn't inherit asyncpg connections from this loop.
+            await worker_ctx.dispose()
 
     original = app.router.lifespan_context
     app.router.lifespan_context = _test_lifespan
