@@ -78,6 +78,7 @@ class ReviewItemResponse(BaseModel):
     source_type: str
     analyzed_at: datetime
     submitted_by_user_id: UUID | None
+    override_count: int
 
 
 class ReviewListResponse(BaseModel):
@@ -196,12 +197,14 @@ async def get_review(
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND, detail="review not found"
             )
-        # Sprint 8.3.4 will populate overrides_applied + raw vs final
-        # split. Today the review row only stores the final score; we
-        # surface it as both raw and final so the frontend has a stable
-        # shape and the divergence appears later without a contract
-        # break.
+        # Sprint 8.3.4 — overrides_applied JSONB now populated by the
+        # bridge (and the batch worker on the dedup/opt-out paths). Rows
+        # analyzed before migration 0014 carry NULL; surface as []. The
+        # raw/final score split still surfaces the same value on both
+        # sides; once override math reshapes the score this row already
+        # has the trace ready to drive the divergence.
         score = float(review.sentiment_score)
+        overrides_list: list[dict[str, object]] = list(review.overrides_applied or [])
         return ReviewDetailResponse(
             id=review.id,
             text=review.text,
@@ -219,7 +222,7 @@ async def get_review(
                 primary=review.primary_category,
                 primary_confidence=float(review.primary_confidence),
             ),
-            overrides_applied=[],
+            overrides_applied=overrides_list,
             ticket_id=review.ticket_id,
             auto_ticket_decision=str(review.decision),
             auto_ticket_decision_reason=review.decision_reason,
@@ -298,4 +301,5 @@ def _to_item_response(item: ReviewListItem) -> ReviewItemResponse:
         source_type=item.source_type,
         analyzed_at=item.analyzed_at,
         submitted_by_user_id=item.submitted_by_user_id,
+        override_count=item.override_count,
     )

@@ -54,6 +54,10 @@ class ReviewListItem:
     source_type: str
     analyzed_at: datetime
     submitted_by_user_id: UUID | None
+    # Sprint 8.3.4 — count of override layers that fired during analysis.
+    # The list view only needs the count for the chip; the full trace is
+    # served by the detail endpoint to keep list responses small.
+    override_count: int
 
 
 class ReviewListService:
@@ -136,6 +140,7 @@ class ReviewListService:
                 source_type="batch" if r.batch_job_id is not None else "manual",
                 analyzed_at=r.analyzed_at,
                 submitted_by_user_id=r.submitted_by_user_id,
+                override_count=len(r.overrides_applied) if r.overrides_applied else 0,
             )
             for r in rows
         ]
