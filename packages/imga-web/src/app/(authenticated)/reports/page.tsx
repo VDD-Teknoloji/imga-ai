@@ -594,12 +594,14 @@ function Step2Filters({
         <input
           type="date"
           value={dateFrom}
+          max={dateTo || undefined}
           onChange={(e) => setDateFrom(e.target.value)}
           className="border-input bg-background rounded-md border px-3 py-2 text-sm"
         />
         <input
           type="date"
           value={dateTo}
+          min={dateFrom || undefined}
           onChange={(e) => setDateTo(e.target.value)}
           className="border-input bg-background rounded-md border px-3 py-2 text-sm"
         />
