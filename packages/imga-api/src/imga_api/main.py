@@ -29,6 +29,7 @@ from imga_api.dependencies import (
 )
 from imga_api.routes import auth as auth_routes
 from imga_api.routes import invitations as public_invitation_routes
+from imga_api.routes import tenant_analytics as tenant_analytics_routes
 from imga_api.routes import tenant_analyze as tenant_analyze_routes
 from imga_api.routes import tenant_batch as tenant_batch_routes
 from imga_api.routes import tenant_config as tenant_config_routes
@@ -212,6 +213,7 @@ app.include_router(tenant_analyze_routes.router)
 app.include_router(tenant_batch_routes.router)
 app.include_router(tenant_reviews_routes.router)
 app.include_router(tenant_reports_routes.router)
+app.include_router(tenant_analytics_routes.router)
 app.include_router(tenant_directory_routes.router)
 app.include_router(tickets_routes.router)
 app.include_router(admin_tenant_routes.router)
