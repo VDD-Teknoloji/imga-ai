@@ -490,3 +490,118 @@ export interface ReportListResponse {
   reports: ReportJobView[];
   total: number;
 }
+
+// ---------------------------------------------------------------------------
+// Sprint 8.3.3 — analytics endpoints
+// ---------------------------------------------------------------------------
+
+export type Granularity = "day" | "week" | "month";
+
+export interface SentimentDistRow {
+  label: string;
+  count: number;
+  percentage: number;
+  avg_score: number;
+}
+
+export interface SentimentDistResponse {
+  total: number;
+  data: SentimentDistRow[];
+}
+
+export interface CategoryDistRow {
+  category: string;
+  category_label_tr: string;
+  count: number;
+  percentage: number;
+}
+
+export interface CategoryDistResponse {
+  total: number;
+  data: CategoryDistRow[];
+}
+
+export interface SentimentByCategoryResponse {
+  categories: string[];
+  category_labels_tr: string[];
+  sentiments: string[];
+  matrix: number[][];
+  totals_by_category: number[];
+  totals_by_sentiment: number[];
+}
+
+export interface OverrideStatsRow {
+  layer: string;
+  layer_label_tr: string;
+  trigger_count: number;
+  trigger_percentage: number;
+  direction: string;
+  avg_impact: number;
+  max_impact: number;
+}
+
+export interface OverrideStatsResponse {
+  total_reviews: number;
+  data: OverrideStatsRow[];
+}
+
+export interface TimelinePoint {
+  date: string;
+  negatif: number;
+  nötr: number;
+  pozitif: number;
+  total: number;
+  avg_score: number;
+}
+
+export interface SentimentTimelineResponse {
+  granularity: Granularity;
+  data: TimelinePoint[];
+}
+
+export interface ResolutionBucket {
+  bucket: string;
+  count: number;
+}
+
+export interface ResolutionByCategory {
+  category: string;
+  avg_hours: number;
+  count: number;
+}
+
+export interface TicketResolutionResponse {
+  total_resolved_tickets: number;
+  avg_resolution_hours: number;
+  median_resolution_hours: number;
+  p95_resolution_hours: number;
+  distribution: ResolutionBucket[];
+  by_category: ResolutionByCategory[];
+}
+
+export interface SensitivityBucket {
+  range_start: number;
+  range_end: number;
+  count: number;
+}
+
+export interface SensitivityStats {
+  mean: number;
+  median: number;
+  std_dev: number;
+}
+
+export interface SensitivityDistResponse {
+  total: number;
+  buckets: SensitivityBucket[];
+  stats: SensitivityStats;
+}
+
+export interface AnalyticsFilters {
+  date_from?: string;
+  date_to?: string;
+  sentiment_labels?: string[];
+  category_ids?: string[];
+  source_types?: string[];
+  batch_job_id?: string;
+}
