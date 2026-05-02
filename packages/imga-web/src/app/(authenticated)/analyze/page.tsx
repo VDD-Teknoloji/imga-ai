@@ -3,6 +3,8 @@
 import {
   ArrowRight,
   CheckCircle2,
+  ChevronDown,
+  ChevronUp,
   CircleAlert,
   HelpCircle,
   Info,
@@ -14,6 +16,10 @@ import Link from "next/link";
 import { useState, type FormEvent } from "react";
 import { toast } from "sonner";
 
+import {
+  OverrideStack,
+  overrideLayerLabel,
+} from "@/components/reviews/override-display";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -173,8 +179,51 @@ function AnalysisOutput({
   return (
     <div className="space-y-4">
       <AnalysisSummary result={result} />
+      <OverrideHits hits={result.analysis.overrides_applied} />
       <DecisionCard result={result} onPromoted={onPromoted} />
     </div>
+  );
+}
+
+// Pills + expandable detail. Hidden when nothing fired so the page
+// stays compact in the common neutral-text case.
+function OverrideHits({
+  hits,
+}: {
+  hits: TenantAnalyzeResponse["analysis"]["overrides_applied"];
+}) {
+  const [expanded, setExpanded] = useState(false);
+  if (hits.length === 0) return null;
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">Tetiklenen Katmanlar</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <div className="flex flex-wrap gap-2">
+          {hits.map((hit, i) => (
+            <Badge key={`${hit.layer}-${i}`} variant="secondary">
+              {overrideLayerLabel(hit.layer)}
+            </Badge>
+          ))}
+        </div>
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          onClick={() => setExpanded((v) => !v)}
+          className="gap-1"
+        >
+          {expanded ? "Detayları Gizle" : "Detayları Göster"}
+          {expanded ? (
+            <ChevronUp className="size-4" aria-hidden />
+          ) : (
+            <ChevronDown className="size-4" aria-hidden />
+          )}
+        </Button>
+        {expanded && <OverrideStack hits={hits} />}
+      </CardContent>
+    </Card>
   );
 }
 
