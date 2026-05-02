@@ -50,6 +50,12 @@ services:
     networks:
       - imga-staging-internal
       - caddy-public
+    # Sprint 8.3.1: batch upload payload'ları host'ta. Staging için
+    # ayrı /var/imga-staging/uploads — production ile karışmasın.
+    # Container içinde aynı path görünür (settings default değişmez).
+    # Host dizini owner=1000:1000 (Dockerfile'daki imga user).
+    volumes:
+      - /var/imga-staging/uploads:/var/imga/uploads
     depends_on:
       postgres:
         condition: service_healthy
