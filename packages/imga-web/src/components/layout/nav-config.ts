@@ -6,6 +6,7 @@ import {
   Settings,
   Sparkles,
   Ticket,
+  TrendingUp,
   Upload,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
@@ -28,6 +29,7 @@ export const NAV_ITEMS: ReadonlyArray<NavItem> = [
   { label: "Toplu Yükleme", href: "/analyze/upload", icon: Upload },
   { label: "Analizler", href: "/reviews", icon: FileSearch },
   { label: "Raporlar", href: "/reports", icon: FileBarChart },
+  { label: "İçgörüler", href: "/insights", icon: TrendingUp },
   { label: "Ayarlar", href: "/settings", icon: Settings },
 ];
 
