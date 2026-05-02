@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useMemo } from "react";
 
+import { OverrideChip } from "@/components/reviews/override-display";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -110,8 +111,10 @@ export default function ReviewsPage() {
                   {r.primary_category}
                 </TableCell>
                 <TableCell className="hidden text-center md:table-cell">
-                  {/* Override count chip — Sprint 8.3.4 makes it clickable. */}
-                  <span className="text-muted-foreground text-xs">—</span>
+                  <OverrideChip
+                    count={r.override_count}
+                    href={`/reviews/${r.id}`}
+                  />
                 </TableCell>
                 <TableCell className="hidden md:table-cell">
                   {r.ticket_id ? (

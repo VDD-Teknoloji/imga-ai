@@ -5,12 +5,25 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { toast } from "sonner";
 
+import { OverrideStack } from "@/components/reviews/override-display";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useManualPromoteReview, useReviewDetail } from "@/hooks/use-reviews";
 import { ApiError } from "@/lib/api-client";
 import type { ReviewDecision } from "@/lib/types";
+
+// Map every decision branch to a Türkçe label + the auto-ticket
+// rationale so the detail page reads as an audit narrative, not a
+// bag of enum values. Reasons mirror the bridge's decision tree in
+// imga_api.services.review_service.
+const DECISION_LABELS_TR: Record<ReviewDecision, string> = {
+  create: "Bilet Açıldı",
+  skipped_belirsiz: "Atlandı (Kategori Belirsiz)",
+  skipped_mode: "Atlandı (Manuel Mod)",
+  skipped_threshold: "Atlandı (Eşik Altı)",
+  skipped_dedup: "Atlandı (24s İçinde Mükerrer)",
+};
 
 const PROMOTABLE_DECISIONS: ReadonlySet<ReviewDecision> = new Set([
   "skipped_mode",
@@ -76,10 +89,10 @@ export default function ReviewDetailPage() {
       )}
 
       {detail.data && (
-        <>
+        <div className="space-y-4">
           <Card>
             <CardHeader>
-              <CardTitle>Analiz</CardTitle>
+              <CardTitle>Analiz #{detail.data.id.slice(0, 8)}</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
               <div>
@@ -88,6 +101,16 @@ export default function ReviewDetailPage() {
                   {new Date(detail.data.analyzed_at).toLocaleString("tr-TR")}
                   {" — "}
                   {detail.data.source_type === "batch" ? "Toplu Yükleme" : "Manuel"}
+                  {detail.data.batch_job_id && (
+                    <>
+                      {" "}
+                      (Batch:{" "}
+                      <span className="font-mono">
+                        {detail.data.batch_job_id.slice(0, 8)}
+                      </span>
+                      )
+                    </>
+                  )}
                 </p>
               </div>
 
@@ -95,30 +118,77 @@ export default function ReviewDetailPage() {
                 <p className="text-muted-foreground text-xs">Metin</p>
                 <p className="whitespace-pre-wrap text-sm">{detail.data.text}</p>
               </div>
+            </CardContent>
+          </Card>
 
-              <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Analiz</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
                 <Stat label="Duygu" value={detail.data.sentiment.label} />
                 <Stat
                   label="Skor (final)"
                   value={detail.data.sentiment.final_score.toFixed(2)}
                 />
-                <Stat label="Kategori" value={detail.data.categorization.primary} />
+                <Stat
+                  label="Skor (raw, BERT)"
+                  value={detail.data.sentiment.raw_score.toFixed(2)}
+                />
                 <Stat
                   label="Güven"
                   value={`%${(detail.data.categorization.primary_confidence * 100).toFixed(0)}`}
                 />
               </div>
+              <div>
+                <p className="text-muted-foreground text-xs">Kategori</p>
+                <p className="text-sm">{detail.data.categorization.primary}</p>
+              </div>
+            </CardContent>
+          </Card>
 
-              <div className="rounded-md border bg-muted/30 p-3 text-xs text-muted-foreground">
-                Override katmanları detayı ve raw / final skor ayrımı
-                Sprint 8.3.4&apos;te eklenecek. Şu an karar:{" "}
-                <Badge variant="outline">{detail.data.auto_ticket_decision}</Badge>
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Override Katmanları</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <OverrideStack hits={detail.data.overrides_applied} />
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Karar</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <div className="flex items-center gap-2">
+                <Badge variant="outline">
+                  {DECISION_LABELS_TR[detail.data.auto_ticket_decision] ??
+                    detail.data.auto_ticket_decision}
+                </Badge>
+                {detail.data.auto_ticket_decision_reason && (
+                  <span className="text-muted-foreground font-mono text-xs">
+                    {detail.data.auto_ticket_decision_reason}
+                  </span>
+                )}
               </div>
 
               {detail.data.ticket_id ? (
-                <Button render={<Link href={`/tickets/${detail.data.ticket_id}`} />}>
-                  Bağlı Bilete Git →
-                </Button>
+                <div className="bg-muted/30 flex items-center justify-between rounded-md border p-3">
+                  <p className="text-sm">
+                    Bağlı bilet:{" "}
+                    <span className="font-mono">
+                      #{detail.data.ticket_id.slice(0, 8)}
+                    </span>
+                  </p>
+                  <Button
+                    size="sm"
+                    render={<Link href={`/tickets/${detail.data.ticket_id}`} />}
+                  >
+                    Bilete Git →
+                  </Button>
+                </div>
               ) : canPromote ? (
                 <div className="flex flex-wrap items-center gap-3">
                   <Button
@@ -136,13 +206,13 @@ export default function ReviewDetailPage() {
                     Bu Analizi Bilete Dönüştür
                   </Button>
                   <span className="text-muted-foreground text-xs">
-                    Manuel override — sistem güveni eşik altındaydı.
+                    Manuel override — bridge bu karar için bilet açmamıştı.
                   </span>
                 </div>
               ) : null}
             </CardContent>
           </Card>
-        </>
+        </div>
       )}
     </main>
   );
