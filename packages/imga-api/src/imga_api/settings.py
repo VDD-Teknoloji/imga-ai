@@ -85,6 +85,27 @@ class BatchSettings:
 
 
 @dataclass(frozen=True, slots=True)
+class ReportSettings:
+    """Sprint 8.3.2 multi-sheet Excel/CSV export configuration.
+
+    ``reports_dir`` mirrors uploads — same /var/imga mount but a
+    separate top-level dir so disk-usage dashboards can split them
+    cleanly. ``retention_hours`` (24h) drives both the file-reaper cron
+    and the ``expires_at`` column on ``report_jobs``: download requests
+    past that point return 410 Gone.
+
+    Hard limits per Sprint 8.3.2 user decision 16:
+      * date span: max 90 days
+      * row count:  max 50,000
+    """
+
+    reports_dir: Path = Path("/var/imga/reports")
+    retention_hours: int = 24
+    max_days: int = 90
+    max_rows: int = 50_000
+
+
+@dataclass(frozen=True, slots=True)
 class Settings:
     bert_model: str = DEFAULT_BERT_MODEL
     knowledge_base_path: Path | None = None
@@ -93,6 +114,7 @@ class Settings:
     max_warehouse_days: int = DEFAULT_MAX_WAREHOUSE_DAYS
     jwt: JWTSettings = JWTSettings()
     batch: BatchSettings = BatchSettings()
+    report: ReportSettings = ReportSettings()
 
     @classmethod
     def from_env(cls) -> Settings:
@@ -130,6 +152,14 @@ class Settings:
             per_tenant_concurrency=_int("IMGA_BATCH_PER_TENANT_CONCURRENCY", 1),
         )
 
+        reports_dir_env = os.environ.get("IMGA_REPORTS_DIR")
+        report = ReportSettings(
+            reports_dir=Path(reports_dir_env) if reports_dir_env else Path("/var/imga/reports"),
+            retention_hours=_int("IMGA_REPORT_RETENTION_HOURS", 24),
+            max_days=_int("IMGA_REPORT_MAX_DAYS", 90),
+            max_rows=_int("IMGA_REPORT_MAX_ROWS", 50_000),
+        )
+
         return cls(
             bert_model=os.environ.get("IMGA_BERT_MODEL", DEFAULT_BERT_MODEL),
             knowledge_base_path=_opt_path("IMGA_KB_PATH"),
@@ -138,4 +168,5 @@ class Settings:
             max_warehouse_days=_int("IMGA_MAX_WAREHOUSE_DAYS", DEFAULT_MAX_WAREHOUSE_DAYS),
             jwt=jwt,
             batch=batch,
+            report=report,
         )

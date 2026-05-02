@@ -23,6 +23,8 @@ dependencies = [
     # Sprint 8.3.1 batch upload pipeline
     "apscheduler>=3.10,<4.0",
     "openpyxl>=3.1,<4.0",
+    # Sprint 8.3.2 multi-sheet Excel reports
+    "xlsxwriter>=3.2,<4.0",
 ]
 
 [project.optional-dependencies]
@@ -71,6 +73,7 @@ module = [
     "factory.*",
     "openpyxl.*",
     "apscheduler.*",
+    "xlsxwriter.*",
 ]
 ignore_missing_imports = true
 

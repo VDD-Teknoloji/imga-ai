@@ -1,15 +1,16 @@
-"""Daily cleanup cron — reap stale upload files under the batch upload
-root.
+"""Daily cleanup cron — reap stale upload + report files.
 
-Sprint 8.3.1 / decision 15: 24h retention. This worker iterates the
-``upload_dir`` and deletes files (not the directory) older than
-``retention_hours``. The ``analyze_batch_jobs.file_path`` column
-deliberately survives — auditors still see WHERE a file lived even
-after the bytes are gone.
+Sprint 8.3.1 / decision 15: 24h retention for batch uploads.
+Sprint 8.3.2: same 24h retention for generated reports.
+
+``reap_stale_uploads`` works for both directories — it just walks a
+root and deletes files (not directories) older than retention. The
+underlying job rows preserve ``file_path`` so auditors still see WHERE
+a file lived even after the bytes are gone.
 
 The directory walk is deliberately lazy + idempotent: if a tenant
 folder is empty, we leave it alone (cheap; saves cross-cron races
-with the upload route writing into a fresh subdir).
+with the upload/report writers landing into a fresh subdir).
 """
 
 from __future__ import annotations

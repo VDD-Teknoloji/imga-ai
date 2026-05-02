@@ -33,6 +33,16 @@ from imga_api.services.invitation_service import (
     InvitationReauthFailedError,
     InvitationService,
 )
+from imga_api.services.report_service import (
+    ReportEstimate,
+    ReportExpiredError,
+    ReportFilters,
+    ReportInvalidFiltersError,
+    ReportNotFoundError,
+    ReportRequest,
+    ReportService,
+    ReportServiceError,
+)
 from imga_api.services.review_service import (
     DEDUP_WINDOW,
     CategoryNotConfiguredError,
@@ -113,6 +123,14 @@ __all__ = [
     "InvitationService",
     "OrderBy",
     "OrderDirection",
+    "ReportEstimate",
+    "ReportExpiredError",
+    "ReportFilters",
+    "ReportInvalidFiltersError",
+    "ReportNotFoundError",
+    "ReportRequest",
+    "ReportService",
+    "ReportServiceError",
     "ReviewAlreadyTicketedError",
     "ReviewBridgeResult",
     "ReviewNotFoundError",
