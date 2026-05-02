@@ -20,9 +20,16 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useAnalyze } from "@/hooks/use-analyze";
+import { useManualPromoteReview } from "@/hooks/use-reviews";
 import { ApiError } from "@/lib/api-client";
 import type { ReviewDecision, TenantAnalyzeResponse } from "@/lib/types";
 import { cn } from "@/lib/utils";
+
+const PROMOTABLE_DECISIONS: ReadonlySet<ReviewDecision> = new Set([
+  "skipped_mode",
+  "skipped_threshold",
+  "skipped_belirsiz",
+]);
 
 const TEXT_MAX_LENGTH = 10_000;
 
@@ -140,18 +147,33 @@ export default function AnalyzePage() {
         </div>
       </form>
 
-      {result ? <AnalysisOutput result={result} /> : null}
+      {result ? (
+        <AnalysisOutput
+          result={result}
+          onPromoted={(ticketId) =>
+            setResult((prev) =>
+              prev ? { ...prev, ticket_id: ticketId } : prev,
+            )
+          }
+        />
+      ) : null}
     </main>
   );
 }
 
 // --- result rendering ---------------------------------------------------
 
-function AnalysisOutput({ result }: { result: TenantAnalyzeResponse }) {
+function AnalysisOutput({
+  result,
+  onPromoted,
+}: {
+  result: TenantAnalyzeResponse;
+  onPromoted: (ticketId: string) => void;
+}) {
   return (
     <div className="space-y-4">
       <AnalysisSummary result={result} />
-      <DecisionCard result={result} />
+      <DecisionCard result={result} onPromoted={onPromoted} />
     </div>
   );
 }
@@ -277,7 +299,13 @@ const DECISION_VARIANTS: Record<ReviewDecision, DecisionVariant> = {
   },
 };
 
-function DecisionCard({ result }: { result: TenantAnalyzeResponse }) {
+function DecisionCard({
+  result,
+  onPromoted,
+}: {
+  result: TenantAnalyzeResponse;
+  onPromoted: (ticketId: string) => void;
+}) {
   const variant = DECISION_VARIANTS[result.decision];
   const Icon = variant.Icon;
   const cardBorder =
@@ -292,6 +320,30 @@ function DecisionCard({ result }: { result: TenantAnalyzeResponse }) {
       : variant.variant === "warning"
         ? "text-amber-600"
         : "text-primary";
+
+  const promote = useManualPromoteReview();
+  const canPromote =
+    result.ticket_id == null && PROMOTABLE_DECISIONS.has(result.decision);
+
+  function handlePromote() {
+    promote.mutate(result.review_id, {
+      onSuccess: (data) => {
+        onPromoted(data.ticket_id);
+        toast.success("Manuel olarak bilet açıldı.");
+      },
+      onError: (err) => {
+        if (err instanceof ApiError && err.status === 403) {
+          toast.error("Bu işlem için yetkin yok.");
+          return;
+        }
+        if (err instanceof ApiError && err.status === 409) {
+          toast.error("Bu analiz zaten bir bilete bağlı.");
+          return;
+        }
+        toast.error("Bilet açılamadı.");
+      },
+    });
+  }
 
   return (
     <Card className={cardBorder}>
@@ -313,6 +365,26 @@ function DecisionCard({ result }: { result: TenantAnalyzeResponse }) {
           </Button>
           <span className="text-muted-foreground text-xs">
             Bilet ID: <code className="font-mono">{result.ticket_id.slice(0, 8)}</code>
+          </span>
+        </CardContent>
+      ) : canPromote ? (
+        <CardContent className="flex flex-wrap items-center gap-3">
+          <Button
+            type="button"
+            variant="outline"
+            onClick={handlePromote}
+            disabled={promote.isPending}
+            className="gap-2"
+          >
+            {promote.isPending ? (
+              <Loader2 className="size-4 animate-spin" aria-hidden />
+            ) : (
+              <ArrowRight className="size-4" aria-hidden />
+            )}
+            Yine de Bilet Aç
+          </Button>
+          <span className="text-muted-foreground text-xs">
+            Sistem güvenini override et — manuel olarak bilet aç.
           </span>
         </CardContent>
       ) : null}

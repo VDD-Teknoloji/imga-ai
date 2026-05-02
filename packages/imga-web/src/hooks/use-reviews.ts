@@ -1,6 +1,6 @@
 // Sprint 8.3.1 reviews list + detail hooks.
 
-import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { apiRequest } from "@/lib/api-client";
 import type {
@@ -8,6 +8,30 @@ import type {
   ReviewListFilters,
   ReviewListResponse,
 } from "@/lib/types";
+
+export interface ManualPromotionResponse {
+  review_id: string;
+  ticket_id: string;
+  ticket_state: string;
+}
+
+/** POST /tenants/me/reviews/{id}/create-ticket — manual override of a
+ * skipped bridge decision. 409 if the review already has a ticket;
+ * 403 if the caller is a viewer. */
+export function useManualPromoteReview() {
+  const queryClient = useQueryClient();
+  return useMutation<ManualPromotionResponse, Error, string>({
+    mutationFn: async (reviewId) =>
+      apiRequest<ManualPromotionResponse>(
+        `/tenants/me/reviews/${reviewId}/create-ticket`,
+        { method: "POST" },
+      ),
+    onSuccess: (_data, reviewId) => {
+      queryClient.invalidateQueries({ queryKey: ["review-detail", reviewId] });
+      queryClient.invalidateQueries({ queryKey: ["reviews"] });
+    },
+  });
+}
 
 function buildQueryString(filters: ReviewListFilters, offset: number, limit: number): string {
   const params = new URLSearchParams();

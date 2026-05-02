@@ -1,13 +1,22 @@
 "use client";
 
-import { ChevronLeft, Loader2 } from "lucide-react";
+import { ArrowRight, ChevronLeft, Loader2 } from "lucide-react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
+import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { useReviewDetail } from "@/hooks/use-reviews";
+import { useManualPromoteReview, useReviewDetail } from "@/hooks/use-reviews";
+import { ApiError } from "@/lib/api-client";
+import type { ReviewDecision } from "@/lib/types";
+
+const PROMOTABLE_DECISIONS: ReadonlySet<ReviewDecision> = new Set([
+  "skipped_mode",
+  "skipped_threshold",
+  "skipped_belirsiz",
+]);
 
 /**
  * Sprint 8.3.1 placeholder — full layout (override layer cards,
@@ -17,6 +26,33 @@ export default function ReviewDetailPage() {
   const params = useParams<{ id: string }>();
   const reviewId = params?.id ?? null;
   const detail = useReviewDetail(reviewId);
+  const promote = useManualPromoteReview();
+
+  const canPromote =
+    detail.data != null &&
+    detail.data.ticket_id == null &&
+    PROMOTABLE_DECISIONS.has(detail.data.auto_ticket_decision);
+
+  function handlePromote() {
+    if (!detail.data) return;
+    promote.mutate(detail.data.id, {
+      onSuccess: () => {
+        toast.success("Manuel olarak bilet açıldı.");
+        detail.refetch();
+      },
+      onError: (err) => {
+        if (err instanceof ApiError && err.status === 403) {
+          toast.error("Bu işlem için yetkin yok.");
+          return;
+        }
+        if (err instanceof ApiError && err.status === 409) {
+          toast.error("Bu analiz zaten bir bilete bağlı.");
+          return;
+        }
+        toast.error("Bilet açılamadı.");
+      },
+    });
+  }
 
   return (
     <main className="mx-auto w-full max-w-3xl space-y-6 px-4 py-8">
@@ -79,11 +115,31 @@ export default function ReviewDetailPage() {
                 <Badge variant="outline">{detail.data.auto_ticket_decision}</Badge>
               </div>
 
-              {detail.data.ticket_id && (
+              {detail.data.ticket_id ? (
                 <Button render={<Link href={`/tickets/${detail.data.ticket_id}`} />}>
                   Bağlı Bilete Git →
                 </Button>
-              )}
+              ) : canPromote ? (
+                <div className="flex flex-wrap items-center gap-3">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={handlePromote}
+                    disabled={promote.isPending}
+                    className="gap-2"
+                  >
+                    {promote.isPending ? (
+                      <Loader2 className="size-4 animate-spin" aria-hidden />
+                    ) : (
+                      <ArrowRight className="size-4" aria-hidden />
+                    )}
+                    Bu Analizi Bilete Dönüştür
+                  </Button>
+                  <span className="text-muted-foreground text-xs">
+                    Manuel override — sistem güveni eşik altındaydı.
+                  </span>
+                </div>
+              ) : null}
             </CardContent>
           </Card>
         </>
