@@ -14,6 +14,8 @@ import os
 from collections.abc import AsyncIterator, Iterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
 from uuid import UUID, uuid4
 
 import pytest
@@ -30,6 +32,7 @@ from imga_core import (
 from imga_db import create_engine, create_session_factory
 from imga_db.models import UserTenantRole
 from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from imga_api.dependencies import get_classifier, get_pipeline, get_settings
 from imga_api.main import app
@@ -267,3 +270,169 @@ async def e2e_seed(_e2e_env: None) -> AsyncIterator[E2ESeed]:
             )
 
     await engine.dispose()
+
+
+# --- Sprint 8.3.1 batch upload fixtures ---------------------------------
+
+
+@pytest.fixture
+def _batch_env(_e2e_env: None, tmp_path: Path) -> None:
+    """Per-test batch env: tmp upload dir + tighter limits.
+
+    Depends on _e2e_env so DB URLs + JWT secret are wired the same way.
+    Tests that touch /tenants/me/analyze/batch should request the
+    ``client`` fixture below which depends on this env.
+    """
+    os.environ["IMGA_UPLOAD_DIR"] = str(tmp_path / "uploads")
+    os.environ["IMGA_BATCH_CHUNK_SIZE"] = "100"
+    os.environ["IMGA_BATCH_GLOBAL_CONCURRENCY"] = "2"
+    os.environ["IMGA_BATCH_PER_TENANT_CONCURRENCY"] = "1"
+
+
+@pytest.fixture
+def stub_batch_pipeline() -> Any:
+    """Deterministic pipeline used by the batch worker. Same signature as
+    AnalysisPipeline; isolated from the test_endpoints stub_pipeline so
+    the two suites don't entangle."""
+    from imga_core import AnalysisPipeline, KeywordCategoryClassifier
+
+    from tests.batch_helpers import StubBatchAnalyzer
+
+    return AnalysisPipeline(
+        analyzer=StubBatchAnalyzer(),
+        classifier=KeywordCategoryClassifier(),
+    )
+
+
+@pytest_asyncio.fixture
+async def admin_engine() -> AsyncIterator[Any]:
+    from imga_db import create_engine
+
+    engine = create_engine("admin")
+    yield engine
+    await engine.dispose()
+
+
+@pytest_asyncio.fixture
+async def admin_session(admin_engine: Any) -> AsyncIterator[AsyncSession]:
+    from imga_db import create_session_factory
+
+    factory = create_session_factory(admin_engine)
+    async with factory() as session:
+        yield session
+
+
+@pytest.fixture
+def batch_client(
+    _batch_env: None,
+    stub_batch_pipeline: Any,
+    tmp_path: Path,
+) -> Iterator[TestClient]:
+    """TestClient with the batch lifespan: settings + tenant_config_cache
+    + recording scheduler + worker context (engines + stub pipeline).
+    Per-test isolation includes resetting the worker module's in-memory
+    concurrency primitives."""
+    from cachetools import TTLCache
+
+    from imga_api.dependencies import get_pipeline
+    from imga_api.workers import batch_analyzer
+    from imga_api.workers.batch_analyzer import build_worker_context
+    from tests.batch_helpers import RecordingScheduler
+
+    @asynccontextmanager
+    async def _test_lifespan(application: FastAPI) -> AsyncIterator[None]:
+        s = Settings.from_env()
+        application.state.settings = s
+        application.state.pipeline = stub_batch_pipeline
+        application.state.tenant_config_cache = TTLCache(maxsize=1000, ttl=300)
+        application.state.batch_scheduler = RecordingScheduler()
+        s.batch.upload_dir.mkdir(parents=True, exist_ok=True)
+        application.state.batch_worker_context = await build_worker_context(
+            pipeline=stub_batch_pipeline,
+            tenant_config_cache=application.state.tenant_config_cache,
+            settings=s.batch,
+        )
+        yield
+
+    original = app.router.lifespan_context
+    app.router.lifespan_context = _test_lifespan
+    app.dependency_overrides[get_pipeline] = lambda: stub_batch_pipeline
+
+    for attr in (
+        "admin_db_engine",
+        "app_db_engine",
+        "admin_db_engine_factory",
+        "app_db_engine_factory",
+    ):
+        if hasattr(app.state, attr):
+            delattr(app.state, attr)
+
+    batch_analyzer._GLOBAL_SEMAPHORE = None
+    batch_analyzer._TENANT_LOCKS.clear()
+
+    try:
+        with TestClient(app, raise_server_exceptions=True) as c:
+            yield c
+    finally:
+        app.dependency_overrides.clear()
+        app.router.lifespan_context = original
+        for attr in (
+            "admin_db_engine",
+            "app_db_engine",
+            "admin_db_engine_factory",
+            "app_db_engine_factory",
+            "tenant_config_cache",
+            "batch_scheduler",
+            "batch_worker_context",
+            "pipeline",
+            "settings",
+        ):
+            if hasattr(app.state, attr):
+                delattr(app.state, attr)
+        batch_analyzer._GLOBAL_SEMAPHORE = None
+        batch_analyzer._TENANT_LOCKS.clear()
+
+
+@pytest_asyncio.fixture
+async def semi_auto_tenant(
+    admin_session: AsyncSession,
+) -> AsyncIterator[tuple[Any, UUID, str]]:
+    from imga_db.models import AutomationMode
+
+    from tests.batch_helpers import cleanup_tenant, seed_tenant_with_admin
+
+    user, tid, pw = await seed_tenant_with_admin(
+        admin_session, automation_mode=AutomationMode.SEMI_AUTO
+    )
+    yield user, tid, pw
+    await cleanup_tenant(admin_session, user.id, tid)
+
+
+@pytest_asyncio.fixture
+async def manual_tenant(
+    admin_session: AsyncSession,
+) -> AsyncIterator[tuple[Any, UUID, str]]:
+    from imga_db.models import AutomationMode
+
+    from tests.batch_helpers import cleanup_tenant, seed_tenant_with_admin
+
+    user, tid, pw = await seed_tenant_with_admin(
+        admin_session, automation_mode=AutomationMode.MANUAL
+    )
+    yield user, tid, pw
+    await cleanup_tenant(admin_session, user.id, tid)
+
+
+@pytest_asyncio.fixture
+async def full_auto_tenant(
+    admin_session: AsyncSession,
+) -> AsyncIterator[tuple[Any, UUID, str]]:
+    from imga_db.models import AutomationMode
+
+    from tests.batch_helpers import cleanup_tenant, seed_tenant_with_admin
+
+    user, tid, pw = await seed_tenant_with_admin(
+        admin_session, automation_mode=AutomationMode.FULL_AUTO
+    )
+    yield user, tid, pw
+    await cleanup_tenant(admin_session, user.id, tid)
