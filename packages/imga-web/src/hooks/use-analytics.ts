@@ -35,14 +35,32 @@ function qs(params: Record<string, string | number | undefined | string[]>): str
   return u.toString();
 }
 
+// AnalyticsFilters carries YYYY-MM-DD date strings (URL-friendly, no
+// timezone slide). The backend expects ISO datetimes, so we expand to
+// local-midnight (start) and local-end-of-day (end) here. Invalid dates
+// are dropped instead of rejected — the URL bar is user-edited so a
+// half-typed value just means "filter not yet committed".
+function dateOnlyToLocalIso(value: string | undefined, endOfDay: boolean): string | undefined {
+  if (!value) return undefined;
+  const d = new Date(`${value}${endOfDay ? "T23:59:59" : "T00:00:00"}`);
+  return Number.isNaN(d.getTime()) ? undefined : d.toISOString();
+}
+
 function commonParams(f: AnalyticsFilters): Record<string, string | string[] | undefined> {
   return {
-    date_from: f.date_from,
-    date_to: f.date_to,
+    date_from: dateOnlyToLocalIso(f.date_from, false),
+    date_to: dateOnlyToLocalIso(f.date_to, true),
     sentiment_labels: f.sentiment_labels,
     category_ids: f.category_ids,
     source_types: f.source_types,
     batch_job_id: f.batch_job_id,
+  };
+}
+
+function dateRangeParams(f: AnalyticsFilters): Record<string, string | undefined> {
+  return {
+    date_from: dateOnlyToLocalIso(f.date_from, false),
+    date_to: dateOnlyToLocalIso(f.date_to, true),
   };
 }
 
@@ -70,8 +88,7 @@ export function useCategoryDistribution(filters: AnalyticsFilters, limit = 10) {
 
 export function useSentimentByCategory(filters: AnalyticsFilters, topN = 10) {
   const query = qs({
-    date_from: filters.date_from,
-    date_to: filters.date_to,
+    ...dateRangeParams(filters),
     source_types: filters.source_types,
     batch_job_id: filters.batch_job_id,
     top_n_categories: topN,
@@ -87,8 +104,7 @@ export function useSentimentByCategory(filters: AnalyticsFilters, topN = 10) {
 
 export function useOverrideStats(filters: AnalyticsFilters) {
   const query = qs({
-    date_from: filters.date_from,
-    date_to: filters.date_to,
+    ...dateRangeParams(filters),
     source_types: filters.source_types,
   });
   return useQuery<OverrideStatsResponse>({
@@ -106,8 +122,7 @@ export function useSentimentTimeline(
 ) {
   const query = qs({
     granularity,
-    date_from: filters.date_from,
-    date_to: filters.date_to,
+    ...dateRangeParams(filters),
     source_types: filters.source_types,
   });
   return useQuery<SentimentTimelineResponse>({
@@ -121,8 +136,7 @@ export function useSentimentTimeline(
 
 export function useTicketResolutionTime(filters: AnalyticsFilters) {
   const query = qs({
-    date_from: filters.date_from,
-    date_to: filters.date_to,
+    ...dateRangeParams(filters),
     category_ids: filters.category_ids,
   });
   return useQuery<TicketResolutionResponse>({
@@ -136,8 +150,7 @@ export function useTicketResolutionTime(filters: AnalyticsFilters) {
 
 export function useSensitivityDistribution(filters: AnalyticsFilters) {
   const query = qs({
-    date_from: filters.date_from,
-    date_to: filters.date_to,
+    ...dateRangeParams(filters),
     source_types: filters.source_types,
   });
   return useQuery<SensitivityDistResponse>({

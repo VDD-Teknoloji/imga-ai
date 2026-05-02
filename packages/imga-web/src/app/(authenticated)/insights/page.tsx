@@ -8,8 +8,8 @@
 // Refresh-stable; cell-click navigation /reviews'a query params ile.
 
 import { TrendingUp } from "lucide-react";
-import { useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { useMemo } from "react";
 import {
   Bar,
   BarChart,
@@ -63,9 +63,18 @@ const TAB_LABELS: Record<TabKey, string> = {
 
 export default function InsightsPage() {
   const router = useRouter();
+  const pathname = usePathname();
   const searchParams = useSearchParams();
 
   const tab = (searchParams.get("tab") as TabKey) || "sentiment";
+
+  // date_from / date_to live in the URL as plain YYYY-MM-DD. Storing the
+  // full ISO datetime here previously round-tripped through URL-encoding
+  // (`:` → `%3A`, `.` → unchanged) and Next.js' soft-nav diff treated the
+  // re-emitted URL as identical to the current one, silently dropping
+  // the navigation — that's what made tab clicks no-op after a refresh
+  // when date_from was present. The hook layer converts to local-
+  // midnight ISO before hitting the API.
   const filters = useMemo<AnalyticsFilters>(
     () => ({
       date_from: searchParams.get("date_from") ?? undefined,
@@ -75,11 +84,16 @@ export default function InsightsPage() {
     [searchParams],
   );
 
+  // Canonical Next.js 16 pattern (see node_modules/next/dist/docs/.../use-search-params.md):
+  // build a fresh URLSearchParams from the current snapshot and push the
+  // pathname + new query. router.push is more honest than replace here —
+  // back button should walk filter history.
   function setParam(key: string, value: string | null) {
     const params = new URLSearchParams(searchParams.toString());
     if (value === null || value === "") params.delete(key);
     else params.set(key, value);
-    router.replace(`/insights?${params.toString()}`, { scroll: false });
+    const qs = params.toString();
+    router.push(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
   }
 
   return (
@@ -98,7 +112,7 @@ export default function InsightsPage() {
 
       <Tabs
         value={tab}
-        onValueChange={(v) => setParam("tab", v === "sentiment" ? null : v)}
+        onValueChange={(v) => setParam("tab", String(v))}
       >
         <TabsList className="grid grid-cols-5">
           {(Object.keys(TAB_LABELS) as TabKey[]).map((k) => (
@@ -130,22 +144,13 @@ export default function InsightsPage() {
 
 // --- filter bar -----------------------------------------------------------
 
-// Commit URL state on blur, not on every keystroke. Browser <input type="date">
-// fires `change` once the value is parseable; commit-on-blur stops a flicker
-// when the user clears the input mid-edit, and lets us reject Invalid Date
-// before round-tripping it through toISOString().
-
-function toIsoStartOfDay(value: string): string | null {
-  if (!value) return null;
-  const d = new Date(`${value}T00:00:00`);
-  return Number.isNaN(d.getTime()) ? null : d.toISOString();
-}
-
-function toIsoEndOfDay(value: string): string | null {
-  if (!value) return null;
-  const d = new Date(`${value}T23:59:59`);
-  return Number.isNaN(d.getTime()) ? null : d.toISOString();
-}
+// Dates live in the URL as YYYY-MM-DD strings — same string the native
+// <input type="date"> already produces and consumes. The ISO datetime
+// detour caused a -1 day timezone slide (a TR user picking April 4
+// stored 2026-04-03T21:00:00Z, which slice(0,10) displayed as April 3).
+// Use-analytics hooks convert to local-midnight ISO before hitting the
+// API, so the user's "April 4" semantically means "April 4 00:00 in
+// my timezone".
 
 function FilterBar({
   filters,
@@ -154,17 +159,6 @@ function FilterBar({
   filters: AnalyticsFilters;
   setParam: (k: string, v: string | null) => void;
 }) {
-  const [fromInput, setFromInput] = useState(filters.date_from?.slice(0, 10) ?? "");
-  const [toInput, setToInput] = useState(filters.date_to?.slice(0, 10) ?? "");
-
-  // Re-sync local input state if URL changes from elsewhere (e.g. back button).
-  useEffect(() => {
-    setFromInput(filters.date_from?.slice(0, 10) ?? "");
-  }, [filters.date_from]);
-  useEffect(() => {
-    setToInput(filters.date_to?.slice(0, 10) ?? "");
-  }, [filters.date_to]);
-
   return (
     <Card>
       <CardContent className="grid grid-cols-1 gap-3 p-4 md:grid-cols-3">
@@ -172,9 +166,8 @@ function FilterBar({
           <Label className="text-xs">Başlangıç</Label>
           <input
             type="date"
-            value={fromInput}
-            onChange={(e) => setFromInput(e.target.value)}
-            onBlur={(e) => setParam("date_from", toIsoStartOfDay(e.target.value))}
+            value={filters.date_from ?? ""}
+            onChange={(e) => setParam("date_from", e.target.value || null)}
             className="border-input bg-background mt-1 w-full rounded-md border px-3 py-2 text-sm"
           />
         </div>
@@ -182,9 +175,8 @@ function FilterBar({
           <Label className="text-xs">Bitiş</Label>
           <input
             type="date"
-            value={toInput}
-            onChange={(e) => setToInput(e.target.value)}
-            onBlur={(e) => setParam("date_to", toIsoEndOfDay(e.target.value))}
+            value={filters.date_to ?? ""}
+            onChange={(e) => setParam("date_to", e.target.value || null)}
             className="border-input bg-background mt-1 w-full rounded-md border px-3 py-2 text-sm"
           />
         </div>
