@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuGroup,
   DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuSeparator,
@@ -73,10 +74,15 @@ export function UserMenu({ collapsed }: UserMenuProps) {
     <DropdownMenu>
       <DropdownMenuTrigger render={triggerElement} />
       <DropdownMenuContent align="end" side="top" className="w-56">
-        <DropdownMenuLabel className="flex flex-col">
-          <span className="truncate font-medium">{user.full_name}</span>
-          <span className="text-muted-foreground truncate text-xs font-normal">{user.email}</span>
-        </DropdownMenuLabel>
+        {/* Base UI's MenuGroupLabel zorunlu olarak Menu.Group içinde
+            yaşar; çıplak `DropdownMenuLabel` Base UI error #31'i
+            ("MenuGroupRootContext is missing") tetikler. */}
+        <DropdownMenuGroup>
+          <DropdownMenuLabel className="flex flex-col">
+            <span className="truncate font-medium">{user.full_name}</span>
+            <span className="text-muted-foreground truncate text-xs font-normal">{user.email}</span>
+          </DropdownMenuLabel>
+        </DropdownMenuGroup>
         <DropdownMenuSeparator />
         <DropdownMenuItem onClick={handleLogout}>
           <LogOut className="size-4" aria-hidden />
