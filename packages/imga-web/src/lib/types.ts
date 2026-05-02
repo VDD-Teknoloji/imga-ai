@@ -330,3 +330,105 @@ export interface CategoryView {
 export interface CategoriesResponse {
   categories: CategoryView[];
 }
+
+// ---------------------------------------------------------------------------
+// Sprint 8.3.1 — batch upload + reviews list
+// ---------------------------------------------------------------------------
+
+export type BatchJobStatus =
+  | "queued"
+  | "processing"
+  | "completed"
+  | "failed"
+  | "cancelled";
+
+export interface BatchJob {
+  job_id: string;
+  status: BatchJobStatus;
+  file_name: string;
+  file_size_bytes: number;
+  text_column: string;
+  source_column: string | null;
+  auto_create_tickets: boolean;
+  total_rows: number;
+  processed_rows: number;
+  succeeded_rows: number;
+  failed_rows: number;
+  tickets_created: number;
+  duplicates_skipped: number;
+  error_summary: Array<{ row: number | null; error: string }>;
+  estimated_seconds: number | null;
+  triggered_by_user_id: string | null;
+  started_at: string | null;
+  completed_at: string | null;
+  cancelled_at: string | null;
+  created_at: string;
+}
+
+export interface BatchJobListResponse {
+  jobs: BatchJob[];
+  total: number;
+}
+
+export type ReviewSourceType = "manual" | "batch" | "api";
+
+export interface ReviewListItem {
+  id: string;
+  text: string;
+  sentiment_label: string;
+  sentiment_score: number;
+  primary_category: string;
+  primary_confidence: number;
+  decision: ReviewDecision;
+  decision_reason: string | null;
+  ticket_id: string | null;
+  batch_job_id: string | null;
+  source_type: ReviewSourceType;
+  analyzed_at: string;
+  submitted_by_user_id: string | null;
+}
+
+export interface ReviewListResponse {
+  items: ReviewListItem[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export interface ReviewDetail {
+  id: string;
+  text: string;
+  text_hash: string;
+  analyzed_at: string;
+  source_type: ReviewSourceType;
+  batch_job_id: string | null;
+  sentiment: {
+    label: string;
+    score: number;
+    raw_score: number;
+    final_score: number;
+  };
+  categorization: {
+    primary: string;
+    primary_confidence: number;
+  };
+  overrides_applied: Array<Record<string, unknown>>;
+  ticket_id: string | null;
+  auto_ticket_decision: ReviewDecision;
+  auto_ticket_decision_reason: string | null;
+}
+
+export interface ReviewListFilters {
+  date_from?: string;
+  date_to?: string;
+  sentiment_labels?: string[];
+  has_ticket?: boolean;
+  batch_job_id?: string;
+  source_types?: ReviewSourceType[];
+  decisions?: ReviewDecision[];
+  search?: string;
+  limit?: number;
+  offset?: number;
+  order_by?: "created_at" | "sentiment_score";
+  order?: "asc" | "desc";
+}

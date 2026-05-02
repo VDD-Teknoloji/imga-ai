@@ -36,9 +36,14 @@ interface RequestOptions {
 }
 
 export async function apiRequest<T>(path: string, options: RequestOptions = {}): Promise<T> {
-  const headers: Record<string, string> = {
-    "Content-Type": "application/json",
-  };
+  const isFormData =
+    typeof FormData !== "undefined" && options.body instanceof FormData;
+  const headers: Record<string, string> = {};
+  // FormData lets the browser set Content-Type with the multipart
+  // boundary; setting it manually breaks parsing. JSON is the default.
+  if (!isFormData) {
+    headers["Content-Type"] = "application/json";
+  }
 
   if (!options.skipAuth) {
     const token = tokenStorage.getAccessToken();
@@ -50,7 +55,12 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
   const response = await fetch(`${API_BASE}${path}`, {
     method: options.method ?? "GET",
     headers,
-    body: options.body !== undefined ? JSON.stringify(options.body) : undefined,
+    body:
+      options.body === undefined
+        ? undefined
+        : isFormData
+        ? (options.body as FormData)
+        : JSON.stringify(options.body),
     signal: options.signal,
   });
 

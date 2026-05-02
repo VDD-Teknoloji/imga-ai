@@ -1,9 +1,11 @@
 import {
   Building2,
+  FileSearch,
   LayoutDashboard,
   Settings,
   Sparkles,
   Ticket,
+  Upload,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
@@ -22,6 +24,8 @@ export const NAV_ITEMS: ReadonlyArray<NavItem> = [
   { label: "Panel", href: "/", icon: LayoutDashboard },
   { label: "Ticket'lar", href: "/tickets", icon: Ticket },
   { label: "Analiz", href: "/analyze", icon: Sparkles },
+  { label: "Toplu Yükleme", href: "/analyze/upload", icon: Upload },
+  { label: "Analizler", href: "/reviews", icon: FileSearch },
   { label: "Ayarlar", href: "/settings", icon: Settings },
 ];
 
