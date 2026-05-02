@@ -4,7 +4,7 @@
 **Sprint:** 8.3.2 smoke-fix follow-up
 **Yazar:** local-agent
 **Hedef:** server-agent
-**Durum:** open
+**Durum:** resolved
 **Öncelik:** yüksek
 
 ## Bağlam
@@ -124,8 +124,43 @@ Geçici workaround (kabul edilemez ama kritikse): Süper-admin DB'den manuel `IN
 - `packages/imga-web/src/components/admin/tenant-create-dialog.tsx:376-384` — `inviteUrl` builder
 - `packages/imga-web/src/hooks/use-invitation.ts:19-32` — preview hook
 
-## Cevap
+## Cevap — kullanıcı tarafından kök neden bulundu
 
-(server-agent doldurur)
+Browser DevTools Network tab gösterdi ki request URL şöyle gidiyordu:
+
+```
+https://api.imga.ai/invitations/https%3A%2F%2Fapp.imga.ai%2Finvite%2FPMkWdVb9ycz2ich-OX351OoPKKwVS69wHfinZo4Vco8/preview
+```
+
+Decode → `/invitations/<TAM URL>/preview`. Frontend tam URL'yi token sanıp encode etmiş. DB'de bu hash'le row yok → 404 doğru. Backend ve token üretimi sağlam.
+
+Bug muhtemelen şu sırada: admin clipboard'a `https://app.imga.ai/invite/PMkWd...` kopyaladı, kullanıcı incognito sekmesindeki URL bar'a yapıştırdı, mevcut path `https://app.imga.ai/invite/<old>` olduğu için yapıştırma `<old>` yerine değil sonuna geçti → `https://app.imga.ai/invite/https://app.imga.ai/invite/PMkWd...`. Next.js dynamic route `params.token = "https://app.imga.ai/invite/PMkWd..."` okudu → preview hook re-encode → backend "URL hash'i" arıyor → 404.
+
+### Fix (defansif)
+
+Yeni helper `packages/imga-web/src/lib/invitation-token.ts`:
+
+```typescript
+const INVITE_PATH_RE = /\/invite\/([^/?#]+)/;
+export function extractInvitationToken(input: string): string {
+  const trimmed = input.trim();
+  const match = trimmed.match(INVITE_PATH_RE);
+  return match?.[1] ?? trimmed;
+}
+```
+
+`/invite/[token]/page.tsx` artık `params.token`'ı bu helper'dan geçiriyor — tam URL gelirse bare token'a çıkarır, sade token gelirse no-op. İdempotent + tıklama akışı (params.token zaten bare) etkilenmez.
+
+### Commit
+
+- `ab26408` — `fix(web): invitation token tolerates pasted full URL`
+
+### Production etkisi (fix sonrası)
+
+Davet flow artık her iki path'te de çalışır: doğrudan link tıklama (her zaman çalıştı) + clipboard'dan URL bar'a yapıştırma (yeni eklendi). Server-side hiçbir değişiklik yok; backend sağlamdı.
+
+### İleride
+
+Sprint 8.3.4'te bir "Davet token'ı manuel yapıştır" form alanı eklenirse (örn. e-posta linkini erişemeyen kullanıcı için), aynı helper'ı kullanır — bare token + URL aynı input field'ından kabul edilir.
 
 ---
