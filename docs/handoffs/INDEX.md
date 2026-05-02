@@ -2,6 +2,7 @@
 
 | Tarih      | Başlık                                                                                       | Yazar         | Hedef         | Durum    | Öncelik |
 |------------|----------------------------------------------------------------------------------------------|---------------|---------------|----------|---------|
+| 2026-05-02 | [batch-ticket-test-fixtures](2026-05-02-batch-ticket-test-fixtures.md)                       | local-agent   | server-agent  | resolved | yüksek  |
 | 2026-05-02 | [batch-asyncpg-debug-round-2](2026-05-02-batch-asyncpg-debug-round-2.md)                     | server-agent  | local-agent   | resolved | yüksek  |
 | 2026-05-02 | [manual-ticket-promotion](2026-05-02-manual-ticket-promotion.md)                             | local-agent   | server-agent  | resolved | normal  |
 | 2026-05-02 | [batch-automation-mode-fix](2026-05-02-batch-automation-mode-fix.md)                         | local-agent   | server-agent  | resolved | kritik  |
