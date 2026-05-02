@@ -180,12 +180,34 @@ def write_xlsx(path: Path, header: list[str], rows: list[list[str]]) -> Path:
 
 
 async def run_worker(client: TestClient, job_id: UUID) -> None:
-    """Directly drive ``process_batch_job`` against the test app's
-    worker context. Use this immediately after POST /...batch when
-    the test wants the worker run to completion (the lifespan replaced
-    the real scheduler with a no-op; nothing fires automatically)."""
-    context: WorkerContext = client.app.state.batch_worker_context  # type: ignore[attr-defined]
-    await batch_analyzer.process_batch_job(job_id, context)
+    """Drive ``process_batch_job`` on the *test's* event loop.
+
+    Subtle: we do NOT reuse ``client.app.state.batch_worker_context`` —
+    that context was built inside the TestClient lifespan, which runs in
+    anyio.from_thread.BlockingPortal's own event loop. Awaiting its
+    engines / Semaphore / Locks from the test loop trips
+    'Future attached to a different loop' on cleanup.
+
+    Building a fresh context here binds every primitive (engines, pool,
+    Semaphore, per-tenant Lock) to the test loop, matches the loop the
+    awaiter is on, and disposes cleanly when the function returns. The
+    same DB is used so the row inserted by the upload route (running in
+    BlockingPortal) is visible to the worker (running on test loop)
+    through Postgres — they only share state, not Python objects.
+    """
+    test_app = client.app  # type: ignore[attr-defined]
+    pipeline = test_app.state.pipeline
+    cache = test_app.state.tenant_config_cache
+    settings = test_app.state.settings.batch
+    context: WorkerContext = await batch_analyzer.build_worker_context(
+        pipeline=pipeline,
+        tenant_config_cache=cache,
+        settings=settings,
+    )
+    try:
+        await batch_analyzer.process_batch_job(job_id, context)
+    finally:
+        await context.dispose()
 
 
 async def fetch_job(

@@ -335,7 +335,6 @@ def batch_client(
     from cachetools import TTLCache
 
     from imga_api.dependencies import get_pipeline
-    from imga_api.workers import batch_analyzer
     from imga_api.workers.batch_analyzer import build_worker_context
     from tests.batch_helpers import RecordingScheduler
 
@@ -373,9 +372,6 @@ def batch_client(
         if hasattr(app.state, attr):
             delattr(app.state, attr)
 
-    batch_analyzer._GLOBAL_SEMAPHORE = None
-    batch_analyzer._TENANT_LOCKS.clear()
-
     try:
         with TestClient(app, raise_server_exceptions=True) as c:
             yield c
@@ -395,8 +391,6 @@ def batch_client(
         ):
             if hasattr(app.state, attr):
                 delattr(app.state, attr)
-        batch_analyzer._GLOBAL_SEMAPHORE = None
-        batch_analyzer._TENANT_LOCKS.clear()
 
 
 @pytest_asyncio.fixture

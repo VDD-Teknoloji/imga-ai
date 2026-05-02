@@ -12,6 +12,15 @@ and check timestamps in the DB. The stub pipeline is fast (no async
 points), so we rely on the DB transaction commits between chunks as
 natural yield points — chunk_size=2 + total=20 forces multiple yield
 opportunities so the loop has a chance to schedule peers.
+
+Concurrency primitives (``Semaphore`` + per-tenant ``Lock``) live on
+``WorkerContext`` after round-2 of the asyncpg debug. These tests
+deliberately bypass the ``run_worker`` helper (which builds a fresh
+context per call) and instead build ONE shared context on the test's
+event loop, then call ``process_batch_job`` directly with that context.
+A fresh context per invocation would isolate the primitives and defeat
+the whole assertion — semaphore-of-1 + 3 jobs would all run in
+parallel each with their own semaphore.
 """
 
 from __future__ import annotations
@@ -35,11 +44,25 @@ from tests.batch_helpers import (
     cleanup_tenant,
     fetch_job,
     login_token,
-    run_worker,
     seed_tenant_with_admin,
     upload_csv,
     write_csv,
 )
+
+
+async def _shared_test_context(
+    batch_client: TestClient,
+) -> batch_analyzer.WorkerContext:
+    """Build a WorkerContext on the *test's* event loop with a stub
+    pipeline + the batch_client's settings. Concurrency tests share
+    one context across N parallel ``process_batch_job`` calls so the
+    Semaphore + tenant Lock semantics are exercised end-to-end."""
+    test_app = batch_client.app  # type: ignore[attr-defined]
+    return await batch_analyzer.build_worker_context(
+        pipeline=test_app.state.pipeline,
+        tenant_config_cache=test_app.state.tenant_config_cache,
+        settings=test_app.state.settings.batch,
+    )
 
 
 def _twenty_row_csv(tmp_path: Path, name: str) -> Path:
@@ -73,8 +96,17 @@ async def test_per_tenant_lock_serialises_jobs(
     j1 = UUID(r1.json()["job_id"])
     j2 = UUID(r2.json()["job_id"])
 
-    # Concurrent worker invocations.
-    await asyncio.gather(run_worker(batch_client, j1), run_worker(batch_client, j2))
+    # Concurrent worker invocations sharing one context — so the
+    # tenant Lock guards both jobs (otherwise per-call contexts would
+    # have separate locks and serialisation would not happen).
+    context = await _shared_test_context(batch_client)
+    try:
+        await asyncio.gather(
+            batch_analyzer.process_batch_job(j1, context),
+            batch_analyzer.process_batch_job(j2, context),
+        )
+    finally:
+        await context.dispose()
 
     job1 = await fetch_job(admin_session, j1)
     job2 = await fetch_job(admin_session, j2)
@@ -103,11 +135,12 @@ async def test_global_semaphore_caps_parallelism_at_two(
     """Three jobs across three tenants with global_concurrency=2 must
     leave one job waiting on the semaphore. We assert this via overlap
     counting: at least one pair has no overlap, AND the third job's
-    started_at is >= the earliest job's completed_at."""
-    # Reset semaphore so this test sees a freshly-built one with the
-    # configured limit (the lifespan's tmp env set it to 2).
-    batch_analyzer._GLOBAL_SEMAPHORE = None
+    started_at is >= the earliest job's completed_at.
 
+    Concurrency primitives (Semaphore + per-tenant Lock) now live on
+    WorkerContext and ``run_worker`` builds a fresh context per call,
+    so each invocation gets a clean Semaphore without a manual reset.
+    """
     a_user, a_tid, a_pw = semi_auto_tenant
     b_user, b_tid, b_pw = await seed_tenant_with_admin(
         admin_session, name_prefix="Beta Co"
@@ -125,11 +158,16 @@ async def test_global_semaphore_caps_parallelism_at_two(
         rc = upload_csv(batch_client, token=c_token, path=_twenty_row_csv(tmp_path, "c.csv"), text_column="yorum")
         ja, jb, jc = (UUID(r.json()["job_id"]) for r in (ra, rb, rc))
 
-        await asyncio.gather(
-            run_worker(batch_client, ja),
-            run_worker(batch_client, jb),
-            run_worker(batch_client, jc),
-        )
+        # Shared context so the global Semaphore caps all three jobs.
+        context = await _shared_test_context(batch_client)
+        try:
+            await asyncio.gather(
+                batch_analyzer.process_batch_job(ja, context),
+                batch_analyzer.process_batch_job(jb, context),
+                batch_analyzer.process_batch_job(jc, context),
+            )
+        finally:
+            await context.dispose()
 
         jobs = [
             await fetch_job(admin_session, jid) for jid in (ja, jb, jc)

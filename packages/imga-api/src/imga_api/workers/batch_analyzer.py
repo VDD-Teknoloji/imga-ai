@@ -32,7 +32,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections import defaultdict
 from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -73,29 +72,6 @@ log = logging.getLogger("imga-api.workers.batch")
 
 
 # ---------------------------------------------------------------------------
-# In-memory concurrency primitives
-# ---------------------------------------------------------------------------
-
-_GLOBAL_SEMAPHORE: asyncio.Semaphore | None = None
-_TENANT_LOCKS: dict[UUID, asyncio.Lock] = defaultdict(asyncio.Lock)
-_LOCK_INIT = asyncio.Lock()
-
-
-async def _get_global_semaphore(limit: int) -> asyncio.Semaphore:
-    """Lazy-init the global semaphore. Called once per process; the
-    limit is read from BatchSettings at first use and never re-read."""
-    global _GLOBAL_SEMAPHORE
-    async with _LOCK_INIT:
-        if _GLOBAL_SEMAPHORE is None:
-            _GLOBAL_SEMAPHORE = asyncio.Semaphore(limit)
-    return _GLOBAL_SEMAPHORE
-
-
-def _tenant_lock(tenant_id: UUID) -> asyncio.Lock:
-    return _TENANT_LOCKS[tenant_id]
-
-
-# ---------------------------------------------------------------------------
 # Worker context — built once per job, NOT per chunk.
 # ---------------------------------------------------------------------------
 
@@ -104,11 +80,15 @@ def _tenant_lock(tenant_id: UUID) -> asyncio.Lock:
 class WorkerContext:
     """Plumbing the worker grabs from app state once per job.
 
-    Engines are owned by the context (not module-level singletons) so
-    each lifespan gets its own pool and ``dispose()`` cleanly shuts
-    them down. Production wires one context per app process via the
-    FastAPI lifespan; tests build a fresh one per test so asyncpg
-    connections never bleed across event loops.
+    Owns BOTH engines AND concurrency primitives (semaphore + per-tenant
+    locks). asyncio.Lock / asyncio.Semaphore bind to the event loop that
+    first awaits them, so module-level globals leaked across pytest's
+    function-scoped loops and tripped 'got Future attached to a different
+    loop' on cleanup. Putting them on the context that's built per
+    lifespan (prod) or per test (pytest) keeps everything on one loop.
+
+    Production wires one context per app process via the FastAPI lifespan;
+    tests build a fresh one per test (see ``run_worker`` helper).
     """
 
     pipeline: AnalysisPipeline
@@ -118,6 +98,18 @@ class WorkerContext:
     app_session_factory: async_sessionmaker[AsyncSession]
     tenant_config_cache: TTLCache[UUID, dict[str, Any]]
     settings: BatchSettings
+    global_semaphore: asyncio.Semaphore
+    tenant_locks: dict[UUID, asyncio.Lock]
+
+    def lock_for(self, tenant_id: UUID) -> asyncio.Lock:
+        """Per-tenant Lock cache. Returns the same Lock for repeated
+        calls within the context's lifetime; binds to the current loop
+        on first await."""
+        lock = self.tenant_locks.get(tenant_id)
+        if lock is None:
+            lock = asyncio.Lock()
+            self.tenant_locks[tenant_id] = lock
+        return lock
 
     async def dispose(self) -> None:
         """Close both engines' connection pools. Lifespan calls this
@@ -135,14 +127,17 @@ async def build_worker_context(
     tenant_config_cache: TTLCache[UUID, dict[str, Any]],
     settings: BatchSettings,
 ) -> WorkerContext:
-    """Build a fresh WorkerContext, including its own engine pair.
+    """Build a fresh WorkerContext, including its own engine pair AND
+    its own concurrency primitives.
 
-    Both engines bind to the asyncpg event loop active at construction
-    time. That's exactly what we want — the lifespan's loop in prod,
-    the test's loop in pytest. Module-level singletons used to live
-    here and broke pytest isolation: the first test's loop owned the
-    pool, every subsequent test got 'another operation is in progress'
-    once that loop closed.
+    Both engines and the Semaphore bind to the asyncpg event loop active
+    at construction time. That's exactly what we want — the lifespan's
+    loop in prod, the test's loop in pytest. Earlier iterations carried
+    these as module-level singletons (engines, Semaphore, init-Lock) and
+    every layer broke pytest isolation in turn: the first test's loop
+    owned the primitives, every subsequent test got either 'another
+    operation is in progress' (engines) or 'Future attached to a
+    different loop' (semaphore / lock).
     """
     admin_engine = create_engine("admin")
     app_engine = create_engine("app")
@@ -154,6 +149,8 @@ async def build_worker_context(
         app_session_factory=create_session_factory(app_engine),
         tenant_config_cache=tenant_config_cache,
         settings=settings,
+        global_semaphore=asyncio.Semaphore(settings.global_concurrency),
+        tenant_locks={},
     )
 
 
@@ -166,16 +163,17 @@ async def process_batch_job(job_id: UUID, context: WorkerContext) -> None:
     """Pick up a queued job, run it to completion / cancellation /
     failure. Idempotent on retries because the QUEUED → PROCESSING
     transition is guarded inside BatchAnalyzeService."""
-    semaphore = await _get_global_semaphore(context.settings.global_concurrency)
-
     # Step 1 — read tenant_id (admin session, no RLS bind needed).
     tenant_id = await _read_tenant_id(job_id, context.admin_session_factory)
     if tenant_id is None:
         log.warning("batch worker: job %s missing or already gone", job_id)
         return
 
-    # Step 2 — wait for both concurrency tickets.
-    async with semaphore, _tenant_lock(tenant_id):
+    # Step 2 — wait for both concurrency tickets. Both primitives are
+    # owned by the context (so they bind to the loop the context was
+    # built on; tests construct a fresh context per call to keep loop
+    # ownership consistent).
+    async with context.global_semaphore, context.lock_for(tenant_id):
         log.info("batch worker: starting job %s (tenant %s)", job_id, tenant_id)
         try:
             await _run_job(job_id, tenant_id, context)
