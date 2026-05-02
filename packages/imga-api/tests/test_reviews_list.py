@@ -43,6 +43,7 @@ async def _insert_review(
     ticket_id: UUID | None = None,
     batch_job_id: UUID | None = None,
     analyzed_at: datetime | None = None,
+    overrides_applied: list[dict[str, object]] | None = None,
 ) -> Review:
     review = Review(
         tenant_id=tenant_id,
@@ -59,6 +60,7 @@ async def _insert_review(
         submitted_by_user_id=None,
         batch_job_id=batch_job_id,
         analyzed_at=analyzed_at or datetime.now(UTC),
+        overrides_applied=overrides_applied,
     )
     session.add(review)
     await session.flush()
@@ -385,3 +387,61 @@ async def test_detail_returns_404_for_other_tenants_review(
         assert r.status_code == 404
     finally:
         await cleanup_tenant(admin_session, user_b.id, tid_b)
+
+
+@pytest.mark.asyncio
+async def test_list_exposes_override_count_and_detail_returns_full_trace(
+    batch_client: TestClient,
+    semi_auto_tenant: tuple[User, UUID, str],
+    admin_session: AsyncSession,
+) -> None:
+    """Sprint 8.3.4 — list response includes a per-row override_count
+    chip; detail response returns the full JSONB trace verbatim."""
+    user, tid, pw = semi_auto_tenant
+    overrides = [
+        {"layer": "critical", "matched_keywords": ["kötü"], "score": -0.5, "detail": None},
+        {"layer": "sla", "matched_keywords": ["3 gün"], "score": -0.3, "detail": "ihlal"},
+    ]
+    async with admin_session.begin():
+        await admin_session.execute(
+            text("SELECT set_config('app.current_tenant_id', :t, true)"),
+            {"t": str(tid)},
+        )
+        with_overrides = await _insert_review(
+            admin_session, tenant_id=tid, text_value="ileti A",
+            overrides_applied=overrides,
+        )
+        without_overrides = await _insert_review(
+            admin_session, tenant_id=tid, text_value="ileti B",
+        )
+        admin_session.expunge(with_overrides)
+        admin_session.expunge(without_overrides)
+
+    token = login_token(batch_client, user.email, pw, tid)
+    list_r = batch_client.get(
+        "/tenants/me/reviews",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert list_r.status_code == 200, list_r.text
+    by_id = {item["id"]: item for item in list_r.json()["items"]}
+    assert by_id[str(with_overrides.id)]["override_count"] == 2
+    assert by_id[str(without_overrides.id)]["override_count"] == 0
+
+    detail_r = batch_client.get(
+        f"/tenants/me/reviews/{with_overrides.id}",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert detail_r.status_code == 200
+    body = detail_r.json()
+    assert len(body["overrides_applied"]) == 2
+    assert body["overrides_applied"][0]["layer"] == "critical"
+    assert body["overrides_applied"][1]["detail"] == "ihlal"
+
+    # Row predating migration 0014 (overrides_applied IS NULL) returns []
+    # so the frontend has a stable list to map over.
+    detail_r2 = batch_client.get(
+        f"/tenants/me/reviews/{without_overrides.id}",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert detail_r2.status_code == 200
+    assert detail_r2.json()["overrides_applied"] == []

@@ -46,6 +46,7 @@ async def _seed(
     confidence: float = 0.8,
     analyzed_at: datetime | None = None,
     batch_job_id: UUID | None = None,
+    overrides_applied: list[dict[str, object]] | None = None,
 ) -> Review:
     async with admin_session.begin():
         await admin_session.execute(
@@ -67,6 +68,7 @@ async def _seed(
             submitted_by_user_id=None,
             batch_job_id=batch_job_id,
             analyzed_at=analyzed_at or datetime.now(UTC),
+            overrides_applied=overrides_applied,
         )
         admin_session.add(review)
         await admin_session.flush()
@@ -173,9 +175,10 @@ async def test_override_stats_returns_known_layers_with_zero_counts(
     semi_auto_tenant: tuple[User, UUID, str],
     admin_session: AsyncSession,
 ) -> None:
-    """Sprint 8.3.3 placeholder: overrides_applied JSONB lands in 8.3.4.
-    Endpoint contract is stable (5 known layers, Türkçe labels, zero
-    counts). Doesn't 500 with no data."""
+    """Reviews without an overrides_applied trace (NULL — predates
+    migration 0014, or pipeline produced an empty list and we stored
+    [] explicitly) must not contribute to any layer's count. The five
+    known layer rows still surface so the UI's table doesn't shift."""
     user, tid, pw = semi_auto_tenant
     await _seed(admin_session, tenant_id=tid, text_value="x", sentiment="NEGATIF", score=-0.5)
     token = login_token(batch_client, user.email, pw, tid)
@@ -188,8 +191,90 @@ async def test_override_stats_returns_known_layers_with_zero_counts(
     assert body["total_reviews"] == 1
     layers = {row["layer"] for row in body["data"]}
     assert layers == {"knowledge_base", "critical", "tier1", "sla", "tier2"}
+    # Every layer is present with zero counts; the NULL row contributes nothing.
+    for row in body["data"]:
+        assert row["trigger_count"] == 0
+        assert row["avg_impact"] == 0.0
+        assert row["max_impact"] == 0.0
+        assert row["direction"] == "none"
     # Türkçe labels present
     assert any(row["layer_label_tr"] == "Bilgi Tabanı Kuralı" for row in body["data"])
+
+
+@pytest.mark.asyncio
+async def test_override_stats_aggregates_jsonb_layer_counts_and_direction(
+    batch_client: TestClient,
+    semi_auto_tenant: tuple[User, UUID, str],
+    admin_session: AsyncSession,
+) -> None:
+    """Sprint 8.3.4 — override_stats now aggregates the JSONB array.
+    Three reviews seed three different layer mixes; assert the
+    per-layer count, direction (boost/dampen/mixed), avg_impact, and
+    trigger_percentage all line up with the fixture.
+    """
+    user, tid, pw = semi_auto_tenant
+    # Review 1: critical fires twice (negative scores → dampen).
+    await _seed(
+        admin_session, tenant_id=tid, text_value="r1",
+        sentiment="NEGATIF", score=-0.8,
+        overrides_applied=[
+            {"layer": "critical", "matched_keywords": ["kötü"], "score": -0.5, "detail": None},
+            {"layer": "critical", "matched_keywords": ["berbat"], "score": -0.7, "detail": None},
+        ],
+    )
+    # Review 2: sla once (negative — dampen) + tier1 once (also negative).
+    await _seed(
+        admin_session, tenant_id=tid, text_value="r2",
+        sentiment="NEGATIF", score=-0.6,
+        overrides_applied=[
+            {"layer": "sla", "matched_keywords": ["3 gün"], "score": -0.3, "detail": "SLA ihlali"},
+            {"layer": "tier1", "matched_keywords": ["yavaş"], "score": -0.4, "detail": None},
+        ],
+    )
+    # Review 3: knowledge_base hit with a positive score (boost direction).
+    await _seed(
+        admin_session, tenant_id=tid, text_value="r3",
+        sentiment="POZITIF", score=0.7,
+        overrides_applied=[
+            {"layer": "knowledge_base", "matched_keywords": ["teşekkür"], "score": 0.4, "detail": None},
+        ],
+    )
+
+    token = login_token(batch_client, user.email, pw, tid)
+    r = batch_client.get(
+        "/tenants/me/analytics/override-stats",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["total_reviews"] == 3
+    by_layer = {row["layer"]: row for row in body["data"]}
+
+    # critical: 2 hits, both negative → dampen, avg|abs| = 0.6, max = 0.7
+    crit = by_layer["critical"]
+    assert crit["trigger_count"] == 2
+    assert crit["direction"] == "dampen"
+    assert crit["avg_impact"] == 0.6
+    assert crit["max_impact"] == 0.7
+    # trigger_percentage: 2 hits over 3 reviews = 66.67%
+    assert crit["trigger_percentage"] == round(100 * 2 / 3, 2)
+
+    # sla: 1 hit, negative → dampen
+    sla = by_layer["sla"]
+    assert sla["trigger_count"] == 1
+    assert sla["direction"] == "dampen"
+    assert sla["avg_impact"] == 0.3
+
+    # knowledge_base: 1 hit, positive → boost
+    kb = by_layer["knowledge_base"]
+    assert kb["trigger_count"] == 1
+    assert kb["direction"] == "boost"
+    assert kb["avg_impact"] == 0.4
+
+    # tier2 had no hits — still surfaces with zero counts.
+    t2 = by_layer["tier2"]
+    assert t2["trigger_count"] == 0
+    assert t2["direction"] == "none"
 
 
 @pytest.mark.asyncio
