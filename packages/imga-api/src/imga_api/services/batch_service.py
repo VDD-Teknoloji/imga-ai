@@ -278,16 +278,6 @@ class BatchAnalyzeService:
         await self._session.flush()
         return job
 
-    async def is_cancelled(self, job_id: UUID) -> bool:
-        """Worker checks this at every chunk boundary. Refreshes from
-        DB so an out-of-band cancel from the cancel endpoint takes
-        effect within at most one chunk."""
-        await self._session.commit()  # release any prior snapshot
-        job = await self._session.get(AnalyzeBatchJob, job_id)
-        if job is None:
-            return False
-        return job.status == BatchJobStatus.CANCELLED
-
 
 __all__ = [
     "BatchAnalyzeService",

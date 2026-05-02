@@ -225,11 +225,22 @@ async def _run_job(
     context: WorkerContext,
 ) -> None:
     # Initial transition: queued → processing.
+    # mark_processing is idempotent: it returns the row untouched if the
+    # status is no longer QUEUED. The cancel endpoint runs in a separate
+    # transaction, so a job cancelled while it sat in the scheduler queue
+    # comes back here with status=CANCELLED — bail without parsing the
+    # file or holding the BERT pipeline.
     async with context.admin_session_factory() as admin_session, admin_session.begin():
         await set_current_tenant(admin_session, tenant_id)
         audit = AuditService(admin_session)
         batch_service = BatchAnalyzeService(admin_session, audit)
         job = await batch_service.mark_processing(job_id)
+        if job.status != BatchJobStatus.PROCESSING:
+            log.info(
+                "batch worker: job %s already in terminal state %s; skipping",
+                job_id, job.status,
+            )
+            return
         file_path = Path(job.file_path)
         text_column = job.text_column
         source_column = job.source_column
