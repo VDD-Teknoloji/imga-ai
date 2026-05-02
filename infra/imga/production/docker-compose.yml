@@ -56,9 +56,11 @@ services:
       - caddy-public
     # Sprint 8.3.1: batch upload payload'ları host'taki /var/imga/uploads'a
     # düşer (worker stream eder, 24h cleanup cron eskiyenleri siler).
-    # Host dizini owner=1000:1000 (Dockerfile'daki imga user) olmalı.
+    # Sprint 8.3.2: rapor çıktıları /var/imga/reports'a, aynı 24h cleanup.
+    # Host dizinleri owner=1000:1000 (Dockerfile'daki imga user) olmalı.
     volumes:
       - /var/imga/uploads:/var/imga/uploads
+      - /var/imga/reports:/var/imga/reports
     depends_on:
       postgres:
         condition: service_healthy
