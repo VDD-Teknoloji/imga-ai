@@ -98,6 +98,7 @@ services:
           tests/test_reviews_list.py \
           tests/test_orphan_recovery.py \
           tests/test_review_manual_ticket.py \
+          tests/test_report_generation.py \
           -v --tb=short
 
 networks:
