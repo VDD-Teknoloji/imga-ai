@@ -86,11 +86,16 @@ export function Heatmap({
   const width = ROW_LABEL_W + cols.length * CELL_W + totalsW;
   const totalH = COL_LABEL_H + rows.length * CELL_H + totalsH;
 
+  // Mobile responsive: pin the SVG at its native pixel width so labels
+  // never shrink to illegible 6px text. The parent's `overflow-x-auto`
+  // lets the user pan horizontally on narrow viewports; the touch-pan-x
+  // utility hints to mobile browsers that horizontal touch-drag is
+  // intended (otherwise iOS Safari sometimes prefers the page scroll).
   return (
-    <div className="overflow-x-auto">
+    <div className="overflow-x-auto -mx-2 px-2 touch-pan-x">
       <svg
         viewBox={`0 0 ${width} ${totalH}`}
-        width="100%"
+        width={width}
         height={height ?? totalH}
         role="img"
         aria-label="Isı haritası"
