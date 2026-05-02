@@ -21,6 +21,7 @@ import { useInvitationPreview } from "@/hooks/use-invitation";
 import { ApiError } from "@/lib/api-client";
 import { useAuthStore } from "@/lib/auth-store";
 import { formatFullDate } from "@/lib/date-format";
+import { extractInvitationToken } from "@/lib/invitation-token";
 import type { InvitationPreview, UserTenantRole } from "@/lib/types";
 import { USER_ROLE_LABELS } from "@/lib/user-helpers";
 
@@ -45,7 +46,13 @@ import { USER_ROLE_LABELS } from "@/lib/user-helpers";
  */
 export default function InviteAcceptPage() {
   const params = useParams<{ token: string }>();
-  const token = params.token;
+  // Defence against pasted-full-URL tokens. The admin's create-dialog
+  // copies ``${origin}/invite/${token}`` to clipboard; if a user pastes
+  // that into the URL bar of a tab that already shows
+  // /invite/<old-token>, the browser builds /invite/<full-url> and
+  // params.token ends up holding the entire URL. extractInvitationToken
+  // is idempotent so passing a clean token is a no-op.
+  const token = extractInvitationToken(params.token);
 
   const preview = useInvitationPreview(token);
 
