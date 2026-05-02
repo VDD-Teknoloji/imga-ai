@@ -239,6 +239,44 @@ def test_refresh_rotates_token(
     assert new_pair["access_token"] != login["access_token"]
 
 
+def test_refresh_preserves_active_tenant_context(
+    client: TestClient,
+    seeded_user_and_tenant: tuple[User, UUID, str],
+    jwt_settings: JWTSettings,
+) -> None:
+    """Regression: prod 8.2 hotfix.
+
+    Silent refresh used to drop ``active_tenant_id`` because the refresh
+    path issued the new access token with ``None`` claims. The fix
+    persists the tenant context on the ``RefreshTokenRecord`` row and
+    carries it across rotations. After /switch-tenant or fresh login,
+    the rotated access token must still embed the same tenant + role.
+    """
+    user, tenant_id, password = seeded_user_and_tenant
+    login = client.post(
+        "/auth/login",
+        json={
+            "email": user.email,
+            "password": password,
+            "active_tenant_id": str(tenant_id),
+        },
+    ).json()
+    # Sanity: login token has the tenant context.
+    login_payload = decode_access_token(login["access_token"], jwt_settings)
+    assert login_payload.active_tenant_id == tenant_id
+    assert login_payload.active_role == "analyst"
+
+    rotated = client.post(
+        "/auth/refresh", json={"refresh_token": login["refresh_token"]}
+    )
+    assert rotated.status_code == 200, rotated.text
+    rotated_payload = decode_access_token(
+        rotated.json()["access_token"], jwt_settings
+    )
+    assert rotated_payload.active_tenant_id == tenant_id
+    assert rotated_payload.active_role == "analyst"
+
+
 def test_refresh_token_reuse_revokes_family(
     client: TestClient,
     seeded_user_and_tenant: tuple[User, UUID, str],

@@ -164,10 +164,19 @@ class AuthService:
         if user is None or not user.is_active:
             raise AuthError("user inactive")
 
+        # Carry the rotation chain's tenant context across rotations.
+        # Explicit kwargs win (kept for symmetry with login); otherwise
+        # the new access token mirrors the parent record's claims so
+        # silent refreshes don't drop the user's active tenant.
+        next_tenant_id = (
+            active_tenant_id if active_tenant_id is not None
+            else record.active_tenant_id
+        )
+        next_role = active_role if active_role is not None else record.active_role
         pair = await self._issue_token_pair(
             user=user,
-            active_tenant_id=active_tenant_id,
-            active_role=active_role,
+            active_tenant_id=next_tenant_id,
+            active_role=next_role,
             family_id=record.family_id,
             parent_jti=record.jti,
         )
@@ -176,7 +185,7 @@ class AuthService:
             resource_type="refresh_token",
             resource_id=pair.refresh_payload.jti,
             actor_user_id=user.id,
-            tenant_id=active_tenant_id,
+            tenant_id=next_tenant_id,
         )
         return user, pair
 
@@ -273,6 +282,8 @@ class AuthService:
             parent_jti=parent_jti,
             issued_at=datetime.fromtimestamp(refresh_payload.iat, tz=UTC),
             expires_at=datetime.fromtimestamp(refresh_payload.exp, tz=UTC),
+            active_tenant_id=active_tenant_id,
+            active_role=active_role,
         )
         self._session.add(record)
         await self._session.flush()

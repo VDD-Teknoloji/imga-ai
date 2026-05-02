@@ -59,3 +59,13 @@ class RefreshTokenRecord(Base):
         DateTime(timezone=True), nullable=True
     )
     revoke_reason: Mapped[str | None] = mapped_column(String(64), nullable=True)
+
+    # Tenant context bound to the rotation chain. Refresh keeps the
+    # access-token claims stable across rotations — without these the
+    # 15-min refresh would silently drop active_tenant_id and break
+    # tenant-scoped endpoints. /switch-tenant opens a fresh family with
+    # different values, so storing per-record (not per-family) is fine.
+    active_tenant_id: Mapped[UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True), nullable=True
+    )
+    active_role: Mapped[str | None] = mapped_column(String(32), nullable=True)
