@@ -432,3 +432,54 @@ export interface ReviewListFilters {
   order_by?: "created_at" | "sentiment_score";
   order?: "asc" | "desc";
 }
+
+// ---------------------------------------------------------------------------
+// Sprint 8.3.2 — multi-sheet Excel/CSV reports
+// ---------------------------------------------------------------------------
+
+export type ReportType = "comprehensive" | "reviews_only" | "tickets_only";
+export type ReportFormat = "xlsx" | "csv";
+export type ReportStatus = "queued" | "generating" | "completed" | "failed";
+
+export interface ReportFiltersInput {
+  date_from?: string;
+  date_to?: string;
+  category_ids?: string[];
+  sentiment_labels?: string[];
+  ticket_states?: string[];
+  batch_job_id?: string;
+}
+
+export interface GenerateReportRequest {
+  report_type: ReportType;
+  format: ReportFormat;
+  filters?: ReportFiltersInput;
+}
+
+export interface GenerateReportResponse {
+  report_id: string;
+  status: ReportStatus;
+  estimated_seconds: number;
+  row_count_estimate: number;
+}
+
+export interface ReportJobView {
+  report_id: string;
+  status: ReportStatus;
+  report_type: ReportType;
+  format: ReportFormat;
+  filters: Record<string, unknown>;
+  row_count: number | null;
+  file_size_bytes: number | null;
+  error_message: string | null;
+  triggered_by_user_id: string | null;
+  started_at: string | null;
+  completed_at: string | null;
+  expires_at: string;
+  created_at: string;
+}
+
+export interface ReportListResponse {
+  reports: ReportJobView[];
+  total: number;
+}
