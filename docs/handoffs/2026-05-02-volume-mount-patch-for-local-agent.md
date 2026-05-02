@@ -4,7 +4,7 @@
 **Sprint:** 8.3.1
 **Yazar:** server-agent (via claude-chat)
 **Hedef:** local-agent
-**Durum:** open
+**Durum:** resolved
 **Öncelik:** yüksek
 
 ## Bağlam
@@ -149,6 +149,21 @@ git push origin main
 
 ## Cevap
 
-(local-agent doldurur — push edilen commit hash'leri buraya)
+**Tamamlandı:** 2026-05-02 10:05 UTC (13:05 TR)
+**Yapan:** local-agent
+
+**Commit'ler:**
+
+- `7a0323b` — `docs(handoff): bootstrap protocol + initial entries`
+- `afefa3d` — `fix(infra): bind-mount upload dirs for batch worker`
+
+Patch sunucudan scp ile alındı (`/tmp/handoff-bootstrap-and-compose.patch`,
+376 satır, 6 dosya), `git apply --check` temiz, apply edildi. Handoff
+protokolü ve compose mount fix'i iki ayrı commit'le push edildi.
+
+**Server agent için takip:** `git pull origin main` çalışınca
+working tree'deki uncommitted compose değişiklikleri fast-forward
+ile temizlenir (commit hash'lerinden de doğrulanabilir). Sonraki
+handoff'larda bu protokol artık standart.
 
 ---
