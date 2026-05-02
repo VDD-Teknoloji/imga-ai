@@ -336,6 +336,7 @@ def batch_client(
 
     from imga_api.dependencies import get_pipeline
     from imga_api.workers.batch_analyzer import build_worker_context
+    from imga_api.workers.report_generator import build_report_context
     from tests.batch_helpers import RecordingScheduler
 
     @asynccontextmanager
@@ -346,18 +347,28 @@ def batch_client(
         application.state.tenant_config_cache = TTLCache(maxsize=1000, ttl=300)
         application.state.batch_scheduler = RecordingScheduler()
         s.batch.upload_dir.mkdir(parents=True, exist_ok=True)
+        s.report.reports_dir.mkdir(parents=True, exist_ok=True)
         worker_ctx = await build_worker_context(
             pipeline=stub_batch_pipeline,
             tenant_config_cache=application.state.tenant_config_cache,
             settings=s.batch,
         )
         application.state.batch_worker_context = worker_ctx
+        # Sprint 8.3.2: report worker context lives next to the batch
+        # one; tests that hit /reports/* via the upload route's
+        # ``submit_report_job`` path read it here. Tests that drive the
+        # report worker directly build a fresh test-loop context
+        # (same pattern as run_worker — see test_report_generation
+        # `_build_test_context`).
+        report_ctx = await build_report_context(settings=s.report)
+        application.state.report_worker_context = report_ctx
         try:
             yield
         finally:
-            # Dispose the worker engines so the next test's event loop
-            # doesn't inherit asyncpg connections from this loop.
+            # Dispose engines so the next test's event loop doesn't
+            # inherit asyncpg connections from this loop.
             await worker_ctx.dispose()
+            await report_ctx.dispose()
 
     original = app.router.lifespan_context
     app.router.lifespan_context = _test_lifespan
@@ -386,6 +397,7 @@ def batch_client(
             "tenant_config_cache",
             "batch_scheduler",
             "batch_worker_context",
+            "report_worker_context",
             "pipeline",
             "settings",
         ):
