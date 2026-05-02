@@ -8,6 +8,12 @@ from imga_db.models.comment import TicketComment, TicketCommentKind
 from imga_db.models.invitation import Invitation
 from imga_db.models.mixins import SoftDeleteMixin, TenantOwnedMixin, TimestampMixin
 from imga_db.models.refresh_token import RefreshTokenRecord
+from imga_db.models.report_job import (
+    ReportFormat,
+    ReportJob,
+    ReportStatus,
+    ReportType,
+)
 from imga_db.models.review import Review, ReviewDecision
 from imga_db.models.tenant import AutomationMode, Tenant, TenantPlanTier
 from imga_db.models.ticket import (
@@ -28,6 +34,10 @@ __all__ = [
     "Category",
     "Invitation",
     "RefreshTokenRecord",
+    "ReportFormat",
+    "ReportJob",
+    "ReportStatus",
+    "ReportType",
     "Review",
     "ReviewDecision",
     "SoftDeleteMixin",
