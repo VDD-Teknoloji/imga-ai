@@ -291,14 +291,68 @@ async def test_auto_create_disabled_skips_ticket_creation(
             text("SELECT set_config('app.current_tenant_id', :t, true)"),
             {"t": str(tid)},
         )
-        decisions = list(
+        rows = list(
             (
                 await admin_session.execute(
-                    select(Review.decision).where(Review.batch_job_id == job_id)
+                    select(Review.decision, Review.automation_mode).where(
+                        Review.batch_job_id == job_id
+                    )
+                )
+            ).all()
+        )
+    assert all(r.decision == ReviewDecision.SKIPPED_MODE for r in rows)
+    # Regression: reviews CHECK constraint accepts only the three real
+    # automation_mode enum values. The worker must snapshot the tenant's
+    # actual mode (full_auto here) — earlier 'batch_opt_out' sentinel
+    # tripped ck_reviews_automation_mode and crashed the whole batch.
+    assert all(r.automation_mode == "full_auto" for r in rows)
+
+
+@pytest.mark.asyncio
+async def test_intra_batch_dedup_uses_real_tenant_automation_mode(
+    batch_client: TestClient,
+    semi_auto_tenant: tuple[User, UUID, str],
+    tmp_path: Path,
+    admin_session: AsyncSession,
+) -> None:
+    """Companion regression: the second of two duplicate rows in the
+    same upload also persists a Review row (decision=SKIPPED_DEDUP).
+    Its ``automation_mode`` must be the tenant's real mode, not the
+    pre-fix 'batch_intra_dedup' sentinel that violated the CHECK
+    constraint."""
+    user, tid, pw = semi_auto_tenant
+    token = login_token(batch_client, user.email, pw, tid)
+
+    csv_path = write_csv(
+        tmp_path / "dup.csv",
+        ["yorum"],
+        [["aynı satır"], ["aynı satır"]],
+    )
+    r = upload_csv(batch_client, token=token, path=csv_path, text_column="yorum")
+    job_id = UUID(r.json()["job_id"])
+    await run_worker(batch_client, job_id)
+
+    job = await fetch_job(admin_session, job_id)
+    assert job.status == BatchJobStatus.COMPLETED
+    assert job.duplicates_skipped == 1
+
+    async with admin_session.begin():
+        await admin_session.execute(
+            text("SELECT set_config('app.current_tenant_id', :t, true)"),
+            {"t": str(tid)},
+        )
+        modes = list(
+            (
+                await admin_session.execute(
+                    select(Review.automation_mode).where(
+                        Review.batch_job_id == job_id
+                    )
                 )
             ).scalars()
         )
-    assert all(d == ReviewDecision.SKIPPED_MODE for d in decisions)
+    assert all(m == "semi_auto" for m in modes), (
+        f"all rows must store tenant.automation_mode; got {modes}"
+    )
 
 
 @pytest.mark.asyncio

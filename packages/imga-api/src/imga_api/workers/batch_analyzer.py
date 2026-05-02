@@ -397,6 +397,16 @@ async def _process_chunk(
             app_session, audit, ticket_service, config_service
         )
 
+        # Snapshot the tenant's real automation_mode once per chunk.
+        # The reviews CHECK constraint allows ONLY 'manual' / 'semi_auto' /
+        # 'full_auto'; batch-specific intent (intra-batch dedup, opt-out)
+        # is expressed by `decision` + `decision_reason`, not by inventing
+        # sentinel mode values. Earlier sentinel values (`batch_intra_dedup`,
+        # `batch_opt_out`) violated ck_reviews_automation_mode and crashed
+        # the whole batch.
+        tenant_config = await config_service.get_config(tenant_id)
+        tenant_mode = str(tenant_config["automation_mode"])
+
         for parsed, analysis in zip(valid_rows, analyses, strict=True):
             from imga_core import review_text_hash
 
@@ -420,7 +430,7 @@ async def _process_chunk(
                         if analysis.categorization
                         else 0.0
                     ),
-                    automation_mode="batch_intra_dedup",
+                    automation_mode=tenant_mode,
                     decision=ReviewDecision.SKIPPED_DEDUP,
                     decision_reason="intra_batch_duplicate",
                     ticket_id=None,
@@ -486,7 +496,7 @@ async def _process_chunk(
                     sentiment_score=float(analysis.sentiment_score),
                     primary_category=primary,
                     primary_confidence=confidence,
-                    automation_mode="batch_opt_out",
+                    automation_mode=tenant_mode,
                     decision=ReviewDecision.SKIPPED_MODE,
                     decision_reason="auto_create_tickets_disabled",
                     ticket_id=None,
