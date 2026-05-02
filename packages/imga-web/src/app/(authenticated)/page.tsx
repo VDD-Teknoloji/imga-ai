@@ -1,17 +1,22 @@
 "use client";
 
 import { CategoryChart } from "@/components/dashboard/category-chart";
+import { CategorySentimentMiniHeatmap } from "@/components/dashboard/category-sentiment-mini-heatmap";
 import { MetricCards } from "@/components/dashboard/metric-cards";
 import { RecentTicketsTable } from "@/components/dashboard/recent-tickets";
+import { SentimentDonut } from "@/components/dashboard/sentiment-donut";
+import { SentimentTrend } from "@/components/dashboard/sentiment-trend";
 import { useAuthStore } from "@/lib/auth-store";
 
 /**
- * Tenant dashboard. Three blocks:
+ * Tenant dashboard. Sprint 8.3.4 expanded the analytics layer:
  *
  *   1. Header     — greeting + active tenant name
- *   2. Metric grid — four ticket-derived counts (Sprint 7.6.3 mapping;
- *      SHI / crisis cards land in 7.5.5/8 once analyze→ticket bridge ships)
- *   3. Two-column body — category distribution chart + recent tickets table
+ *   2. Metric grid — four ticket-derived counts
+ *   3. Analytics row — sentiment donut + category bar (existing)
+ *   4. Trend row — last 30 days sentiment line chart (full width)
+ *   5. Heatmap row — category × sentiment mini matrix (full width)
+ *   6. Recent tickets — full-width table
  */
 export default function DashboardPage() {
   const user = useAuthStore((s) => s.user);
@@ -31,9 +36,15 @@ export default function DashboardPage() {
       <MetricCards />
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <SentimentDonut />
         <CategoryChart />
-        <RecentTicketsTable />
       </div>
+
+      <SentimentTrend />
+
+      <CategorySentimentMiniHeatmap />
+
+      <RecentTicketsTable />
     </main>
   );
 }
