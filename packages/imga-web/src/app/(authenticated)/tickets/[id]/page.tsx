@@ -4,6 +4,7 @@ import { ChevronLeft } from "lucide-react";
 import Link from "next/link";
 import { notFound, useParams } from "next/navigation";
 
+import { LinkedReviewSection } from "@/components/tickets/linked-review";
 import { TicketActionBar } from "@/components/tickets/ticket-action-bar";
 import { TicketComments } from "@/components/tickets/ticket-comments";
 import { TicketSidePanel } from "@/components/tickets/ticket-side-panel";
@@ -75,7 +76,10 @@ export default function TicketDetailPage() {
             <TicketComments ticketId={data.id} ticketState={data.state} />
           </div>
 
-          <TicketSidePanel ticket={data} categoryLabel={categoryLabel} />
+          <div className="space-y-6">
+            <TicketSidePanel ticket={data} categoryLabel={categoryLabel} />
+            <LinkedReviewSection reviewId={data.review_id} />
+          </div>
         </div>
       )}
     </main>
