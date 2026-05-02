@@ -19,6 +19,7 @@ from enum import StrEnum
 from uuid import UUID, uuid4
 
 from sqlalchemy import CHAR, DateTime, Float, ForeignKey, String, Text
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -104,4 +105,11 @@ class Review(Base, TimestampMixin, SoftDeleteMixin):
 
     analyzed_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False
+    )
+
+    # Sprint 8.3.4. Pipeline override trace — list of OverrideHit dicts
+    # (layer, matched_keywords, score, detail). NULL on rows analyzed
+    # before migration 0014; [] when the pipeline ran and nothing fired.
+    overrides_applied: Mapped[list[dict[str, object]] | None] = mapped_column(
+        JSONB(), nullable=True
     )
