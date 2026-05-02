@@ -9,7 +9,7 @@
 
 import { TrendingUp } from "lucide-react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { useMemo } from "react";
+import { Suspense, useMemo } from "react";
 import {
   Bar,
   BarChart,
@@ -61,7 +61,37 @@ const TAB_LABELS: Record<TabKey, string> = {
   tickets: "Biletler",
 };
 
+// Sprint 8.3.4 round-2 — wrap the search-params-reading subtree in
+// <Suspense>. Without it, Next.js 16 client-renders the entire page
+// up to the nearest boundary; on hard refresh the searchParams hook
+// hits a hydration race where the first paint sees stale (or null)
+// values, locks `tab` and `filters` to defaults, and subsequent
+// router.push() updates don't propagate cleanly. The Suspense
+// fallback covers the brief window before client hydration; once
+// mounted, useSearchParams is reactive as documented.
 export default function InsightsPage() {
+  return (
+    <Suspense fallback={<InsightsHeaderSkeleton />}>
+      <InsightsContent />
+    </Suspense>
+  );
+}
+
+function InsightsHeaderSkeleton() {
+  return (
+    <main className="mx-auto w-full max-w-6xl space-y-6 px-4 py-8">
+      <header className="flex items-center gap-2">
+        <TrendingUp className="text-primary size-6" aria-hidden />
+        <div>
+          <h1 className="text-2xl font-semibold">İçgörüler</h1>
+          <p className="text-muted-foreground text-sm">Yükleniyor…</p>
+        </div>
+      </header>
+    </main>
+  );
+}
+
+function InsightsContent() {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -159,6 +189,10 @@ function FilterBar({
   filters: AnalyticsFilters;
   setParam: (k: string, v: string | null) => void;
 }) {
+  // Native min/max on the date inputs prevents the picker from offering
+  // an invalid (from > to) range; the API would still cap at 90 days,
+  // but stopping it at the input level is friendlier than a 400 round-
+  // trip and makes the picker greys-out the disallowed days visually.
   return (
     <Card>
       <CardContent className="grid grid-cols-1 gap-3 p-4 md:grid-cols-3">
@@ -167,6 +201,7 @@ function FilterBar({
           <input
             type="date"
             value={filters.date_from ?? ""}
+            max={filters.date_to ?? undefined}
             onChange={(e) => setParam("date_from", e.target.value || null)}
             className="border-input bg-background mt-1 w-full rounded-md border px-3 py-2 text-sm"
           />
@@ -176,6 +211,7 @@ function FilterBar({
           <input
             type="date"
             value={filters.date_to ?? ""}
+            min={filters.date_from ?? undefined}
             onChange={(e) => setParam("date_to", e.target.value || null)}
             className="border-input bg-background mt-1 w-full rounded-md border px-3 py-2 text-sm"
           />
