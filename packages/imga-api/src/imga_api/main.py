@@ -33,6 +33,7 @@ from imga_api.routes import tenant_analyze as tenant_analyze_routes
 from imga_api.routes import tenant_batch as tenant_batch_routes
 from imga_api.routes import tenant_config as tenant_config_routes
 from imga_api.routes import tenant_directory as tenant_directory_routes
+from imga_api.routes import tenant_reports as tenant_reports_routes
 from imga_api.routes import tenant_reviews as tenant_reviews_routes
 from imga_api.routes import tickets as tickets_routes
 from imga_api.routes.admin import invitations as admin_invitation_routes
@@ -74,12 +75,17 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # gaps from out-of-band tenant edits stay bounded.
     app.state.tenant_config_cache = TTLCache(maxsize=1000, ttl=300)
 
-    # Sprint 8.3.1 — APScheduler for batch upload jobs + daily cleanup.
-    # Worker context is built once and reused across job dispatches so
-    # we don't reconstruct DB engines per job.
+    # Sprint 8.3.1 + 8.3.2 — APScheduler for batch upload + report jobs +
+    # daily cleanup of both upload and report directories. Worker
+    # contexts are built once and reused across job dispatches so we
+    # don't reconstruct DB engines per job.
     from imga_api.workers.batch_analyzer import (
         build_worker_context,
         recover_orphans,
+    )
+    from imga_api.workers.report_generator import (
+        build_report_context,
+        recover_report_orphans,
     )
     from imga_api.workers.scheduler import (
         build_scheduler,
@@ -87,34 +93,46 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     )
 
     settings.batch.upload_dir.mkdir(parents=True, exist_ok=True)
+    settings.report.reports_dir.mkdir(parents=True, exist_ok=True)
     worker_context = await build_worker_context(
         pipeline=app.state.pipeline,
         tenant_config_cache=app.state.tenant_config_cache,
         settings=settings.batch,
     )
     app.state.batch_worker_context = worker_context
+    report_context = await build_report_context(settings=settings.report)
+    app.state.report_worker_context = report_context
+
     scheduler = build_scheduler()
     app.state.batch_scheduler = scheduler
 
-    # Recovery: any job left PROCESSING in the DB came from a previous
-    # process that died holding the in-memory lock. Mark them failed
-    # so the UI surfaces an actionable state instead of a stalled
-    # progress bar.
+    # Recovery: PROCESSING / GENERATING jobs left in the DB came from a
+    # previous process that died holding the in-memory lock. Mark them
+    # failed so the UI surfaces an actionable state instead of a
+    # stalled progress bar.
     orphans = await recover_orphans(worker_context)
     if orphans:
         log.warning("startup: marked %s orphaned batch jobs as failed", orphans)
+    report_orphans = await recover_report_orphans(report_context)
+    if report_orphans:
+        log.warning("startup: marked %s orphaned report jobs as failed", report_orphans)
 
     schedule_cleanup(
         scheduler,
         upload_root=settings.batch.upload_dir,
         retention_hours=settings.batch.retention_hours,
     )
+    schedule_cleanup(
+        scheduler,
+        upload_root=settings.report.reports_dir,
+        retention_hours=settings.report.retention_hours,
+    )
     scheduler.start()
     log.info(
-        "scheduler started (upload_dir=%s, retention=%sh, global_concurrency=%s)",
+        "scheduler started (upload_dir=%s, reports_dir=%s, retention=%sh)",
         settings.batch.upload_dir,
+        settings.report.reports_dir,
         settings.batch.retention_hours,
-        settings.batch.global_concurrency,
     )
 
     try:
@@ -122,11 +140,12 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     finally:
         log.info("Shutting down imga-api")
         scheduler.shutdown(wait=False)
-        # Dispose batch worker engines so asyncpg pools close cleanly.
+        # Dispose worker engines so asyncpg pools close cleanly.
         # In prod this is end-of-process (a no-op for behaviour); in
         # tests it's mandatory — the next test's lifespan must start
         # with no connections bound to the previous event loop.
         await worker_context.dispose()
+        await report_context.dispose()
 
 
 # OpenAPI tag metadata. Order here drives the order in Swagger UI.
@@ -192,6 +211,7 @@ app.include_router(tenant_config_routes.router)
 app.include_router(tenant_analyze_routes.router)
 app.include_router(tenant_batch_routes.router)
 app.include_router(tenant_reviews_routes.router)
+app.include_router(tenant_reports_routes.router)
 app.include_router(tenant_directory_routes.router)
 app.include_router(tickets_routes.router)
 app.include_router(admin_tenant_routes.router)
