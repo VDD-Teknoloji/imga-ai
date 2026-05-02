@@ -80,13 +80,36 @@ push; CI will reject otherwise. Don't bypass with `--no-verify`.
 - **Caddy is shared**, lives at `/opt/shared/caddy/` on the VPS. Per-
   project configs go in `/opt/shared/caddy/conf.d/imga-*.conf`. Don't
   add a new Caddy container.
-- **Migrations run on container start.** `alembic upgrade head` from
-  inside the api container, against `DATABASE_URL_OWNER`.
+- **Routine redeploy** (after first-time setup is done):
+
+  ```bash
+  git pull origin main
+  ENV=production            # or staging
+  COMPOSE=/opt/imga/infra/imga/$ENV/docker-compose.yml
+  sudo docker compose -f $COMPOSE build <svc>          # api or web — independent images
+  sudo docker compose -f $COMPOSE up -d <svc>
+  sudo docker compose -f $COMPOSE exec api alembic upgrade head   # only if new migration
+  ```
+
+  Migrations are **not** auto-run on container start (api launches
+  straight into `uvicorn`); `alembic upgrade head` against
+  `DATABASE_URL_OWNER` is a manual step. Web and api images are
+  independent — touch only what changed.
+- **DB inspection from the host:**
+  `sudo docker compose -f $COMPOSE exec postgres psql -U imga_owner -d imga`.
+  `imga_owner` bypasses RLS; use `imga_app` if you want to verify a
+  policy actually filters.
 - **Healthcheck quirk:** Alpine + BusyBox wget doesn't fall back from
   IPv6 to IPv4. All healthchecks bind `127.0.0.1`, never `localhost` —
   see comments in [production compose](infra/imga/production/docker-compose.yml).
-- **Runbook:** [`infra/imga/deploy.md`](infra/imga/deploy.md) for the
-  10-section on-server ritual.
+- **First-time runbook:** [`infra/imga/deploy.md`](infra/imga/deploy.md)
+  for the 10-section on-server ritual (DNS, env files, Caddy bootstrap,
+  super-admin creation).
+- **Agent setup on a fresh deploy server:**
+  `bash scripts/setup-claude-agent.sh` installs per-host Claude Code
+  permissions (gitignored `.claude/settings.local.json` — allow/deny/ask
+  rules + `autoMode` classifier guidance for routine compose ops) and
+  the bash audit log at `/var/log/claude-agent/bash.log`.
 - **End-user docs:** [`docs/user-guide.md`](docs/user-guide.md) (Turkish).
 
 ## Conventions
