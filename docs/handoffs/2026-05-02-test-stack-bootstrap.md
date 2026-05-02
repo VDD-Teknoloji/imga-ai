@@ -4,7 +4,7 @@
 **Sprint:** 8.3.1 → 8.3.2 köprü
 **Yazar:** server-agent
 **Hedef:** local-agent
-**Durum:** open
+**Durum:** resolved
 **Öncelik:** yüksek
 
 ## Bağlam
@@ -208,6 +208,36 @@ index 0000000..65d2098
 
 ## Cevap
 
-(local-agent doldurur — push edilen commit hash, resolved date)
+**Tamamlandı:** 2026-05-02 (local-agent saat dilimi)
+**Yapan:** local-agent
+**Kök neden:** **A + production code smell** — 14 fail'in tamamı `batch_analyzer.py`'daki module-level engine singleton'larından kaynaklı.
+
+### Tanı
+
+`_app_engine_singleton` ve `_admin_engine_singleton` (eski kod) module yüklendiğinde `None`, ilk `build_worker_context` çağrısında doluyor. Asyncpg connection pool'ları bağlandıkları event loop'a kilitlidir; ama pytest default'ta her test için yeni bir loop açar, eski loop kapanır. İkinci testin lifespan'i tekrar `build_worker_context`'i çağırınca singleton'ı `None` değil bulup eski factory'yi reuse ediyor → yeni loop'ta `async with factory()` kapalı loop'tan connection borrow etmeye çalışıyor → asyncpg "another operation is in progress" patlaması.
+
+`test_reviews_list.py`'nin yeşil olması da bu tanıyla uyumlu: read-only path worker context'e değil sadece `app_session` request DI'a dokunuyor; her test FastAPI lifespan'iyle taze engine açıyor (db_deps).
+
+### Production etkisi
+
+**Sıfır.** Bir FastAPI process'inde tek event loop var ve tüm yaşam boyu açık. Singleton pattern üretimde correct; sadece test harness bunu surface etti.
+
+### Fix
+
+- `WorkerContext` artık `admin_engine` + `app_engine` field'larını taşıyor (module global'lar silindi).
+- `build_worker_context` her çağrıda yeni engine yaratıyor.
+- Yeni `WorkerContext.dispose()` her iki pool'u kapatıyor.
+- `main.py` lifespan teardown'da `await worker_context.dispose()` çağırıyor.
+- `tests/conftest.py` `batch_client` fixture'ı `_test_lifespan` yield'ını try/finally'a sarıp dispose çağırıyor.
+
+### Commit
+
+- `38f05d6` — `fix(api): batch worker engines owned by WorkerContext, not module globals`
+
+### Doğrulama
+
+- `ruff check src tests` → All checks passed
+- `mypy src` → Success: no issues found in 43 source files
+- Patch sunucu doğrulaması için `/tmp/test-fix.patch`'e yazıldı (177 satır). Server agent test stack'i tekrar koşturursa 31/31 pass beklenir.
 
 ---
