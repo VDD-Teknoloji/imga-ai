@@ -76,6 +76,16 @@ class CategoryNotConfiguredError(ReviewServiceError):
     rather than silently dropping a ticket on the floor."""
 
 
+class ReviewNotFoundError(ReviewServiceError):
+    """promote_to_ticket called with a review_id the active tenant can
+    not see (or doesn't exist). Surfaces as 404."""
+
+
+class ReviewAlreadyTicketedError(ReviewServiceError):
+    """Review already has ticket_id set; the manual-promotion endpoint
+    must not double-mint. Surfaces as 409."""
+
+
 @dataclass(frozen=True, slots=True)
 class ReviewBridgeResult:
     """Wire-shape return value from record_and_decide.
@@ -244,6 +254,76 @@ class ReviewService:
             analyzed_at=moment,
         )
 
+    # --- manual promotion ---------------------------------------------
+
+    async def promote_to_ticket(
+        self,
+        *,
+        tenant_id: UUID,
+        review_id: UUID,
+        actor_user_id: UUID,
+        now: datetime | None = None,
+    ) -> Ticket:
+        """Open a ticket for a review the bridge previously skipped.
+
+        Used by ``POST /tenants/me/reviews/{id}/create-ticket`` when a
+        user wants to override the bridge's no-op decision (skipped_mode,
+        skipped_threshold, skipped_belirsiz) with their domain expertise.
+
+        Idempotency: if the review already points at a ticket, raises
+        ``ReviewAlreadyTicketedError`` so the route can return 409. The
+        ``manually_promoted_to_ticket`` decision_reason marks the row
+        for analytics; the original ``decision`` column stays so the
+        bridge's call is preserved as audit trail.
+        """
+        moment = now or datetime.now(UTC)
+        review = await self._session.get(Review, review_id)
+        if review is None or review.tenant_id != tenant_id or review.deleted_at is not None:
+            raise ReviewNotFoundError(f"review {review_id} not found")
+        if review.ticket_id is not None:
+            raise ReviewAlreadyTicketedError(
+                f"review {review_id} already linked to ticket {review.ticket_id}"
+            )
+
+        # Reuse the bridge's category-resolution + title/summary helpers
+        # so a manually-promoted ticket looks identical to an
+        # automatically-created one in the tickets list.
+        category_code = review.primary_category or "belirsiz"
+        category_id = await self._resolve_category_id(category_code)
+        title, summary = _split_title_summary(review.text)
+
+        ticket = await self._tickets.create(
+            tenant_id=tenant_id,
+            category_id=category_id,
+            title=title,
+            summary=summary,
+            priority=TicketPriority.NORMAL,
+            review_id=review.id,
+            created_by_user_id=actor_user_id,
+            opened_at=moment,
+        )
+        review.ticket_id = ticket.id
+        # Preserve the original `decision` (skipped_mode etc.) so the
+        # audit trail still shows the bridge's call. `decision_reason`
+        # gets the new label so analytics can count manual overrides
+        # separately from the bridge's reasons.
+        review.decision_reason = "manually_promoted_to_ticket"
+        await self._session.flush()
+
+        await self._audit.log(
+            action="review.manual_ticket_creation",
+            resource_type="review",
+            resource_id=review.id,
+            tenant_id=tenant_id,
+            actor_user_id=actor_user_id,
+            details={
+                "review_id": str(review.id),
+                "ticket_id": str(ticket.id),
+                "original_decision": str(review.decision),
+            },
+        )
+        return ticket
+
     # --- helpers --------------------------------------------------------
 
     async def _find_dedup_ticket(
@@ -312,7 +392,9 @@ def _split_title_summary(text: str) -> tuple[str, str | None]:
 __all__ = [
     "DEDUP_WINDOW",
     "CategoryNotConfiguredError",
+    "ReviewAlreadyTicketedError",
     "ReviewBridgeResult",
+    "ReviewNotFoundError",
     "ReviewService",
     "ReviewServiceError",
 ]

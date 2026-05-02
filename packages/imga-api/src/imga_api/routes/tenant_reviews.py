@@ -20,6 +20,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from imga_api.auth_deps import CurrentUser, bind_tenant, require_role
 from imga_api.db_deps import get_app_session
+from imga_api.dependencies import get_review_service
+from imga_api.services import (
+    CategoryNotConfiguredError,
+    ReviewAlreadyTicketedError,
+    ReviewNotFoundError,
+    ReviewService,
+)
 from imga_api.services.review_list_service import (
     ReviewListFilters,
     ReviewListItem,
@@ -32,6 +39,10 @@ _AnyMember = Depends(require_role(
     UserTenantRole.TENANT_ADMIN,
     UserTenantRole.ANALYST,
     UserTenantRole.VIEWER,
+))
+_WriteMember = Depends(require_role(
+    UserTenantRole.TENANT_ADMIN,
+    UserTenantRole.ANALYST,
 ))
 
 
@@ -212,6 +223,63 @@ async def get_review(
             ticket_id=review.ticket_id,
             auto_ticket_decision=str(review.decision),
             auto_ticket_decision_reason=review.decision_reason,
+        )
+
+
+class ManualPromotionResponse(BaseModel):
+    review_id: UUID
+    ticket_id: UUID
+    ticket_state: str
+
+
+@router.post(
+    "/{review_id}/create-ticket",
+    response_model=ManualPromotionResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Manually open a ticket for a review the bridge skipped.",
+    description=(
+        "Used when an analyst's domain expertise overrides the bridge's "
+        "no-op decision (skipped_mode / skipped_threshold / skipped_belirsiz). "
+        "Idempotent on the review side: the second call against a review "
+        "that already has a ticket returns 409. Viewer role is denied."
+    ),
+    responses={
+        403: {"description": "Viewer role can not promote reviews."},
+        404: {"description": "Review not found / hidden by RLS."},
+        409: {"description": "Review already linked to a ticket."},
+    },
+)
+async def manually_create_ticket(
+    review_id: UUID,
+    current: Annotated[CurrentUser, _WriteMember],
+    app_session: Annotated[AsyncSession, Depends(get_app_session)],
+    reviews: Annotated[ReviewService, Depends(get_review_service)],
+) -> ManualPromotionResponse:
+    tenant_id = _require_active_tenant(current)
+    async with app_session.begin():
+        await bind_tenant(app_session, current)
+        try:
+            ticket = await reviews.promote_to_ticket(
+                tenant_id=tenant_id,
+                review_id=review_id,
+                actor_user_id=current.user_id,
+            )
+        except ReviewNotFoundError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="review not found"
+            ) from exc
+        except ReviewAlreadyTicketedError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT, detail=str(exc)
+            ) from exc
+        except CategoryNotConfiguredError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT, detail=str(exc)
+            ) from exc
+        return ManualPromotionResponse(
+            review_id=review_id,
+            ticket_id=ticket.id,
+            ticket_state=str(ticket.state),
         )
 
 

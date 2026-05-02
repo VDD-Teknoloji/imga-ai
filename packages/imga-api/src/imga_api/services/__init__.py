@@ -36,7 +36,9 @@ from imga_api.services.invitation_service import (
 from imga_api.services.review_service import (
     DEDUP_WINDOW,
     CategoryNotConfiguredError,
+    ReviewAlreadyTicketedError,
     ReviewBridgeResult,
+    ReviewNotFoundError,
     ReviewService,
     ReviewServiceError,
 )
@@ -111,7 +113,9 @@ __all__ = [
     "InvitationService",
     "OrderBy",
     "OrderDirection",
+    "ReviewAlreadyTicketedError",
     "ReviewBridgeResult",
+    "ReviewNotFoundError",
     "ReviewService",
     "ReviewServiceError",
     "StatsRequest",
