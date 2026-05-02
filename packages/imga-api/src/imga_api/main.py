@@ -30,8 +30,10 @@ from imga_api.dependencies import (
 from imga_api.routes import auth as auth_routes
 from imga_api.routes import invitations as public_invitation_routes
 from imga_api.routes import tenant_analyze as tenant_analyze_routes
+from imga_api.routes import tenant_batch as tenant_batch_routes
 from imga_api.routes import tenant_config as tenant_config_routes
 from imga_api.routes import tenant_directory as tenant_directory_routes
+from imga_api.routes import tenant_reviews as tenant_reviews_routes
 from imga_api.routes import tickets as tickets_routes
 from imga_api.routes.admin import invitations as admin_invitation_routes
 from imga_api.routes.admin import tenants as admin_tenant_routes
@@ -71,8 +73,55 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # dependency. 5-minute TTL is short enough that audit/observability
     # gaps from out-of-band tenant edits stay bounded.
     app.state.tenant_config_cache = TTLCache(maxsize=1000, ttl=300)
-    yield
-    log.info("Shutting down imga-api")
+
+    # Sprint 8.3.1 — APScheduler for batch upload jobs + daily cleanup.
+    # Worker context is built once and reused across job dispatches so
+    # we don't reconstruct DB engines per job.
+    from imga_api.workers.batch_analyzer import (
+        build_worker_context,
+        recover_orphans,
+    )
+    from imga_api.workers.scheduler import (
+        build_scheduler,
+        schedule_cleanup,
+    )
+
+    settings.batch.upload_dir.mkdir(parents=True, exist_ok=True)
+    worker_context = await build_worker_context(
+        pipeline=app.state.pipeline,
+        tenant_config_cache=app.state.tenant_config_cache,
+        settings=settings.batch,
+    )
+    app.state.batch_worker_context = worker_context
+    scheduler = build_scheduler()
+    app.state.batch_scheduler = scheduler
+
+    # Recovery: any job left PROCESSING in the DB came from a previous
+    # process that died holding the in-memory lock. Mark them failed
+    # so the UI surfaces an actionable state instead of a stalled
+    # progress bar.
+    orphans = await recover_orphans(worker_context)
+    if orphans:
+        log.warning("startup: marked %s orphaned batch jobs as failed", orphans)
+
+    schedule_cleanup(
+        scheduler,
+        upload_root=settings.batch.upload_dir,
+        retention_hours=settings.batch.retention_hours,
+    )
+    scheduler.start()
+    log.info(
+        "scheduler started (upload_dir=%s, retention=%sh, global_concurrency=%s)",
+        settings.batch.upload_dir,
+        settings.batch.retention_hours,
+        settings.batch.global_concurrency,
+    )
+
+    try:
+        yield
+    finally:
+        log.info("Shutting down imga-api")
+        scheduler.shutdown(wait=False)
 
 
 # OpenAPI tag metadata. Order here drives the order in Swagger UI.
@@ -136,6 +185,8 @@ app.add_middleware(
 app.include_router(auth_routes.router)
 app.include_router(tenant_config_routes.router)
 app.include_router(tenant_analyze_routes.router)
+app.include_router(tenant_batch_routes.router)
+app.include_router(tenant_reviews_routes.router)
 app.include_router(tenant_directory_routes.router)
 app.include_router(tickets_routes.router)
 app.include_router(admin_tenant_routes.router)
