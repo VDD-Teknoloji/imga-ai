@@ -9,7 +9,7 @@
 
 import { TrendingUp } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Bar,
   BarChart,
@@ -43,7 +43,7 @@ import {
   useSentimentTimeline,
   useTicketResolutionTime,
 } from "@/hooks/use-analytics";
-import type { AnalyticsFilters, Granularity } from "@/lib/types";
+import type { AnalyticsFilters } from "@/lib/types";
 
 const SENTIMENT_COLOURS: Record<string, string> = {
   NEGATIF: "#dc2626",
@@ -130,6 +130,23 @@ export default function InsightsPage() {
 
 // --- filter bar -----------------------------------------------------------
 
+// Commit URL state on blur, not on every keystroke. Browser <input type="date">
+// fires `change` once the value is parseable; commit-on-blur stops a flicker
+// when the user clears the input mid-edit, and lets us reject Invalid Date
+// before round-tripping it through toISOString().
+
+function toIsoStartOfDay(value: string): string | null {
+  if (!value) return null;
+  const d = new Date(`${value}T00:00:00`);
+  return Number.isNaN(d.getTime()) ? null : d.toISOString();
+}
+
+function toIsoEndOfDay(value: string): string | null {
+  if (!value) return null;
+  const d = new Date(`${value}T23:59:59`);
+  return Number.isNaN(d.getTime()) ? null : d.toISOString();
+}
+
 function FilterBar({
   filters,
   setParam,
@@ -137,6 +154,17 @@ function FilterBar({
   filters: AnalyticsFilters;
   setParam: (k: string, v: string | null) => void;
 }) {
+  const [fromInput, setFromInput] = useState(filters.date_from?.slice(0, 10) ?? "");
+  const [toInput, setToInput] = useState(filters.date_to?.slice(0, 10) ?? "");
+
+  // Re-sync local input state if URL changes from elsewhere (e.g. back button).
+  useEffect(() => {
+    setFromInput(filters.date_from?.slice(0, 10) ?? "");
+  }, [filters.date_from]);
+  useEffect(() => {
+    setToInput(filters.date_to?.slice(0, 10) ?? "");
+  }, [filters.date_to]);
+
   return (
     <Card>
       <CardContent className="grid grid-cols-1 gap-3 p-4 md:grid-cols-3">
@@ -144,13 +172,9 @@ function FilterBar({
           <Label className="text-xs">Başlangıç</Label>
           <input
             type="date"
-            value={filters.date_from?.slice(0, 10) ?? ""}
-            onChange={(e) =>
-              setParam(
-                "date_from",
-                e.target.value ? new Date(e.target.value).toISOString() : null,
-              )
-            }
+            value={fromInput}
+            onChange={(e) => setFromInput(e.target.value)}
+            onBlur={(e) => setParam("date_from", toIsoStartOfDay(e.target.value))}
             className="border-input bg-background mt-1 w-full rounded-md border px-3 py-2 text-sm"
           />
         </div>
@@ -158,15 +182,9 @@ function FilterBar({
           <Label className="text-xs">Bitiş</Label>
           <input
             type="date"
-            value={filters.date_to?.slice(0, 10) ?? ""}
-            onChange={(e) =>
-              setParam(
-                "date_to",
-                e.target.value
-                  ? new Date(`${e.target.value}T23:59:59`).toISOString()
-                  : null,
-              )
-            }
+            value={toInput}
+            onChange={(e) => setToInput(e.target.value)}
+            onBlur={(e) => setParam("date_to", toIsoEndOfDay(e.target.value))}
             className="border-input bg-background mt-1 w-full rounded-md border px-3 py-2 text-sm"
           />
         </div>
@@ -187,6 +205,60 @@ function FilterBar({
   );
 }
 
+// --- chart frame: handles loading / error / empty states + min-height ---
+
+// Recharts ResponsiveContainer measures parent on mount. If a Tabs primitive
+// keeps inactive content with display:none, the container reads 0×0 and
+// emits "width(-1) height(-1)" warnings; explicit min-h on the wrapper plus
+// keying the chart to the active tab ensures clean dimensions on tab switch.
+
+type AsyncState<T> = {
+  data?: T;
+  error?: { message: string } | null;
+  isLoading?: boolean;
+  isPending?: boolean;
+};
+
+function ChartFrame<T>({
+  state,
+  isEmpty,
+  height = 240,
+  children,
+}: {
+  state: AsyncState<T>;
+  isEmpty: (data: T) => boolean;
+  height?: number;
+  children: (data: T) => React.ReactNode;
+}) {
+  const minH = `min-h-[${height}px]`;
+  if (state.error) {
+    return (
+      <div className={`${minH} flex items-center justify-center`}>
+        <p className="text-destructive text-sm">
+          Veri yüklenemedi: {state.error.message}
+        </p>
+      </div>
+    );
+  }
+  if (state.isLoading || state.isPending || !state.data) {
+    return (
+      <div className={`${minH} flex items-center justify-center`}>
+        <p className="text-muted-foreground text-sm">Yükleniyor…</p>
+      </div>
+    );
+  }
+  if (isEmpty(state.data)) {
+    return (
+      <div className={`${minH} flex items-center justify-center`}>
+        <p className="text-muted-foreground text-sm">
+          Bu filtrelerle veri bulunamadı.
+        </p>
+      </div>
+    );
+  }
+  return <div className={minH}>{children(state.data)}</div>;
+}
+
 // --- tab components -------------------------------------------------------
 
 function SentimentTab({ filters }: { filters: AnalyticsFilters }) {
@@ -201,27 +273,27 @@ function SentimentTab({ filters }: { filters: AnalyticsFilters }) {
             <CardTitle className="text-base">Duygu Dağılımı</CardTitle>
           </CardHeader>
           <CardContent>
-            {dist.data && dist.data.total > 0 ? (
-              <ResponsiveContainer width="100%" height={240}>
-                <PieChart>
-                  <Pie
-                    data={dist.data.data}
-                    dataKey="count"
-                    nameKey="label"
-                    innerRadius={45}
-                    outerRadius={80}
-                    label
-                  >
-                    {dist.data.data.map((row) => (
-                      <Cell key={row.label} fill={SENTIMENT_COLOURS[row.label] ?? "#888"} />
-                    ))}
-                  </Pie>
-                  <Tooltip />
-                </PieChart>
-              </ResponsiveContainer>
-            ) : (
-              <EmptyState />
-            )}
+            <ChartFrame state={dist} isEmpty={(d) => d.total === 0}>
+              {(d) => (
+                <ResponsiveContainer width="100%" height={240}>
+                  <PieChart>
+                    <Pie
+                      data={d.data}
+                      dataKey="count"
+                      nameKey="label"
+                      innerRadius={45}
+                      outerRadius={80}
+                      label
+                    >
+                      {d.data.map((row) => (
+                        <Cell key={row.label} fill={SENTIMENT_COLOURS[row.label] ?? "#888"} />
+                      ))}
+                    </Pie>
+                    <Tooltip />
+                  </PieChart>
+                </ResponsiveContainer>
+              )}
+            </ChartFrame>
           </CardContent>
         </Card>
         <Card>
@@ -229,23 +301,23 @@ function SentimentTab({ filters }: { filters: AnalyticsFilters }) {
             <CardTitle className="text-base">Skor Histogramı</CardTitle>
           </CardHeader>
           <CardContent>
-            {sens.data && sens.data.total > 0 ? (
-              <ResponsiveContainer width="100%" height={240}>
-                <BarChart data={sens.data.buckets}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis
-                    dataKey="range_start"
-                    tickFormatter={(v) => v.toFixed(1)}
-                    fontSize={10}
-                  />
-                  <YAxis fontSize={10} />
-                  <Tooltip />
-                  <Bar dataKey="count" fill="#1e40af" />
-                </BarChart>
-              </ResponsiveContainer>
-            ) : (
-              <EmptyState />
-            )}
+            <ChartFrame state={sens} isEmpty={(d) => d.total === 0}>
+              {(d) => (
+                <ResponsiveContainer width="100%" height={240}>
+                  <BarChart data={d.buckets}>
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis
+                      dataKey="range_start"
+                      tickFormatter={(v) => v.toFixed(1)}
+                      fontSize={10}
+                    />
+                    <YAxis fontSize={10} />
+                    <Tooltip />
+                    <Bar dataKey="count" fill="#1e40af" />
+                  </BarChart>
+                </ResponsiveContainer>
+              )}
+            </ChartFrame>
           </CardContent>
         </Card>
       </div>
@@ -254,21 +326,21 @@ function SentimentTab({ filters }: { filters: AnalyticsFilters }) {
           <CardTitle className="text-base">Duygu Trendi (gün)</CardTitle>
         </CardHeader>
         <CardContent>
-          {tl.data && tl.data.data.length > 0 ? (
-            <ResponsiveContainer width="100%" height={260}>
-              <LineChart data={tl.data.data}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="date" fontSize={10} />
-                <YAxis fontSize={10} />
-                <Tooltip />
-                <Line type="monotone" dataKey="negatif" stroke="#dc2626" />
-                <Line type="monotone" dataKey="nötr" stroke="#737373" />
-                <Line type="monotone" dataKey="pozitif" stroke="#16a34a" />
-              </LineChart>
-            </ResponsiveContainer>
-          ) : (
-            <EmptyState />
-          )}
+          <ChartFrame state={tl} isEmpty={(d) => d.data.length === 0} height={260}>
+            {(d) => (
+              <ResponsiveContainer width="100%" height={260}>
+                <LineChart data={d.data}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="date" fontSize={10} />
+                  <YAxis fontSize={10} />
+                  <Tooltip />
+                  <Line type="monotone" dataKey="negatif" stroke="#dc2626" />
+                  <Line type="monotone" dataKey="nötr" stroke="#737373" />
+                  <Line type="monotone" dataKey="pozitif" stroke="#16a34a" />
+                </LineChart>
+              </ResponsiveContainer>
+            )}
+          </ChartFrame>
         </CardContent>
       </Card>
     </div>
@@ -283,19 +355,19 @@ function CategoryTab({ filters }: { filters: AnalyticsFilters }) {
         <CardTitle className="text-base">Kategori Top 10</CardTitle>
       </CardHeader>
       <CardContent>
-        {cats.data && cats.data.total > 0 ? (
-          <ResponsiveContainer width="100%" height={Math.max(220, cats.data.data.length * 32)}>
-            <BarChart layout="vertical" data={cats.data.data}>
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis type="number" fontSize={10} />
-              <YAxis type="category" dataKey="category_label_tr" fontSize={11} width={140} />
-              <Tooltip />
-              <Bar dataKey="count" fill="#1e40af" />
-            </BarChart>
-          </ResponsiveContainer>
-        ) : (
-          <EmptyState />
-        )}
+        <ChartFrame state={cats} isEmpty={(d) => d.total === 0}>
+          {(d) => (
+            <ResponsiveContainer width="100%" height={Math.max(220, d.data.length * 32)}>
+              <BarChart layout="vertical" data={d.data}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis type="number" fontSize={10} />
+                <YAxis type="category" dataKey="category_label_tr" fontSize={11} width={140} />
+                <Tooltip />
+                <Bar dataKey="count" fill="#1e40af" />
+              </BarChart>
+            </ResponsiveContainer>
+          )}
+        </ChartFrame>
       </CardContent>
     </Card>
   );
@@ -315,29 +387,33 @@ function CrossAnalysisTab({
         <CardTitle className="text-base">Kategori × Duygu Matrisi</CardTitle>
       </CardHeader>
       <CardContent>
-        {matrix.data && matrix.data.categories.length > 0 ? (
-          <Heatmap
-            rows={matrix.data.category_labels_tr}
-            cols={matrix.data.sentiments}
-            matrix={matrix.data.matrix}
-            rowTotals={matrix.data.totals_by_category}
-            colTotals={matrix.data.totals_by_sentiment}
-            colorScale="blue"
-            tooltip={(value, rowLabel, colLabel) =>
-              `${rowLabel} × ${colLabel}: ${value} analiz`
-            }
-            onCellClick={(i, j) => {
-              const cat = matrix.data?.categories[i];
-              const sent = matrix.data?.sentiments[j];
-              if (!cat || !sent) return;
-              router.push(
-                `/reviews?sentiment_labels=${encodeURIComponent(sent)}&category=${encodeURIComponent(cat)}`,
-              );
-            }}
-          />
-        ) : (
-          <EmptyState />
-        )}
+        <ChartFrame
+          state={matrix}
+          isEmpty={(d) => d.categories.length === 0}
+          height={300}
+        >
+          {(d) => (
+            <Heatmap
+              rows={d.category_labels_tr}
+              cols={d.sentiments}
+              matrix={d.matrix}
+              rowTotals={d.totals_by_category}
+              colTotals={d.totals_by_sentiment}
+              colorScale="blue"
+              tooltip={(value, rowLabel, colLabel) =>
+                `${rowLabel} × ${colLabel}: ${value} analiz`
+              }
+              onCellClick={(i, j) => {
+                const cat = d.categories[i];
+                const sent = d.sentiments[j];
+                if (!cat || !sent) return;
+                router.push(
+                  `/reviews?sentiment_labels=${encodeURIComponent(sent)}&category=${encodeURIComponent(cat)}`,
+                );
+              }}
+            />
+          )}
+        </ChartFrame>
       </CardContent>
     </Card>
   );
@@ -351,19 +427,19 @@ function OverridesTab({ filters }: { filters: AnalyticsFilters }) {
         <CardTitle className="text-base">Override Katmanları</CardTitle>
       </CardHeader>
       <CardContent>
-        {stats.data && stats.data.data.length > 0 ? (
-          <ResponsiveContainer width="100%" height={260}>
-            <BarChart data={stats.data.data} layout="vertical">
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis type="number" fontSize={10} />
-              <YAxis type="category" dataKey="layer_label_tr" fontSize={11} width={160} />
-              <Tooltip />
-              <Bar dataKey="trigger_count" fill="#1e40af" />
-            </BarChart>
-          </ResponsiveContainer>
-        ) : (
-          <EmptyState />
-        )}
+        <ChartFrame state={stats} isEmpty={(d) => d.data.length === 0} height={260}>
+          {(d) => (
+            <ResponsiveContainer width="100%" height={260}>
+              <BarChart data={d.data} layout="vertical">
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis type="number" fontSize={10} />
+                <YAxis type="category" dataKey="layer_label_tr" fontSize={11} width={160} />
+                <Tooltip />
+                <Bar dataKey="trigger_count" fill="#1e40af" />
+              </BarChart>
+            </ResponsiveContainer>
+          )}
+        </ChartFrame>
         <p className="text-muted-foreground mt-2 text-xs">
           Override katman sayımı Sprint 8.3.4&apos;te doldurulacak (
           <code>overrides_applied</code> JSONB kolonu); şimdilik 5 katman
@@ -383,51 +459,47 @@ function TicketsTab({ filters }: { filters: AnalyticsFilters }) {
           <CardTitle className="text-base">Çözüm Süresi Dağılımı</CardTitle>
         </CardHeader>
         <CardContent>
-          {res.data && res.data.total_resolved_tickets > 0 ? (
-            <>
-              <ResponsiveContainer width="100%" height={220}>
-                <BarChart data={res.data.distribution}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="bucket" fontSize={11} />
-                  <YAxis fontSize={10} />
-                  <Tooltip />
-                  <Bar dataKey="count" fill="#1e40af" />
-                </BarChart>
-              </ResponsiveContainer>
-              <dl className="text-muted-foreground mt-3 grid grid-cols-3 gap-3 text-xs">
-                <div>
-                  <dt>Ortalama</dt>
-                  <dd className="text-foreground text-base font-semibold">
-                    {res.data.avg_resolution_hours.toFixed(1)} saat
-                  </dd>
-                </div>
-                <div>
-                  <dt>Ortanca</dt>
-                  <dd className="text-foreground text-base font-semibold">
-                    {res.data.median_resolution_hours.toFixed(1)} saat
-                  </dd>
-                </div>
-                <div>
-                  <dt>p95</dt>
-                  <dd className="text-foreground text-base font-semibold">
-                    {res.data.p95_resolution_hours.toFixed(1)} saat
-                  </dd>
-                </div>
-              </dl>
-            </>
-          ) : (
-            <EmptyState />
-          )}
+          <ChartFrame
+            state={res}
+            isEmpty={(d) => d.total_resolved_tickets === 0}
+            height={220}
+          >
+            {(d) => (
+              <>
+                <ResponsiveContainer width="100%" height={220}>
+                  <BarChart data={d.distribution}>
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis dataKey="bucket" fontSize={11} />
+                    <YAxis fontSize={10} />
+                    <Tooltip />
+                    <Bar dataKey="count" fill="#1e40af" />
+                  </BarChart>
+                </ResponsiveContainer>
+                <dl className="text-muted-foreground mt-3 grid grid-cols-3 gap-3 text-xs">
+                  <div>
+                    <dt>Ortalama</dt>
+                    <dd className="text-foreground text-base font-semibold">
+                      {d.avg_resolution_hours.toFixed(1)} saat
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>Ortanca</dt>
+                    <dd className="text-foreground text-base font-semibold">
+                      {d.median_resolution_hours.toFixed(1)} saat
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>p95</dt>
+                    <dd className="text-foreground text-base font-semibold">
+                      {d.p95_resolution_hours.toFixed(1)} saat
+                    </dd>
+                  </div>
+                </dl>
+              </>
+            )}
+          </ChartFrame>
         </CardContent>
       </Card>
     </div>
-  );
-}
-
-function EmptyState() {
-  return (
-    <p className="text-muted-foreground py-8 text-center text-sm">
-      Bu filtrelerle veri bulunamadı.
-    </p>
   );
 }
