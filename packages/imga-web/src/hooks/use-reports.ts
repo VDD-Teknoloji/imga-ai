@@ -16,12 +16,27 @@ import { apiRequest } from "@/lib/api-client";
 import type {
   GenerateReportRequest,
   GenerateReportResponse,
+  ReportEstimateResponse,
   ReportJobView,
   ReportListResponse,
   ReportStatus,
 } from "@/lib/types";
 
 const TERMINAL: ReadonlySet<ReportStatus> = new Set(["completed", "failed"]);
+
+/** Dry-run preview the 90-day / 50K-row checks + estimate. Same 400
+ * surface as /generate so the user sees the same Turkish error before
+ * the modal's "Üret" step. */
+export function useEstimateReport() {
+  return useMutation<ReportEstimateResponse, Error, GenerateReportRequest>({
+    mutationFn: (body) =>
+      apiRequest<ReportEstimateResponse>("/tenants/me/reports/estimate", {
+        method: "POST",
+        body,
+      }),
+  });
+}
+
 
 export function useGenerateReport() {
   const queryClient = useQueryClient();

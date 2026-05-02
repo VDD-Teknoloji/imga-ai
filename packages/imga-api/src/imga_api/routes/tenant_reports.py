@@ -87,6 +87,17 @@ class GenerateResponse(BaseModel):
     row_count_estimate: int
 
 
+class EstimateResponse(BaseModel):
+    """Dry-run estimate for the modal's Step 3 preview. No row inserted;
+    same validation as /generate runs so the user sees the same 400
+    they'd hit on submit."""
+
+    row_count_estimate: int
+    estimated_seconds: int
+    review_rows: int
+    ticket_rows: int
+
+
 class ReportJobView(BaseModel):
     report_id: UUID
     status: str
@@ -163,6 +174,52 @@ def _estimate_seconds(row_count: int) -> int:
 
 
 # --- endpoints -------------------------------------------------------
+
+
+@router.post(
+    "/estimate",
+    response_model=EstimateResponse,
+    summary="Dry-run validation + row-count estimate (no row inserted).",
+    description=(
+        "Runs the same 90-day / 50K-row checks as /generate. The modal's "
+        "Step 3 preview calls this so the user sees the projected row "
+        "count and ETA before confirming."
+    ),
+    responses={
+        400: {"description": "Filter validation failed (Turkish detail)."},
+    },
+)
+async def estimate_report(
+    body: GenerateRequest,
+    request: Request,
+    current: Annotated[CurrentUser, _AnyMember],
+    app_session: Annotated[AsyncSession, Depends(get_app_session)],
+) -> EstimateResponse:
+    tenant_id = _require_active_tenant(current)
+    settings = request.app.state.settings.report
+    filters = _filters_from_request(body.filters)
+    async with app_session.begin():
+        await bind_tenant(app_session, current)
+        audit = AuditService(app_session)
+        service = ReportService(app_session, audit, settings)
+        try:
+            service.validate_filters(filters)
+            estimate = await service.estimate_rows(
+                tenant_id=tenant_id,
+                report_type=body.report_type,
+                filters=filters,
+            )
+            service.enforce_row_cap(estimate)
+        except ReportInvalidFiltersError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)
+            ) from exc
+    return EstimateResponse(
+        row_count_estimate=estimate.total,
+        estimated_seconds=_estimate_seconds(estimate.total),
+        review_rows=estimate.review_rows,
+        ticket_rows=estimate.ticket_rows,
+    )
 
 
 @router.post(

@@ -463,6 +463,13 @@ export interface GenerateReportResponse {
   row_count_estimate: number;
 }
 
+export interface ReportEstimateResponse {
+  row_count_estimate: number;
+  estimated_seconds: number;
+  review_rows: number;
+  ticket_rows: number;
+}
+
 export interface ReportJobView {
   report_id: string;
   status: ReportStatus;
