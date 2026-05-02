@@ -20,6 +20,9 @@ dependencies = [
     "email-validator>=2.1,<3.0",
     "python-multipart>=0.0.9",
     "cachetools>=5.3,<6.0",
+    # Sprint 8.3.1 batch upload pipeline
+    "apscheduler>=3.10,<4.0",
+    "openpyxl>=3.1,<4.0",
 ]
 
 [project.optional-dependencies]
@@ -60,7 +63,15 @@ disallow_untyped_defs = true
 warn_unused_ignores = true
 
 [[tool.mypy.overrides]]
-module = ["uvicorn.*", "argon2.*", "asyncpg.*", "cachetools.*", "factory.*"]
+module = [
+    "uvicorn.*",
+    "argon2.*",
+    "asyncpg.*",
+    "cachetools.*",
+    "factory.*",
+    "openpyxl.*",
+    "apscheduler.*",
+]
 ignore_missing_imports = true
 
 # factory_boy ships no type stubs and its descriptor-style API

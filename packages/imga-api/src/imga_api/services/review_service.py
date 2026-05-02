@@ -119,9 +119,16 @@ class ReviewService:
         tenant_id: UUID,
         text: str,
         analysis: AnalysisResult,
-        actor_user_id: UUID,
+        actor_user_id: UUID | None,
         now: datetime | None = None,
     ) -> ReviewBridgeResult:
+        """Persist one review row and (on the CREATE branch) one ticket.
+
+        ``actor_user_id`` is None for system-driven calls (Sprint 8.3.1
+        batch worker when the upload's triggering user has been deleted
+        between upload and processing). The audit row + Review row both
+        accept NULL there; the FK constraint on ``users`` uses ON DELETE
+        SET NULL, so a valid UUID is not strictly required."""
         moment = now or datetime.now(UTC)
         text_hash = review_text_hash(text)
 

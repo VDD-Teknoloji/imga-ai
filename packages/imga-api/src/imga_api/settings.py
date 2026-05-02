@@ -57,6 +57,34 @@ class JWTSettings:
 
 
 @dataclass(frozen=True, slots=True)
+class BatchSettings:
+    """Sprint 8.3.1 bulk upload + worker configuration.
+
+    ``upload_dir`` is where multipart payloads land before the worker
+    streams them. Each tenant gets a subdir, each job gets its own
+    sub-subdir. Production mounts /var/imga/uploads as a Docker volume;
+    tests pass tmp_path through this setting so they don't need a
+    privileged path.
+
+    ``retention_hours`` drives the daily cleanup cron — files older
+    than this are reaped, but the ``analyze_batch_jobs.file_path``
+    column is preserved as audit trail.
+
+    Concurrency limits are in-memory (asyncio Semaphore + per-tenant
+    Lock). They assume a single API instance; multi-instance
+    deployments need an advisory-lock variant in Sprint 9+.
+    """
+
+    upload_dir: Path = Path("/var/imga/uploads")
+    max_file_bytes: int = 50 * 1024 * 1024  # 50 MB
+    max_rows: int = 10_000
+    chunk_size: int = 1000
+    retention_hours: int = 24
+    global_concurrency: int = 2  # server-wide simultaneous batch jobs
+    per_tenant_concurrency: int = 1  # one batch per tenant at a time
+
+
+@dataclass(frozen=True, slots=True)
 class Settings:
     bert_model: str = DEFAULT_BERT_MODEL
     knowledge_base_path: Path | None = None
@@ -64,6 +92,7 @@ class Settings:
     max_shipping_days: int = DEFAULT_MAX_SHIPPING_DAYS
     max_warehouse_days: int = DEFAULT_MAX_WAREHOUSE_DAYS
     jwt: JWTSettings = JWTSettings()
+    batch: BatchSettings = BatchSettings()
 
     @classmethod
     def from_env(cls) -> Settings:
@@ -90,6 +119,17 @@ class Settings:
             refresh_token_ttl_days=_int("JWT_REFRESH_TOKEN_TTL_DAYS", 7),
         )
 
+        batch_upload_dir = os.environ.get("IMGA_UPLOAD_DIR")
+        batch = BatchSettings(
+            upload_dir=Path(batch_upload_dir) if batch_upload_dir else Path("/var/imga/uploads"),
+            max_file_bytes=_int("IMGA_BATCH_MAX_FILE_BYTES", 50 * 1024 * 1024),
+            max_rows=_int("IMGA_BATCH_MAX_ROWS", 10_000),
+            chunk_size=_int("IMGA_BATCH_CHUNK_SIZE", 1000),
+            retention_hours=_int("IMGA_BATCH_RETENTION_HOURS", 24),
+            global_concurrency=_int("IMGA_BATCH_GLOBAL_CONCURRENCY", 2),
+            per_tenant_concurrency=_int("IMGA_BATCH_PER_TENANT_CONCURRENCY", 1),
+        )
+
         return cls(
             bert_model=os.environ.get("IMGA_BERT_MODEL", DEFAULT_BERT_MODEL),
             knowledge_base_path=_opt_path("IMGA_KB_PATH"),
@@ -97,4 +137,5 @@ class Settings:
             max_shipping_days=_int("IMGA_MAX_SHIPPING_DAYS", DEFAULT_MAX_SHIPPING_DAYS),
             max_warehouse_days=_int("IMGA_MAX_WAREHOUSE_DAYS", DEFAULT_MAX_WAREHOUSE_DAYS),
             jwt=jwt,
+            batch=batch,
         )

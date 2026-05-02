@@ -7,6 +7,13 @@ from imga_api.services.auth_service import (
     TokenPair,
     TokenReuseDetectedError,
 )
+from imga_api.services.batch_service import (
+    BatchAnalyzeService,
+    BatchJobNotCancellableError,
+    BatchJobNotFoundError,
+    BatchProgress,
+    BatchServiceError,
+)
 from imga_api.services.comment_service import (
     MAX_BODY_LENGTH as COMMENT_MAX_BODY_LENGTH,
 )
@@ -79,6 +86,11 @@ __all__ = [
     "AuthError",
     "AuthService",
     "AutoCreateDecision",
+    "BatchAnalyzeService",
+    "BatchJobNotCancellableError",
+    "BatchJobNotFoundError",
+    "BatchProgress",
+    "BatchServiceError",
     "CancellationReasonRequiredError",
     "CategoryCodeConflictError",
     "CategoryNotConfiguredError",
