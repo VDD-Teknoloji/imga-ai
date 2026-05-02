@@ -20,7 +20,7 @@ from typing import Any, Literal
 from uuid import UUID
 
 from imga_db.models import Category, Review, Ticket, TicketState
-from sqlalchemy import and_, case, cast, func, or_, select
+from sqlalchemy import and_, case, func, or_, select
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -353,14 +353,24 @@ class AnalyticsService:
         tenant_id: UUID,
         filters: AnalyticsFilters,
     ) -> OverrideStats:
-        """Reads ``Review.overrides_applied`` (JSONB array of
-        ``{layer, delta}`` entries — schema fixed in Sprint 8.3.4). The
-        column doesn't exist on the model yet (Sprint 8.3.3 ships the
-        endpoint contract; the JSONB column is an 8.3.4 migration), so
-        we return zero rows for each known layer and the route's
-        contract stays stable. Once the column lands, replace this stub
-        with a JSONB-aggregation query."""
-        # Total review count for percentage calc.
+        """Group ``reviews.overrides_applied`` JSONB array by layer.
+
+        Sprint 8.3.4 — replaces the 8.3.3 zero-count placeholder. We
+        pull the JSONB column verbatim and aggregate in Python instead
+        of unnesting in SQL: nested SRF expressions
+        (``jsonb_array_elements`` inside ``jsonb_extract_path_text``)
+        trip Postgres' planner on rows where the column is NULL,
+        raising ``InvalidParameterValueError: cannot extract elements
+        from a scalar`` even when a redundant ``IS NOT NULL`` filter
+        precedes them. The dataset is already tenant-bounded by RLS,
+        so the round trip cost is bounded by tenant size; aggregating
+        in Python keeps the query trivial and the NULL semantics
+        explicit.
+
+        Layers that never fire still surface with zero counts so the
+        UI's 5-row table doesn't shift around as data accumulates.
+        """
+        # Total review count drives the trigger_percentage denominator.
         total_stmt = (
             select(func.count())
             .select_from(Review)
@@ -370,18 +380,76 @@ class AnalyticsService:
         total_stmt = self._apply_review_filters(total_stmt, filters)
         total_reviews = (await self._session.execute(total_stmt)).scalar_one()
 
-        data = [
-            OverrideStatsRow(
-                layer=code,
-                layer_label_tr=_OVERRIDE_LABEL_TR[code],
-                trigger_count=0,
-                trigger_percentage=0.0,
-                direction="none",
-                avg_impact=0.0,
-                max_impact=0.0,
+        # Pull the JSONB column for every matching review. NULL rows
+        # (predating migration 0014) and empty arrays both contribute
+        # zero hits below — no SRF acrobatics needed.
+        col_stmt = (
+            select(Review.overrides_applied)
+            .where(Review.tenant_id == tenant_id)
+            .where(Review.deleted_at.is_(None))
+            .where(Review.overrides_applied.is_not(None))
+        )
+        col_stmt = self._apply_review_filters(col_stmt, filters)
+        arrays = (await self._session.execute(col_stmt)).scalars().all()
+
+        # Bucket per known layer. Forward-compat: any unexpected layer
+        # code is silently dropped rather than crashing the dashboard.
+        per_layer: dict[str, list[float]] = {code: [] for code in _OVERRIDE_LABEL_TR}
+        for arr in arrays:
+            if not isinstance(arr, list):
+                continue
+            for hit in arr:
+                if not isinstance(hit, dict):
+                    continue
+                layer = hit.get("layer")
+                score = hit.get("score")
+                if (
+                    isinstance(layer, str)
+                    and layer in per_layer
+                    and isinstance(score, (int, float))
+                ):
+                    per_layer[layer].append(float(score))
+
+        data = []
+        for code, scores in per_layer.items():
+            count = len(scores)
+            if count == 0:
+                data.append(
+                    OverrideStatsRow(
+                        layer=code,
+                        layer_label_tr=_OVERRIDE_LABEL_TR[code],
+                        trigger_count=0,
+                        trigger_percentage=0.0,
+                        direction="none",
+                        avg_impact=0.0,
+                        max_impact=0.0,
+                    )
+                )
+                continue
+            avg_impact = sum(abs(s) for s in scores) / count
+            max_impact = max(abs(s) for s in scores)
+            positives = sum(1 for s in scores if s > 0)
+            negatives = sum(1 for s in scores if s < 0)
+            if positives > 0 and negatives == 0:
+                direction = "boost"
+            elif negatives > 0 and positives == 0:
+                direction = "dampen"
+            else:
+                direction = "mixed"
+            data.append(
+                OverrideStatsRow(
+                    layer=code,
+                    layer_label_tr=_OVERRIDE_LABEL_TR[code],
+                    trigger_count=count,
+                    trigger_percentage=round(100 * count / total_reviews, 2)
+                    if total_reviews
+                    else 0.0,
+                    direction=direction,
+                    avg_impact=round(avg_impact, 3),
+                    max_impact=round(max_impact, 3),
+                )
             )
-            for code in _OVERRIDE_LABEL_TR
-        ]
+
         return OverrideStats(total_reviews=total_reviews, data=data)
 
     # ------------------------------------------------------------------
@@ -631,7 +699,7 @@ class AnalyticsService:
 
 
 # Silence unused-imports warnings (kept for forward use).
-_ = (and_, case, cast, JSONB, timedelta)
+_ = (and_, case, JSONB, timedelta)
 
 
 __all__ = [
