@@ -11,6 +11,7 @@ Filters share a CSV-encoded querystring shape, mirroring the
 
 from __future__ import annotations
 
+from dataclasses import asdict
 from datetime import datetime
 from typing import Annotated
 from uuid import UUID
@@ -211,7 +212,7 @@ async def sentiment_distribution(
         )
     return SentimentDistResponse(
         total=result.total,
-        data=[SentimentDistRowResponse(**row.__dict__) for row in result.data],
+        data=[SentimentDistRowResponse(**asdict(row)) for row in result.data],
     )
 
 
@@ -242,7 +243,7 @@ async def category_distribution(
         )
     return CategoryDistResponse(
         total=result.total,
-        data=[CategoryDistRowResponse(**row.__dict__) for row in result.data],
+        data=[CategoryDistRowResponse(**asdict(row)) for row in result.data],
     )
 
 
@@ -270,7 +271,7 @@ async def sentiment_by_category(
             tenant_id=tenant_id, filters=filters,
             top_n_categories=top_n_categories,
         )
-    return SentimentByCategoryResponse(**result.__dict__)
+    return SentimentByCategoryResponse(**asdict(result))
 
 
 @router.get(
@@ -294,7 +295,7 @@ async def override_stats(
         )
     return OverrideStatsResponse(
         total_reviews=result.total_reviews,
-        data=[OverrideStatsRowResponse(**row.__dict__) for row in result.data],
+        data=[OverrideStatsRowResponse(**asdict(row)) for row in result.data],
     )
 
 
@@ -320,7 +321,7 @@ async def sentiment_timeline(
         )
     return TimelineResponse(
         granularity=result.granularity,
-        data=[TimelinePointResponse(**point.__dict__) for point in result.data],
+        data=[TimelinePointResponse(**asdict(point)) for point in result.data],
     )
 
 
@@ -348,8 +349,8 @@ async def ticket_resolution_time(
         avg_resolution_hours=result.avg_resolution_hours,
         median_resolution_hours=result.median_resolution_hours,
         p95_resolution_hours=result.p95_resolution_hours,
-        distribution=[ResolutionBucketResponse(**b.__dict__) for b in result.distribution],
-        by_category=[ResolutionByCategoryResponse(**c.__dict__) for c in result.by_category],
+        distribution=[ResolutionBucketResponse(**asdict(b)) for b in result.distribution],
+        by_category=[ResolutionByCategoryResponse(**asdict(c)) for c in result.by_category],
     )
 
 
@@ -374,6 +375,6 @@ async def sensitivity_distribution(
         )
     return SensitivityDistResponse(
         total=result.total,
-        buckets=[SensitivityBucketResponse(**b.__dict__) for b in result.buckets],
-        stats=SensitivityStatsResponse(**result.stats.__dict__),
+        buckets=[SensitivityBucketResponse(**asdict(b)) for b in result.buckets],
+        stats=SensitivityStatsResponse(**asdict(result.stats)),
     )
