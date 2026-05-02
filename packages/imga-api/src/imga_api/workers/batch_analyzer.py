@@ -435,6 +435,7 @@ async def _process_chunk(
                     submitted_by_user_id=triggered_by_user_id,
                     batch_job_id=job_id,
                     analyzed_at=datetime.now(UTC),
+                    overrides_applied=[hit.model_dump() for hit in analysis.overrides_applied],
                 )
                 app_session.add(review)
                 duplicates += 1
@@ -501,6 +502,7 @@ async def _process_chunk(
                     submitted_by_user_id=triggered_by_user_id,
                     batch_job_id=job_id,
                     analyzed_at=datetime.now(UTC),
+                    overrides_applied=[hit.model_dump() for hit in analysis.overrides_applied],
                 )
                 app_session.add(review)
                 succeeded += 1

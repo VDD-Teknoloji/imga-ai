@@ -215,6 +215,7 @@ class ReviewService:
             ticket_id=ticket_id,
             submitted_by_user_id=actor_user_id,
             analyzed_at=moment,
+            overrides_applied=[hit.model_dump() for hit in analysis.overrides_applied],
         )
         self._session.add(review)
         await self._session.flush()
