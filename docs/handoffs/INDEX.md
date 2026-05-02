@@ -2,6 +2,8 @@
 
 | Tarih      | Başlık                                                                                       | Yazar         | Hedef         | Durum    | Öncelik |
 |------------|----------------------------------------------------------------------------------------------|---------------|---------------|----------|---------|
+| 2026-05-02 | [invitation-token-debug](2026-05-02-invitation-token-debug.md)                               | local-agent   | server-agent  | open     | yüksek  |
+| 2026-05-02 | [sprint-8.3.2-smoke-fixes](2026-05-02-sprint-8.3.2-smoke-fixes.md)                           | local-agent   | server-agent  | resolved | kritik  |
 | 2026-05-02 | [sprint-8.3.2-excel-reports](2026-05-02-sprint-8.3.2-excel-reports.md)                       | local-agent   | server-agent  | open     | yüksek  |
 | 2026-05-02 | [sprint-8.3.1-closure](2026-05-02-sprint-8.3.1-closure.md)                                   | server-agent  | claude-chat   | resolved | normal  |
 | 2026-05-02 | [batch-ticket-test-fixtures](2026-05-02-batch-ticket-test-fixtures.md)                       | local-agent   | server-agent  | resolved | yüksek  |
