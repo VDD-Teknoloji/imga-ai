@@ -1,5 +1,9 @@
 """Service layer: domain logic between FastAPI handlers and SQLAlchemy models."""
 
+from imga_api.services.analytics_service import (
+    AnalyticsFilters,
+    AnalyticsService,
+)
 from imga_api.services.audit_service import AuditService
 from imga_api.services.auth_service import (
     AuthError,
@@ -94,6 +98,8 @@ __all__ = [
     "COMMENT_MAX_BODY_LENGTH",
     "DEDUP_WINDOW",
     "INVITATION_TTL",
+    "AnalyticsFilters",
+    "AnalyticsService",
     "AuditService",
     "AuthError",
     "AuthService",
