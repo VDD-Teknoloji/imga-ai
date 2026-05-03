@@ -50,10 +50,16 @@ class TenantAnalyzeRequest(BaseModel):
         json_schema_extra={
             "example": {
                 "text": "Kargom 5 gündür gelmedi, takip numarası da çalışmıyor.",
+                "nps_score": 3,
             }
         },
     )
     text: str = Field(..., min_length=1, max_length=10_000)
+    # Sprint 8.3.5. Optional NPS (0–10). When the caller also captured
+    # the customer's "would you recommend us?" score, pass it through
+    # so the review row carries it into analytics. Skipping is fine —
+    # the pipeline ignores the value, only persistence reads it.
+    nps_score: int | None = Field(default=None, ge=0, le=10)
 
 
 class TenantAnalyzeResponse(BaseModel):
@@ -127,6 +133,7 @@ async def tenant_analyze(
                 text=body.text,
                 analysis=analysis,
                 actor_user_id=current.user_id,
+                nps_score=body.nps_score,
             )
         except CategoryNotConfiguredError as exc:
             raise HTTPException(
