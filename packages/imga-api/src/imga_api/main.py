@@ -148,6 +148,14 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         # with no connections bound to the previous event loop.
         await worker_context.dispose()
         await report_context.dispose()
+        # Sprint 8.3.6 — close the SWOT cache Redis client if it was
+        # opened. Lazy: ``close_redis_client`` is a no-op when no
+        # cache lookup ever ran. Same isolation reason as the worker
+        # contexts: the next test's lifespan must not inherit a
+        # connection bound to the previous event loop.
+        from imga_api.cache.redis_client import close_redis_client
+
+        await close_redis_client()
 
 
 # OpenAPI tag metadata. Order here drives the order in Swagger UI.
