@@ -104,6 +104,7 @@ services:
           tests/test_batch_nps.py \
           tests/test_tenant_analyze_nps.py \
           tests/test_analytics_nps.py \
+          tests/test_analytics_headline.py \
           -v --tb=short
 
 networks:
