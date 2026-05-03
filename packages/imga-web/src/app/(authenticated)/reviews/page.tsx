@@ -12,7 +12,7 @@ import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
   DropdownMenuContent,
-  DropdownMenuLabel,
+  DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
@@ -254,8 +254,13 @@ function PerspectiveFilterDropdown({ selected }: { selected: string[] }) {
           </Button>
         }
       />
+      {/* Sprint 8.3.5.6 round-1 — DropdownMenuLabel removed: it maps to
+          MenuPrimitive.GroupLabel which Base UI requires to live inside a
+          <Menu.Group>. Without the Group wrapper the component throws
+          "MenuGroupRootContext is missing" (production error #31) on
+          first open. Trigger label already reads "Şirket perspektifi" so
+          the in-menu heading was redundant. */}
       <DropdownMenuContent align="start" className="max-h-80 w-64 overflow-y-auto">
-        <DropdownMenuLabel>Filtrele</DropdownMenuLabel>
         <DropdownMenuCheckboxItem
           checked={selected.includes(UNMATCHED_SENTINEL)}
           onCheckedChange={() => toggle(UNMATCHED_SENTINEL)}
@@ -281,13 +286,12 @@ function PerspectiveFilterDropdown({ selected }: { selected: string[] }) {
         {selected.length > 0 ? (
           <>
             <DropdownMenuSeparator />
-            <button
-              type="button"
-              className="text-muted-foreground hover:text-foreground w-full px-2 py-1.5 text-left text-xs"
+            <DropdownMenuItem
               onClick={() => setSelection([])}
+              className="text-muted-foreground text-xs"
             >
               Tümünü temizle
-            </button>
+            </DropdownMenuItem>
           </>
         ) : null}
       </DropdownMenuContent>
