@@ -73,3 +73,9 @@ packages/imga-core/tests/fixtures/snapshot_calibrated.json
 
 # Claude Code per-server config (deploy-server-specific permissions)
 .claude/settings.local.json
+
+# Eski imga sistemleri — Sprint 8.3.5 reference only, repo'ya commit edilmez.
+# Mevcut sistemden önce yazılmış Streamlit prototipleri; özellikleri yeni
+# mimariye taşırken docs/analysis/ altındaki rapor üzerinden çalışılıyor.
+/cx_sentiment_dashboard/
+/dedas_cx_sentiment_dashboard/
