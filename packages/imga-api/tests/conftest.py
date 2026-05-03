@@ -448,3 +448,178 @@ async def full_auto_tenant(
     )
     yield user, tid, pw
     await cleanup_tenant(admin_session, user.id, tid)
+
+
+# ---------------------------------------------------------------------------
+# Sprint 8.3.6 — LLM credential + tenant context fixtures
+# ---------------------------------------------------------------------------
+#
+# Five fixtures shared by every Sprint 8.3.6.x test file. They live
+# here (rather than per-file) so the encryption helper's lru_cache is
+# reset uniformly: a stale cache between tests is the same class of
+# bug Sprint 8.3.5.2 caught with migration version persistence.
+#
+# Layout:
+#   * master_key_path     — repo-local Fernet key, swaps env var,
+#                           clears the encryption cache on yield.
+#   * encryption_helper   — module reference (encrypt / decrypt /
+#                           reset_fernet_cache), wired to master_key_path.
+#   * mock_gemini_credential — factory: insert one encrypted credential
+#                              row for a given tenant, return the row id.
+#   * tenant_with_context — semi_auto_tenant + industry/size/description
+#                           prefilled (e_commerce / medium / "...").
+#   * prompt_template_swot_v1 — read the migration-seeded placeholder
+#                               row; tests that need the real prompt
+#                               UPDATE it inside the fixture.
+
+
+@pytest.fixture
+def master_key_path(tmp_path: Path) -> Iterator[Path]:
+    """Per-test Fernet key written to tmp_path. Sets the env var the
+    encryption helper reads, yields the path, then clears the cache
+    so the next test re-binds to its own key."""
+    from cryptography.fernet import Fernet
+
+    from imga_core.security.encryption import reset_fernet_cache
+
+    key_path = tmp_path / "master.key"
+    key_path.write_bytes(Fernet.generate_key())
+    prev = os.environ.get("IMGA_MASTER_KEY_PATH")
+    os.environ["IMGA_MASTER_KEY_PATH"] = str(key_path)
+    reset_fernet_cache()
+    try:
+        yield key_path
+    finally:
+        if prev is None:
+            os.environ.pop("IMGA_MASTER_KEY_PATH", None)
+        else:
+            os.environ["IMGA_MASTER_KEY_PATH"] = prev
+        reset_fernet_cache()
+
+
+@pytest.fixture
+def encryption_helper(master_key_path: Path) -> Any:  # noqa: ARG001
+    """Returns the encryption module so tests can call
+    ``encryption_helper.encrypt(...)`` without re-importing. The
+    ``master_key_path`` dependency wires the env + clears the cache;
+    by the time this fixture yields the module is bound to the new
+    key. ``master_key_path`` is read for its side effect only — the
+    ARG001 noqa silences the unused-arg lint."""
+    from imga_core.security import encryption
+
+    return encryption
+
+
+@pytest_asyncio.fixture
+async def mock_gemini_credential(
+    admin_session: AsyncSession,
+    encryption_helper: Any,
+) -> AsyncIterator[Any]:
+    """Factory fixture: inserts one encrypted Gemini credential row for
+    a given tenant. Returns a callable so a single test can mint
+    multiple credentials with different priorities (primary +
+    fallback). Cleanup deletes everything inserted via this factory.
+
+    Usage::
+
+        async def test_rotator(mock_gemini_credential, semi_auto_tenant):
+            user, tid, _ = semi_auto_tenant
+            await mock_gemini_credential(tid, "fake-key-1", priority=0)
+            await mock_gemini_credential(tid, "fake-key-2", priority=1)
+            ...
+    """
+    from imga_db.models import TenantLlmCredential
+
+    inserted_ids: list[UUID] = []
+
+    async def _insert(
+        tenant_id: UUID,
+        plaintext_key: str,
+        *,
+        provider: str = "gemini",
+        label: str = "Birincil Hesap",
+        priority: int = 0,
+    ) -> UUID:
+        ciphertext = encryption_helper.encrypt(plaintext_key)
+        async with admin_session.begin():
+            await admin_session.execute(
+                text("SELECT set_config('app.current_tenant_id', :t, true)"),
+                {"t": str(tenant_id)},
+            )
+            cred = TenantLlmCredential(
+                tenant_id=tenant_id,
+                provider=provider,
+                label=label,
+                encrypted_value=ciphertext,
+                priority=priority,
+            )
+            admin_session.add(cred)
+            await admin_session.flush()
+            cred_id = cred.id
+            inserted_ids.append(cred_id)
+        return cred_id
+
+    yield _insert
+
+    # Teardown — remove every credential the factory inserted.
+    if inserted_ids:
+        async with admin_session.begin():
+            await admin_session.execute(
+                text("DELETE FROM tenant_llm_credentials WHERE id = ANY(:ids)"),
+                {"ids": [str(cid) for cid in inserted_ids]},
+            )
+
+
+@pytest_asyncio.fixture
+async def tenant_with_context(
+    admin_session: AsyncSession,
+    semi_auto_tenant: tuple[Any, UUID, str],
+) -> AsyncIterator[tuple[Any, UUID, str]]:
+    """A semi_auto tenant with industry/company_size/business_description
+    prefilled — the SWOT/OKR generators expect this shape; running them
+    against an empty tenant context should be a separate test. The
+    fixture leaves the cleanup to ``semi_auto_tenant`` (CASCADE on
+    tenant DELETE)."""
+    user, tid, pw = semi_auto_tenant
+    async with admin_session.begin():
+        await admin_session.execute(
+            text(
+                "UPDATE tenants SET industry = :ind, "
+                "company_size = :sz, business_description = :desc "
+                "WHERE id = :tid"
+            ),
+            {
+                "ind": "e_commerce",
+                "sz": "medium",
+                "desc": (
+                    "Türkiye genelinde online çocuk ürünleri satışı; "
+                    "kargo + iade süreci kritik."
+                ),
+                "tid": str(tid),
+            },
+        )
+    yield user, tid, pw
+
+
+@pytest_asyncio.fixture
+async def prompt_template_swot_v1(
+    admin_session: AsyncSession,
+) -> AsyncIterator[Any]:
+    """Returns the migration-seeded ``swot_v1`` prompt template row.
+    Tests that need the finalised prompt UPDATE the row in-place
+    inside their own setup; this fixture's job is just to surface the
+    placeholder so the test doesn't have to know the migration shape.
+    """
+    from imga_db.models import PromptTemplate
+    from sqlalchemy import select
+
+    async with admin_session.begin():
+        row = (
+            await admin_session.execute(
+                select(PromptTemplate).where(
+                    PromptTemplate.template_key == "swot_v1"
+                )
+            )
+        ).scalar_one()
+        admin_session.expunge(row)
+    yield row
