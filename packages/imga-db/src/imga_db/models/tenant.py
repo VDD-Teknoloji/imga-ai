@@ -70,3 +70,22 @@ class Tenant(Base, TimestampMixin, SoftDeleteMixin):
     ticket_reopen_window_days: Mapped[int] = mapped_column(
         Integer, default=30, nullable=False
     )
+
+    # --- Sprint 8.3.6 — tenant context for SWOT/OKR prompt injection ----
+    # Nullable: existing tenants come up empty until /settings/profile
+    # backfills them. industry is a hybrid enum — when ``other`` the
+    # ``industry_other_text`` column carries the free-form label.
+    # company_size is a coarse enum (solo / small / medium / large /
+    # enterprise) for prompt segmentation.
+    industry: Mapped[str | None] = mapped_column(
+        String(64), nullable=True
+    )
+    industry_other_text: Mapped[str | None] = mapped_column(
+        String(128), nullable=True
+    )
+    company_size: Mapped[str | None] = mapped_column(
+        String(32), nullable=True
+    )
+    business_description: Mapped[str | None] = mapped_column(
+        String(500), nullable=True
+    )

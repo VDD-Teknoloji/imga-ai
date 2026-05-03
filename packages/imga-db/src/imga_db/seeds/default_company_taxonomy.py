@@ -34,6 +34,8 @@ DEFAULT_COMPANY_TAXONOMY: Final[list[TaxonomyEntry]] = [
         "keywords": [
             "kargom nerede", "gelmedi", "teslim edilmedi",
             "ulaşmadı", "gecikti", "teslimat sorunu",
+            # Sprint 8.3.6.1 tense varyantları (Bug 2 patch).
+            "gelmiyor", "ulaşamıyorum", "ulaşamadı", "ulaşmıyor",
         ],
         "priority": 1,
     },
@@ -43,6 +45,8 @@ DEFAULT_COMPANY_TAXONOMY: Final[list[TaxonomyEntry]] = [
         "keywords": [
             "kırık", "deforme", "ezik", "hasarlı",
             "parçalanmış", "yırtık ürün", "defolu", "ayıplı",
+            # Sprint 8.3.6.1 tense varyantları.
+            "kırılmış", "deforme olmuş",
         ],
         "priority": 2,
     },
@@ -82,6 +86,8 @@ DEFAULT_COMPANY_TAXONOMY: Final[list[TaxonomyEntry]] = [
         "keywords": [
             "ücret iadesi", "param yatmadı", "hesap",
             "geri ödeme", "tutar iadesi", "bakiye",
+            # Sprint 8.3.6.1 tense varyantları.
+            "param yatmıyor", "iade gelmedi henüz",
         ],
         "priority": 7,
     },
@@ -115,6 +121,8 @@ DEFAULT_COMPANY_TAXONOMY: Final[list[TaxonomyEntry]] = [
         "keywords": [
             "iptal etmek istiyorum", "yanlışlıkla verdim",
             "vazgeçtim", "siparişi iptal",
+            # Sprint 8.3.6.1 tense varyantları.
+            "iptal istiyorum", "iptal edebilir miyim",
         ],
         "priority": 13,
     },
@@ -123,6 +131,8 @@ DEFAULT_COMPANY_TAXONOMY: Final[list[TaxonomyEntry]] = [
         "label_tr": "Teslimat adresini değiştirebilir miyim?",
         "keywords": [
             "adres değişikliği", "yanlış adres", "kargo adresi", "adresi değiştir",
+            # Sprint 8.3.6.1 tense varyantları.
+            "adresimi değiştirebilir miyim", "yanlış adres yazdım",
         ],
         "priority": 14,
     },
@@ -147,6 +157,8 @@ DEFAULT_COMPANY_TAXONOMY: Final[list[TaxonomyEntry]] = [
         "label_tr": "İade nasıl yapılır",
         "keywords": [
             "iade kodu", "nasıl iade ederim", "iade işlemi", "iade etmek istiyorum",
+            # Sprint 8.3.6.1 tense varyantları.
+            "nasıl iade edeceğim", "iade prosedürü",
         ],
         "priority": 17,
     },

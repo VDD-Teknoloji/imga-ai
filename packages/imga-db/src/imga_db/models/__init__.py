@@ -15,8 +15,11 @@ from imga_db.models.report_job import (
     ReportStatus,
     ReportType,
 )
+from imga_db.models.prompt_template import PromptTemplate
 from imga_db.models.review import Review, ReviewDecision
+from imga_db.models.strategic_report import StrategicReport
 from imga_db.models.tenant import AutomationMode, Tenant, TenantPlanTier
+from imga_db.models.tenant_llm_credential import TenantLlmCredential
 from imga_db.models.ticket import (
     CancellationReason,
     Ticket,
@@ -35,6 +38,7 @@ __all__ = [
     "Category",
     "CategoryTaxonomy",
     "Invitation",
+    "PromptTemplate",
     "RefreshTokenRecord",
     "ReportFormat",
     "ReportJob",
@@ -43,8 +47,10 @@ __all__ = [
     "Review",
     "ReviewDecision",
     "SoftDeleteMixin",
+    "StrategicReport",
     "Tenant",
     "TenantCategory",
+    "TenantLlmCredential",
     "TenantOwnedMixin",
     "TenantPlanTier",
     "Ticket",
