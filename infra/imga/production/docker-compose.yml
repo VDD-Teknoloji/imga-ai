@@ -51,6 +51,17 @@ services:
     container_name: imga-prod-api
     restart: unless-stopped
     env_file: /etc/imga/production/api.env
+    # Sprint 8.3.6: Fernet master key + Redis URL injected via env, so the
+    # encryption helper and the SWOT cache pick them up without leaking
+    # the key into the env file. The secret is mounted read-only at
+    # /run/secrets/imga/master.key (chmod 0400 by Docker).
+    environment:
+      IMGA_MASTER_KEY_PATH: /run/secrets/imga/master.key
+      REDIS_URL: redis://redis:6379/0
+    secrets:
+      - source: imga_master_key
+        target: imga/master.key
+        mode: 0400
     networks:
       - imga-prod-internal
       - caddy-public
@@ -63,6 +74,8 @@ services:
       - /var/imga/reports:/var/imga/reports
     depends_on:
       postgres:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     healthcheck:
       # 127.0.0.1 KASITLI — `localhost` Alpine resolver'ında ::1'i
@@ -111,6 +124,29 @@ services:
           memory: 512M
           cpus: '1'
 
+  # Sprint 8.3.6 — SWOT generation cache (24h TTL per tenant + date range)
+  # plus rate-limit / multi-key rotation state. allkeys-lru eviction so
+  # an unbounded tenant set can't OOM the container.
+  redis:
+    image: redis:7-alpine
+    container_name: imga-prod-redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    volumes:
+      - redis_data:/data
+    networks:
+      - imga-prod-internal
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          memory: 384M
+          cpus: '0.5'
+
 networks:
   # Sadece bu projenin container'larının paylaştığı network. Postgres'i
   # dış dünyaya açmadan api'nin DB'ye ulaşmasına izin verir.
@@ -127,3 +163,16 @@ volumes:
   # buradan okunur. Backup'taki tek doğruluk kaynağı.
   postgres_data:
     name: imga-prod-postgres-data
+  # Sprint 8.3.6 — Redis AOF + RDB persistence için. SWOT cache
+  # ephemeral olsa da Redis'i restart sonrası warm tutmak ilk request
+  # latency'sini düşürür.
+  redis_data:
+    name: imga-prod-redis-data
+
+# Sprint 8.3.6 — Fernet master key for tenant LLM credential encryption.
+# Mounted into the api container at /run/secrets/imga/master.key (mode
+# 0400). Source file lives at /etc/imga-secrets/master.key on the host
+# (root:root, chmod 600 — see docs/sprints/sprint-8.3.6-master.md).
+secrets:
+  imga_master_key:
+    file: /etc/imga-secrets/master.key

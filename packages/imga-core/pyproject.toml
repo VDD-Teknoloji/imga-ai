@@ -25,6 +25,9 @@ dependencies = [
     "torch>=2.0,<3.0",
     "pandas>=2.0,<3.0",
     "pydantic>=2.0,<3.0",
+    # Sprint 8.3.6 — Fernet symmetric encryption for tenant LLM
+    # credentials (imga_core.security.encryption).
+    "cryptography>=42.0,<46.0",
 ]
 
 [project.optional-dependencies]

@@ -42,6 +42,22 @@ services:
       timeout: 3s
       retries: 20
 
+  # Sprint 8.3.6 — SWOT generator + multi-key rotation cache. Test
+  # stack mirrors production's redis service so the cache hooks fire
+  # during pytest. allkeys-lru with a tiny maxmemory keeps the
+  # container small for short-lived test runs.
+  redis-test:
+    image: redis:7-alpine
+    container_name: imga-test-redis
+    command: redis-server --maxmemory 64mb --maxmemory-policy allkeys-lru
+    networks:
+      - imga-test-net
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 3s
+      timeout: 3s
+      retries: 10
+
   api-test:
     # Production image'ını yeniden kullanırız — pytest + plugin'leri
     # runtime'da kurulur. Image build edilmemişse :latest tag'inden
@@ -56,6 +72,16 @@ services:
     depends_on:
       postgres-test:
         condition: service_healthy
+      redis-test:
+        condition: service_healthy
+    # Sprint 8.3.6 — Fernet master key mount for tenant LLM credential
+    # encryption tests. Source is repo-local infra/imga/test/secrets/
+    # (gitignored, generated via scripts/generate_master_key.py before
+    # the first run; CI hook regenerates per build).
+    secrets:
+      - source: imga_master_key
+        target: imga/master.key
+        mode: 0400
     environment:
       # Conftest bu iki var'ı okur; defaultlar (localhost:5433) yerine
       # docker network'teki postgres-test:5432'yi gösterir.
@@ -64,6 +90,9 @@ services:
       # E2E tests bunu okur (e2e_env fixture override etse de güvenlik
       # ağı). Test-only secret, gerçek bir şey değil.
       JWT_SECRET_KEY: test-secret-key-32-bytes-min-padding-xyz
+      # Sprint 8.3.6 — encryption helper + Redis URL.
+      IMGA_MASTER_KEY_PATH: /run/secrets/imga/master.key
+      REDIS_URL: redis://redis-test:6379/0
       # Alembic migration'ları test postgres'e koşturmak için (E2E
       # fixture create_engine("admin") etkisini kullanır; tablolar
       # önce alembic upgrade head ile yaratılmalı — entrypoint command
@@ -107,8 +136,18 @@ services:
           tests/test_analytics_headline.py \
           tests/test_company_taxonomy.py \
           tests/test_company_perspective_wire_in.py \
+          tests/test_encryption_smoke.py \
           -v --tb=short
 
 networks:
   imga-test-net:
     name: imga-test-net
+
+# Sprint 8.3.6 — repo-local test master key. Generate once via
+# `python scripts/generate_master_key.py infra/imga/test/secrets/master.key`
+# before running the test stack. Gitignored; regenerating invalidates
+# any encrypted ciphertext stored in the test postgres volume (also
+# ephemeral, so re-runs survive).
+secrets:
+  imga_master_key:
+    file: ./secrets/master.key
