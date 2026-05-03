@@ -120,6 +120,15 @@ function InsightsContent() {
   // links, /reviews drilldown navigating back here). Functional setter
   // form keeps the eslint deps array honest while still no-op'ing when
   // the value is unchanged.
+  //
+  // The four setState calls trip react-hooks/set-state-in-effect. They
+  // are the load-bearing half of the Path B mirror pattern documented
+  // above (Sprint 8.3.4 round-2) — useSearchParams is not reactive in
+  // this Suspense child after the first hydration, so URL-driven nav
+  // (back/forward, deep links) needs an effect to re-sync local state.
+  // Intentional; refactoring to useSyncExternalStore would re-introduce
+  // the round-1 freeze.
+  /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
     const urlTab = (searchParams.get("tab") as TabKey) || "sentiment";
     setTabState((prev) => (prev === urlTab ? prev : urlTab));
@@ -130,6 +139,7 @@ function InsightsContent() {
     const urlSrc = searchParams.get("source_types") ?? "";
     setSourceTypesState((prev) => (prev === urlSrc ? prev : urlSrc));
   }, [searchParams]);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   // The query hooks see this; date strings are YYYY-MM-DD (the
   // use-analytics layer expands to local-midnight ISO before the API).

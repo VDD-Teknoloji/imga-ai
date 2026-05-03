@@ -67,11 +67,17 @@ export default function ReportsPage() {
   const reports = list.data?.pages.flatMap((p) => p.reports) ?? [];
   const polled = useReportJob(pollingId);
 
-  // Stop polling once the polled job hits a terminal state.
+  // Stop polling once the polled job hits a terminal state. The
+  // setState here mirrors the async settle of the TanStack Query
+  // poll onto sync UI state — there's no event to hang this on and
+  // hook-level refetchInterval-stop would still need a setState
+  // somewhere to clear the local pollingId. Intentional exception
+  // to react-hooks/set-state-in-effect.
   useEffect(() => {
     if (!polled.data) return;
     if (polled.data.status === "completed" || polled.data.status === "failed") {
       list.refetch();
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setPollingId(null);
     }
   }, [polled.data, list]);

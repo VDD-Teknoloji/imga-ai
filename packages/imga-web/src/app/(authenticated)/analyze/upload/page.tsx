@@ -53,10 +53,15 @@ export default function BatchUploadPage() {
   const job = useBatchJob(activeJobId);
 
   // Auto-advance to step 4 when the polled job hits a terminal status.
+  // Mirror of an async result onto sync UI state — the standard
+  // exception to react-hooks/set-state-in-effect: there's no event to
+  // hang this on, the transition is driven by the polled query
+  // settling. Intentional, reviewed.
   useEffect(() => {
     if (!job.data) return;
     const terminal = ["completed", "failed", "cancelled"].includes(job.data.status);
     if (terminal && step === 3) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setStep(4);
     }
   }, [job.data, step]);
