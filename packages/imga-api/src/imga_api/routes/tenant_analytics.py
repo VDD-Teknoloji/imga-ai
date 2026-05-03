@@ -12,7 +12,7 @@ Filters share a CSV-encoded querystring shape, mirroring the
 from __future__ import annotations
 
 from dataclasses import asdict
-from datetime import datetime
+from datetime import date, datetime
 from typing import Annotated
 from uuid import UUID
 
@@ -141,6 +141,24 @@ class SensitivityDistResponse(BaseModel):
     total: int
     buckets: list[SensitivityBucketResponse]
     stats: SensitivityStatsResponse
+
+
+class NPSSummaryResponse(BaseModel):
+    score: float | None
+    detractor_count: int
+    passive_count: int
+    promoter_count: int
+    total_count: int
+    coverage_percent: float
+
+
+class NPSMonthlyPointResponse(BaseModel):
+    month: date
+    score: float | None
+    detractor_count: int
+    passive_count: int
+    promoter_count: int
+    total_count: int
 
 
 # --- helpers ------------------------------------------------------------
@@ -378,3 +396,53 @@ async def sensitivity_distribution(
         buckets=[SensitivityBucketResponse(**asdict(b)) for b in result.buckets],
         stats=SensitivityStatsResponse(**asdict(result.stats)),
     )
+
+
+@router.get(
+    "/nps-summary",
+    response_model=NPSSummaryResponse,
+    summary="NPS score + bucket counts (Sprint 8.3.5).",
+)
+async def nps_summary(
+    current: Annotated[CurrentUser, _AnyMember],
+    app_session: Annotated[AsyncSession, Depends(get_app_session)],
+    date_from: date | None = None,
+    date_to: date | None = None,
+    batch_job_id: UUID | None = None,
+) -> NPSSummaryResponse:
+    """Aggregate NPS for the tenant + filter window. The pipeline date
+    filter for NPS keys on Review.created_at (when ingested), distinct
+    from the sentiment endpoints which key on analyzed_at — see
+    AnalyticsService.compute_nps_summary docstring."""
+    tenant_id = _require_active_tenant(current)
+    async with app_session.begin():
+        await bind_tenant(app_session, current)
+        result = await AnalyticsService(app_session).compute_nps_summary(
+            tenant_id=tenant_id,
+            date_from=date_from,
+            date_to=date_to,
+            batch_job_id=batch_job_id,
+        )
+    return NPSSummaryResponse(**asdict(result))
+
+
+@router.get(
+    "/nps-monthly-trend",
+    response_model=list[NPSMonthlyPointResponse],
+    summary="Last N months of NPS, oldest first; empty months keep score=null.",
+)
+async def nps_monthly_trend(
+    current: Annotated[CurrentUser, _AnyMember],
+    app_session: Annotated[AsyncSession, Depends(get_app_session)],
+    months_back: int = Query(default=12, ge=1, le=24),
+) -> list[NPSMonthlyPointResponse]:
+    """Trailing months_back calendar months of NPS. Months without any
+    NPS-bearing review surface with score=null so a connectNulls=false
+    chart renders a real gap."""
+    tenant_id = _require_active_tenant(current)
+    async with app_session.begin():
+        await bind_tenant(app_session, current)
+        result = await AnalyticsService(app_session).compute_monthly_nps_trend(
+            tenant_id=tenant_id, months_back=months_back,
+        )
+    return [NPSMonthlyPointResponse(**asdict(p)) for p in result]
