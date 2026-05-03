@@ -16,7 +16,15 @@ from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
-from imga_db.models import AutomationMode, Category, Tenant, TenantCategory, TenantPlanTier
+from imga_db.models import (
+    AutomationMode,
+    Category,
+    CategoryTaxonomy,
+    Tenant,
+    TenantCategory,
+    TenantPlanTier,
+)
+from imga_db.seeds import DEFAULT_COMPANY_TAXONOMY
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -83,6 +91,24 @@ class TenantService:
         if global_ids:
             await self._session.flush()
 
+        # Sprint 8.3.5. Seed the 21-row default company-perspective
+        # taxonomy. Tenant-edit UI lands in 8.3.7; until then this is
+        # the static catalog every fresh tenant starts with. Seed
+        # mirrors the migration 0017 backfill so existing-tenant rows
+        # and new-tenant rows look identical at the schema level.
+        for entry in DEFAULT_COMPANY_TAXONOMY:
+            self._session.add(
+                CategoryTaxonomy(
+                    tenant_id=tenant.id,
+                    code=entry["code"],
+                    label_tr=entry["label_tr"],
+                    keywords=list(entry["keywords"]),
+                    priority=entry["priority"],
+                    is_default_seed=True,
+                )
+            )
+        await self._session.flush()
+
         await self._audit.log(
             action="tenant.create",
             resource_type="tenant",
@@ -94,6 +120,7 @@ class TenantService:
                 "slug": slug,
                 "plan_tier": str(plan_tier),
                 "seeded_categories": len(global_ids),
+                "seeded_taxonomies": len(DEFAULT_COMPANY_TAXONOMY),
             },
         )
         return tenant
