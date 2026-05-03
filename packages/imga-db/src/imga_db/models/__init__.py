@@ -4,6 +4,7 @@ from imga_db.models.assignment_history import TicketAssignmentEvent
 from imga_db.models.audit import AuditLog
 from imga_db.models.batch_job import AnalyzeBatchJob, BatchJobStatus
 from imga_db.models.category import Category, TenantCategory
+from imga_db.models.category_taxonomy import CategoryTaxonomy
 from imga_db.models.comment import TicketComment, TicketCommentKind
 from imga_db.models.invitation import Invitation
 from imga_db.models.mixins import SoftDeleteMixin, TenantOwnedMixin, TimestampMixin
@@ -32,6 +33,7 @@ __all__ = [
     "BatchJobStatus",
     "CancellationReason",
     "Category",
+    "CategoryTaxonomy",
     "Invitation",
     "RefreshTokenRecord",
     "ReportFormat",
