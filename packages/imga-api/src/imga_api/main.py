@@ -36,6 +36,7 @@ from imga_api.routes import tenant_config as tenant_config_routes
 from imga_api.routes import tenant_directory as tenant_directory_routes
 from imga_api.routes import tenant_reports as tenant_reports_routes
 from imga_api.routes import tenant_reviews as tenant_reviews_routes
+from imga_api.routes import tenant_taxonomies as tenant_taxonomies_routes
 from imga_api.routes import tickets as tickets_routes
 from imga_api.routes.admin import invitations as admin_invitation_routes
 from imga_api.routes.admin import tenants as admin_tenant_routes
@@ -215,6 +216,7 @@ app.include_router(tenant_reviews_routes.router)
 app.include_router(tenant_reports_routes.router)
 app.include_router(tenant_analytics_routes.router)
 app.include_router(tenant_directory_routes.router)
+app.include_router(tenant_taxonomies_routes.router)
 app.include_router(tickets_routes.router)
 app.include_router(admin_tenant_routes.router)
 app.include_router(admin_invitation_routes.router)
