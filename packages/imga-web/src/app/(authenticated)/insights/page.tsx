@@ -9,7 +9,7 @@
 
 import { TrendingUp } from "lucide-react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { Suspense, useMemo } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import {
   Bar,
   BarChart,
@@ -91,39 +91,89 @@ function InsightsHeaderSkeleton() {
   );
 }
 
+// Sprint 8.3.4 round-2 (continued) — controlled local state mirrors the
+// URL snapshot. The pure URL-as-source-of-truth pattern (round-1) broke
+// after a hard refresh with non-empty query: tab clicks fired
+// onValueChange and our handler pushed the new URL, but `useSearchParams`
+// in this Suspense child stopped notifying subscribers after the first
+// hydration, so `tab` never updated, the controlled <Tabs value=...>
+// prop never changed, and the UI froze. The mirror gives the controlled
+// primitives an immediate state update independent of the hook's
+// reactivity; the URL still gets pushed (shareable + back-button), and
+// a sync useEffect catches external nav (back/forward, deep links).
+
 function InsightsContent() {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
 
-  const tab = (searchParams.get("tab") as TabKey) || "sentiment";
-
-  // date_from / date_to live in the URL as plain YYYY-MM-DD. Storing the
-  // full ISO datetime here previously round-tripped through URL-encoding
-  // (`:` → `%3A`, `.` → unchanged) and Next.js' soft-nav diff treated the
-  // re-emitted URL as identical to the current one, silently dropping
-  // the navigation — that's what made tab clicks no-op after a refresh
-  // when date_from was present. The hook layer converts to local-
-  // midnight ISO before hitting the API.
-  const filters = useMemo<AnalyticsFilters>(
-    () => ({
-      date_from: searchParams.get("date_from") ?? undefined,
-      date_to: searchParams.get("date_to") ?? undefined,
-      source_types: searchParams.get("source_types")?.split(",").filter(Boolean),
-    }),
-    [searchParams],
+  const [tab, setTabState] = useState<TabKey>(
+    () => (searchParams.get("tab") as TabKey) || "sentiment",
+  );
+  const [dateFrom, setDateFromState] = useState<string>(
+    () => searchParams.get("date_from") ?? "",
+  );
+  const [dateTo, setDateToState] = useState<string>(
+    () => searchParams.get("date_to") ?? "",
+  );
+  const [sourceTypes, setSourceTypesState] = useState<string>(
+    () => searchParams.get("source_types") ?? "",
   );
 
-  // Canonical Next.js 16 pattern (see node_modules/next/dist/docs/.../use-search-params.md):
-  // build a fresh URLSearchParams from the current snapshot and push the
-  // pathname + new query. router.push is more honest than replace here —
-  // back button should walk filter history.
-  function setParam(key: string, value: string | null) {
+  // Sync FROM URL → state for external navigations (back/forward, deep
+  // links, /reviews drilldown navigating back here). Functional setter
+  // form keeps the eslint deps array honest while still no-op'ing when
+  // the value is unchanged.
+  useEffect(() => {
+    const urlTab = (searchParams.get("tab") as TabKey) || "sentiment";
+    setTabState((prev) => (prev === urlTab ? prev : urlTab));
+    const urlFrom = searchParams.get("date_from") ?? "";
+    setDateFromState((prev) => (prev === urlFrom ? prev : urlFrom));
+    const urlTo = searchParams.get("date_to") ?? "";
+    setDateToState((prev) => (prev === urlTo ? prev : urlTo));
+    const urlSrc = searchParams.get("source_types") ?? "";
+    setSourceTypesState((prev) => (prev === urlSrc ? prev : urlSrc));
+  }, [searchParams]);
+
+  // The query hooks see this; date strings are YYYY-MM-DD (the
+  // use-analytics layer expands to local-midnight ISO before the API).
+  const filters = useMemo<AnalyticsFilters>(
+    () => ({
+      date_from: dateFrom || undefined,
+      date_to: dateTo || undefined,
+      source_types: sourceTypes
+        ? sourceTypes.split(",").filter(Boolean)
+        : undefined,
+    }),
+    [dateFrom, dateTo, sourceTypes],
+  );
+
+  // Push a single querystring update. Reads searchParams fresh on each
+  // call (closure-captured but the captured value is the latest at click
+  // time, since the click handlers are recreated per render).
+  function pushParam(key: string, value: string | null) {
     const params = new URLSearchParams(searchParams.toString());
     if (value === null || value === "") params.delete(key);
     else params.set(key, value);
     const qs = params.toString();
     router.push(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+  }
+
+  function handleTabChange(newTab: TabKey) {
+    setTabState(newTab);
+    pushParam("tab", newTab);
+  }
+  function handleDateFromChange(value: string) {
+    setDateFromState(value);
+    pushParam("date_from", value || null);
+  }
+  function handleDateToChange(value: string) {
+    setDateToState(value);
+    pushParam("date_to", value || null);
+  }
+  function handleSourceTypesChange(value: string) {
+    setSourceTypesState(value);
+    pushParam("source_types", value || null);
   }
 
   return (
@@ -138,12 +188,16 @@ function InsightsContent() {
         </div>
       </header>
 
-      <FilterBar filters={filters} setParam={setParam} />
+      <FilterBar
+        dateFrom={dateFrom}
+        dateTo={dateTo}
+        sourceTypes={sourceTypes}
+        onDateFromChange={handleDateFromChange}
+        onDateToChange={handleDateToChange}
+        onSourceTypesChange={handleSourceTypesChange}
+      />
 
-      <Tabs
-        value={tab}
-        onValueChange={(v) => setParam("tab", String(v))}
-      >
+      <Tabs value={tab} onValueChange={(v) => handleTabChange(v as TabKey)}>
         <TabsList className="grid grid-cols-5">
           {(Object.keys(TAB_LABELS) as TabKey[]).map((k) => (
             <TabsTrigger key={k} value={k}>
@@ -183,16 +237,24 @@ function InsightsContent() {
 // my timezone".
 
 function FilterBar({
-  filters,
-  setParam,
+  dateFrom,
+  dateTo,
+  sourceTypes,
+  onDateFromChange,
+  onDateToChange,
+  onSourceTypesChange,
 }: {
-  filters: AnalyticsFilters;
-  setParam: (k: string, v: string | null) => void;
+  dateFrom: string;
+  dateTo: string;
+  sourceTypes: string;
+  onDateFromChange: (value: string) => void;
+  onDateToChange: (value: string) => void;
+  onSourceTypesChange: (value: string) => void;
 }) {
   // Native min/max on the date inputs prevents the picker from offering
   // an invalid (from > to) range; the API would still cap at 90 days,
   // but stopping it at the input level is friendlier than a 400 round-
-  // trip and makes the picker greys-out the disallowed days visually.
+  // trip and makes the picker grey out the disallowed days visually.
   return (
     <Card>
       <CardContent className="grid grid-cols-1 gap-3 p-4 md:grid-cols-3">
@@ -200,9 +262,9 @@ function FilterBar({
           <Label className="text-xs">Başlangıç</Label>
           <input
             type="date"
-            value={filters.date_from ?? ""}
-            max={filters.date_to ?? undefined}
-            onChange={(e) => setParam("date_from", e.target.value || null)}
+            value={dateFrom}
+            max={dateTo || undefined}
+            onChange={(e) => onDateFromChange(e.target.value)}
             className="border-input bg-background mt-1 w-full rounded-md border px-3 py-2 text-sm"
           />
         </div>
@@ -210,17 +272,17 @@ function FilterBar({
           <Label className="text-xs">Bitiş</Label>
           <input
             type="date"
-            value={filters.date_to ?? ""}
-            min={filters.date_from ?? undefined}
-            onChange={(e) => setParam("date_to", e.target.value || null)}
+            value={dateTo}
+            min={dateFrom || undefined}
+            onChange={(e) => onDateToChange(e.target.value)}
             className="border-input bg-background mt-1 w-full rounded-md border px-3 py-2 text-sm"
           />
         </div>
         <div>
           <Label className="text-xs">Kaynak</Label>
           <select
-            value={filters.source_types?.join(",") ?? ""}
-            onChange={(e) => setParam("source_types", e.target.value || null)}
+            value={sourceTypes}
+            onChange={(e) => onSourceTypesChange(e.target.value)}
             className="border-input bg-background mt-1 w-full rounded-md border px-3 py-2 text-sm"
           >
             <option value="">Tümü</option>
