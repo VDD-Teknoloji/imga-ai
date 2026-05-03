@@ -13,6 +13,11 @@ import logging
 from typing import Any, cast
 
 from imga_core.llm.base import LLMProvider, LLMProviderError
+from imga_core.llm.errors import (
+    InvalidKeyError,
+    MalformedResponseError,
+    RateLimitError,
+)
 from imga_core.llm.prompts import (
     CLASSIFICATION_RESPONSE_SCHEMA,
     build_classification_prompt,
@@ -139,3 +144,199 @@ class GeminiProvider(LLMProvider):
             provider=self.PROVIDER_NAME,
             model=self._model_name,
         )
+
+    # ------------------------------------------------------------------
+    # Sprint 8.3.6 — SWOT + OKR generation (structured output)
+    # ------------------------------------------------------------------
+    #
+    # These methods diverge from ``classify`` in three ways:
+    #
+    #   1. ``api_key`` is a per-call argument. The multi-key rotator
+    #      (imga_core.llm.key_rotation) walks priorities and falls
+    #      through on RateLimit/InvalidKey, so the provider must
+    #      reconfigure the SDK at each attempt. ``classify`` keeps the
+    #      constructor-bound key because the HybridClassifier path has
+    #      a single configured tenant key.
+    #   2. They're async. Service-layer callers (Sprint 8.3.6.3,
+    #      8.3.6.4) live inside FastAPI request handlers; awaiting
+    #      ``generate_content_async`` is straightforward there, while
+    #      classify still runs sync inside the analyze pipeline's
+    #      thread-bound BERT path.
+    #   3. They map SDK errors to the Sprint 8.3.6 ``LLMError``
+    #      hierarchy (RateLimitError / InvalidKeyError /
+    #      MalformedResponseError) instead of the legacy
+    #      ``LLMProviderError`` so the rotator can act on them.
+
+    async def generate_swot(
+        self,
+        *,
+        api_key: str,
+        system_prompt: str,
+        user_prompt: str,
+        response_schema: dict[str, Any],
+        model_name: str = "gemini-2.5-pro",
+        temperature: float = 0.2,
+        top_p: float = 0.9,
+        max_output_tokens: int = 8192,
+    ) -> dict[str, Any]:
+        """Generate a SWOT analysis with structured JSON output.
+
+        ``response_schema`` is the JSON-schema dict the prompt template
+        ships (Sprint 8.3.6.3 finalises it). The Gemini SDK's
+        ``response_mime_type=application/json`` + ``response_schema``
+        combination guarantees the model returns syntactically valid
+        JSON — this method's job is to map provider-side errors to the
+        rotator's hierarchy and surface the parsed dict.
+
+        Raises:
+            RateLimitError: HTTP 429.
+            InvalidKeyError: HTTP 401 / 403.
+            MalformedResponseError: 200 response that didn't parse to a
+                dict, or empty ``response.text``.
+            LLMProviderError: any other provider failure (network,
+                timeout, 5xx). The rotator does not handle these —
+                they propagate so the service layer can decide.
+        """
+        return await self._generate_structured(
+            api_key=api_key,
+            system_prompt=system_prompt,
+            user_prompt=user_prompt,
+            response_schema=response_schema,
+            model_name=model_name,
+            temperature=temperature,
+            top_p=top_p,
+            max_output_tokens=max_output_tokens,
+        )
+
+    async def generate_okr(
+        self,
+        *,
+        api_key: str,
+        system_prompt: str,
+        user_prompt: str,
+        response_schema: dict[str, Any],
+        model_name: str = "gemini-2.5-pro",
+        temperature: float = 0.3,
+        top_p: float = 0.9,
+        max_output_tokens: int = 4096,
+    ) -> dict[str, Any]:
+        """Generate OKR proposals with structured JSON output.
+
+        Default temperature is 0.3 (vs SWOT's 0.2) because OKRs benefit
+        from a touch more variation in framing — strict deterministic
+        output produces stilted "Increase X by Y" templates.
+        ``max_output_tokens`` is half of SWOT's because OKR responses
+        are tighter (2-4 objectives × 2-4 key results, no narrative
+        recommendations).
+
+        Same error contract as ``generate_swot``.
+        """
+        return await self._generate_structured(
+            api_key=api_key,
+            system_prompt=system_prompt,
+            user_prompt=user_prompt,
+            response_schema=response_schema,
+            model_name=model_name,
+            temperature=temperature,
+            top_p=top_p,
+            max_output_tokens=max_output_tokens,
+        )
+
+    async def _generate_structured(
+        self,
+        *,
+        api_key: str,
+        system_prompt: str,
+        user_prompt: str,
+        response_schema: dict[str, Any],
+        model_name: str,
+        temperature: float,
+        top_p: float,
+        max_output_tokens: int,
+    ) -> dict[str, Any]:
+        """Shared structured-output call path. SWOT/OKR diverge only in
+        defaults; the actual SDK plumbing is identical."""
+        if not api_key:
+            raise InvalidKeyError("Empty api_key passed to generate_structured")
+        if not user_prompt or not user_prompt.strip():
+            raise MalformedResponseError("user_prompt must be non-empty")
+
+        # Reconfigure the SDK with this attempt's key. Sequential by
+        # construction (rotator walks one key at a time), so the global
+        # ``configure`` call is safe; concurrent generation across
+        # tenants is out of scope for Sprint 8.3.6 (manual-only
+        # trigger).
+        self._genai.configure(api_key=api_key)
+        model = self._genai.GenerativeModel(
+            model_name,
+            system_instruction=system_prompt,
+        )
+
+        try:
+            response = await model.generate_content_async(
+                user_prompt,
+                generation_config={
+                    "response_mime_type": "application/json",
+                    "response_schema": response_schema,
+                    "temperature": temperature,
+                    "top_p": top_p,
+                    "max_output_tokens": max_output_tokens,
+                },
+            )
+        except Exception as exc:
+            self._raise_mapped_sdk_error(exc)
+
+        return self._parse_structured_response(response)
+
+    @staticmethod
+    def _raise_mapped_sdk_error(exc: Exception) -> None:
+        """Map a raw SDK exception to the Sprint 8.3.6 hierarchy.
+
+        ``google.generativeai`` raises a small zoo of types and the
+        public ones don't expose stable HTTP status access; we sniff
+        the exception message + chained context for the codes that
+        matter to the rotator. Anything we can't classify falls
+        through as ``LLMProviderError`` so the service layer sees
+        it without the rotator swallowing it.
+        """
+        text = str(exc).lower()
+        # 429 / quota — rate limit. The SDK sometimes surfaces a
+        # ``retry_after`` header; not stable enough to parse, so we
+        # leave it None.
+        if (
+            "429" in text
+            or "rate limit" in text
+            or "resource_exhausted" in text
+            or "quota" in text
+        ):
+            raise RateLimitError() from exc
+        # 401 / 403 — invalid or revoked key.
+        if (
+            "401" in text
+            or "403" in text
+            or "api key not valid" in text
+            or "permission_denied" in text
+            or "invalid api key" in text
+            or "unauthenticated" in text
+        ):
+            raise InvalidKeyError(f"API key rejected: {exc}") from exc
+        # Everything else propagates to the legacy provider error so
+        # the service layer's catch-all logging handles it.
+        raise LLMProviderError(f"Gemini SWOT/OKR call failed: {exc}") from exc
+
+    @staticmethod
+    def _parse_structured_response(response: Any) -> dict[str, Any]:
+        raw = getattr(response, "text", None)
+        if not raw:
+            raise MalformedResponseError("Empty response text from Gemini")
+        try:
+            data = json.loads(raw)
+        except json.JSONDecodeError as exc:
+            raise MalformedResponseError(
+                f"Gemini returned non-JSON text: {raw!r}"
+            ) from exc
+        if not isinstance(data, dict):
+            raise MalformedResponseError(
+                f"Expected JSON object, got {type(data).__name__}"
+            )
+        return cast(dict[str, Any], data)
