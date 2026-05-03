@@ -18,7 +18,16 @@ from datetime import datetime
 from enum import StrEnum
 from uuid import UUID, uuid4
 
-from sqlalchemy import CHAR, DateTime, Float, ForeignKey, String, Text
+from sqlalchemy import (
+    CHAR,
+    Computed,
+    DateTime,
+    Float,
+    ForeignKey,
+    SmallInteger,
+    String,
+    Text,
+)
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column
@@ -112,4 +121,27 @@ class Review(Base, TimestampMixin, SoftDeleteMixin):
     # before migration 0014; [] when the pipeline ran and nothing fired.
     overrides_applied: Mapped[list[dict[str, object]] | None] = mapped_column(
         JSONB(), nullable=True
+    )
+
+    # Sprint 8.3.5. NPS score (0–10), populated when the upload had an
+    # NPS column or the manual /analyze caller passed one. NULL is the
+    # "not captured" value; check constraint ck_reviews_nps_score_range
+    # enforces the 0..10 bound at the DB layer.
+    nps_score: Mapped[int | None] = mapped_column(SmallInteger(), nullable=True)
+
+    # Postgres GENERATED ALWAYS STORED — derived from nps_score per the
+    # standard NPS bucketing. App must never write this column; the
+    # Computed(persisted=True) annotation tells SQLAlchemy to omit it
+    # from inserts/updates and just read it back.
+    nps_category: Mapped[str | None] = mapped_column(
+        String(16),
+        Computed(
+            "CASE "
+            "WHEN nps_score IS NULL THEN NULL "
+            "WHEN nps_score <= 6 THEN 'detractor' "
+            "WHEN nps_score <= 8 THEN 'passive' "
+            "ELSE 'promoter' END",
+            persisted=True,
+        ),
+        nullable=True,
     )
