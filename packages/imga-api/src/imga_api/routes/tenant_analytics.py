@@ -172,6 +172,19 @@ class HeadlineMetricsResponse(BaseModel):
     sensitive_topics_count: int
 
 
+class CompanyPerspectiveDistRowResponse(BaseModel):
+    code: str
+    label_tr: str
+    count: int
+    percentage: float
+
+
+class CompanyPerspectiveDistResponse(BaseModel):
+    total: int
+    unmatched_count: int
+    data: list[CompanyPerspectiveDistRowResponse]
+
+
 # --- helpers ------------------------------------------------------------
 
 
@@ -480,3 +493,41 @@ async def headline_metrics(
             tenant_id=tenant_id, date_from=date_from, date_to=date_to,
         )
     return HeadlineMetricsResponse(**asdict(result))
+
+
+@router.get(
+    "/company-perspective-distribution",
+    response_model=CompanyPerspectiveDistResponse,
+    summary="Top-N company-perspective codes + unmatched count (Sprint 8.3.5.6).",
+)
+async def company_perspective_distribution(
+    current: Annotated[CurrentUser, _AnyMember],
+    app_session: Annotated[AsyncSession, Depends(get_app_session)],
+    date_from: datetime | None = None,
+    date_to: datetime | None = None,
+    sentiment_labels: str | None = None,
+    source_types: str | None = None,
+    batch_job_id: UUID | None = None,
+    limit: int = Query(default=10, ge=1, le=50),
+) -> CompanyPerspectiveDistResponse:
+    """Top-N matched company-perspective codes for the tenant, joined
+    to the taxonomy for label_tr. ``unmatched_count`` is the share of
+    reviews where the heuristic didn't match anything; reported
+    separately so the dashboard can show it as its own signal."""
+    tenant_id = _require_active_tenant(current)
+    filters = _build_filters(
+        date_from, date_to, sentiment_labels=sentiment_labels,
+        source_types=source_types, batch_job_id=batch_job_id,
+    )
+    async with app_session.begin():
+        await bind_tenant(app_session, current)
+        result = await AnalyticsService(
+            app_session
+        ).compute_company_perspective_distribution(
+            tenant_id=tenant_id, filters=filters, limit=limit,
+        )
+    return CompanyPerspectiveDistResponse(
+        total=result.total,
+        unmatched_count=result.unmatched_count,
+        data=[CompanyPerspectiveDistRowResponse(**asdict(r)) for r in result.data],
+    )

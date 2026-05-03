@@ -41,10 +41,12 @@ from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
 from imga_core import AnalysisPipeline, AnalysisResult
+from imga_core.categorizers import TaxonomyEntry, apply_company_heuristic
 from imga_db import create_engine, create_session_factory, set_current_tenant
 from imga_db.models import (
     AnalyzeBatchJob,
     BatchJobStatus,
+    CategoryTaxonomy,
     Review,
     ReviewDecision,
 )
@@ -425,10 +427,31 @@ async def _process_chunk(
         tenant_config = await config_service.get_config(tenant_id)
         tenant_mode = str(tenant_config["automation_mode"])
 
+        # Sprint 8.3.5.6. Fetch the company taxonomy once per chunk so
+        # the heuristic reranker doesn't hit the DB per row. The auto-
+        # create branch routes through ReviewService.record_and_decide
+        # which has its own fetch — duplicate work, but keeps both
+        # paths self-sufficient and the read is cheap (21 rows max,
+        # B-tree index on tenant_id).
+        taxonomy_payload = await _load_taxonomy_payload(app_session, tenant_id)
+
         for parsed, analysis in zip(valid_rows, analyses, strict=True):
             from imga_core import review_text_hash
 
             text_hash = review_text_hash(parsed.text)
+
+            # Sprint 8.3.5.6. Compute the heuristic perspective once per
+            # row, reused below for whichever insertion path fires. The
+            # auto_create branch routes through ReviewService which runs
+            # its own taxonomy load + heuristic pass; we let that path
+            # win for the row it owns and only persist this value on the
+            # two direct-insert branches (intra-batch dedup + opt-out).
+            perspective_hit = apply_company_heuristic(
+                parsed.text, taxonomy=taxonomy_payload
+            )
+            perspective_code = (
+                perspective_hit.code if perspective_hit is not None else None
+            )
 
             # Intra-batch dedup — already seen this text in this job.
             if text_hash in seen_hashes:
@@ -457,6 +480,7 @@ async def _process_chunk(
                     analyzed_at=datetime.now(UTC),
                     overrides_applied=[hit.model_dump() for hit in analysis.overrides_applied],
                     nps_score=parsed.nps_score,
+                    company_perspective_code=perspective_code,
                 )
                 app_session.add(review)
                 duplicates += 1
@@ -530,6 +554,7 @@ async def _process_chunk(
                     analyzed_at=datetime.now(UTC),
                     overrides_applied=[hit.model_dump() for hit in analysis.overrides_applied],
                     nps_score=parsed.nps_score,
+                    company_perspective_code=perspective_code,
                 )
                 app_session.add(review)
                 succeeded += 1
@@ -599,6 +624,35 @@ async def recover_orphans(context: WorkerContext) -> int:
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+
+async def _load_taxonomy_payload(
+    session: AsyncSession, tenant_id: UUID
+) -> list[TaxonomyEntry]:
+    """Read the tenant's CategoryTaxonomy rows and shape them as the
+    list-of-dicts payload ``apply_company_heuristic`` expects.
+
+    Returns ``[]`` when the tenant has no taxonomy (legacy / pre-8.3.5.5
+    tenants that never landed via ``TenantService.create``); the
+    heuristic short-circuits to ``None`` on an empty list.
+    """
+    stmt = select(
+        CategoryTaxonomy.code,
+        CategoryTaxonomy.label_tr,
+        CategoryTaxonomy.keywords,
+        CategoryTaxonomy.priority,
+    ).where(CategoryTaxonomy.tenant_id == tenant_id)
+    rows = (await session.execute(stmt)).all()
+    return [
+        TaxonomyEntry(
+            code=r.code,
+            label_tr=r.label_tr,
+            keywords=list(r.keywords),
+            priority=r.priority,
+        )
+        for r in rows
+    ]
+
 
 __all__ = [
     "WorkerContext",

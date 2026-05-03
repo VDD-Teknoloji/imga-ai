@@ -78,6 +78,10 @@ class TenantAnalyzeResponse(BaseModel):
     ticket_id: UUID | None
     analyzed_at: datetime
     analysis: AnalysisResult
+    # Sprint 8.3.5.6 — heuristic company-perspective match. Both fields
+    # None when the heuristic didn't fire / taxonomy is empty.
+    company_perspective_code: str | None = None
+    company_perspective_label_tr: str | None = None
 
 
 def _require_active_tenant(current: CurrentUser) -> UUID:
@@ -148,4 +152,6 @@ async def tenant_analyze(
         ticket_id=result.ticket_id,
         analyzed_at=result.analyzed_at,
         analysis=analysis,
+        company_perspective_code=result.company_perspective_code,
+        company_perspective_label_tr=result.company_perspective_label_tr,
     )

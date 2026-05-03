@@ -38,9 +38,11 @@ from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
 from imga_core import AnalysisResult, review_text_hash
+from imga_core.categorizers import TaxonomyEntry, apply_company_heuristic
 from imga_db.models import (
     AutomationMode,
     Category,
+    CategoryTaxonomy,
     Review,
     ReviewDecision,
     Ticket,
@@ -93,6 +95,11 @@ class ReviewBridgeResult:
     ``ticket_id`` is set on ``CREATE`` (newly minted) and
     ``SKIPPED_DEDUP`` (pointer to existing). All other branches
     leave it None.
+
+    ``company_perspective_code`` / ``company_perspective_label_tr`` mirror
+    the heuristic match the bridge persisted on the row (Sprint 8.3.5.6);
+    surfacing them here lets the /analyze route render the matched code
+    without a follow-up GET on the new review.
     """
 
     review_id: UUID
@@ -100,6 +107,8 @@ class ReviewBridgeResult:
     decision_reason: str | None
     ticket_id: UUID | None
     analyzed_at: datetime
+    company_perspective_code: str | None = None
+    company_perspective_label_tr: str | None = None
 
 
 class ReviewService:
@@ -152,6 +161,15 @@ class ReviewService:
         automation_mode = AutomationMode(mode_str)
 
         primary_code, primary_confidence = _extract_primary(analysis)
+
+        # Sprint 8.3.5.6. Heuristic company-perspective match —
+        # parallel dimension to BERT primary, drives the dashboard's
+        # "Şirket Perspektifi" column. Both fields are None when the
+        # tenant's taxonomy is empty or no keyword matched (the latter
+        # is the dominant case for short / off-topic reviews).
+        perspective_code, perspective_label_tr = await self._compute_company_perspective(
+            tenant_id=tenant_id, text=text
+        )
 
         # --- decision tree (order matters; see module docstring) ---
         decision: ReviewDecision
@@ -218,6 +236,7 @@ class ReviewService:
             analyzed_at=moment,
             overrides_applied=[hit.model_dump() for hit in analysis.overrides_applied],
             nps_score=nps_score,
+            company_perspective_code=perspective_code,
         )
         self._session.add(review)
         await self._session.flush()
@@ -255,6 +274,8 @@ class ReviewService:
             decision_reason=decision_reason,
             ticket_id=ticket_id,
             analyzed_at=moment,
+            company_perspective_code=perspective_code,
+            company_perspective_label_tr=perspective_label_tr,
         )
 
     # --- manual promotion ---------------------------------------------
@@ -351,6 +372,42 @@ class ReviewService:
             .limit(1)
         )
         return (await self._session.execute(stmt)).scalar_one_or_none()
+
+    async def _compute_company_perspective(
+        self, *, tenant_id: UUID, text: str
+    ) -> tuple[str | None, str | None]:
+        """Load the tenant's CategoryTaxonomy rows and run the heuristic
+        reranker. Returns ``(code, label_tr)`` for the match, or
+        ``(None, None)`` when nothing matched / the taxonomy is empty.
+
+        Reads inside the bound app session; RLS keeps the query scoped
+        to ``tenant_id`` automatically. Service stays headless of any
+        explicit ``WHERE tenant_id = :t`` since the policy already
+        adds it — passing tenant_id here is just for the rare path
+        where bind_tenant hasn't run (it always has, in practice).
+        """
+        stmt = select(
+            CategoryTaxonomy.code,
+            CategoryTaxonomy.label_tr,
+            CategoryTaxonomy.keywords,
+            CategoryTaxonomy.priority,
+        ).where(CategoryTaxonomy.tenant_id == tenant_id)
+        rows = (await self._session.execute(stmt)).all()
+        if not rows:
+            return None, None
+        taxonomy: list[TaxonomyEntry] = [
+            TaxonomyEntry(
+                code=r.code,
+                label_tr=r.label_tr,
+                keywords=list(r.keywords),
+                priority=r.priority,
+            )
+            for r in rows
+        ]
+        hit = apply_company_heuristic(review_text=text, taxonomy=taxonomy)
+        if hit is None:
+            return None, None
+        return hit.code, hit.label_tr
 
     async def _resolve_category_id(self, code: str) -> UUID:
         """Find the category id for a code visible to the bound tenant.

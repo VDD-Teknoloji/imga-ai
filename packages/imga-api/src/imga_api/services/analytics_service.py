@@ -21,7 +21,7 @@ from uuid import UUID
 from zoneinfo import ZoneInfo
 
 from imga_core.config import CRISIS_SCORE_THRESHOLD
-from imga_db.models import Category, Review, Ticket, TicketState
+from imga_db.models import Category, CategoryTaxonomy, Review, Ticket, TicketState
 from sqlalchemy import and_, case, func, or_, select, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -215,6 +215,33 @@ class HeadlineMetrics:
     nps_coverage_percent: float
     avg_sentiment_score: float | None
     sensitive_topics_count: int
+
+
+@dataclass(frozen=True, slots=True)
+class CompanyPerspectiveDistRow:
+    """One row of the company-perspective distribution. ``code`` is the
+    raw ``CategoryTaxonomy.code`` (or the placeholder for unmatched
+    rows); ``label_tr`` falls back to the raw code when the taxonomy
+    row has been pruned since the review was analyzed (8.3.7 edit UI
+    can delete rows; we don't repair historical reviews).
+    """
+
+    code: str
+    label_tr: str
+    count: int
+    percentage: float
+
+
+@dataclass(frozen=True, slots=True)
+class CompanyPerspectiveDist:
+    """``unmatched_count`` is the share of reviews where the heuristic
+    didn't fire (NULL company_perspective_code). It's reported alongside
+    rather than mixed in so the dashboard can show "X reviews didn't
+    match any taxonomy entry" as a separate signal."""
+
+    total: int
+    unmatched_count: int
+    data: list[CompanyPerspectiveDistRow] = field(default_factory=list)
 
 
 @dataclass(frozen=True, slots=True)
@@ -1038,6 +1065,92 @@ class AnalyticsService:
         )
 
     # ------------------------------------------------------------------
+    # 11. Company-perspective distribution (Sprint 8.3.5.6)
+    # ------------------------------------------------------------------
+
+    async def compute_company_perspective_distribution(
+        self,
+        *,
+        tenant_id: UUID,
+        filters: AnalyticsFilters,
+        limit: int = 10,
+    ) -> CompanyPerspectiveDist:
+        """Top-N matched company-perspective codes plus the unmatched
+        count. Joins ``CategoryTaxonomy`` per (tenant, code) for the
+        Türkçe label; rows whose taxonomy entry has since been pruned
+        (Sprint 8.3.7 will allow deletes) fall back to the raw code.
+
+        Reviews with ``company_perspective_code IS NULL`` (the heuristic
+        didn't match anything in the tenant's taxonomy) are reported via
+        ``unmatched_count`` rather than mixed into ``data`` — the
+        dashboard treats "didn't match" as a separate signal from "fell
+        below the top-N tail".
+        """
+        # Total matching reviews after filters — denominator for percentage
+        # and for unmatched_count = total - matched_total.
+        total_stmt = (
+            select(func.count())
+            .select_from(Review)
+            .where(Review.tenant_id == tenant_id)
+            .where(Review.deleted_at.is_(None))
+        )
+        total_stmt = self._apply_review_filters(total_stmt, filters)
+        total = (await self._session.execute(total_stmt)).scalar_one() or 0
+
+        # Top-N codes by count, joined to taxonomy for label_tr. LEFT
+        # JOIN on the (tenant_id, code) composite so a pruned taxonomy
+        # entry still surfaces with the raw code.
+        rows_stmt = (
+            select(
+                Review.company_perspective_code.label("code"),
+                CategoryTaxonomy.label_tr.label("label_tr"),
+                func.count().label("cnt"),
+            )
+            .select_from(Review)
+            .outerjoin(
+                CategoryTaxonomy,
+                and_(
+                    CategoryTaxonomy.tenant_id == Review.tenant_id,
+                    CategoryTaxonomy.code == Review.company_perspective_code,
+                ),
+            )
+            .where(Review.tenant_id == tenant_id)
+            .where(Review.deleted_at.is_(None))
+            .where(Review.company_perspective_code.is_not(None))
+            .group_by(Review.company_perspective_code, CategoryTaxonomy.label_tr)
+            .order_by(func.count().desc())
+            .limit(limit)
+        )
+        rows_stmt = self._apply_review_filters(rows_stmt, filters)
+        rows = (await self._session.execute(rows_stmt)).all()
+
+        matched_total_stmt = (
+            select(func.count())
+            .select_from(Review)
+            .where(Review.tenant_id == tenant_id)
+            .where(Review.deleted_at.is_(None))
+            .where(Review.company_perspective_code.is_not(None))
+        )
+        matched_total_stmt = self._apply_review_filters(matched_total_stmt, filters)
+        matched_total = (
+            await self._session.execute(matched_total_stmt)
+        ).scalar_one() or 0
+        unmatched_count = total - matched_total
+
+        data = [
+            CompanyPerspectiveDistRow(
+                code=r.code,
+                label_tr=r.label_tr or r.code,
+                count=r.cnt,
+                percentage=round(100 * r.cnt / total, 2) if total else 0.0,
+            )
+            for r in rows
+        ]
+        return CompanyPerspectiveDist(
+            total=total, unmatched_count=unmatched_count, data=data
+        )
+
+    # ------------------------------------------------------------------
     # Filter helpers
     # ------------------------------------------------------------------
 
@@ -1182,6 +1295,8 @@ __all__ = [
     "AnalyticsService",
     "CategoryDist",
     "CategoryDistRow",
+    "CompanyPerspectiveDist",
+    "CompanyPerspectiveDistRow",
     "Granularity",
     "HeadlineMetrics",
     "NPSMonthlyPoint",

@@ -79,6 +79,8 @@ class ReviewItemResponse(BaseModel):
     analyzed_at: datetime
     submitted_by_user_id: UUID | None
     override_count: int
+    company_perspective_code: str | None = None
+    company_perspective_label_tr: str | None = None
 
 
 class ReviewListResponse(BaseModel):
@@ -100,6 +102,19 @@ class CategorizationBlock(BaseModel):
     primary_confidence: float
 
 
+class CompanyPerspectiveBlock(BaseModel):
+    """Heuristic match block, Sprint 8.3.5.6.
+
+    Both fields can be None: ``code`` is None when the heuristic didn't
+    fire, ``label_tr`` is None additionally when the taxonomy row has
+    been pruned since analyze (Sprint 8.3.7 edit UI). Frontend renders
+    "removed category" for code != None / label_tr None.
+    """
+
+    code: str | None
+    label_tr: str | None
+
+
 class ReviewDetailResponse(BaseModel):
     id: UUID
     text: str
@@ -109,10 +124,13 @@ class ReviewDetailResponse(BaseModel):
     batch_job_id: UUID | None
     sentiment: SentimentBlock
     categorization: CategorizationBlock
+    company_perspective: CompanyPerspectiveBlock
     overrides_applied: list[dict[str, object]]
     ticket_id: UUID | None
     auto_ticket_decision: str
     auto_ticket_decision_reason: str | None
+    nps_score: int | None = None
+    nps_category: str | None = None
 
 
 # --- endpoints -----------------------------------------------------
@@ -139,6 +157,14 @@ async def list_reviews(
         default=None,
         description="CSV: create,skipped_belirsiz,skipped_mode,skipped_threshold,skipped_dedup",
     ),
+    perspective_codes: str | None = Query(
+        default=None,
+        description=(
+            "CSV of CategoryTaxonomy.code values. The literal "
+            "'__unmatched__' filters to rows where the heuristic didn't "
+            "match any code (NULL company_perspective_code)."
+        ),
+    ),
     search: str | None = Query(default=None, max_length=200),
     limit: int = Query(default=100, ge=1, le=500),
     offset: int = Query(default=0, ge=0),
@@ -154,6 +180,7 @@ async def list_reviews(
         batch_job_id=batch_job_id,
         source_types=_split_csv(source_types),
         decisions=_split_csv(decisions),
+        perspective_codes=_split_csv(perspective_codes),
         search=search,
         order_by=order_by,
         order=order,
@@ -190,13 +217,14 @@ async def get_review(
     async with app_session.begin():
         await bind_tenant(app_session, current)
         service = ReviewListService(app_session)
-        review = await service.get_review(
+        result = await service.get_review(
             tenant_id=tenant_id, review_id=review_id
         )
-        if review is None:
+        if result is None:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND, detail="review not found"
             )
+        review, perspective_label_tr = result
         # Sprint 8.3.4 — overrides_applied JSONB now populated by the
         # bridge (and the batch worker on the dedup/opt-out paths). Rows
         # analyzed before migration 0014 carry NULL; surface as []. The
@@ -222,10 +250,16 @@ async def get_review(
                 primary=review.primary_category,
                 primary_confidence=float(review.primary_confidence),
             ),
+            company_perspective=CompanyPerspectiveBlock(
+                code=review.company_perspective_code,
+                label_tr=perspective_label_tr,
+            ),
             overrides_applied=overrides_list,
             ticket_id=review.ticket_id,
             auto_ticket_decision=str(review.decision),
             auto_ticket_decision_reason=review.decision_reason,
+            nps_score=review.nps_score,
+            nps_category=review.nps_category,
         )
 
 
@@ -302,4 +336,6 @@ def _to_item_response(item: ReviewListItem) -> ReviewItemResponse:
         analyzed_at=item.analyzed_at,
         submitted_by_user_id=item.submitted_by_user_id,
         override_count=item.override_count,
+        company_perspective_code=item.company_perspective_code,
+        company_perspective_label_tr=item.company_perspective_label_tr,
     )

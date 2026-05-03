@@ -145,3 +145,12 @@ class Review(Base, TimestampMixin, SoftDeleteMixin):
         ),
         nullable=True,
     )
+
+    # Sprint 8.3.5.6. The heuristic reranker's ``CategoryTaxonomy.code``
+    # match at analyze time. Plain VARCHAR (no FK) — taxonomy is
+    # editable per tenant in 8.3.7, and we don't want a delete to break
+    # historical reviews; if the code stops existing, the UI renders
+    # the raw code or a "removed category" badge.
+    company_perspective_code: Mapped[str | None] = mapped_column(
+        String(64), nullable=True
+    )
