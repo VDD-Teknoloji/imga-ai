@@ -18,9 +18,11 @@ from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, timedelta
 from typing import Any, Literal
 from uuid import UUID
+from zoneinfo import ZoneInfo
 
+from imga_core.config import CRISIS_SCORE_THRESHOLD
 from imga_db.models import Category, Review, Ticket, TicketState
-from sqlalchemy import and_, case, func, or_, select
+from sqlalchemy import and_, case, func, or_, select, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -184,6 +186,35 @@ class NPSSummary:
     promoter_count: int
     total_count: int
     coverage_percent: float
+
+
+@dataclass(frozen=True, slots=True)
+class HeadlineMetrics:
+    """Eight-field bundle for the dashboard's top row, served from a
+    single endpoint so the page paints in one round-trip.
+
+    Numeric fields default to 0 when the tenant has no qualifying rows.
+    ``nps_score`` and ``avg_sentiment_score`` are ``None`` (not 0.0) on
+    "no data" because 0 is a meaningful score in both metrics — the
+    frontend renders an empty state for None.
+
+    Date filter (``date_from`` / ``date_to``) applies to the review-side
+    metrics only — total_reviews, crisis_count, nps_score / coverage,
+    avg_sentiment_score, sensitive_topics_count. Tickets always reflect
+    "right now" state (open + today's intake), independent of the
+    review timeline filter; that matches the dashboard UX where
+    reviewing yesterday's NPS doesn't pretend yesterday's open-ticket
+    count.
+    """
+
+    total_reviews: int
+    open_tickets: int
+    today_new_tickets: int
+    crisis_count: int
+    nps_score: float | None
+    nps_coverage_percent: float
+    avg_sentiment_score: float | None
+    sensitive_topics_count: int
 
 
 @dataclass(frozen=True, slots=True)
@@ -860,8 +891,175 @@ class AnalyticsService:
         return points
 
     # ------------------------------------------------------------------
+    # 10. Headline metrics — dashboard top row, single-call (Sprint 8.3.5)
+    # ------------------------------------------------------------------
+
+    async def compute_headline_metrics(
+        self,
+        *,
+        tenant_id: UUID,
+        date_from: date | None = None,
+        date_to: date | None = None,
+        now: datetime | None = None,
+    ) -> HeadlineMetrics:
+        """Eight headline values for the dashboard's top row.
+
+        The query plan: six small COUNTs / AVGs hitting indexes the
+        previous sprints already laid down — partial NPS composite,
+        sentiment_score (covered by ix_reviews_tenant_analyzed from
+        Sprint 7), JSONB GIN on overrides_applied (Sprint 8.3.4),
+        ticket state index (Sprint 7). On a 10K-row tenant the whole
+        bundle should land under 100ms warm; that's the budget the
+        dashboard pays on every page load.
+
+        Date filter applies to *review* metrics only (created_at). The
+        two ticket counts always reflect the live state — open
+        tickets right now, today's intake from the Istanbul-local
+        midnight boundary — so the dashboard doesn't pretend "Açık
+        Bilet" is the count from a historical date range.
+        """
+        # --- review-side metrics ----------------------------------
+        # 1. total_reviews (date-filtered)
+        total_stmt = (
+            select(func.count())
+            .select_from(Review)
+            .where(Review.tenant_id == tenant_id)
+            .where(Review.deleted_at.is_(None))
+        )
+        total_stmt = self._apply_review_date_window(
+            total_stmt, date_from=date_from, date_to=date_to
+        )
+        total_reviews: int = (await self._session.execute(total_stmt)).scalar_one() or 0
+
+        # 2. crisis_count — sentiment_score <= -0.80
+        crisis_stmt = (
+            select(func.count())
+            .select_from(Review)
+            .where(Review.tenant_id == tenant_id)
+            .where(Review.deleted_at.is_(None))
+            .where(Review.sentiment_score <= CRISIS_SCORE_THRESHOLD)
+        )
+        crisis_stmt = self._apply_review_date_window(
+            crisis_stmt, date_from=date_from, date_to=date_to
+        )
+        crisis_count: int = (await self._session.execute(crisis_stmt)).scalar_one() or 0
+
+        # 3. avg_sentiment_score — None when no scored rows match.
+        avg_stmt = (
+            select(func.avg(Review.sentiment_score))
+            .where(Review.tenant_id == tenant_id)
+            .where(Review.deleted_at.is_(None))
+            .where(Review.sentiment_score.is_not(None))
+        )
+        avg_stmt = self._apply_review_date_window(
+            avg_stmt, date_from=date_from, date_to=date_to
+        )
+        avg_raw = (await self._session.execute(avg_stmt)).scalar_one_or_none()
+        avg_sentiment_score: float | None = (
+            round(float(avg_raw), 3) if avg_raw is not None else None
+        )
+
+        # 4. sensitive_topics_count — rows whose overrides_applied
+        # contains a tier1 or tier2 hit. The JSONB ``@>`` containment
+        # operator is NULL-safe (NULL @> anything → NULL → excluded by
+        # WHERE) AND uses the GIN index from migration 0014 directly;
+        # the obvious EXISTS-with-jsonb_array_elements path fails with
+        # "cannot extract elements from a scalar" because the Postgres
+        # planner can push the SRF past the row-level NULL filter even
+        # with COALESCE wrapping (same quirk Sprint 8.3.4 round-1 hit
+        # in override-stats — moved to Python-side aggregation there;
+        # @> sidesteps it cleanly here).
+        sensitive_stmt = (
+            select(func.count())
+            .select_from(Review)
+            .where(Review.tenant_id == tenant_id)
+            .where(Review.deleted_at.is_(None))
+            .where(
+                or_(
+                    Review.overrides_applied.op("@>")(
+                        text("'[{\"layer\": \"tier1\"}]'::jsonb")
+                    ),
+                    Review.overrides_applied.op("@>")(
+                        text("'[{\"layer\": \"tier2\"}]'::jsonb")
+                    ),
+                )
+            )
+        )
+        sensitive_stmt = self._apply_review_date_window(
+            sensitive_stmt, date_from=date_from, date_to=date_to
+        )
+        sensitive_topics_count: int = (
+            await self._session.execute(sensitive_stmt)
+        ).scalar_one() or 0
+
+        # 5 + 6. NPS via the existing summary aggregator (date-filtered).
+        nps = await self.compute_nps_summary(
+            tenant_id=tenant_id, date_from=date_from, date_to=date_to
+        )
+
+        # --- ticket-side metrics (no date filter) -----------------
+        # 7. open_tickets — OPEN + IN_PROGRESS + PENDING_CUSTOMER.
+        active_states = (
+            TicketState.OPEN,
+            TicketState.IN_PROGRESS,
+            TicketState.PENDING_CUSTOMER,
+        )
+        open_stmt = (
+            select(func.count())
+            .select_from(Ticket)
+            .where(Ticket.tenant_id == tenant_id)
+            .where(Ticket.deleted_at.is_(None))
+            .where(Ticket.state.in_(active_states))
+        )
+        open_tickets: int = (await self._session.execute(open_stmt)).scalar_one() or 0
+
+        # 8. today_new_tickets — opened_at >= today_istanbul_start.
+        today_start = _istanbul_today_start_utc(now)
+        today_stmt = (
+            select(func.count())
+            .select_from(Ticket)
+            .where(Ticket.tenant_id == tenant_id)
+            .where(Ticket.deleted_at.is_(None))
+            .where(Ticket.opened_at >= today_start)
+        )
+        today_new_tickets: int = (
+            await self._session.execute(today_stmt)
+        ).scalar_one() or 0
+
+        return HeadlineMetrics(
+            total_reviews=total_reviews,
+            open_tickets=open_tickets,
+            today_new_tickets=today_new_tickets,
+            crisis_count=crisis_count,
+            nps_score=nps.score,
+            nps_coverage_percent=nps.coverage_percent,
+            avg_sentiment_score=avg_sentiment_score,
+            sensitive_topics_count=sensitive_topics_count,
+        )
+
+    # ------------------------------------------------------------------
     # Filter helpers
     # ------------------------------------------------------------------
+
+    def _apply_review_date_window(
+        self,
+        stmt: Any,
+        *,
+        date_from: date | None,
+        date_to: date | None,
+    ) -> Any:
+        """Headline metrics + NPS endpoints filter reviews on
+        ``created_at`` (when ingested), inclusive UTC midnight bounds.
+        Same widening rule as ``_apply_nps_window``: pass a date and
+        the upper bound becomes end-of-day so 2026-03-31 captures
+        2026-03-31T23:59:59Z."""
+        if date_from is not None:
+            from_dt = datetime.combine(date_from, datetime.min.time(), tzinfo=UTC)
+            stmt = stmt.where(Review.created_at >= from_dt)
+        if date_to is not None:
+            to_dt = datetime.combine(date_to, datetime.max.time(), tzinfo=UTC)
+            stmt = stmt.where(Review.created_at <= to_dt)
+        return stmt
 
     def _apply_nps_window(
         self,
@@ -871,18 +1069,13 @@ class AnalyticsService:
         date_to: date | None,
         batch_job_id: UUID | None,
     ) -> Any:
-        """NPS endpoints filter on ``Review.created_at`` (when the row
-        was ingested), not ``analyzed_at`` — the partial index in
-        migration 0015 is on (tenant_id, created_at). date_from /
-        date_to are inclusive UTC midnight bounds; pass a ``date`` and
-        we widen the upper bound to end-of-day so 2026-03-31 captures
-        2026-03-31T23:59:59Z."""
-        if date_from is not None:
-            from_dt = datetime.combine(date_from, datetime.min.time(), tzinfo=UTC)
-            stmt = stmt.where(Review.created_at >= from_dt)
-        if date_to is not None:
-            to_dt = datetime.combine(date_to, datetime.max.time(), tzinfo=UTC)
-            stmt = stmt.where(Review.created_at <= to_dt)
+        """NPS-summary's filter envelope: review date window (shared
+        with headline metrics, see ``_apply_review_date_window``) plus
+        the batch_job_id filter that's NPS-specific to scope a single
+        upload's score."""
+        stmt = self._apply_review_date_window(
+            stmt, date_from=date_from, date_to=date_to
+        )
         if batch_job_id is not None:
             stmt = stmt.where(Review.batch_job_id == batch_job_id)
         return stmt
@@ -927,6 +1120,29 @@ class AnalyticsService:
         return dt.strftime("%Y-%m")
 
 
+# --- Time helpers (Sprint 8.3.5 headline metrics) --------------------
+
+
+_TR_TZ = ZoneInfo("Europe/Istanbul")
+
+
+def _istanbul_today_start_utc(now: datetime | None = None) -> datetime:
+    """First moment of *today* in the Europe/Istanbul timezone, returned
+    as a UTC ``datetime`` for the DB comparison.
+
+    "Bugün" semantics: dashboard's "Bugün Açılan" card is anchored to
+    the user's calendar day, not UTC midnight (which is 03:00 in
+    Istanbul). Caller passes ``now`` only in tests that need
+    deterministic "today" boundaries; production calls leave it None.
+    """
+    moment = now or datetime.now(UTC)
+    moment_tr = moment.astimezone(_TR_TZ)
+    today_start_tr = datetime(
+        moment_tr.year, moment_tr.month, moment_tr.day, tzinfo=_TR_TZ
+    )
+    return today_start_tr.astimezone(UTC)
+
+
 # --- Month math helpers (Sprint 8.3.5 NPS trend) ---------------------
 
 
@@ -967,6 +1183,7 @@ __all__ = [
     "CategoryDist",
     "CategoryDistRow",
     "Granularity",
+    "HeadlineMetrics",
     "NPSMonthlyPoint",
     "NPSSummary",
     "OverrideStats",
