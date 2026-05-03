@@ -28,10 +28,12 @@ Sprint 8.3.5 / Alt-Faz 8.3.5.1 (Prework). Adds NPS support to the
 The check constraint ``ck_reviews_nps_score_range`` is the only place the
 0..10 invariant is enforced — at the schema layer, not in app code.
 
-Sprint 8.3.5.2 will append two columns to ``analyze_batch_jobs`` here
-(``detected_nps_column`` + ``rows_with_nps``) once the parser-side
-detection logic lands. Keeping this migration scoped to the reviews
-side for the prework checkpoint.
+The ``analyze_batch_jobs`` metadata columns (``detected_nps_column`` +
+``rows_with_nps``) ship in 0016 (Alt-Faz 8.3.5.2). They were originally
+planned to land in this same migration, but 0015 had already been
+applied to the test stack at that point so amending it would have been
+silent (alembic skips already-applied revisions). 0016 is forward-only
+and clean for both fresh + already-bootstrapped envs.
 """
 
 from __future__ import annotations

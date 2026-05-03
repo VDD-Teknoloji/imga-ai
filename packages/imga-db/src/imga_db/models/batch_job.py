@@ -108,3 +108,15 @@ class AnalyzeBatchJob(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False
     )
+
+    # Sprint 8.3.5. NPS auto-detection results, populated by the worker
+    # at job start (detected_nps_column) and incremented as rows persist
+    # (rows_with_nps). NULL detected_nps_column == "no recognizable NPS
+    # header in the upload"; rows_with_nps stays at 0 when no column
+    # was detected and counts NPS-bearing rows otherwise.
+    detected_nps_column: Mapped[str | None] = mapped_column(
+        String(64), nullable=True
+    )
+    rows_with_nps: Mapped[int] = mapped_column(
+        Integer, default=0, nullable=False
+    )
