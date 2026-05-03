@@ -130,6 +130,8 @@ class ReviewFactory(factory.Factory):  # type: ignore[misc]
     ticket_id = None
     submitted_by_user_id = None
     analyzed_at = factory.LazyFunction(lambda: datetime.now(UTC))
+    # Sprint 8.3.5. Default NULL — only NPS-aware tests set it.
+    nps_score = None
 
 
 class TicketFactory(factory.Factory):  # type: ignore[misc]
@@ -193,3 +195,55 @@ def seed_reviews_for_tenant(
         sentiment_label=sentiment_label,
         sentiment_score=sentiment_score,
     )
+
+
+def seed_reviews_with_nps(
+    tenant_id: UUID,
+    *,
+    count: int,
+    nps_distribution: dict[str, int] | None = None,
+) -> list[Review]:
+    """Build ``count`` Review rows with NPS scores spread across categories.
+
+    Sprint 8.3.5. ``nps_distribution`` is a {detractor, passive, promoter}
+    map of percentages that sum to 100; each bucket fills a contiguous
+    slice of the output and rows inside the slice cycle through the
+    valid scores for that bucket (0–6 / 7–8 / 9–10). Absent buckets
+    default to 0%.
+
+    Defaults to {detractor: 30, passive: 20, promoter: 50} — a slightly
+    promoter-heavy mix that still has enough of every bucket to drive
+    aggregation and trend tests without zero-row edge cases.
+
+    Rounding: when ``count`` doesn't divide evenly, the promoter bucket
+    absorbs the remainder so the total row count exactly matches
+    ``count`` (callers usually assert ``len(reviews) == count``).
+    """
+    distribution = nps_distribution or {"detractor": 30, "passive": 20, "promoter": 50}
+    total_pct = sum(distribution.values())
+    if total_pct != 100:
+        raise ValueError(
+            f"nps_distribution must sum to 100, got {total_pct}: {distribution}"
+        )
+
+    bucket_scores: dict[str, list[int]] = {
+        "detractor": [0, 1, 2, 3, 4, 5, 6],
+        "passive": [7, 8],
+        "promoter": [9, 10],
+    }
+
+    counts = {
+        bucket: (count * pct) // 100 for bucket, pct in distribution.items()
+    }
+    counts["promoter"] = counts.get("promoter", 0) + (count - sum(counts.values()))
+
+    reviews: list[Review] = []
+    for bucket, n in counts.items():
+        scores = bucket_scores[bucket]
+        for i in range(n):
+            reviews.append(
+                ReviewFactory.build(
+                    tenant_id=tenant_id, nps_score=scores[i % len(scores)]
+                )
+            )
+    return reviews
