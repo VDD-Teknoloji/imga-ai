@@ -106,6 +106,7 @@ services:
           tests/test_analytics_nps.py \
           tests/test_analytics_headline.py \
           tests/test_company_taxonomy.py \
+          tests/test_company_perspective_wire_in.py \
           -v --tb=short
 
 networks:
