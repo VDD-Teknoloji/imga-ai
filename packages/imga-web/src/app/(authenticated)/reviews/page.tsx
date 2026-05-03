@@ -3,7 +3,7 @@
 import { ChevronDown, Loader2 } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { useCallback, useMemo } from "react";
+import { Suspense, useCallback, useEffect, useState } from "react";
 
 import { OverrideChip } from "@/components/reviews/override-display";
 import { Badge } from "@/components/ui/badge";
@@ -40,32 +40,123 @@ const SOURCE_LABELS: Record<ReviewSourceType, string> = {
 const UNMATCHED_SENTINEL = "__unmatched__";
 
 /**
- * Sprint 8.3.1 — minimal reviews list. Filter bar (sentiment, source,
- * has_ticket, batch_job_id from query string), table, infinite scroll.
- * Override count chip is rendered but not clickable yet — that polish
- * lands in Sprint 8.3.4.
+ * Reviews list. Filter surface: sentiment, source, has_ticket,
+ * batch_job_id, perspective_codes, search — all URL-bound per
+ * docs/agent-rules/url-state-patterns.md.
+ *
+ * Sprint 8.3.5.6 round-2: Suspense wrapper + Path B mirror added.
+ * Round-1 used `useSearchParams + useMemo` directly on the page, which
+ * lost filter state on F5 (Next.js 16 hydration race + no mirror to
+ * keep the dropdown's checked state in sync after the URL → memo
+ * round-trip).
  */
 export default function ReviewsPage() {
+  return (
+    <Suspense fallback={<ReviewsPageSkeleton />}>
+      <ReviewsPageInner />
+    </Suspense>
+  );
+}
+
+function ReviewsPageSkeleton() {
+  return (
+    <main className="mx-auto w-full max-w-6xl space-y-6 px-4 py-8">
+      <header className="space-y-2">
+        <h1 className="text-2xl font-semibold">Analizler</h1>
+        <p className="text-muted-foreground text-sm">Yükleniyor…</p>
+      </header>
+    </main>
+  );
+}
+
+/** Read the seven URL params into one filter snapshot. Pure function
+ *  off URLSearchParams so the lazy-init + the useEffect mirror share
+ *  the parsing logic. */
+function readFiltersFromParams(params: URLSearchParams): ReviewListFilters {
+  const sentimentRaw = params.get("sentiment_labels");
+  const sourceRaw = params.get("source_types");
+  const perspectiveRaw = params.get("perspective_codes");
+  const sourceTypes = sourceRaw
+    ? (sourceRaw.split(",").filter(Boolean) as ReviewSourceType[])
+    : undefined;
+  return {
+    sentiment_labels: sentimentRaw?.split(",").filter(Boolean),
+    source_types: sourceTypes,
+    perspective_codes: perspectiveRaw?.split(",").filter(Boolean),
+    has_ticket: params.has("has_ticket") ? params.get("has_ticket") === "true" : undefined,
+    batch_job_id: params.get("batch_job_id") ?? undefined,
+    search: params.get("search") ?? undefined,
+  };
+}
+
+/** Cheap shallow-array eq for the mirror's no-op short-circuit. */
+function arrEq(a: string[] | undefined, b: string[] | undefined): boolean {
+  if (a === b) return true;
+  if (!a || !b) return a === undefined && b === undefined;
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+  return true;
+}
+
+function filtersEq(a: ReviewListFilters, b: ReviewListFilters): boolean {
+  return (
+    arrEq(a.sentiment_labels, b.sentiment_labels) &&
+    arrEq(a.source_types as string[] | undefined, b.source_types as string[] | undefined) &&
+    arrEq(a.perspective_codes, b.perspective_codes) &&
+    a.has_ticket === b.has_ticket &&
+    a.batch_job_id === b.batch_job_id &&
+    a.search === b.search
+  );
+}
+
+function ReviewsPageInner() {
+  const router = useRouter();
+  const pathname = usePathname();
   const searchParams = useSearchParams();
 
-  const filters = useMemo<ReviewListFilters>(() => {
-    const sentimentRaw = searchParams.get("sentiment_labels");
-    const sourceRaw = searchParams.get("source_types");
-    const perspectiveRaw = searchParams.get("perspective_codes");
-    const sourceTypes = sourceRaw
-      ? (sourceRaw.split(",").filter(Boolean) as ReviewSourceType[])
-      : undefined;
-    return {
-      sentiment_labels: sentimentRaw?.split(",").filter(Boolean),
-      source_types: sourceTypes,
-      perspective_codes: perspectiveRaw?.split(",").filter(Boolean),
-      has_ticket: searchParams.has("has_ticket")
-        ? searchParams.get("has_ticket") === "true"
-        : undefined,
-      batch_job_id: searchParams.get("batch_job_id") ?? undefined,
-      search: searchParams.get("search") ?? undefined,
-    };
+  // Path B mirror — local state controlled by the URL but updated
+  // immediately on user actions. See docs/agent-rules/url-state-patterns.md.
+  const [filters, setFilters] = useState<ReviewListFilters>(() =>
+    readFiltersFromParams(new URLSearchParams(searchParams.toString())),
+  );
+
+  // URL → state mirror for back/forward, deep-link, F5 hydration race.
+  // INTENT: URL is source of truth; mirror onto local state on
+  // navigation events. Path B pattern (Sprint 8.3.4 round-2,
+  // Sprint 8.3.5.6 round-2 for /reviews).
+  useEffect(() => {
+    const fromUrl = readFiltersFromParams(new URLSearchParams(searchParams.toString()));
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setFilters((prev) => (filtersEq(prev, fromUrl) ? prev : fromUrl));
   }, [searchParams]);
+
+  // State-first user action: update local state immediately (controlled
+  // primitives stay responsive even if useSearchParams' reactivity
+  // glitches), then push the URL so the change is shareable +
+  // back-button-able.
+  const applyFilters = useCallback(
+    (next: ReviewListFilters) => {
+      setFilters(next);
+      const params = new URLSearchParams();
+      if (next.sentiment_labels?.length) {
+        params.set("sentiment_labels", next.sentiment_labels.join(","));
+      }
+      if (next.source_types?.length) {
+        params.set("source_types", next.source_types.join(","));
+      }
+      if (next.perspective_codes?.length) {
+        params.set("perspective_codes", next.perspective_codes.join(","));
+      }
+      if (next.has_ticket !== undefined) {
+        params.set("has_ticket", String(next.has_ticket));
+      }
+      if (next.batch_job_id) params.set("batch_job_id", next.batch_job_id);
+      if (next.search) params.set("search", next.search);
+      const qs = params.toString();
+      router.push(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+    },
+    [pathname, router],
+  );
 
   const reviews = useInfiniteReviews(filters, 50);
   const items = reviews.data?.pages.flatMap((p) => p.items) ?? [];
@@ -86,7 +177,15 @@ export default function ReviewsPage() {
       </header>
 
       <div className="flex flex-wrap items-center gap-2">
-        <PerspectiveFilterDropdown selected={filters.perspective_codes ?? []} />
+        <PerspectiveFilterDropdown
+          selected={filters.perspective_codes ?? []}
+          onApply={(next) =>
+            applyFilters({
+              ...filters,
+              perspective_codes: next.length > 0 ? next : undefined,
+            })
+          }
+        />
         <FilterPills filters={filters} />
       </div>
 
@@ -208,36 +307,27 @@ function FilterPills({ filters }: { filters: ReviewListFilters }) {
 }
 
 /** Multi-select dropdown driven by ``GET /tenants/me/taxonomies`` plus
- *  the ``__unmatched__`` sentinel. State syncs to the URL search param
- *  ``perspective_codes`` so the filter survives reload + back-button. */
-function PerspectiveFilterDropdown({ selected }: { selected: string[] }) {
-  const router = useRouter();
-  const pathname = usePathname();
-  const searchParams = useSearchParams();
+ *  the ``__unmatched__`` sentinel. The dropdown is a controlled
+ *  primitive — ``selected`` flows in from the parent's mirror state,
+ *  ``onApply`` flows out and the parent owns both the local state +
+ *  URL push (Path B mirror, see docs/agent-rules/url-state-patterns.md). */
+function PerspectiveFilterDropdown({
+  selected,
+  onApply,
+}: {
+  selected: string[];
+  onApply: (next: string[]) => void;
+}) {
   const taxonomies = useCompanyTaxonomies();
-
-  const setSelection = useCallback(
-    (next: string[]) => {
-      const params = new URLSearchParams(searchParams.toString());
-      if (next.length === 0) {
-        params.delete("perspective_codes");
-      } else {
-        params.set("perspective_codes", next.join(","));
-      }
-      const qs = params.toString();
-      router.push(qs ? `${pathname}?${qs}` : pathname);
-    },
-    [pathname, router, searchParams],
-  );
 
   const toggle = useCallback(
     (code: string) => {
       const next = selected.includes(code)
         ? selected.filter((c) => c !== code)
         : [...selected, code];
-      setSelection(next);
+      onApply(next);
     },
-    [selected, setSelection],
+    [selected, onApply],
   );
 
   const items = taxonomies.data ?? [];
@@ -286,10 +376,7 @@ function PerspectiveFilterDropdown({ selected }: { selected: string[] }) {
         {selected.length > 0 ? (
           <>
             <DropdownMenuSeparator />
-            <DropdownMenuItem
-              onClick={() => setSelection([])}
-              className="text-muted-foreground text-xs"
-            >
+            <DropdownMenuItem onClick={() => onApply([])} className="text-muted-foreground text-xs">
               Tümünü temizle
             </DropdownMenuItem>
           </>
