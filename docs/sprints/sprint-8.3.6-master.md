@@ -136,7 +136,24 @@ OKR_RESPONSE_SCHEMA = {
 
 Her SWOT/OKR çağrısında prompt'a inject edilir; LLM tenant'ın sektörüne ve büyüklüğüne göre özelleştirilmiş analiz üretir.
 
-### 7. Bug 2 patch (tense varyantları) Sprint 8.3.6.1 prework'ünde
+### 7. RLS convention (Sprint 8.3.6.1 düzeltmesi)
+
+Tüm yeni tenant-scoped tablolar (Sprint 8.3.6'da `tenant_llm_credentials`,
+`strategic_reports`) policy'si:
+
+```sql
+USING (tenant_id = current_setting('app.current_tenant_id')::uuid)
+```
+
+Setting adı **`app.current_tenant_id`** — migration 0001'den beri proje
+boyunca tutarlı. Master prompt'un erken taslağında `imga.tenant_id`
+yazılmıştı; mevcut policy'lerle uyumsuzdu, RLS lookup'larını kıracaktı.
+8.3.6.2+ alt-faz'larda bu setting'e referans yapan herhangi bir kod
+(rotator, swot service, vb.) **`app.current_tenant_id`** kullanır.
+
+`prompt_templates` system-level — RLS yok.
+
+### 8. Bug 2 patch (tense varyantları) Sprint 8.3.6.1 prework'ünde
 
 Sprint 8.3.5.6'da raporlanan "Heuristic tense varyantları kaçırıyor" bug'ının kritik 5-6 keyword'ünü Migration 0019'da existing taxonomies'e UPDATE ile ekle. Tam çözüm Sprint 8.3.7'ye (taxonomy edit UI) birleştirildi.
 
