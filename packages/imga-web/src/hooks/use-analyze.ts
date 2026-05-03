@@ -20,15 +20,19 @@ import type { TenantAnalyzeResponse } from "@/lib/types";
  */
 export interface AnalyzeInput {
   text: string;
+  /** Sprint 8.3.5 — optional NPS score (0–10). Omit when the form
+   *  doesn't capture it; the backend ignores undefined and only
+   *  persists when present. */
+  nps_score?: number;
 }
 
 export function useAnalyze() {
   const qc = useQueryClient();
   return useMutation<TenantAnalyzeResponse, Error, AnalyzeInput>({
-    mutationFn: async ({ text }) => {
+    mutationFn: async ({ text, nps_score }) => {
       return apiRequest<TenantAnalyzeResponse>("/tenants/me/analyze", {
         method: "POST",
-        body: { text },
+        body: { text, nps_score },
       });
     },
     onSuccess: (data) => {

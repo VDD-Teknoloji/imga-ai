@@ -3,11 +3,7 @@
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { apiRequest } from "@/lib/api-client";
-import type {
-  ReviewDetail,
-  ReviewListFilters,
-  ReviewListResponse,
-} from "@/lib/types";
+import type { ReviewDetail, ReviewListFilters, ReviewListResponse } from "@/lib/types";
 
 export interface ManualPromotionResponse {
   review_id: string;
@@ -22,10 +18,9 @@ export function useManualPromoteReview() {
   const queryClient = useQueryClient();
   return useMutation<ManualPromotionResponse, Error, string>({
     mutationFn: async (reviewId) =>
-      apiRequest<ManualPromotionResponse>(
-        `/tenants/me/reviews/${reviewId}/create-ticket`,
-        { method: "POST" },
-      ),
+      apiRequest<ManualPromotionResponse>(`/tenants/me/reviews/${reviewId}/create-ticket`, {
+        method: "POST",
+      }),
     onSuccess: (_data, reviewId) => {
       queryClient.invalidateQueries({ queryKey: ["review-detail", reviewId] });
       queryClient.invalidateQueries({ queryKey: ["reviews"] });
@@ -51,6 +46,9 @@ function buildQueryString(filters: ReviewListFilters, offset: number, limit: num
   }
   if (filters.decisions?.length) {
     params.set("decisions", filters.decisions.join(","));
+  }
+  if (filters.perspective_codes?.length) {
+    params.set("perspective_codes", filters.perspective_codes.join(","));
   }
   if (filters.search) params.set("search", filters.search);
   if (filters.order_by) params.set("order_by", filters.order_by);

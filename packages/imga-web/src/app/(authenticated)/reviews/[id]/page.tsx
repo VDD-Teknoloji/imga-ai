@@ -83,9 +83,7 @@ export default function ReviewDetailPage() {
       )}
 
       {detail.error && (
-        <p className="text-destructive p-6 text-sm">
-          Analiz bulunamadı veya erişim yok.
-        </p>
+        <p className="text-destructive p-6 text-sm">Analiz bulunamadı veya erişim yok.</p>
       )}
 
       {detail.data && (
@@ -105,10 +103,7 @@ export default function ReviewDetailPage() {
                     <>
                       {" "}
                       (Batch:{" "}
-                      <span className="font-mono">
-                        {detail.data.batch_job_id.slice(0, 8)}
-                      </span>
-                      )
+                      <span className="font-mono">{detail.data.batch_job_id.slice(0, 8)}</span>)
                     </>
                   )}
                 </p>
@@ -116,7 +111,7 @@ export default function ReviewDetailPage() {
 
               <div>
                 <p className="text-muted-foreground text-xs">Metin</p>
-                <p className="whitespace-pre-wrap text-sm">{detail.data.text}</p>
+                <p className="text-sm whitespace-pre-wrap">{detail.data.text}</p>
               </div>
             </CardContent>
           </Card>
@@ -128,14 +123,8 @@ export default function ReviewDetailPage() {
             <CardContent className="space-y-4">
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
                 <Stat label="Duygu" value={detail.data.sentiment.label} />
-                <Stat
-                  label="Skor (final)"
-                  value={detail.data.sentiment.final_score.toFixed(2)}
-                />
-                <Stat
-                  label="Skor (raw, BERT)"
-                  value={detail.data.sentiment.raw_score.toFixed(2)}
-                />
+                <Stat label="Skor (final)" value={detail.data.sentiment.final_score.toFixed(2)} />
+                <Stat label="Skor (raw, BERT)" value={detail.data.sentiment.raw_score.toFixed(2)} />
                 <Stat
                   label="Güven"
                   value={`%${(detail.data.categorization.primary_confidence * 100).toFixed(0)}`}
@@ -145,6 +134,52 @@ export default function ReviewDetailPage() {
                 <p className="text-muted-foreground text-xs">Kategori</p>
                 <p className="text-sm">{detail.data.categorization.primary}</p>
               </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Şirket Perspektifi</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <div>
+                  <p className="text-muted-foreground text-xs">BERT kategorisi</p>
+                  <p className="text-sm font-medium">{detail.data.categorization.primary}</p>
+                </div>
+                <div>
+                  <p className="text-muted-foreground text-xs">Heuristik perspektif</p>
+                  <p className="text-sm font-medium">
+                    {detail.data.company_perspective.code === null ? (
+                      <span className="text-muted-foreground italic">eşleşme yok</span>
+                    ) : detail.data.company_perspective.label_tr === null ? (
+                      <span className="text-muted-foreground italic">
+                        kaldırılmış kategori (kod:{" "}
+                        <span className="font-mono">{detail.data.company_perspective.code}</span>)
+                      </span>
+                    ) : (
+                      detail.data.company_perspective.label_tr
+                    )}
+                  </p>
+                </div>
+              </div>
+              {detail.data.nps_score !== null && (
+                <div>
+                  <p className="text-muted-foreground text-xs">NPS</p>
+                  <p className="text-sm">
+                    {detail.data.nps_score} /10{" "}
+                    {detail.data.nps_category && (
+                      <Badge variant="outline" className="ml-1">
+                        {detail.data.nps_category === "promoter"
+                          ? "Promoter"
+                          : detail.data.nps_category === "passive"
+                            ? "Passive"
+                            : "Detractor"}
+                      </Badge>
+                    )}
+                  </p>
+                </div>
+              )}
             </CardContent>
           </Card>
 
@@ -178,14 +213,9 @@ export default function ReviewDetailPage() {
                 <div className="bg-muted/30 flex items-center justify-between rounded-md border p-3">
                   <p className="text-sm">
                     Bağlı bilet:{" "}
-                    <span className="font-mono">
-                      #{detail.data.ticket_id.slice(0, 8)}
-                    </span>
+                    <span className="font-mono">#{detail.data.ticket_id.slice(0, 8)}</span>
                   </p>
-                  <Button
-                    size="sm"
-                    render={<Link href={`/tickets/${detail.data.ticket_id}`} />}
-                  >
+                  <Button size="sm" render={<Link href={`/tickets/${detail.data.ticket_id}`} />}>
                     Bilete Git →
                   </Button>
                 </div>

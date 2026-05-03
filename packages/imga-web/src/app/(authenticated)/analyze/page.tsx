@@ -16,10 +16,7 @@ import Link from "next/link";
 import { useState, type FormEvent } from "react";
 import { toast } from "sonner";
 
-import {
-  OverrideStack,
-  overrideLayerLabel,
-} from "@/components/reviews/override-display";
+import { OverrideStack, overrideLayerLabel } from "@/components/reviews/override-display";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -48,6 +45,10 @@ const TEXT_MAX_LENGTH = 10_000;
  */
 export default function AnalyzePage() {
   const [text, setText] = useState("");
+  // Sprint 8.3.5 — optional NPS, kept as string in state so an empty
+  // input round-trips without coercing to 0. Validated to 0..10 below;
+  // the backend re-validates on its side.
+  const [npsInput, setNpsInput] = useState<string>("");
   const [result, setResult] = useState<TenantAnalyzeResponse | null>(null);
   const analyze = useAnalyze();
 
@@ -56,8 +57,18 @@ export default function AnalyzePage() {
     const trimmed = text.trim();
     if (trimmed.length === 0) return;
     setResult(null);
+    let npsScore: number | undefined;
+    if (npsInput.trim().length > 0) {
+      const parsed = Number.parseInt(npsInput.trim(), 10);
+      if (Number.isFinite(parsed) && parsed >= 0 && parsed <= 10) {
+        npsScore = parsed;
+      } else {
+        toast.error("NPS 0 ile 10 arasında olmalı.");
+        return;
+      }
+    }
     analyze.mutate(
-      { text: trimmed },
+      { text: trimmed, nps_score: npsScore },
       {
         onSuccess: (data) => {
           setResult(data);
@@ -81,13 +92,13 @@ export default function AnalyzePage() {
 
   function reset() {
     setText("");
+    setNpsInput("");
     setResult(null);
   }
 
   const charCount = text.length;
   const overLimit = charCount > TEXT_MAX_LENGTH;
-  const submitDisabled =
-    text.trim().length === 0 || overLimit || analyze.isPending;
+  const submitDisabled = text.trim().length === 0 || overLimit || analyze.isPending;
 
   return (
     <main className="mx-auto w-full max-w-3xl space-y-6 p-6 md:p-8">
@@ -97,8 +108,8 @@ export default function AnalyzePage() {
           Yorum Analiz Et
         </h1>
         <p className="text-muted-foreground text-sm">
-          Müşteri yorumunu yapıştırın. Duygu ve kategori analizi yapılır;
-          tenant otomasyon moduna göre gerekirse bilet otomatik açılır.
+          Müşteri yorumunu yapıştırın. Duygu ve kategori analizi yapılır; tenant otomasyon moduna
+          göre gerekirse bilet otomatik açılır.
         </p>
       </header>
 
@@ -126,6 +137,23 @@ export default function AnalyzePage() {
             {charCount.toLocaleString("tr-TR")} / {TEXT_MAX_LENGTH.toLocaleString("tr-TR")} karakter
           </p>
         </div>
+        <div className="max-w-[200px] space-y-1">
+          <Label htmlFor="analyze-nps" className="text-xs">
+            NPS (opsiyonel, 0–10)
+          </Label>
+          <input
+            id="analyze-nps"
+            type="number"
+            min={0}
+            max={10}
+            step={1}
+            value={npsInput}
+            onChange={(e) => setNpsInput(e.target.value)}
+            disabled={analyze.isPending}
+            placeholder="—"
+            className="border-input bg-background w-full rounded-md border px-3 py-2 text-sm tabular-nums"
+          />
+        </div>
         <div className="flex flex-wrap gap-2">
           <Button type="submit" disabled={submitDisabled} className="gap-2">
             {analyze.isPending ? (
@@ -141,12 +169,7 @@ export default function AnalyzePage() {
             )}
           </Button>
           {result || analyze.isError ? (
-            <Button
-              type="button"
-              variant="ghost"
-              onClick={reset}
-              disabled={analyze.isPending}
-            >
+            <Button type="button" variant="ghost" onClick={reset} disabled={analyze.isPending}>
               Yeni analiz
             </Button>
           ) : null}
@@ -157,9 +180,7 @@ export default function AnalyzePage() {
         <AnalysisOutput
           result={result}
           onPromoted={(ticketId) =>
-            setResult((prev) =>
-              prev ? { ...prev, ticket_id: ticketId } : prev,
-            )
+            setResult((prev) => (prev ? { ...prev, ticket_id: ticketId } : prev))
           }
         />
       ) : null}
@@ -187,11 +208,7 @@ function AnalysisOutput({
 
 // Pills + expandable detail. Hidden when nothing fired so the page
 // stays compact in the common neutral-text case.
-function OverrideHits({
-  hits,
-}: {
-  hits: TenantAnalyzeResponse["analysis"]["overrides_applied"];
-}) {
+function OverrideHits({ hits }: { hits: TenantAnalyzeResponse["analysis"]["overrides_applied"] }) {
   const [expanded, setExpanded] = useState(false);
   if (hits.length === 0) return null;
   return (
@@ -237,9 +254,7 @@ function AnalysisSummary({ result }: { result: TenantAnalyzeResponse }) {
         : "secondary";
   const categoryCode = a.categorization?.primary ?? "belirsiz";
   const confidencePct =
-    a.categorization != null
-      ? Math.round(a.categorization.primary_confidence * 100)
-      : null;
+    a.categorization != null ? Math.round(a.categorization.primary_confidence * 100) : null;
 
   return (
     <Card>
@@ -252,7 +267,7 @@ function AnalysisSummary({ result }: { result: TenantAnalyzeResponse }) {
             <Badge variant={sentimentVariant} className="px-2 py-0.5">
               {a.sentiment_label}
             </Badge>
-            <span className="text-muted-foreground tabular-nums text-xs">
+            <span className="text-muted-foreground text-xs tabular-nums">
               {a.sentiment_score.toFixed(2)}
             </span>
           </div>
@@ -263,11 +278,20 @@ function AnalysisSummary({ result }: { result: TenantAnalyzeResponse }) {
               {categoryCode}
             </Badge>
             {confidencePct != null ? (
-              <span className="text-muted-foreground tabular-nums text-xs">
+              <span className="text-muted-foreground text-xs tabular-nums">
                 %{confidencePct} güven
               </span>
             ) : null}
           </div>
+        </Metric>
+        <Metric label="Şirket perspektifi">
+          {result.company_perspective_code === null ? (
+            <span className="text-muted-foreground text-sm italic">eşleşme yok</span>
+          ) : (
+            <Badge variant="outline" className="px-2 py-0.5">
+              {result.company_perspective_label_tr ?? result.company_perspective_code}
+            </Badge>
+          )}
         </Metric>
         {a.sla_detected ? (
           <Metric label="SLA">
@@ -315,15 +339,13 @@ const DECISION_VARIANTS: Record<ReviewDecision, DecisionVariant> = {
     variant: "success",
     Icon: CheckCircle2,
     title: "Otomatik bilet açıldı",
-    message:
-      "Tenant'ınızın otomasyon modu bu yoruma göre yeni bir bilet açtı.",
+    message: "Tenant'ınızın otomasyon modu bu yoruma göre yeni bir bilet açtı.",
   },
   skipped_dedup: {
     variant: "info",
     Icon: Info,
     title: "Aynı metin son 24 saatte zaten analiz edildi",
-    message:
-      "Tekrar bilet açılmadı; mevcut biletin altında çalışmaya devam et.",
+    message: "Tekrar bilet açılmadı; mevcut biletin altında çalışmaya devam et.",
   },
   skipped_mode: {
     variant: "info",
@@ -371,8 +393,7 @@ function DecisionCard({
         : "text-primary";
 
   const promote = useManualPromoteReview();
-  const canPromote =
-    result.ticket_id == null && PROMOTABLE_DECISIONS.has(result.decision);
+  const canPromote = result.ticket_id == null && PROMOTABLE_DECISIONS.has(result.decision);
 
   function handlePromote() {
     promote.mutate(result.review_id, {
@@ -405,10 +426,7 @@ function DecisionCard({
       </CardHeader>
       {result.ticket_id ? (
         <CardContent className="flex flex-wrap items-center gap-3">
-          <Button
-            render={<Link href={`/tickets/${result.ticket_id}`} />}
-            className="gap-2"
-          >
+          <Button render={<Link href={`/tickets/${result.ticket_id}`} />} className="gap-2">
             {result.decision === "create" ? "Yeni bilete git" : "Mevcut bilete git"}
             <ArrowRight className="size-4" aria-hidden />
           </Button>

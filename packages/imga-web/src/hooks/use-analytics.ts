@@ -13,7 +13,11 @@ import { apiRequest } from "@/lib/api-client";
 import type {
   AnalyticsFilters,
   CategoryDistResponse,
+  CompanyPerspectiveDistResponse,
   Granularity,
+  HeadlineMetrics,
+  NPSMonthlyPoint,
+  NPSSummary,
   OverrideStatsResponse,
   SensitivityDistResponse,
   SentimentByCategoryResponse,
@@ -69,9 +73,7 @@ export function useSentimentDistribution(filters: AnalyticsFilters) {
   return useQuery<SentimentDistResponse>({
     queryKey: ["analytics-sentiment-dist", query],
     queryFn: () =>
-      apiRequest<SentimentDistResponse>(
-        `/tenants/me/analytics/sentiment-distribution?${query}`,
-      ),
+      apiRequest<SentimentDistResponse>(`/tenants/me/analytics/sentiment-distribution?${query}`),
   });
 }
 
@@ -80,9 +82,7 @@ export function useCategoryDistribution(filters: AnalyticsFilters, limit = 10) {
   return useQuery<CategoryDistResponse>({
     queryKey: ["analytics-category-dist", query],
     queryFn: () =>
-      apiRequest<CategoryDistResponse>(
-        `/tenants/me/analytics/category-distribution?${query}`,
-      ),
+      apiRequest<CategoryDistResponse>(`/tenants/me/analytics/category-distribution?${query}`),
   });
 }
 
@@ -110,16 +110,11 @@ export function useOverrideStats(filters: AnalyticsFilters) {
   return useQuery<OverrideStatsResponse>({
     queryKey: ["analytics-override-stats", query],
     queryFn: () =>
-      apiRequest<OverrideStatsResponse>(
-        `/tenants/me/analytics/override-stats?${query}`,
-      ),
+      apiRequest<OverrideStatsResponse>(`/tenants/me/analytics/override-stats?${query}`),
   });
 }
 
-export function useSentimentTimeline(
-  filters: AnalyticsFilters,
-  granularity: Granularity = "day",
-) {
+export function useSentimentTimeline(filters: AnalyticsFilters, granularity: Granularity = "day") {
   const query = qs({
     granularity,
     ...dateRangeParams(filters),
@@ -128,9 +123,7 @@ export function useSentimentTimeline(
   return useQuery<SentimentTimelineResponse>({
     queryKey: ["analytics-sentiment-timeline", query],
     queryFn: () =>
-      apiRequest<SentimentTimelineResponse>(
-        `/tenants/me/analytics/sentiment-timeline?${query}`,
-      ),
+      apiRequest<SentimentTimelineResponse>(`/tenants/me/analytics/sentiment-timeline?${query}`),
   });
 }
 
@@ -142,9 +135,7 @@ export function useTicketResolutionTime(filters: AnalyticsFilters) {
   return useQuery<TicketResolutionResponse>({
     queryKey: ["analytics-ticket-resolution", query],
     queryFn: () =>
-      apiRequest<TicketResolutionResponse>(
-        `/tenants/me/analytics/ticket-resolution-time?${query}`,
-      ),
+      apiRequest<TicketResolutionResponse>(`/tenants/me/analytics/ticket-resolution-time?${query}`),
   });
 }
 
@@ -158,6 +149,60 @@ export function useSensitivityDistribution(filters: AnalyticsFilters) {
     queryFn: () =>
       apiRequest<SensitivityDistResponse>(
         `/tenants/me/analytics/sensitivity-distribution?${query}`,
+      ),
+  });
+}
+
+// --- Sprint 8.3.5 / 8.3.5.6 — NPS + headline + perspective distribution --
+
+/** ``date_from`` / ``date_to`` are bare YYYY-MM-DD strings (no timezone
+ *  expansion needed; the NPS endpoints accept ``date`` query params and
+ *  widen server-side). The shape matches the FastAPI date binding. */
+interface NpsDateFilters {
+  date_from?: string;
+  date_to?: string;
+  batch_job_id?: string;
+}
+
+export function useNpsSummary(filters: NpsDateFilters) {
+  const query = qs({
+    date_from: filters.date_from,
+    date_to: filters.date_to,
+    batch_job_id: filters.batch_job_id,
+  });
+  return useQuery<NPSSummary>({
+    queryKey: ["analytics-nps-summary", query],
+    queryFn: () => apiRequest<NPSSummary>(`/tenants/me/analytics/nps-summary?${query}`),
+  });
+}
+
+export function useNpsMonthlyTrend(monthsBack: number = 12) {
+  const query = qs({ months_back: monthsBack });
+  return useQuery<NPSMonthlyPoint[]>({
+    queryKey: ["analytics-nps-trend", query],
+    queryFn: () =>
+      apiRequest<NPSMonthlyPoint[]>(`/tenants/me/analytics/nps-monthly-trend?${query}`),
+  });
+}
+
+export function useHeadlineMetrics(filters: NpsDateFilters) {
+  const query = qs({
+    date_from: filters.date_from,
+    date_to: filters.date_to,
+  });
+  return useQuery<HeadlineMetrics>({
+    queryKey: ["analytics-headline-metrics", query],
+    queryFn: () => apiRequest<HeadlineMetrics>(`/tenants/me/analytics/headline-metrics?${query}`),
+  });
+}
+
+export function useCompanyPerspectiveDistribution(filters: AnalyticsFilters, limit = 10) {
+  const query = qs({ ...commonParams(filters), limit });
+  return useQuery<CompanyPerspectiveDistResponse>({
+    queryKey: ["analytics-company-perspective-dist", query],
+    queryFn: () =>
+      apiRequest<CompanyPerspectiveDistResponse>(
+        `/tenants/me/analytics/company-perspective-distribution?${query}`,
       ),
   });
 }

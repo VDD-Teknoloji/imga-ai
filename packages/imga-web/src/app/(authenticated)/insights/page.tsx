@@ -28,14 +28,12 @@ import {
 import { Heatmap } from "@/components/charts/heatmap";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
-import {
-  Tabs,
-  TabsContent,
-  TabsList,
-  TabsTrigger,
-} from "@/components/ui/tabs";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   useCategoryDistribution,
+  useCompanyPerspectiveDistribution,
+  useNpsMonthlyTrend,
+  useNpsSummary,
   useOverrideStats,
   useSensitivityDistribution,
   useSentimentByCategory,
@@ -51,7 +49,7 @@ const SENTIMENT_COLOURS: Record<string, string> = {
   POZITIF: "#16a34a",
 };
 
-type TabKey = "sentiment" | "category" | "cross" | "overrides" | "tickets";
+type TabKey = "sentiment" | "category" | "cross" | "overrides" | "tickets" | "nps" | "perspective";
 
 const TAB_LABELS: Record<TabKey, string> = {
   sentiment: "Duygu",
@@ -59,6 +57,8 @@ const TAB_LABELS: Record<TabKey, string> = {
   cross: "Çapraz Analiz",
   overrides: "Override Katmanları",
   tickets: "Biletler",
+  nps: "NPS",
+  perspective: "Şirket Perspektifi",
 };
 
 // Sprint 8.3.4 round-2 — wrap the search-params-reading subtree in
@@ -110,12 +110,8 @@ function InsightsContent() {
   const [tab, setTabState] = useState<TabKey>(
     () => (searchParams.get("tab") as TabKey) || "sentiment",
   );
-  const [dateFrom, setDateFromState] = useState<string>(
-    () => searchParams.get("date_from") ?? "",
-  );
-  const [dateTo, setDateToState] = useState<string>(
-    () => searchParams.get("date_to") ?? "",
-  );
+  const [dateFrom, setDateFromState] = useState<string>(() => searchParams.get("date_from") ?? "");
+  const [dateTo, setDateToState] = useState<string>(() => searchParams.get("date_to") ?? "");
   const [sourceTypes, setSourceTypesState] = useState<string>(
     () => searchParams.get("source_types") ?? "",
   );
@@ -141,9 +137,7 @@ function InsightsContent() {
     () => ({
       date_from: dateFrom || undefined,
       date_to: dateTo || undefined,
-      source_types: sourceTypes
-        ? sourceTypes.split(",").filter(Boolean)
-        : undefined,
+      source_types: sourceTypes ? sourceTypes.split(",").filter(Boolean) : undefined,
     }),
     [dateFrom, dateTo, sourceTypes],
   );
@@ -198,7 +192,7 @@ function InsightsContent() {
       />
 
       <Tabs value={tab} onValueChange={(v) => handleTabChange(v as TabKey)}>
-        <TabsList className="grid grid-cols-5">
+        <TabsList className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-7">
           {(Object.keys(TAB_LABELS) as TabKey[]).map((k) => (
             <TabsTrigger key={k} value={k}>
               {TAB_LABELS[k]}
@@ -220,6 +214,12 @@ function InsightsContent() {
         </TabsContent>
         <TabsContent value="tickets">
           <TicketsTab filters={filters} />
+        </TabsContent>
+        <TabsContent value="nps">
+          <NpsTab dateFrom={dateFrom} dateTo={dateTo} />
+        </TabsContent>
+        <TabsContent value="perspective">
+          <PerspectiveTab filters={filters} router={router} />
         </TabsContent>
       </Tabs>
     </main>
@@ -324,9 +324,7 @@ function ChartFrame<T>({
   if (state.error) {
     return (
       <div className={`${minH} flex items-center justify-center`}>
-        <p className="text-destructive text-sm">
-          Veri yüklenemedi: {state.error.message}
-        </p>
+        <p className="text-destructive text-sm">Veri yüklenemedi: {state.error.message}</p>
       </div>
     );
   }
@@ -340,9 +338,7 @@ function ChartFrame<T>({
   if (isEmpty(state.data)) {
     return (
       <div className={`${minH} flex items-center justify-center`}>
-        <p className="text-muted-foreground text-sm">
-          Bu filtrelerle veri bulunamadı.
-        </p>
+        <p className="text-muted-foreground text-sm">Bu filtrelerle veri bulunamadı.</p>
       </div>
     );
   }
@@ -477,11 +473,7 @@ function CrossAnalysisTab({
         <CardTitle className="text-base">Kategori × Duygu Matrisi</CardTitle>
       </CardHeader>
       <CardContent>
-        <ChartFrame
-          state={matrix}
-          isEmpty={(d) => d.categories.length === 0}
-          height={300}
-        >
+        <ChartFrame state={matrix} isEmpty={(d) => d.categories.length === 0} height={300}>
           {(d) => (
             <Heatmap
               rows={d.category_labels_tr}
@@ -490,9 +482,7 @@ function CrossAnalysisTab({
               rowTotals={d.totals_by_category}
               colTotals={d.totals_by_sentiment}
               colorScale="blue"
-              tooltip={(value, rowLabel, colLabel) =>
-                `${rowLabel} × ${colLabel}: ${value} analiz`
-              }
+              tooltip={(value, rowLabel, colLabel) => `${rowLabel} × ${colLabel}: ${value} analiz`}
               onCellClick={(i, j) => {
                 const cat = d.categories[i];
                 const sent = d.sentiments[j];
@@ -531,12 +521,190 @@ function OverridesTab({ filters }: { filters: AnalyticsFilters }) {
           )}
         </ChartFrame>
         <p className="text-muted-foreground mt-2 text-xs">
-          Override katman sayımı Sprint 8.3.4&apos;te doldurulacak (
-          <code>overrides_applied</code> JSONB kolonu); şimdilik 5 katman
-          sıfır sayımla gösteriliyor.
+          Override katman sayımı Sprint 8.3.4&apos;te doldurulacak (<code>overrides_applied</code>{" "}
+          JSONB kolonu); şimdilik 5 katman sıfır sayımla gösteriliyor.
         </p>
       </CardContent>
     </Card>
+  );
+}
+
+// --- Sprint 8.3.5 / 8.3.5.6 — NPS + Şirket Perspektifi --------------------
+
+const NPS_BUCKET_COLOURS: Record<string, string> = {
+  Detractor: "#dc2626",
+  Passive: "#f59e0b",
+  Promoter: "#16a34a",
+};
+
+function NpsTab({ dateFrom, dateTo }: { dateFrom: string; dateTo: string }) {
+  const filters = useMemo(
+    () => ({
+      date_from: dateFrom || undefined,
+      date_to: dateTo || undefined,
+    }),
+    [dateFrom, dateTo],
+  );
+  const summary = useNpsSummary(filters);
+  const trend = useNpsMonthlyTrend(12);
+
+  const trendData = useMemo(
+    () => (trend.data ?? []).map((p) => ({ ...p, label: p.month.slice(0, 7) })),
+    [trend.data],
+  );
+  const donutData = useMemo(() => {
+    if (!summary.data) return [];
+    return [
+      { name: "Detractor", count: summary.data.detractor_count },
+      { name: "Passive", count: summary.data.passive_count },
+      { name: "Promoter", count: summary.data.promoter_count },
+    ];
+  }, [summary.data]);
+
+  return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">NPS Skoru</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <ChartFrame state={summary} isEmpty={(d) => d.total_count === 0} height={160}>
+              {(d) => (
+                <div className="flex flex-col items-center justify-center gap-1 py-6">
+                  <span className="text-5xl font-semibold tracking-tight">
+                    {d.score === null ? "—" : (d.score > 0 ? "+" : "") + Math.round(d.score)}
+                  </span>
+                  <span className="text-muted-foreground text-xs">
+                    {d.total_count} yanıt · kapsama %{d.coverage_percent.toFixed(1)}
+                  </span>
+                </div>
+              )}
+            </ChartFrame>
+          </CardContent>
+        </Card>
+        <Card className="md:col-span-2">
+          <CardHeader>
+            <CardTitle className="text-base">Bucket Dağılımı</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <ChartFrame state={summary} isEmpty={(d) => d.total_count === 0} height={220}>
+              {() => (
+                <ResponsiveContainer width="100%" height={220}>
+                  <PieChart>
+                    <Pie
+                      data={donutData}
+                      dataKey="count"
+                      nameKey="name"
+                      innerRadius={45}
+                      outerRadius={80}
+                      label
+                    >
+                      {donutData.map((row) => (
+                        <Cell key={row.name} fill={NPS_BUCKET_COLOURS[row.name] ?? "#888"} />
+                      ))}
+                    </Pie>
+                    <Tooltip />
+                  </PieChart>
+                </ResponsiveContainer>
+              )}
+            </ChartFrame>
+          </CardContent>
+        </Card>
+      </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Aylık Trend (son 12 ay)</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <ChartFrame state={trend} isEmpty={(d) => d.length === 0} height={260}>
+            {() => (
+              <ResponsiveContainer width="100%" height={260}>
+                <LineChart data={trendData}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="label" fontSize={10} />
+                  <YAxis domain={[-100, 100]} ticks={[-100, -50, 0, 50, 100]} fontSize={10} />
+                  <Tooltip
+                    formatter={(value) =>
+                      value === null || value === undefined ? "veri yok" : String(value)
+                    }
+                  />
+                  <Line
+                    type="monotone"
+                    dataKey="score"
+                    stroke="#2563eb"
+                    strokeWidth={2.5}
+                    dot={{ r: 3 }}
+                    connectNulls={false}
+                    name="NPS"
+                  />
+                </LineChart>
+              </ResponsiveContainer>
+            )}
+          </ChartFrame>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+function PerspectiveTab({
+  filters,
+  router,
+}: {
+  filters: AnalyticsFilters;
+  router: ReturnType<typeof useRouter>;
+}) {
+  const dist = useCompanyPerspectiveDistribution(filters, 10);
+  return (
+    <div className="space-y-4">
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Şirket Perspektifi Top 10</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <ChartFrame state={dist} isEmpty={(d) => d.total === 0}>
+            {(d) => (
+              <>
+                <ResponsiveContainer width="100%" height={Math.max(220, d.data.length * 32)}>
+                  <BarChart layout="vertical" data={d.data}>
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis type="number" fontSize={10} />
+                    <YAxis type="category" dataKey="label_tr" fontSize={11} width={160} />
+                    <Tooltip />
+                    <Bar
+                      dataKey="count"
+                      fill="#0d9488"
+                      onClick={(data) => {
+                        const code = (data as { code?: string } | undefined)?.code;
+                        if (typeof code === "string" && code.length > 0) {
+                          router.push(`/reviews?perspective_codes=${encodeURIComponent(code)}`);
+                        }
+                      }}
+                      style={{ cursor: "pointer" }}
+                    />
+                  </BarChart>
+                </ResponsiveContainer>
+                {d.unmatched_count > 0 && (
+                  <p className="text-muted-foreground mt-3 text-xs">
+                    Eşleşme yok:{" "}
+                    <button
+                      type="button"
+                      className="hover:text-foreground underline"
+                      onClick={() => router.push("/reviews?perspective_codes=__unmatched__")}
+                    >
+                      {d.unmatched_count} analiz
+                    </button>{" "}
+                    (heuristik bir taksonomi girdisiyle eşleşmedi).
+                  </p>
+                )}
+              </>
+            )}
+          </ChartFrame>
+        </CardContent>
+      </Card>
+    </div>
   );
 }
 
@@ -549,11 +717,7 @@ function TicketsTab({ filters }: { filters: AnalyticsFilters }) {
           <CardTitle className="text-base">Çözüm Süresi Dağılımı</CardTitle>
         </CardHeader>
         <CardContent>
-          <ChartFrame
-            state={res}
-            isEmpty={(d) => d.total_resolved_tickets === 0}
-            height={220}
-          >
+          <ChartFrame state={res} isEmpty={(d) => d.total_resolved_tickets === 0} height={220}>
             {(d) => (
               <>
                 <ResponsiveContainer width="100%" height={220}>

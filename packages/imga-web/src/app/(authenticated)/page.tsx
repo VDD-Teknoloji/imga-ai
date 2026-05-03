@@ -2,21 +2,24 @@
 
 import { CategoryChart } from "@/components/dashboard/category-chart";
 import { CategorySentimentMiniHeatmap } from "@/components/dashboard/category-sentiment-mini-heatmap";
-import { MetricCards } from "@/components/dashboard/metric-cards";
+import { HeadlineMetricsCards } from "@/components/dashboard/headline-metrics-cards";
+import { NpsMonthlyTrend } from "@/components/dashboard/nps-monthly-trend";
 import { RecentTicketsTable } from "@/components/dashboard/recent-tickets";
 import { SentimentDonut } from "@/components/dashboard/sentiment-donut";
 import { SentimentTrend } from "@/components/dashboard/sentiment-trend";
 import { useAuthStore } from "@/lib/auth-store";
 
 /**
- * Tenant dashboard. Sprint 8.3.4 expanded the analytics layer:
+ * Tenant dashboard. Sprint 8.3.5.6 expanded the headline row:
  *
- *   1. Header     — greeting + active tenant name
- *   2. Metric grid — four ticket-derived counts
- *   3. Analytics row — sentiment donut + category bar (existing)
- *   4. Trend row — last 30 days sentiment line chart (full width)
- *   5. Heatmap row — category × sentiment mini matrix (full width)
- *   6. Recent tickets — full-width table
+ *   1. Header        — greeting + active tenant name
+ *   2. Headline row  — NPS hero card + 6 support metrics (single
+ *                      /headline-metrics round-trip)
+ *   3. NPS trend     — 12-month line, gap-on-null
+ *   4. Analytics row — sentiment donut + category bar
+ *   5. Sentiment trend — 30-day line chart (full width)
+ *   6. Heatmap row   — category × sentiment mini matrix (full width)
+ *   7. Recent tickets — full-width table
  */
 export default function DashboardPage() {
   const user = useAuthStore((s) => s.user);
@@ -33,7 +36,9 @@ export default function DashboardPage() {
         <p className="text-muted-foreground text-sm">{tenantName}</p>
       </header>
 
-      <MetricCards />
+      <HeadlineMetricsCards />
+
+      <NpsMonthlyTrend />
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <SentimentDonut />

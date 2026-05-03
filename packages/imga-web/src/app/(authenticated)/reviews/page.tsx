@@ -1,13 +1,21 @@
 "use client";
 
-import { Loader2 } from "lucide-react";
+import { ChevronDown, Loader2 } from "lucide-react";
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
-import { useMemo } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { useCallback, useMemo } from "react";
 
 import { OverrideChip } from "@/components/reviews/override-display";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import {
   Table,
   TableBody,
@@ -17,6 +25,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { useInfiniteReviews } from "@/hooks/use-reviews";
+import { useCompanyTaxonomies } from "@/hooks/use-taxonomies";
 import type { ReviewListFilters, ReviewSourceType } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
@@ -25,6 +34,10 @@ const SOURCE_LABELS: Record<ReviewSourceType, string> = {
   batch: "Toplu",
   api: "API",
 };
+
+/** Sentinel for the "heuristic didn't match" filter bucket. Backend
+ *  recognises the same string in the perspective_codes CSV. */
+const UNMATCHED_SENTINEL = "__unmatched__";
 
 /**
  * Sprint 8.3.1 — minimal reviews list. Filter bar (sentiment, source,
@@ -38,12 +51,14 @@ export default function ReviewsPage() {
   const filters = useMemo<ReviewListFilters>(() => {
     const sentimentRaw = searchParams.get("sentiment_labels");
     const sourceRaw = searchParams.get("source_types");
+    const perspectiveRaw = searchParams.get("perspective_codes");
     const sourceTypes = sourceRaw
       ? (sourceRaw.split(",").filter(Boolean) as ReviewSourceType[])
       : undefined;
     return {
       sentiment_labels: sentimentRaw?.split(",").filter(Boolean),
       source_types: sourceTypes,
+      perspective_codes: perspectiveRaw?.split(",").filter(Boolean),
       has_ticket: searchParams.has("has_ticket")
         ? searchParams.get("has_ticket") === "true"
         : undefined,
@@ -70,16 +85,17 @@ export default function ReviewsPage() {
         </p>
       </header>
 
-      <FilterPills filters={filters} />
+      <div className="flex flex-wrap items-center gap-2">
+        <PerspectiveFilterDropdown selected={filters.perspective_codes ?? []} />
+        <FilterPills filters={filters} />
+      </div>
 
       {reviews.isLoading ? (
         <div className="flex items-center gap-2 p-6 text-sm">
           <Loader2 className="size-4 animate-spin" /> Yükleniyor…
         </div>
       ) : items.length === 0 ? (
-        <p className="text-muted-foreground p-6 text-sm">
-          Bu filtrelerle eşleşen analiz yok.
-        </p>
+        <p className="text-muted-foreground p-6 text-sm">Bu filtrelerle eşleşen analiz yok.</p>
       ) : (
         <Table>
           <TableHeader>
@@ -88,6 +104,7 @@ export default function ReviewsPage() {
               <TableHead>Metin</TableHead>
               <TableHead>Duygu</TableHead>
               <TableHead className="hidden md:table-cell">Kategori</TableHead>
+              <TableHead className="hidden lg:table-cell">Şirket perspektifi</TableHead>
               <TableHead className="hidden text-center md:table-cell">OV</TableHead>
               <TableHead className="hidden md:table-cell">Bilet</TableHead>
               <TableHead className="hidden md:table-cell">Kaynak</TableHead>
@@ -107,14 +124,15 @@ export default function ReviewsPage() {
                 <TableCell>
                   <SentimentBadge label={r.sentiment_label} score={r.sentiment_score} />
                 </TableCell>
-                <TableCell className="hidden text-sm md:table-cell">
-                  {r.primary_category}
+                <TableCell className="hidden text-sm md:table-cell">{r.primary_category}</TableCell>
+                <TableCell className="hidden text-sm lg:table-cell">
+                  <PerspectiveCell
+                    code={r.company_perspective_code}
+                    labelTr={r.company_perspective_label_tr}
+                  />
                 </TableCell>
                 <TableCell className="hidden text-center md:table-cell">
-                  <OverrideChip
-                    count={r.override_count}
-                    href={`/reviews/${r.id}`}
-                  />
+                  <OverrideChip count={r.override_count} href={`/reviews/${r.id}`} />
                 </TableCell>
                 <TableCell className="hidden md:table-cell">
                   {r.ticket_id ? (
@@ -187,6 +205,111 @@ function FilterPills({ filters }: { filters: ReviewListFilters }) {
       ))}
     </div>
   );
+}
+
+/** Multi-select dropdown driven by ``GET /tenants/me/taxonomies`` plus
+ *  the ``__unmatched__`` sentinel. State syncs to the URL search param
+ *  ``perspective_codes`` so the filter survives reload + back-button. */
+function PerspectiveFilterDropdown({ selected }: { selected: string[] }) {
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const taxonomies = useCompanyTaxonomies();
+
+  const setSelection = useCallback(
+    (next: string[]) => {
+      const params = new URLSearchParams(searchParams.toString());
+      if (next.length === 0) {
+        params.delete("perspective_codes");
+      } else {
+        params.set("perspective_codes", next.join(","));
+      }
+      const qs = params.toString();
+      router.push(qs ? `${pathname}?${qs}` : pathname);
+    },
+    [pathname, router, searchParams],
+  );
+
+  const toggle = useCallback(
+    (code: string) => {
+      const next = selected.includes(code)
+        ? selected.filter((c) => c !== code)
+        : [...selected, code];
+      setSelection(next);
+    },
+    [selected, setSelection],
+  );
+
+  const items = taxonomies.data ?? [];
+  const triggerLabel =
+    selected.length === 0 ? "Şirket perspektifi" : `Perspektif: ${selected.length} seçili`;
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger
+        render={
+          <Button variant="outline" size="sm" className="gap-1">
+            {triggerLabel}
+            <ChevronDown className="size-4" aria-hidden />
+          </Button>
+        }
+      />
+      <DropdownMenuContent align="start" className="max-h-80 w-64 overflow-y-auto">
+        <DropdownMenuLabel>Filtrele</DropdownMenuLabel>
+        <DropdownMenuCheckboxItem
+          checked={selected.includes(UNMATCHED_SENTINEL)}
+          onCheckedChange={() => toggle(UNMATCHED_SENTINEL)}
+        >
+          <span className="text-muted-foreground italic">Eşleşme yok</span>
+        </DropdownMenuCheckboxItem>
+        <DropdownMenuSeparator />
+        {taxonomies.isLoading ? (
+          <div className="text-muted-foreground px-2 py-1.5 text-xs">Yükleniyor…</div>
+        ) : items.length === 0 ? (
+          <div className="text-muted-foreground px-2 py-1.5 text-xs">Taksonomi yok.</div>
+        ) : (
+          items.map((t) => (
+            <DropdownMenuCheckboxItem
+              key={t.code}
+              checked={selected.includes(t.code)}
+              onCheckedChange={() => toggle(t.code)}
+            >
+              {t.label_tr}
+            </DropdownMenuCheckboxItem>
+          ))
+        )}
+        {selected.length > 0 ? (
+          <>
+            <DropdownMenuSeparator />
+            <button
+              type="button"
+              className="text-muted-foreground hover:text-foreground w-full px-2 py-1.5 text-left text-xs"
+              onClick={() => setSelection([])}
+            >
+              Tümünü temizle
+            </button>
+          </>
+        ) : null}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+function PerspectiveCell({ code, labelTr }: { code: string | null; labelTr: string | null }) {
+  if (code === null) {
+    return <span className="text-muted-foreground text-xs">—</span>;
+  }
+  // labelTr null + code non-null = taxonomy entry was pruned post-analyze
+  // (Sprint 8.3.7 edit UI). Render a subtle "kaldırıldı" badge so the
+  // UI doesn't pretend the raw code is the human-friendly label.
+  if (labelTr === null) {
+    return (
+      <span className="text-muted-foreground italic" title={`Kod: ${code}`}>
+        kaldırılmış
+      </span>
+    );
+  }
+  return <span className="line-clamp-1">{labelTr}</span>;
 }
 
 function SentimentBadge({ label, score }: { label: string; score: number }) {

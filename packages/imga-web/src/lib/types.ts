@@ -104,8 +104,8 @@ export interface TicketBackendFilters {
   states?: ReadonlyArray<TicketState>;
   priorities?: ReadonlyArray<TicketPriority>;
   category_ids?: ReadonlyArray<string>;
-  opened_after?: string;       // ISO 8601
-  opened_before?: string;      // ISO 8601
+  opened_after?: string; // ISO 8601
+  opened_before?: string; // ISO 8601
   assignee?: AssigneeFilterValue;
   search?: string;
   order_by?: TicketSortField;
@@ -152,10 +152,7 @@ export interface TicketCommentsResponse {
 
 // --- Polymorphic timeline (mirrors routes/tickets.py:TimelineEvent) ---
 
-export type TimelineEventType =
-  | "state_transition"
-  | "comment"
-  | "assignment_changed";
+export type TimelineEventType = "state_transition" | "comment" | "assignment_changed";
 
 export interface TimelineEvent {
   type: TimelineEventType;
@@ -297,6 +294,11 @@ export interface TenantAnalyzeResponse {
   ticket_id: string | null;
   analyzed_at: string;
   analysis: AnalysisResult;
+  // Sprint 8.3.5.6 — heuristic taxonomy match. Both null when the
+  // tenant's taxonomy was empty or no keyword matched. Distinct from
+  // AnalysisResult.company_perspective (legacy free-text field).
+  company_perspective_code: string | null;
+  company_perspective_label_tr: string | null;
 }
 
 // --- Tenant directory (mirrors routes/tenant_directory.py:TenantMemberView) -
@@ -336,12 +338,7 @@ export interface CategoriesResponse {
 // Sprint 8.3.1 — batch upload + reviews list
 // ---------------------------------------------------------------------------
 
-export type BatchJobStatus =
-  | "queued"
-  | "processing"
-  | "completed"
-  | "failed"
-  | "cancelled";
+export type BatchJobStatus = "queued" | "processing" | "completed" | "failed" | "cancelled";
 
 export interface BatchJob {
   job_id: string;
@@ -376,12 +373,7 @@ export type ReviewSourceType = "manual" | "batch" | "api";
 // Sprint 8.3.4 — five known override layer codes. Server may emit
 // any one of these in `overrides_applied[].layer`; the UI maps them
 // to Türkçe labels via OVERRIDE_LAYER_LABELS_TR below.
-export type OverrideLayer =
-  | "knowledge_base"
-  | "critical"
-  | "tier1"
-  | "sla"
-  | "tier2";
+export type OverrideLayer = "knowledge_base" | "critical" | "tier1" | "sla" | "tier2";
 
 export const OVERRIDE_LAYER_LABELS_TR: Record<OverrideLayer, string> = {
   knowledge_base: "Bilgi Tabanı Kuralı",
@@ -413,6 +405,11 @@ export interface ReviewListItem {
   analyzed_at: string;
   submitted_by_user_id: string | null;
   override_count: number;
+  // Sprint 8.3.5.6 — heuristic match for the review. ``code`` null when
+  // the heuristic didn't fire; ``label_tr`` additionally null when the
+  // tenant's taxonomy row was deleted after analyze (Sprint 8.3.7).
+  company_perspective_code: string | null;
+  company_perspective_label_tr: string | null;
 }
 
 export interface ReviewListResponse {
@@ -439,10 +436,20 @@ export interface ReviewDetail {
     primary: string;
     primary_confidence: number;
   };
+  // Sprint 8.3.5.6 — parallel dimension to BERT primary. Both fields
+  // can be null; UI reads them together to render the perspective
+  // section.
+  company_perspective: {
+    code: string | null;
+    label_tr: string | null;
+  };
   overrides_applied: OverrideHit[];
   ticket_id: string | null;
   auto_ticket_decision: ReviewDecision;
   auto_ticket_decision_reason: string | null;
+  // Sprint 8.3.5 NPS — null when the upload row didn't carry an NPS.
+  nps_score: number | null;
+  nps_category: "detractor" | "passive" | "promoter" | null;
 }
 
 export interface ReviewListFilters {
@@ -453,6 +460,11 @@ export interface ReviewListFilters {
   batch_job_id?: string;
   source_types?: ReviewSourceType[];
   decisions?: ReviewDecision[];
+  /** Sprint 8.3.5.6 — CSV of CategoryTaxonomy.code values; the literal
+   * "__unmatched__" sentinel filters to rows where the heuristic didn't
+   * fire (NULL company_perspective_code). Mixing it with real codes is
+   * an OR. */
+  perspective_codes?: string[];
   search?: string;
   limit?: number;
   offset?: number;
@@ -631,4 +643,74 @@ export interface AnalyticsFilters {
   category_ids?: string[];
   source_types?: string[];
   batch_job_id?: string;
+}
+
+// ---------------------------------------------------------------------------
+// Sprint 8.3.5 — NPS + headline metrics + company-perspective taxonomy
+// ---------------------------------------------------------------------------
+
+/** ``score`` is null when total_count == 0 — the dashboard renders a
+ *  "yeterli veri yok" state instead of a misleading 0.0. */
+export interface NPSSummary {
+  score: number | null;
+  detractor_count: number;
+  passive_count: number;
+  promoter_count: number;
+  total_count: number;
+  coverage_percent: number;
+}
+
+/** ``score`` null when total_count == 0; combined with
+ *  ``connectNulls={false}`` on Recharts the line shows a true gap. */
+export interface NPSMonthlyPoint {
+  month: string; // ISO date — first day of the calendar month, UTC.
+  score: number | null;
+  detractor_count: number;
+  passive_count: number;
+  promoter_count: number;
+  total_count: number;
+}
+
+/** Eight-field bundle for the dashboard top row. ``nps_score`` and
+ *  ``avg_sentiment_score`` are nullable on "no data" because 0 is a
+ *  meaningful value in both metrics. */
+export interface HeadlineMetrics {
+  total_reviews: number;
+  open_tickets: number;
+  today_new_tickets: number;
+  crisis_count: number;
+  nps_score: number | null;
+  nps_coverage_percent: number;
+  avg_sentiment_score: number | null;
+  sensitive_topics_count: number;
+}
+
+// --- Sprint 8.3.5.6 — company-perspective distribution + taxonomy --------
+
+export interface CompanyPerspectiveDistRow {
+  code: string;
+  label_tr: string;
+  count: number;
+  percentage: number;
+}
+
+/** ``unmatched_count`` is the share of reviews where the heuristic
+ *  didn't match anything — surfaced separately from ``data`` so the
+ *  /insights tab can show it as its own signal. */
+export interface CompanyPerspectiveDistResponse {
+  total: number;
+  unmatched_count: number;
+  data: CompanyPerspectiveDistRow[];
+}
+
+/** Read-only view of one row in the tenant's company-perspective
+ *  taxonomy. The 8.3.7 edit UI will mutate this server-side; until
+ *  then ``GET /tenants/me/taxonomies`` is the only consumer. */
+export interface CategoryTaxonomyView {
+  id: string;
+  code: string;
+  label_tr: string;
+  keywords: string[];
+  priority: number;
+  is_default_seed: boolean;
 }
