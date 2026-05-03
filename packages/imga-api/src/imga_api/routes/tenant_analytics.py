@@ -161,6 +161,17 @@ class NPSMonthlyPointResponse(BaseModel):
     total_count: int
 
 
+class HeadlineMetricsResponse(BaseModel):
+    total_reviews: int
+    open_tickets: int
+    today_new_tickets: int
+    crisis_count: int
+    nps_score: float | None
+    nps_coverage_percent: float
+    avg_sentiment_score: float | None
+    sensitive_topics_count: int
+
+
 # --- helpers ------------------------------------------------------------
 
 
@@ -446,3 +457,26 @@ async def nps_monthly_trend(
             tenant_id=tenant_id, months_back=months_back,
         )
     return [NPSMonthlyPointResponse(**asdict(p)) for p in result]
+
+
+@router.get(
+    "/headline-metrics",
+    response_model=HeadlineMetricsResponse,
+    summary="Eight dashboard headline values in one call (Sprint 8.3.5).",
+)
+async def headline_metrics(
+    current: Annotated[CurrentUser, _AnyMember],
+    app_session: Annotated[AsyncSession, Depends(get_app_session)],
+    date_from: date | None = None,
+    date_to: date | None = None,
+) -> HeadlineMetricsResponse:
+    """Eight values for the dashboard top row, served from a single
+    round-trip. Date filter applies to the review-side metrics only;
+    open_tickets + today_new_tickets always reflect live state."""
+    tenant_id = _require_active_tenant(current)
+    async with app_session.begin():
+        await bind_tenant(app_session, current)
+        result = await AnalyticsService(app_session).compute_headline_metrics(
+            tenant_id=tenant_id, date_from=date_from, date_to=date_to,
+        )
+    return HeadlineMetricsResponse(**asdict(result))
