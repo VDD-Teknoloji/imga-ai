@@ -52,6 +52,7 @@ class BatchProgress:
     failed_delta: int = 0
     tickets_created_delta: int = 0
     duplicates_skipped_delta: int = 0
+    rows_with_nps_delta: int = 0
     error_entries: list[dict[str, Any]] | None = None
 
 
@@ -268,6 +269,7 @@ class BatchAnalyzeService:
         job.failed_rows += progress.failed_delta
         job.tickets_created += progress.tickets_created_delta
         job.duplicates_skipped += progress.duplicates_skipped_delta
+        job.rows_with_nps += progress.rows_with_nps_delta
         if progress.error_entries:
             current = list(job.error_summary or [])
             for entry in progress.error_entries:

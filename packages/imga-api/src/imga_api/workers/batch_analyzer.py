@@ -31,6 +31,7 @@ worth of latency).
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
@@ -63,6 +64,7 @@ from imga_api.workers.file_parser import (
     FileParseError,
     UnknownColumnError,
     iter_rows,
+    peek_detected_nps_column,
 )
 
 if TYPE_CHECKING:
@@ -264,6 +266,23 @@ async def _run_job(
         )
         return
 
+    # Sprint 8.3.5. Auto-detect the NPS column once before chunks start
+    # landing so analyze_batch_jobs.detected_nps_column is correct from
+    # the very first progress write. peek failures fall through to
+    # iter_rows() below; the catastrophic-failure path there is the
+    # right place to record the unrecoverable state.
+    detected_nps: str | None = None
+    with contextlib.suppress(FileParseError):
+        detected_nps = peek_detected_nps_column(file_path)
+    if detected_nps is not None:
+        async with context.admin_session_factory() as admin_session, admin_session.begin():
+            await set_current_tenant(admin_session, tenant_id)
+            await admin_session.execute(
+                update(AnalyzeBatchJob)
+                .where(AnalyzeBatchJob.id == job_id)
+                .values(detected_nps_column=detected_nps)
+            )
+
     try:
         rows_iter = iter_rows(
             file_path, text_column=text_column, source_column=source_column
@@ -334,6 +353,7 @@ async def _process_chunk(
     failed = 0
     tickets = 0
     duplicates = 0
+    rows_with_nps_in_chunk = 0
 
     # Pre-filter empty rows (don't burn BERT inference on whitespace).
     valid_rows: list[Any] = []
@@ -436,10 +456,13 @@ async def _process_chunk(
                     batch_job_id=job_id,
                     analyzed_at=datetime.now(UTC),
                     overrides_applied=[hit.model_dump() for hit in analysis.overrides_applied],
+                    nps_score=parsed.nps_score,
                 )
                 app_session.add(review)
                 duplicates += 1
                 succeeded += 1
+                if parsed.nps_score is not None:
+                    rows_with_nps_in_chunk += 1
                 continue
 
             seen_hashes.add(text_hash)
@@ -451,6 +474,7 @@ async def _process_chunk(
                         text=parsed.text,
                         analysis=analysis,
                         actor_user_id=triggered_by_user_id,
+                        nps_score=parsed.nps_score,
                     )
                 except Exception as exc:
                     log.exception("row %s record_and_decide", parsed.row_number)
@@ -474,6 +498,8 @@ async def _process_chunk(
                 elif result.decision == ReviewDecision.SKIPPED_DEDUP:
                     duplicates += 1
                 succeeded += 1
+                if parsed.nps_score is not None:
+                    rows_with_nps_in_chunk += 1
             else:
                 # Opt-out path: persist a review row marked SKIPPED_MODE
                 # so the user still sees the analysis, but no ticket.
@@ -503,9 +529,12 @@ async def _process_chunk(
                     batch_job_id=job_id,
                     analyzed_at=datetime.now(UTC),
                     overrides_applied=[hit.model_dump() for hit in analysis.overrides_applied],
+                    nps_score=parsed.nps_score,
                 )
                 app_session.add(review)
                 succeeded += 1
+                if parsed.nps_score is not None:
+                    rows_with_nps_in_chunk += 1
 
     # Single progress write per chunk on the admin session (RLS still
     # applied via FORCE; we set tenant context).
@@ -519,6 +548,7 @@ async def _process_chunk(
             failed_delta=failed,
             tickets_created_delta=tickets,
             duplicates_skipped_delta=duplicates,
+            rows_with_nps_delta=rows_with_nps_in_chunk,
             error_entries=error_entries or None,
         ),
     )

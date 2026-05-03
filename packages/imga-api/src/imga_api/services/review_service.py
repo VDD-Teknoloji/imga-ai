@@ -131,6 +131,7 @@ class ReviewService:
         analysis: AnalysisResult,
         actor_user_id: UUID | None,
         now: datetime | None = None,
+        nps_score: int | None = None,
     ) -> ReviewBridgeResult:
         """Persist one review row and (on the CREATE branch) one ticket.
 
@@ -216,6 +217,7 @@ class ReviewService:
             submitted_by_user_id=actor_user_id,
             analyzed_at=moment,
             overrides_applied=[hit.model_dump() for hit in analysis.overrides_applied],
+            nps_score=nps_score,
         )
         self._session.add(review)
         await self._session.flush()

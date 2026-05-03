@@ -24,6 +24,7 @@ from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
 
+from imga_core.parsers import detect_nps_column, parse_nps_value
 from imga_core.text_utils import normalize_turkish
 from openpyxl import load_workbook
 
@@ -48,11 +49,18 @@ class ParsedRow:
     """One non-header row from the upload, projected onto the columns
     the user picked. ``row_number`` is 1-indexed against the *data*
     rows (header is 0); the worker uses it for error_summary entries.
+
+    ``nps_score`` is populated when the upload has an auto-detected NPS
+    column AND the row's cell parses to a value in [0, 10] (Sprint
+    8.3.5). NULL covers both "no column detected" and "column detected
+    but this row's value was empty / out of range / non-numeric" — the
+    worker increments rows_with_nps only when this is non-null.
     """
 
     row_number: int
     text: str
     source: str | None
+    nps_score: int | None = None
 
 
 def _normalize_header(name: str) -> str:
@@ -64,9 +72,16 @@ def _resolve_columns(
     *,
     text_column: str,
     source_column: str | None,
-) -> tuple[int, int | None]:
-    """Return (text_idx, source_idx | None). Raises UnknownColumnError
-    if either column is absent. Match is case + accent + I/İ-insensitive."""
+) -> tuple[int, int | None, int | None]:
+    """Return (text_idx, source_idx | None, nps_idx | None). Raises
+    UnknownColumnError if text/source column is absent. NPS is
+    auto-detected via the imga-core pattern set; missing NPS is fine
+    (returns None) — the upload doesn't have to carry an NPS column.
+
+    Match for text/source is case + accent + I/İ-insensitive (same fold
+    nps_detector applies to its own pattern set, so the two stay in
+    sync as the rules evolve).
+    """
     norm_header = [_normalize_header(c) for c in header]
     target_text = _normalize_header(text_column)
     try:
@@ -87,7 +102,12 @@ def _resolve_columns(
                 f"source column {source_column!r} not in header"
             ) from exc
 
-    return text_idx, source_idx
+    nps_idx: int | None = None
+    nps_header = detect_nps_column(header)
+    if nps_header is not None:
+        nps_idx = header.index(nps_header)
+
+    return text_idx, source_idx, nps_idx
 
 
 def _iter_csv(
@@ -103,7 +123,7 @@ def _iter_csv(
         except StopIteration as exc:
             raise FileParseError("file is empty") from exc
 
-        text_idx, source_idx = _resolve_columns(
+        text_idx, source_idx, nps_idx = _resolve_columns(
             header, text_column=text_column, source_column=source_column
         )
         for i, row in enumerate(reader, start=1):
@@ -117,7 +137,12 @@ def _iter_csv(
             if source_idx is not None and source_idx < len(row):
                 raw = row[source_idx].strip()
                 source = raw or None
-            yield ParsedRow(row_number=i, text=text, source=source)
+            nps_score: int | None = None
+            if nps_idx is not None and nps_idx < len(row):
+                nps_score = parse_nps_value(row[nps_idx])
+            yield ParsedRow(
+                row_number=i, text=text, source=source, nps_score=nps_score
+            )
 
 
 def _iter_xlsx(
@@ -141,7 +166,7 @@ def _iter_xlsx(
             raise FileParseError("file is empty") from exc
 
         header = [str(c) if c is not None else "" for c in raw_header]
-        text_idx, source_idx = _resolve_columns(
+        text_idx, source_idx, nps_idx = _resolve_columns(
             header, text_column=text_column, source_column=source_column
         )
         for i, row in enumerate(rows_iter, start=1):
@@ -154,7 +179,12 @@ def _iter_xlsx(
                 raw_source = row[source_idx]
                 if raw_source is not None:
                     source = str(raw_source).strip() or None
-            yield ParsedRow(row_number=i, text=text, source=source)
+            nps_score: int | None = None
+            if nps_idx is not None and nps_idx < len(row):
+                nps_score = parse_nps_value(row[nps_idx])
+            yield ParsedRow(
+                row_number=i, text=text, source=source, nps_score=nps_score
+            )
     finally:
         workbook.close()
 
@@ -234,6 +264,16 @@ def peek_header(path: Path) -> list[str]:
     )
 
 
+def peek_detected_nps_column(path: Path) -> str | None:
+    """Sprint 8.3.5. Return the header name of the auto-detected NPS
+    column, or None if the upload doesn't have one. Thin wrapper around
+    ``peek_header()`` + ``detect_nps_column()`` so the worker can record
+    ``analyze_batch_jobs.detected_nps_column`` once at job start without
+    re-streaming the file. ``iter_rows()`` re-detects internally — the
+    two paths are deterministic over the same header so they agree."""
+    return detect_nps_column(peek_header(path))
+
+
 __all__ = [
     "FileParseError",
     "ParsedRow",
@@ -241,5 +281,6 @@ __all__ = [
     "UnsupportedFormatError",
     "count_rows",
     "iter_rows",
+    "peek_detected_nps_column",
     "peek_header",
 ]
