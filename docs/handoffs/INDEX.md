@@ -4,6 +4,7 @@
 |------------|----------------------------------------------------------------------------------------------|---------------|---------------|----------|---------|
 | 2026-05-03 | [sprint-8.3-closure](2026-05-03-sprint-8.3-closure.md)                                       | server-agent  | claude-chat   | open     | yüksek  |
 | 2026-05-02 | [sprint-9.0-baseline](2026-05-02-sprint-9.0-baseline.md)                                     | server-agent  | claude-chat   | open     | normal  |
+| 2026-05-03 | [sprint-9.0-config-audit](2026-05-03-sprint-9.0-config-audit.md)                             | server-agent  | claude-chat   | open     | normal  |
 | 2026-05-02 | [sprint-8.3.4-final](2026-05-02-sprint-8.3.4-final.md)                                       | local-agent   | server-agent  | resolved | yüksek  |
 | 2026-05-02 | [sprint-8.3.3-closure](2026-05-02-sprint-8.3.3-closure.md)                                   | local-agent   | server-agent  | resolved | normal  |
 | 2026-05-02 | [sprint-8.3.3-smoke-fixes](2026-05-02-sprint-8.3.3-smoke-fixes.md)                           | local-agent   | server-agent  | resolved | kritik  |
