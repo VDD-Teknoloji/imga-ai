@@ -15,7 +15,7 @@ want at least date_from/date_to + source_types. Per-endpoint extras
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from typing import Any, Literal
 from uuid import UUID
 
@@ -157,6 +157,49 @@ class SensitivityDistribution:
     total: int
     buckets: list[SensitivityBucket] = field(default_factory=list)
     stats: SensitivityStats = SensitivityStats(0.0, 0.0, 0.0)
+
+
+# --- Sprint 8.3.5 — NPS aggregation shapes ------------------------------
+
+
+@dataclass(frozen=True, slots=True)
+class NPSSummary:
+    """Aggregate NPS view for a tenant + date/batch filter set.
+
+    ``score`` is None when total_count == 0 — not 0, not -100. Frontend
+    renders the empty state for None ("yeterli veri yok"). When
+    total_count > 0:
+
+        score = ((promoter_count - detractor_count) / total_count) * 100
+
+    yielding -100..100 by definition. ``coverage_percent`` is the share
+    of all (NPS-bearing or not) reviews that carry an nps_score in the
+    same filter window — useful for "how reliable is this score?"
+    callouts on the dashboard.
+    """
+
+    score: float | None
+    detractor_count: int
+    passive_count: int
+    promoter_count: int
+    total_count: int
+    coverage_percent: float
+
+
+@dataclass(frozen=True, slots=True)
+class NPSMonthlyPoint:
+    """One row of the monthly trend list. ``month`` is the first day of
+    the calendar month (UTC midnight) — the frontend formats from there.
+    ``score`` is None when ``total_count == 0`` so a connectNulls=false
+    line chart renders a real gap instead of dropping the point.
+    """
+
+    month: date
+    score: float | None
+    detractor_count: int
+    passive_count: int
+    promoter_count: int
+    total_count: int
 
 
 # --- override layer Türkçe labels (Sprint 8.3 spec) ---------------------
@@ -655,8 +698,194 @@ class AnalyticsService:
         )
 
     # ------------------------------------------------------------------
+    # 8. NPS summary (Sprint 8.3.5)
+    # ------------------------------------------------------------------
+
+    async def compute_nps_summary(
+        self,
+        *,
+        tenant_id: UUID,
+        date_from: date | None = None,
+        date_to: date | None = None,
+        batch_job_id: UUID | None = None,
+    ) -> NPSSummary:
+        """Aggregate NPS bucket counts + score for the filter window.
+
+        ``score`` is None when no NPS-bearing rows match the filter; the
+        frontend renders the empty state instead of a confusing "0.0".
+        Date filtering uses ``Review.created_at`` per the partial index
+        ``ix_reviews_tenant_nps_created`` — semantically "when did we
+        ingest this NPS feedback", which is the dimension dashboards
+        track. The fold-down filter helper used by the other endpoints
+        keys on ``analyzed_at`` so we deliberately don't reuse it here.
+
+        Coverage = NPS-bearing rows / all-tenant-rows in the same window;
+        the all-rows count uses the same created_at + batch_job_id
+        filters so callers comparing it to total_count don't hit an
+        apples-to-oranges denominator.
+        """
+        # Bucket aggregation — group by the GENERATED column. NULL rows
+        # (no NPS) drop out of the GROUP BY because nps_category IS NULL
+        # when nps_score IS NULL by construction.
+        bucket_stmt = (
+            select(Review.nps_category, func.count().label("cnt"))
+            .where(Review.tenant_id == tenant_id)
+            .where(Review.deleted_at.is_(None))
+            .where(Review.nps_score.is_not(None))
+            .group_by(Review.nps_category)
+        )
+        bucket_stmt = self._apply_nps_window(
+            bucket_stmt, date_from=date_from, date_to=date_to, batch_job_id=batch_job_id
+        )
+        rows = (await self._session.execute(bucket_stmt)).all()
+
+        per_bucket: dict[str, int] = {"detractor": 0, "passive": 0, "promoter": 0}
+        for r in rows:
+            if r.nps_category in per_bucket:
+                per_bucket[r.nps_category] = r.cnt
+        total = sum(per_bucket.values())
+
+        score: float | None
+        if total == 0:
+            score = None
+        else:
+            score = round(
+                ((per_bucket["promoter"] - per_bucket["detractor"]) / total) * 100,
+                2,
+            )
+
+        # Coverage denominator — all non-deleted reviews in the same window.
+        all_stmt = (
+            select(func.count())
+            .select_from(Review)
+            .where(Review.tenant_id == tenant_id)
+            .where(Review.deleted_at.is_(None))
+        )
+        all_stmt = self._apply_nps_window(
+            all_stmt, date_from=date_from, date_to=date_to, batch_job_id=batch_job_id
+        )
+        all_total: int = (await self._session.execute(all_stmt)).scalar_one() or 0
+        coverage = round(100 * total / all_total, 2) if all_total else 0.0
+
+        return NPSSummary(
+            score=score,
+            detractor_count=per_bucket["detractor"],
+            passive_count=per_bucket["passive"],
+            promoter_count=per_bucket["promoter"],
+            total_count=total,
+            coverage_percent=coverage,
+        )
+
+    # ------------------------------------------------------------------
+    # 9. NPS monthly trend (Sprint 8.3.5)
+    # ------------------------------------------------------------------
+
+    async def compute_monthly_nps_trend(
+        self,
+        *,
+        tenant_id: UUID,
+        months_back: int = 12,
+        now: datetime | None = None,
+    ) -> list[NPSMonthlyPoint]:
+        """Return ``months_back`` calendar months of NPS, oldest first.
+
+        Months without any NPS-bearing review still surface as a point
+        with score=None — the frontend's connectNulls=false renders a
+        gap, which is the truthful read of "we have no data this month",
+        not a 0 that would smash the trend line.
+
+        Now-anchored at the caller's ``now`` (or UTC now). Buckets are
+        UTC calendar months (date_trunc('month', created_at)) — same
+        timezone the partial index ``ix_reviews_tenant_nps_created``
+        operates on, so the planner can stay on it.
+        """
+        anchor = (now or datetime.now(UTC)).date()
+        target_months = _trailing_month_starts(anchor, months_back)
+        # Window = oldest target month → next month after the newest.
+        window_start = datetime.combine(target_months[0], datetime.min.time(), tzinfo=UTC)
+        next_month_after_anchor = _next_month_start(target_months[-1])
+        window_end_exclusive = datetime.combine(
+            next_month_after_anchor, datetime.min.time(), tzinfo=UTC
+        )
+
+        bucket_expr = func.date_trunc("month", Review.created_at).label("bucket")
+        stmt = (
+            select(
+                bucket_expr,
+                Review.nps_category,
+                func.count().label("cnt"),
+            )
+            .where(Review.tenant_id == tenant_id)
+            .where(Review.deleted_at.is_(None))
+            .where(Review.nps_score.is_not(None))
+            .where(Review.created_at >= window_start)
+            .where(Review.created_at < window_end_exclusive)
+            .group_by(bucket_expr, Review.nps_category)
+        )
+        rows = (await self._session.execute(stmt)).all()
+
+        # Pivot: month_start_date → bucket_label → count.
+        agg: dict[date, dict[str, int]] = {
+            m: {"detractor": 0, "passive": 0, "promoter": 0} for m in target_months
+        }
+        for r in rows:
+            month_key = r.bucket.date() if isinstance(r.bucket, datetime) else r.bucket
+            slot = agg.get(month_key)
+            if slot is None or r.nps_category not in slot:
+                continue
+            slot[r.nps_category] = r.cnt
+
+        points: list[NPSMonthlyPoint] = []
+        for m in target_months:
+            buckets = agg[m]
+            total = sum(buckets.values())
+            score: float | None
+            if total == 0:
+                score = None
+            else:
+                score = round(
+                    ((buckets["promoter"] - buckets["detractor"]) / total) * 100,
+                    2,
+                )
+            points.append(
+                NPSMonthlyPoint(
+                    month=m,
+                    score=score,
+                    detractor_count=buckets["detractor"],
+                    passive_count=buckets["passive"],
+                    promoter_count=buckets["promoter"],
+                    total_count=total,
+                )
+            )
+        return points
+
+    # ------------------------------------------------------------------
     # Filter helpers
     # ------------------------------------------------------------------
+
+    def _apply_nps_window(
+        self,
+        stmt: Any,
+        *,
+        date_from: date | None,
+        date_to: date | None,
+        batch_job_id: UUID | None,
+    ) -> Any:
+        """NPS endpoints filter on ``Review.created_at`` (when the row
+        was ingested), not ``analyzed_at`` — the partial index in
+        migration 0015 is on (tenant_id, created_at). date_from /
+        date_to are inclusive UTC midnight bounds; pass a ``date`` and
+        we widen the upper bound to end-of-day so 2026-03-31 captures
+        2026-03-31T23:59:59Z."""
+        if date_from is not None:
+            from_dt = datetime.combine(date_from, datetime.min.time(), tzinfo=UTC)
+            stmt = stmt.where(Review.created_at >= from_dt)
+        if date_to is not None:
+            to_dt = datetime.combine(date_to, datetime.max.time(), tzinfo=UTC)
+            stmt = stmt.where(Review.created_at <= to_dt)
+        if batch_job_id is not None:
+            stmt = stmt.where(Review.batch_job_id == batch_job_id)
+        return stmt
 
     def _apply_review_filters(self, stmt: Any, filters: AnalyticsFilters) -> Any:
         if filters.date_from is not None:
@@ -698,6 +927,36 @@ class AnalyticsService:
         return dt.strftime("%Y-%m")
 
 
+# --- Month math helpers (Sprint 8.3.5 NPS trend) ---------------------
+
+
+def _next_month_start(month_first: date) -> date:
+    """Given the first day of a calendar month, return the first day of
+    the next month. Handles December → January year roll without a
+    timedelta hack."""
+    if month_first.month == 12:
+        return date(month_first.year + 1, 1, 1)
+    return date(month_first.year, month_first.month + 1, 1)
+
+
+def _trailing_month_starts(anchor: date, months_back: int) -> list[date]:
+    """Return ``months_back`` first-of-month dates, oldest first,
+    ending with the anchor's own month. ``months_back=12`` on
+    2026-05-15 yields [2025-06-01, ..., 2026-05-01]."""
+    first_of_anchor_month = date(anchor.year, anchor.month, 1)
+    months: list[date] = []
+    cursor = first_of_anchor_month
+    for _ in range(months_back):
+        months.append(cursor)
+        # Walk backwards a month at a time.
+        if cursor.month == 1:
+            cursor = date(cursor.year - 1, 12, 1)
+        else:
+            cursor = date(cursor.year, cursor.month - 1, 1)
+    months.reverse()
+    return months
+
+
 # Silence unused-imports warnings (kept for forward use).
 _ = (and_, case, JSONB, timedelta)
 
@@ -708,6 +967,8 @@ __all__ = [
     "CategoryDist",
     "CategoryDistRow",
     "Granularity",
+    "NPSMonthlyPoint",
+    "NPSSummary",
     "OverrideStats",
     "OverrideStatsRow",
     "ResolutionBucket",
