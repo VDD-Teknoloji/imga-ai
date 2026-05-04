@@ -22,10 +22,14 @@ from jinja2 import Environment, StrictUndefined
 # Response schema (structured output)
 # ---------------------------------------------------------------------------
 #
-# Master prompt's spec, verbatim. The Gemini SDK enforces this against
-# the model's output; we still re-validate at the service layer for
-# defence in depth (a future SDK regression shouldn't silently let a
-# malformed payload reach the DB).
+# Master prompt's spec, with one Gemini-imposed limitation: the SDK's
+# proto-based Schema type does not understand JSON Schema's
+# ``minItems`` / ``maxItems`` keywords (8.3.6.6 round-1 production
+# crash: ``ValueError: Unknown field for Schema: minItems``). The
+# count constraints (2-6 per SWOT category, 3-5 recommendations) live
+# in the system prompt instead, with a permissive service-side guard
+# that logs (but does NOT reject) out-of-range counts so a model
+# misbehavior never blackouts the dashboard.
 
 SWOT_RESPONSE_SCHEMA: dict[str, Any] = {
     "type": "object",
@@ -39,8 +43,6 @@ SWOT_RESPONSE_SCHEMA: dict[str, Any] = {
     "properties": {
         "strengths": {
             "type": "array",
-            "minItems": 2,
-            "maxItems": 6,
             "items": {
                 "type": "object",
                 "required": ["title", "description", "evidence"],
@@ -53,8 +55,6 @@ SWOT_RESPONSE_SCHEMA: dict[str, Any] = {
         },
         "weaknesses": {
             "type": "array",
-            "minItems": 2,
-            "maxItems": 6,
             "items": {
                 "type": "object",
                 "required": ["title", "description", "evidence"],
@@ -67,8 +67,6 @@ SWOT_RESPONSE_SCHEMA: dict[str, Any] = {
         },
         "opportunities": {
             "type": "array",
-            "minItems": 2,
-            "maxItems": 6,
             "items": {
                 "type": "object",
                 "required": ["title", "description", "evidence"],
@@ -81,8 +79,6 @@ SWOT_RESPONSE_SCHEMA: dict[str, Any] = {
         },
         "threats": {
             "type": "array",
-            "minItems": 2,
-            "maxItems": 6,
             "items": {
                 "type": "object",
                 "required": ["title", "description", "evidence"],
@@ -95,8 +91,6 @@ SWOT_RESPONSE_SCHEMA: dict[str, Any] = {
         },
         "strategic_recommendations": {
             "type": "array",
-            "minItems": 3,
-            "maxItems": 5,
             "items": {
                 "type": "object",
                 "required": [
@@ -149,6 +143,9 @@ KURALLAR:
 6. Stratejik öneriler SMART olsun (specific, measurable, achievable, \
    relevant, time-bound).
 7. JSON formatında, response_schema'ya tam uyumlu yanıt ver.
+8. Her SWOT kategorisinde (Güçlü Yönler, Zayıf Yönler, Fırsatlar, \
+   Tehditler) en az 2, en fazla 6 madde olsun. Stratejik öneriler \
+   bölümünde 3-5 öneri olsun.
 """
 
 # ---------------------------------------------------------------------------

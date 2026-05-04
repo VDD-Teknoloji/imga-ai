@@ -28,14 +28,17 @@ from jinja2 import Environment, StrictUndefined
 # Response schema
 # ---------------------------------------------------------------------------
 
+# Same Gemini SDK proto-Schema limitation as swot_v1: ``minItems`` /
+# ``maxItems`` are unsupported and crash the SDK at validation time
+# (8.3.6.6 round-1 production crash). The 2-4 / 2-4 spec lives in the
+# system prompt with a permissive service-side guard that logs out-of-
+# range counts but never rejects.
 OKR_RESPONSE_SCHEMA: dict[str, Any] = {
     "type": "object",
     "required": ["objectives"],
     "properties": {
         "objectives": {
             "type": "array",
-            "minItems": 2,
-            "maxItems": 4,
             "items": {
                 "type": "object",
                 "required": ["objective", "rationale", "key_results"],
@@ -44,8 +47,6 @@ OKR_RESPONSE_SCHEMA: dict[str, Any] = {
                     "rationale": {"type": "string"},
                     "key_results": {
                         "type": "array",
-                        "minItems": 2,
-                        "maxItems": 4,
                         "items": {
                             "type": "object",
                             "required": ["text", "metric", "baseline", "target"],
@@ -93,6 +94,8 @@ KURALLAR:
    yazma.
 6. Türkçe yaz. Hedefler net ve ulaşılabilir olsun.
 7. JSON formatında, response_schema'ya tam uyumlu yanıt ver.
+8. 2-4 Objective öner. Her Objective için 2-4 Key Result tanımla. Her KR \
+   ölçülebilir ve farklı bir boyutu kapsar olsun.
 """
 
 # ---------------------------------------------------------------------------
