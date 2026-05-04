@@ -34,11 +34,19 @@ from imga_api.routes import tenant_analyze as tenant_analyze_routes
 from imga_api.routes import tenant_batch as tenant_batch_routes
 from imga_api.routes import tenant_config as tenant_config_routes
 from imga_api.routes import tenant_directory as tenant_directory_routes
+from imga_api.routes import tenant_llm_credentials as tenant_llm_credentials_routes
+from imga_api.routes import tenant_profile as tenant_profile_routes
 from imga_api.routes import tenant_reports as tenant_reports_routes
 from imga_api.routes import tenant_reviews as tenant_reviews_routes
+from imga_api.routes import (
+    tenant_strategic_reports as tenant_strategic_reports_routes,
+)
 from imga_api.routes import tenant_taxonomies as tenant_taxonomies_routes
 from imga_api.routes import tickets as tickets_routes
 from imga_api.routes.admin import invitations as admin_invitation_routes
+from imga_api.routes.admin import (
+    prompt_templates as admin_prompt_templates_routes,
+)
 from imga_api.routes.admin import tenants as admin_tenant_routes
 from imga_api.schemas import (
     AnalyzeRequest,
@@ -137,6 +145,25 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         settings.batch.retention_hours,
     )
 
+    # Sprint 8.3.6.5 — Redis liveness probe at startup. Non-fatal:
+    # SwotService wraps every cache op in defensive try/except, so a
+    # Redis blip falls through to the slow path. The startup ping is
+    # purely for early observability ("did SWOT cache wire correctly
+    # on this deploy?"). Skipped under tests because fakeredis is
+    # injected post-lifespan via set_redis_client.
+    from imga_api.cache.redis_client import get_redis_client
+
+    try:
+        redis_client = get_redis_client()
+        await redis_client.ping()
+        log.info("Redis cache reachable")
+    except Exception as exc:
+        log.warning(
+            "Redis cache not reachable at startup (%s); SWOT generation "
+            "will fall through to the slow path on every call",
+            exc,
+        )
+
     try:
         yield
     finally:
@@ -226,8 +253,13 @@ app.include_router(tenant_analytics_routes.router)
 app.include_router(tenant_directory_routes.router)
 app.include_router(tenant_taxonomies_routes.router)
 app.include_router(tickets_routes.router)
+# Sprint 8.3.6.5 — strategic reports + LLM credentials + tenant profile.
+app.include_router(tenant_profile_routes.router)
+app.include_router(tenant_llm_credentials_routes.router)
+app.include_router(tenant_strategic_reports_routes.router)
 app.include_router(admin_tenant_routes.router)
 app.include_router(admin_invitation_routes.router)
+app.include_router(admin_prompt_templates_routes.router)
 app.include_router(public_invitation_routes.router)
 
 
