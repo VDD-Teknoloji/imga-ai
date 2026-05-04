@@ -1,5 +1,7 @@
 "use client";
 
+import { ArrowRight, Building2, KeyRound } from "lucide-react";
+import Link from "next/link";
 import { useMemo } from "react";
 
 import { AutomationModeForm } from "@/components/settings/automation-mode-form";
@@ -48,6 +50,35 @@ export default function SettingsPage() {
           Tenant yapılandırması — otomasyon politikası, kategori taksonomisi.
         </p>
       </header>
+
+      <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+        <Link
+          href="/settings/profile"
+          className="bg-card hover:bg-accent flex items-start gap-3 rounded-lg border p-4 transition-colors"
+        >
+          <Building2 className="text-primary mt-0.5 size-5" aria-hidden />
+          <div className="flex-1">
+            <p className="text-sm font-medium">Şirket Profili</p>
+            <p className="text-muted-foreground text-xs">
+              Sektör, büyüklük ve iş tanımı — strateji raporları için bağlam.
+            </p>
+          </div>
+          <ArrowRight className="text-muted-foreground size-4" aria-hidden />
+        </Link>
+        <Link
+          href="/settings/integrations"
+          className="bg-card hover:bg-accent flex items-start gap-3 rounded-lg border p-4 transition-colors"
+        >
+          <KeyRound className="text-primary mt-0.5 size-5" aria-hidden />
+          <div className="flex-1">
+            <p className="text-sm font-medium">Gemini API Anahtarları</p>
+            <p className="text-muted-foreground text-xs">
+              Strateji raporları için API anahtar yönetimi ve önceliklendirme.
+            </p>
+          </div>
+          <ArrowRight className="text-muted-foreground size-4" aria-hidden />
+        </Link>
+      </div>
 
       {config.isLoading ? (
         <div className="space-y-6">

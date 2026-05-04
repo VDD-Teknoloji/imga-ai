@@ -1,5 +1,6 @@
 import {
   Building2,
+  Compass,
   FileBarChart,
   FileSearch,
   LayoutDashboard,
@@ -30,6 +31,7 @@ export const NAV_ITEMS: ReadonlyArray<NavItem> = [
   { label: "Analizler", href: "/reviews", icon: FileSearch },
   { label: "Raporlar", href: "/reports", icon: FileBarChart },
   { label: "İçgörüler", href: "/insights", icon: TrendingUp },
+  { label: "Strateji", href: "/strategy", icon: Compass },
   { label: "Ayarlar", href: "/settings", icon: Settings },
 ];
 
