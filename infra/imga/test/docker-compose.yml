@@ -144,6 +144,10 @@ services:
           tests/test_stats_aggregator.py \
           tests/test_swot_service.py \
           tests/test_okr_service.py \
+          tests/test_strategic_reports_routes.py \
+          tests/test_llm_credentials_routes.py \
+          tests/test_tenant_profile_routes.py \
+          tests/test_pdf_render.py \
           tests-core/test_key_rotation.py \
           tests-core/test_gemini_swot_okr.py \
           -v --tb=short
