@@ -132,7 +132,7 @@ class OkrService:
         # 4. LLM call with rotation.
         failed_invalid_key_ids: list[UUID] = []
 
-        async def _call(api_key: str) -> dict[str, Any]:
+        async def _call(api_key: str) -> tuple[dict[str, Any], dict[str, int] | None]:
             try:
                 return await self._provider.generate_okr(
                     api_key=api_key,
@@ -149,7 +149,7 @@ class OkrService:
 
         start = time.monotonic()
         try:
-            response, key_used = await rotator.call_with_rotation(_call)
+            (response, token_usage), key_used = await rotator.call_with_rotation(_call)
         except AllKeysExhaustedError:
             await mark_keys_failed(self._session, failed_invalid_key_ids)
             raise
@@ -170,6 +170,7 @@ class OkrService:
             source=source,
             model_name=DEFAULT_MODEL_NAME,
             duration_ms=duration_ms,
+            token_usage=token_usage,
         )
 
         _logger.info(
@@ -249,6 +250,7 @@ class OkrService:
         source: StrategicReport,
         model_name: str,
         duration_ms: int,
+        token_usage: dict[str, int] | None,
     ) -> dict[str, Any]:
         report = StrategicReport(
             tenant_id=self._tenant_id,
@@ -266,7 +268,7 @@ class OkrService:
             output_payload=response,
             source_report_id=source.id,
             model_name=model_name,
-            token_usage=None,
+            token_usage=token_usage,
             generation_duration_ms=duration_ms,
             created_by_user_id=self._user_id,
         )
@@ -287,7 +289,7 @@ class OkrService:
             "output_payload": response,
             "source_report_id": str(source.id),
             "model_name": model_name,
-            "token_usage": None,
+            "token_usage": token_usage,
             "generation_duration_ms": duration_ms,
             "created_by_user_id": (
                 str(self._user_id) if self._user_id is not None else None

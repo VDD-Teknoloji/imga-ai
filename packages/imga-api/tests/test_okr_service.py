@@ -114,9 +114,12 @@ def _build_mock_provider(
     *,
     payload: dict[str, Any] | None = None,
     side_effect: Exception | None = None,
+    token_usage: dict[str, int] | None = None,
 ) -> Any:
     """Mock GeminiProvider with generate_okr stubbed out. SwotService
-    tests share the same ``__new__`` trick so the SDK never imports."""
+    tests share the same ``__new__`` trick so the SDK never imports.
+
+    Sprint 8.3.6.5 — provider returns ``(payload, token_usage)``."""
     from imga_core.llm.gemini import GeminiProvider
 
     provider = GeminiProvider.__new__(GeminiProvider)
@@ -124,7 +127,7 @@ def _build_mock_provider(
         provider.generate_okr = AsyncMock(side_effect=side_effect)  # type: ignore[method-assign]
     else:
         provider.generate_okr = AsyncMock(  # type: ignore[method-assign]
-            return_value=payload or _okr_payload()
+            return_value=(payload or _okr_payload(), token_usage)
         )
     return provider
 

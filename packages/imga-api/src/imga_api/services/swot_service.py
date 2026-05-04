@@ -164,7 +164,7 @@ class SwotService:
         # mark).
         failed_invalid_key_ids: list[UUID] = []
 
-        async def _call(api_key: str) -> dict[str, Any]:
+        async def _call(api_key: str) -> tuple[dict[str, Any], dict[str, int] | None]:
             try:
                 return await self._provider.generate_swot(
                     api_key=api_key,
@@ -183,7 +183,7 @@ class SwotService:
 
         start = time.monotonic()
         try:
-            response, key_used = await rotator.call_with_rotation(_call)
+            (response, token_usage), key_used = await rotator.call_with_rotation(_call)
         except AllKeysExhaustedError:
             # Mark every key we identified as InvalidKey before re-raising.
             await mark_keys_failed(self._session, failed_invalid_key_ids)
@@ -205,7 +205,6 @@ class SwotService:
         self._validate_swot_response(response)
 
         # 8. Persist + cache + return
-        token_usage = self._extract_token_usage(response)
         report_dict = await self._persist_report(
             response=response,
             stats=stats,
@@ -304,15 +303,6 @@ class SwotService:
             raise SwotResponseInvalidError(
                 f"SWOT response missing required fields: {missing}"
             )
-
-    @staticmethod
-    def _extract_token_usage(payload: dict[str, Any]) -> dict[str, Any] | None:
-        """Token usage is not in the response payload itself (Gemini
-        returns it as ``response.usage_metadata`` — opaque to us once
-        we've parsed JSON). The provider's generate_swot doesn't
-        thread it through today. Wired as None for now; Sprint 8.3.6.5
-        polish lifts it through if we decide we need it."""
-        return None
 
     async def _persist_report(
         self,

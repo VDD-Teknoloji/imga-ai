@@ -178,7 +178,7 @@ class GeminiProvider(LLMProvider):
         temperature: float = 0.2,
         top_p: float = 0.9,
         max_output_tokens: int = 8192,
-    ) -> dict[str, Any]:
+    ) -> tuple[dict[str, Any], dict[str, int] | None]:
         """Generate a SWOT analysis with structured JSON output.
 
         ``response_schema`` is the JSON-schema dict the prompt template
@@ -187,6 +187,13 @@ class GeminiProvider(LLMProvider):
         combination guarantees the model returns syntactically valid
         JSON — this method's job is to map provider-side errors to the
         rotator's hierarchy and surface the parsed dict.
+
+        Returns:
+            ``(parsed_payload, token_usage)``. ``token_usage`` is a
+            ``{"input": int, "output": int, "total": int}`` dict when
+            the SDK surfaced ``response.usage_metadata`` (Sprint
+            8.3.6.5 lift), otherwise ``None``. The service layer
+            persists it on ``strategic_reports.token_usage``.
 
         Raises:
             RateLimitError: HTTP 429.
@@ -219,7 +226,7 @@ class GeminiProvider(LLMProvider):
         temperature: float = 0.3,
         top_p: float = 0.9,
         max_output_tokens: int = 4096,
-    ) -> dict[str, Any]:
+    ) -> tuple[dict[str, Any], dict[str, int] | None]:
         """Generate OKR proposals with structured JSON output.
 
         Default temperature is 0.3 (vs SWOT's 0.2) because OKRs benefit
@@ -229,7 +236,8 @@ class GeminiProvider(LLMProvider):
         are tighter (2-4 objectives × 2-4 key results, no narrative
         recommendations).
 
-        Same error contract as ``generate_swot``.
+        Same return + error contract as ``generate_swot`` — including
+        the ``(payload, token_usage)`` tuple.
         """
         return await self._generate_structured(
             api_key=api_key,
@@ -253,7 +261,7 @@ class GeminiProvider(LLMProvider):
         temperature: float,
         top_p: float,
         max_output_tokens: int,
-    ) -> dict[str, Any]:
+    ) -> tuple[dict[str, Any], dict[str, int] | None]:
         """Shared structured-output call path. SWOT/OKR diverge only in
         defaults; the actual SDK plumbing is identical."""
         if not api_key:
@@ -286,7 +294,10 @@ class GeminiProvider(LLMProvider):
         except Exception as exc:
             self._raise_mapped_sdk_error(exc)
 
-        return self._parse_structured_response(response)
+        return (
+            self._parse_structured_response(response),
+            self._extract_usage_metadata(response),
+        )
 
     @staticmethod
     def _raise_mapped_sdk_error(exc: Exception) -> None:
@@ -340,3 +351,36 @@ class GeminiProvider(LLMProvider):
                 f"Expected JSON object, got {type(data).__name__}"
             )
         return cast(dict[str, Any], data)
+
+    @staticmethod
+    def _extract_usage_metadata(response: Any) -> dict[str, int] | None:
+        """Pull token usage off ``response.usage_metadata`` when the
+        SDK surfaced it.
+
+        Sprint 8.3.6.5 lift — Sprint 8.3.6.3 deferred this with a
+        TODO. The SDK populates ``prompt_token_count`` /
+        ``candidates_token_count`` / ``total_token_count`` for every
+        successful call; some pre-2024 SDKs don't, so ``None`` is the
+        correct fall-back instead of a fake-zero dict that downstream
+        cost dashboards would treat as a free request.
+
+        Returned ``{"input": int, "output": int, "total": int}`` matches
+        the ``strategic_reports.token_usage`` JSONB shape the service
+        layer persists.
+        """
+        usage = getattr(response, "usage_metadata", None)
+        if usage is None:
+            return None
+        prompt = getattr(usage, "prompt_token_count", None)
+        candidates = getattr(usage, "candidates_token_count", None)
+        total = getattr(usage, "total_token_count", None)
+        # If the SDK returned a usage_metadata object but with all
+        # fields missing, treat as no usage rather than a {None, None,
+        # None} dict the JSONB column would happily accept.
+        if prompt is None and candidates is None and total is None:
+            return None
+        return {
+            "input": int(prompt) if prompt is not None else 0,
+            "output": int(candidates) if candidates is not None else 0,
+            "total": int(total) if total is not None else 0,
+        }

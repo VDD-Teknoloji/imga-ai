@@ -191,9 +191,14 @@ def _build_mock_provider(
     *,
     payload: dict[str, Any] | None = None,
     side_effect: Exception | None = None,
+    token_usage: dict[str, int] | None = None,
 ) -> Any:
     """Mock GeminiProvider for SwotService injection. ``generate_swot``
-    is the only attribute the service touches."""
+    is the only attribute the service touches.
+
+    Sprint 8.3.6.5 — provider returns ``(payload, token_usage)``;
+    default ``token_usage=None`` matches the "SDK didn't surface
+    metadata" branch the service handles."""
     from imga_core.llm.gemini import GeminiProvider
 
     provider = GeminiProvider.__new__(GeminiProvider)
@@ -201,7 +206,7 @@ def _build_mock_provider(
         provider.generate_swot = AsyncMock(side_effect=side_effect)  # type: ignore[method-assign]
     else:
         provider.generate_swot = AsyncMock(  # type: ignore[method-assign]
-            return_value=payload or _swot_payload()
+            return_value=(payload or _swot_payload(), token_usage)
         )
     return provider
 
@@ -409,6 +414,41 @@ async def test_swot_service_all_keys_exhausted_marks_invalid_keys(
             )
         ).scalars().all()
         assert all(r.last_failed_at is not None for r in rows)
+
+
+@pytest.mark.asyncio
+async def test_swot_service_persists_token_usage_when_provided(
+    admin_session: AsyncSession,
+    tenant_with_context: tuple[User, UUID, str],
+    mock_gemini_credential: Any,
+    fake_redis_client: Any,
+) -> None:
+    """Sprint 8.3.6.5 — when the provider returns a usage dict, the
+    service writes it onto strategic_reports.token_usage so cost
+    dashboards have data to read."""
+    del fake_redis_client
+    _user, tid, _pw = tenant_with_context
+    await mock_gemini_credential(tid, "fake-key", priority=0)
+
+    usage = {"input": 1234, "output": 567, "total": 1801}
+    provider = _build_mock_provider(token_usage=usage)
+    async with admin_session.begin():
+        await _bind_tenant(admin_session, tid)
+        service = SwotService(
+            admin_session, tid, user_id=None, provider=provider
+        )
+        result = await service.generate()
+
+        # Service surfaces the usage on the returned dict + persists.
+        assert result["token_usage"] == usage
+        row = (
+            await admin_session.execute(
+                select(StrategicReport).where(
+                    StrategicReport.id == UUID(result["id"])
+                )
+            )
+        ).scalar_one()
+        assert row.token_usage == usage
 
 
 @pytest.mark.asyncio

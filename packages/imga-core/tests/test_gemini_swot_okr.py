@@ -53,13 +53,20 @@ def _wire_response(
 ) -> MagicMock:
     """Configure the genai mock so a generate_content_async call
     returns ``text`` (or raises ``raises``). Returns the model mock
-    so callers can assert on call args."""
+    so callers can assert on call args.
+
+    ``response.usage_metadata`` is explicitly set to ``None`` so the
+    provider's ``_extract_usage_metadata`` returns None — without
+    this, MagicMock auto-creates a usage_metadata attr that's a
+    MagicMock itself, and ``int(MagicMock())`` defaults to 1, making
+    every default-helper test look like it had {1, 1, 1} usage."""
     model_mock = MagicMock()
     if raises is not None:
         model_mock.generate_content_async = AsyncMock(side_effect=raises)
     else:
         response = MagicMock()
         response.text = text
+        response.usage_metadata = None
         model_mock.generate_content_async = AsyncMock(return_value=response)
     genai_mock.GenerativeModel.return_value = model_mock
     return model_mock
@@ -83,7 +90,7 @@ async def test_generate_swot_returns_parsed_dict(
     import json
     model = _wire_response(genai_mock, text=json.dumps(payload))
 
-    result = await p.generate_swot(
+    result, usage = await p.generate_swot(
         api_key="test-key",
         system_prompt="You are a SWOT analyst.",
         user_prompt="Analyze: 1000 reviews, 80% positive.",
@@ -91,6 +98,10 @@ async def test_generate_swot_returns_parsed_dict(
     )
 
     assert result == payload
+    # No usage_metadata wired on the mock → None (the slow-path service
+    # persists None on token_usage; cost dashboards treat the row as
+    # "usage unknown" rather than "free request").
+    assert usage is None
     # configure was called with the per-call key (not constructor key).
     genai_mock.configure.assert_called_with(api_key="test-key")
     # GenerativeModel constructed with the SWOT default model + system instruction.
@@ -177,7 +188,7 @@ async def test_generate_okr_uses_okr_specific_defaults(
     import json
     model = _wire_response(genai_mock, text=json.dumps(payload))
 
-    result = await p.generate_okr(
+    result, usage = await p.generate_okr(
         api_key="okr-key",
         system_prompt="OKR system",
         user_prompt="Generate OKRs from: ...",
@@ -185,10 +196,101 @@ async def test_generate_okr_uses_okr_specific_defaults(
     )
 
     assert result == payload
+    assert usage is None  # No usage_metadata on this mock.
     cfg = model.generate_content_async.call_args.kwargs["generation_config"]
     assert cfg["response_schema"] == _OKR_SCHEMA
     assert cfg["temperature"] == 0.3  # OKR default — slightly higher
     assert cfg["max_output_tokens"] == 4096  # OKR tighter response
+
+
+# ---------------------------------------------------------------------------
+# Token usage extraction (Sprint 8.3.6.5 lift)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_generate_swot_extracts_token_usage_from_metadata(
+    provider: tuple[GeminiProvider, MagicMock],
+) -> None:
+    """``response.usage_metadata`` populated → provider returns the
+    {input/output/total} dict the strategic_reports.token_usage
+    column expects."""
+    p, genai_mock = provider
+    payload = {k: [] for k in ("strengths", "weaknesses", "opportunities", "threats", "strategic_recommendations")}
+    import json
+    model_mock = MagicMock()
+    response = MagicMock()
+    response.text = json.dumps(payload)
+    # SDK shape: usage_metadata is an object with three int attrs.
+    usage_meta = MagicMock()
+    usage_meta.prompt_token_count = 1234
+    usage_meta.candidates_token_count = 567
+    usage_meta.total_token_count = 1801
+    response.usage_metadata = usage_meta
+    model_mock.generate_content_async = AsyncMock(return_value=response)
+    genai_mock.GenerativeModel.return_value = model_mock
+
+    _result, usage = await p.generate_swot(
+        api_key="ok-key",
+        system_prompt="x",
+        user_prompt="y",
+        response_schema=_SWOT_SCHEMA,
+    )
+    assert usage == {"input": 1234, "output": 567, "total": 1801}
+
+
+@pytest.mark.asyncio
+async def test_generate_swot_returns_none_usage_when_metadata_absent(
+    provider: tuple[GeminiProvider, MagicMock],
+) -> None:
+    """Pre-2024 SDKs / some error paths come back without
+    ``usage_metadata``; provider returns None so downstream cost
+    dashboards distinguish "unknown" from "0 tokens"."""
+    p, genai_mock = provider
+    payload = {k: [] for k in ("strengths", "weaknesses", "opportunities", "threats", "strategic_recommendations")}
+    import json
+    response = MagicMock(spec=["text"])  # spec= means no usage_metadata attr
+    response.text = json.dumps(payload)
+    model_mock = MagicMock()
+    model_mock.generate_content_async = AsyncMock(return_value=response)
+    genai_mock.GenerativeModel.return_value = model_mock
+
+    _result, usage = await p.generate_swot(
+        api_key="ok-key",
+        system_prompt="x",
+        user_prompt="y",
+        response_schema=_SWOT_SCHEMA,
+    )
+    assert usage is None
+
+
+@pytest.mark.asyncio
+async def test_generate_okr_extracts_token_usage_too(
+    provider: tuple[GeminiProvider, MagicMock],
+) -> None:
+    """Same usage-metadata path applies to OKR — both methods share
+    ``_generate_structured`` underneath."""
+    p, genai_mock = provider
+    payload = {"objectives": []}
+    import json
+    response = MagicMock()
+    response.text = json.dumps(payload)
+    usage_meta = MagicMock()
+    usage_meta.prompt_token_count = 800
+    usage_meta.candidates_token_count = 300
+    usage_meta.total_token_count = 1100
+    response.usage_metadata = usage_meta
+    model_mock = MagicMock()
+    model_mock.generate_content_async = AsyncMock(return_value=response)
+    genai_mock.GenerativeModel.return_value = model_mock
+
+    _result, usage = await p.generate_okr(
+        api_key="ok-key",
+        system_prompt="x",
+        user_prompt="y",
+        response_schema=_OKR_SCHEMA,
+    )
+    assert usage == {"input": 800, "output": 300, "total": 1100}
 
 
 # ---------------------------------------------------------------------------
