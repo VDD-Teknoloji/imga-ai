@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowRight, Building2, KeyRound } from "lucide-react";
+import { ArrowRight, Building2, KeyRound, ShieldAlert, Tags } from "lucide-react";
 import Link from "next/link";
 import { useMemo } from "react";
 
@@ -74,6 +74,32 @@ export default function SettingsPage() {
             <p className="text-sm font-medium">Gemini API Anahtarları</p>
             <p className="text-muted-foreground text-xs">
               Strateji raporları için API anahtar yönetimi ve önceliklendirme.
+            </p>
+          </div>
+          <ArrowRight className="text-muted-foreground size-4" aria-hidden />
+        </Link>
+        <Link
+          href="/settings/taxonomies"
+          className="bg-card hover:bg-accent flex items-start gap-3 rounded-lg border p-4 transition-colors"
+        >
+          <Tags className="text-primary mt-0.5 size-5" aria-hidden />
+          <div className="flex-1">
+            <p className="text-sm font-medium">Şikayet Kategorileri</p>
+            <p className="text-muted-foreground text-xs">
+              Şirket-perspektifi taksonomisi — etiket, anahtar kelime, sıralama.
+            </p>
+          </div>
+          <ArrowRight className="text-muted-foreground size-4" aria-hidden />
+        </Link>
+        <Link
+          href="/settings/sla-rules"
+          className="bg-card hover:bg-accent flex items-start gap-3 rounded-lg border p-4 transition-colors"
+        >
+          <ShieldAlert className="text-primary mt-0.5 size-5" aria-hidden />
+          <div className="flex-1">
+            <p className="text-sm font-medium">SLA Kuralları</p>
+            <p className="text-muted-foreground text-xs">
+              Yanıt/çözüm sürelerini koşullara göre yönet (uyarı şu an aktif).
             </p>
           </div>
           <ArrowRight className="text-muted-foreground size-4" aria-hidden />
