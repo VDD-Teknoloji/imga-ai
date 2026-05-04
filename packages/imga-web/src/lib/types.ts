@@ -878,3 +878,104 @@ export interface SwotGenerateRequest {
 export interface OkrGenerateRequest {
   source_report_id: string;
 }
+
+// ---------------------------------------------------------------------------
+// Sprint 8.3.7-A — taxonomy edit + SLA rules
+// ---------------------------------------------------------------------------
+
+/** Mirrors imga-api ``TaxonomyEntryResponse``. ``is_default_seed`` is
+ *  the wire/storage field name; the UI labels it as "Sistem" in
+ *  Türkçe copy (the pre-existing /reviews + /insights pages already
+ *  read the same column under the same name, so the frontend stays
+ *  consistent across consumers). */
+export interface TaxonomyEntry {
+  id: string;
+  code: string;
+  label_tr: string;
+  keywords: string[];
+  priority: number;
+  parent_code: string | null;
+  is_default_seed: boolean;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface TaxonomyCreateRequest {
+  code: string;
+  label_tr: string;
+  keywords?: string[];
+  priority?: number;
+  parent_code?: string | null;
+}
+
+export interface TaxonomyUpdateRequest {
+  label_tr?: string;
+  keywords?: string[];
+  priority?: number;
+  parent_code?: string | null;
+}
+
+export interface TaxonomyReorderRequest {
+  ordered_ids: string[];
+}
+
+export type SlaPriority = "low" | "normal" | "high" | "urgent";
+export type SlaActionType =
+  | "warn_only"
+  | "create_ticket"
+  | "escalate"
+  | "notify_email";
+
+export const SLA_ACTION_LABELS: Record<SlaActionType, string> = {
+  warn_only: "Uyarı (sadece logla)",
+  create_ticket: "Bilet oluştur",
+  escalate: "Yükselt",
+  notify_email: "E-posta gönder",
+};
+
+export const SLA_ACTION_AVAILABLE_NOW: ReadonlySet<SlaActionType> = new Set([
+  "warn_only",
+]);
+
+export interface SlaRule {
+  id: string;
+  name: string;
+  match_priority: SlaPriority | null;
+  match_taxonomy_codes: string[] | null;
+  match_company_perspective_codes: string[] | null;
+  match_nps_score_max: number | null;
+  response_sla_minutes: number | null;
+  resolution_sla_minutes: number | null;
+  action_type: SlaActionType;
+  action_config: Record<string, unknown>;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SlaRuleCreateRequest {
+  name: string;
+  match_priority?: SlaPriority | null;
+  match_taxonomy_codes?: string[] | null;
+  match_company_perspective_codes?: string[] | null;
+  match_nps_score_max?: number | null;
+  response_sla_minutes?: number | null;
+  resolution_sla_minutes?: number | null;
+  action_type?: SlaActionType;
+  action_config?: Record<string, unknown>;
+  is_active?: boolean;
+}
+
+export interface SlaRuleUpdateRequest {
+  name?: string;
+  match_priority?: SlaPriority | null;
+  match_taxonomy_codes?: string[] | null;
+  match_company_perspective_codes?: string[] | null;
+  match_nps_score_max?: number | null;
+  response_sla_minutes?: number | null;
+  resolution_sla_minutes?: number | null;
+  action_type?: SlaActionType;
+  action_config?: Record<string, unknown>;
+  is_active?: boolean;
+}
