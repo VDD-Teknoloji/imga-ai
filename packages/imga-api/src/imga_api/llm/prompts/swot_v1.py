@@ -102,8 +102,19 @@ SWOT_RESPONSE_SCHEMA: dict[str, Any] = {
                 "properties": {
                     "title": {"type": "string"},
                     "description": {"type": "string"},
-                    "priority": {"enum": ["yüksek", "orta", "düşük"]},
-                    "estimated_impact": {"enum": ["yüksek", "orta", "düşük"]},
+                    # Sprint 8.3.6.6 round-3 — Gemini SDK rejects ``enum``
+                    # without an explicit ``type: "string"``. The 400
+                    # response was: "enum: only allowed for STRING
+                    # type". JSON Schema treats ``type`` as optional
+                    # alongside ``enum``; the SDK does not.
+                    "priority": {
+                        "type": "string",
+                        "enum": ["yüksek", "orta", "düşük"],
+                    },
+                    "estimated_impact": {
+                        "type": "string",
+                        "enum": ["yüksek", "orta", "düşük"],
+                    },
                 },
             },
         },
@@ -146,6 +157,10 @@ KURALLAR:
 8. Her SWOT kategorisinde (Güçlü Yönler, Zayıf Yönler, Fırsatlar, \
    Tehditler) en az 2, en fazla 6 madde olsun. Stratejik öneriler \
    bölümünde 3-5 öneri olsun.
+9. priority alanı SADECE "yüksek", "orta" veya "düşük" değerlerinden \
+   biri olmalı. estimated_impact alanı SADECE "yüksek", "orta" veya \
+   "düşük" değerlerinden biri olmalı. Başka değer kullanma; \
+   "high"/"medium"/"low" gibi İngilizce karşılıklarını da yazma.
 """
 
 # ---------------------------------------------------------------------------
