@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <title>OKR Önerileri</title>
+    <style>{% include "_base.css" %}</style>
+</head>
+<body>
+    <header class="report-header">
+        <h1>OKR Önerileri</h1>
+        <div class="meta">
+            <span class="label">Üretildi:</span>
+            {{ generated_at.strftime("%d.%m.%Y %H:%M UTC") }}
+            &nbsp;·&nbsp;
+            <span class="label">Dönem:</span>
+            {% if report.date_from and report.date_to -%}
+            {{ report.date_from }} – {{ report.date_to }}
+            {%- else -%}
+            Tüm zaman
+            {%- endif %}
+            &nbsp;·&nbsp;
+            <span class="label">Model:</span> {{ report.model_name }}
+        </div>
+    </header>
+
+    {% if source_swot %}
+    <div class="source-note">
+        <strong>Kaynak SWOT:</strong>
+        {{ source_swot.created_at.strftime("%d.%m.%Y") if source_swot.created_at else "tarih belirsiz" }}
+        &nbsp;·&nbsp;
+        ID: <code>{{ source_swot.id[:8] if source_swot.id else "—" }}…</code>
+    </div>
+    {% endif %}
+
+    <section>
+        <h2>Hedefler ve Anahtar Sonuçlar</h2>
+        {% if payload.objectives %}
+            {% for o in payload.objectives %}
+            <div class="objective">
+                <div class="objective-text">Objective {{ loop.index }}: {{ o.objective }}</div>
+                {% if o.rationale %}
+                <div class="rationale">Gerekçe: {{ o.rationale }}</div>
+                {% endif %}
+
+                {% if o.key_results %}
+                <table class="kr-table">
+                    <thead>
+                        <tr>
+                            <th>Key Result</th>
+                            <th>Metrik</th>
+                            <th>Mevcut</th>
+                            <th>Hedef</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for kr in o.key_results %}
+                        <tr>
+                            <td class="kr-text">{{ kr.text }}</td>
+                            <td class="kr-metric">{{ kr.metric }}</td>
+                            <td class="kr-baseline">{{ kr.baseline }}</td>
+                            <td class="kr-target">{{ kr.target }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+                {% else %}
+                <div class="empty">Key Result yok.</div>
+                {% endif %}
+            </div>
+            {% endfor %}
+        {% else %}
+            <div class="empty">Objective yok.</div>
+        {% endif %}
+    </section>
+</body>
+</html>

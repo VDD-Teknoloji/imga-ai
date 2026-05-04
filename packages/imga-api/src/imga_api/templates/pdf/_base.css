@@ -1,0 +1,223 @@
+/*
+ * Sprint 8.3.6.5 PDF baseline. Inline-loaded by both swot.html and
+ * okr.html via the Jinja include directive inside their style tags.
+ * WeasyPrint pulls fonts from the system (fonts-dejavu-core +
+ * fonts-liberation in the runtime image), so no @import / @font-face
+ * here.
+ */
+
+@page {
+    size: A4;
+    margin: 18mm 18mm 22mm 18mm;
+    @bottom-center {
+        content: "Sayfa " counter(page) " / " counter(pages);
+        font-family: "Liberation Sans", "DejaVu Sans", sans-serif;
+        font-size: 9pt;
+        color: #6b7280;
+    }
+    @bottom-right {
+        content: "İmga.AI";
+        font-family: "Liberation Sans", "DejaVu Sans", sans-serif;
+        font-size: 9pt;
+        color: #6b7280;
+    }
+}
+
+body {
+    font-family: "Liberation Sans", "DejaVu Sans", sans-serif;
+    font-size: 10.5pt;
+    line-height: 1.5;
+    color: #111827;
+    margin: 0;
+}
+
+h1 {
+    font-size: 22pt;
+    color: #0f766e;          /* teal-700, primary */
+    margin: 0 0 4pt 0;
+    font-weight: 600;
+}
+
+h2 {
+    font-size: 14pt;
+    color: #1e3a8a;          /* blue-900, secondary */
+    margin: 16pt 0 6pt 0;
+    font-weight: 600;
+    border-bottom: 1px solid #e5e7eb;
+    padding-bottom: 3pt;
+}
+
+h3 {
+    font-size: 11pt;
+    color: #374151;
+    margin: 8pt 0 3pt 0;
+    font-weight: 600;
+}
+
+.report-header {
+    border-bottom: 2px solid #0f766e;
+    padding-bottom: 10pt;
+    margin-bottom: 16pt;
+}
+
+.report-header .meta {
+    font-size: 9.5pt;
+    color: #6b7280;
+}
+
+.report-header .meta .label {
+    color: #374151;
+    font-weight: 500;
+}
+
+/* SWOT 2x2 grid */
+.swot-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10pt;
+    margin: 12pt 0;
+}
+
+.swot-quadrant {
+    border: 1px solid #e5e7eb;
+    border-radius: 4pt;
+    padding: 8pt 10pt;
+    page-break-inside: avoid;
+}
+
+.swot-quadrant h2 {
+    margin-top: 0;
+    border: none;
+    padding: 0 0 4pt 0;
+    font-size: 12pt;
+}
+
+.swot-quadrant.strengths h2 { color: #15803d; }   /* green-700 */
+.swot-quadrant.weaknesses h2 { color: #b91c1c; }  /* red-700 */
+.swot-quadrant.opportunities h2 { color: #1d4ed8; } /* blue-700 */
+.swot-quadrant.threats h2 { color: #c2410c; }     /* orange-700 */
+
+.swot-item {
+    margin-bottom: 6pt;
+    page-break-inside: avoid;
+}
+
+.swot-item .title {
+    font-weight: 600;
+    color: #111827;
+}
+
+.swot-item .description {
+    margin: 2pt 0;
+    color: #374151;
+}
+
+.swot-item .evidence {
+    font-size: 9pt;
+    font-style: italic;
+    color: #6b7280;
+}
+
+/* Strategic recommendations + OKR objectives */
+.recommendations {
+    margin-top: 14pt;
+}
+
+.recommendation {
+    border-left: 3px solid #0f766e;
+    padding: 4pt 0 4pt 10pt;
+    margin: 8pt 0;
+    page-break-inside: avoid;
+}
+
+.recommendation .title {
+    font-weight: 600;
+    color: #111827;
+}
+
+.recommendation .badges {
+    display: inline-block;
+    margin-left: 6pt;
+    font-size: 8.5pt;
+}
+
+.badge {
+    display: inline-block;
+    padding: 1pt 5pt;
+    margin-right: 3pt;
+    border-radius: 3pt;
+    font-weight: 500;
+    text-transform: lowercase;
+}
+
+.badge.priority-yüksek, .badge.impact-yüksek { background: #fee2e2; color: #991b1b; }
+.badge.priority-orta, .badge.impact-orta { background: #fef3c7; color: #92400e; }
+.badge.priority-düşük, .badge.impact-düşük { background: #e0e7ff; color: #3730a3; }
+
+.recommendation .description {
+    margin-top: 3pt;
+    color: #374151;
+}
+
+/* OKR objective cards */
+.objective {
+    border: 1px solid #d1d5db;
+    border-radius: 4pt;
+    padding: 10pt 12pt;
+    margin: 10pt 0;
+    page-break-inside: avoid;
+}
+
+.objective .objective-text {
+    font-size: 12pt;
+    font-weight: 600;
+    color: #0f766e;
+}
+
+.objective .rationale {
+    font-style: italic;
+    color: #6b7280;
+    margin: 4pt 0 8pt 0;
+    font-size: 9.5pt;
+}
+
+.kr-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 6pt;
+    font-size: 9.5pt;
+}
+
+.kr-table th, .kr-table td {
+    border: 1px solid #e5e7eb;
+    padding: 4pt 6pt;
+    text-align: left;
+    vertical-align: top;
+}
+
+.kr-table th {
+    background: #f3f4f6;
+    font-weight: 600;
+    color: #374151;
+}
+
+.kr-table td.kr-text { width: 45%; }
+.kr-table td.kr-metric { width: 25%; color: #1e3a8a; }
+.kr-table td.kr-baseline, .kr-table td.kr-target { width: 15%; }
+.kr-table td.kr-target { color: #0f766e; font-weight: 500; }
+
+.empty {
+    color: #9ca3af;
+    font-style: italic;
+    text-align: center;
+    padding: 6pt;
+}
+
+.source-note {
+    margin-top: 14pt;
+    padding: 8pt 10pt;
+    background: #f9fafb;
+    border-left: 3px solid #6b7280;
+    font-size: 9.5pt;
+    color: #4b5563;
+}

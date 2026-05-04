@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <title>SWOT Analizi</title>
+    <style>{% include "_base.css" %}</style>
+</head>
+<body>
+    <header class="report-header">
+        <h1>SWOT Analizi</h1>
+        <div class="meta">
+            <span class="label">Üretildi:</span>
+            {{ generated_at.strftime("%d.%m.%Y %H:%M UTC") }}
+            &nbsp;·&nbsp;
+            <span class="label">Dönem:</span>
+            {% if report.date_from and report.date_to -%}
+            {{ report.date_from }} – {{ report.date_to }}
+            {%- else -%}
+            Tüm zaman
+            {%- endif %}
+            &nbsp;·&nbsp;
+            <span class="label">Model:</span> {{ report.model_name }}
+        </div>
+    </header>
+
+    <section class="swot-grid">
+        <div class="swot-quadrant strengths">
+            <h2>Güçlü Yönler</h2>
+            {% if payload.strengths %}
+                {% for item in payload.strengths %}
+                <div class="swot-item">
+                    <div class="title">{{ item.title }}</div>
+                    <div class="description">{{ item.description }}</div>
+                    <div class="evidence">Kanıt: {{ item.evidence }}</div>
+                </div>
+                {% endfor %}
+            {% else %}
+                <div class="empty">Madde yok.</div>
+            {% endif %}
+        </div>
+
+        <div class="swot-quadrant weaknesses">
+            <h2>Zayıf Yönler</h2>
+            {% if payload.weaknesses %}
+                {% for item in payload.weaknesses %}
+                <div class="swot-item">
+                    <div class="title">{{ item.title }}</div>
+                    <div class="description">{{ item.description }}</div>
+                    <div class="evidence">Kanıt: {{ item.evidence }}</div>
+                </div>
+                {% endfor %}
+            {% else %}
+                <div class="empty">Madde yok.</div>
+            {% endif %}
+        </div>
+
+        <div class="swot-quadrant opportunities">
+            <h2>Fırsatlar</h2>
+            {% if payload.opportunities %}
+                {% for item in payload.opportunities %}
+                <div class="swot-item">
+                    <div class="title">{{ item.title }}</div>
+                    <div class="description">{{ item.description }}</div>
+                    <div class="evidence">Kanıt: {{ item.evidence }}</div>
+                </div>
+                {% endfor %}
+            {% else %}
+                <div class="empty">Madde yok.</div>
+            {% endif %}
+        </div>
+
+        <div class="swot-quadrant threats">
+            <h2>Tehditler</h2>
+            {% if payload.threats %}
+                {% for item in payload.threats %}
+                <div class="swot-item">
+                    <div class="title">{{ item.title }}</div>
+                    <div class="description">{{ item.description }}</div>
+                    <div class="evidence">Kanıt: {{ item.evidence }}</div>
+                </div>
+                {% endfor %}
+            {% else %}
+                <div class="empty">Madde yok.</div>
+            {% endif %}
+        </div>
+    </section>
+
+    <section class="recommendations">
+        <h2>Stratejik Öneriler</h2>
+        {% if payload.strategic_recommendations %}
+            {% for r in payload.strategic_recommendations %}
+            <div class="recommendation">
+                <div>
+                    <span class="title">{{ r.title }}</span>
+                    <span class="badges">
+                        <span class="badge priority-{{ r.priority }}">öncelik: {{ r.priority }}</span>
+                        <span class="badge impact-{{ r.estimated_impact }}">etki: {{ r.estimated_impact }}</span>
+                    </span>
+                </div>
+                <div class="description">{{ r.description }}</div>
+            </div>
+            {% endfor %}
+        {% else %}
+            <div class="empty">Öneri yok.</div>
+        {% endif %}
+    </section>
+</body>
+</html>

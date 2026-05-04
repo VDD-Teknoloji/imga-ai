@@ -57,7 +57,21 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     HF_HOME=/cache/huggingface
 
 RUN apt-get update \
- && apt-get install -y --no-install-recommends curl \
+ && apt-get install -y --no-install-recommends \
+    curl \
+    # Sprint 8.3.6.5 — WeasyPrint runtime deps. Pango + Cairo +
+    # GdkPixbuf for the renderer; Harfbuzz for OpenType shaping;
+    # the dejavu/liberation font packs so PDFs have working Türkçe
+    # glyphs (ı/ş/ğ etc.) without bundling fonts in the repo. Adds
+    # ~80-100 MB to the image; accepted trade-off for executive
+    # PDF deliverables.
+    libpango-1.0-0 \
+    libpangoft2-1.0-0 \
+    libharfbuzz0b \
+    libcairo2 \
+    libgdk-pixbuf-2.0-0 \
+    fonts-dejavu-core \
+    fonts-liberation \
  && rm -rf /var/lib/apt/lists/* \
  && useradd --create-home --uid 1000 imga \
  && mkdir -p /cache/huggingface /data /app \
