@@ -236,12 +236,39 @@ class OkrService:
 
     @staticmethod
     def _validate_okr_response(payload: dict[str, Any]) -> None:
+        """Two-layer validation, mirroring SwotService:
+
+          * **Top-level required (strict):** missing ``objectives``
+            means the row is unrenderable; reject.
+          * **Per-objective counts (permissive):** the 2-4 / 2-4 spec
+            used to live in the response_schema as ``minItems`` /
+            ``maxItems`` until the Gemini SDK crashed on those keys
+            (8.3.6.6 round-1 production). It now lives in the system
+            prompt + this soft check: out-of-range counts log a
+            warning but the row gets persisted regardless.
+        """
         required = OKR_RESPONSE_SCHEMA["required"]
         missing = [k for k in required if k not in payload]
         if missing:
             raise OkrResponseInvalidError(
                 f"OKR response missing required fields: {missing}"
             )
+
+        objectives = payload.get("objectives", [])
+        if not (2 <= len(objectives) <= 4):
+            _logger.warning(
+                "OKR response has %d objectives, expected 2-4 — "
+                "persisting anyway",
+                len(objectives),
+            )
+        for idx, obj in enumerate(objectives):
+            krs = obj.get("key_results", []) if isinstance(obj, dict) else []
+            if not (2 <= len(krs) <= 4):
+                _logger.warning(
+                    "OKR objective[%d] has %d key_results, expected 2-4 — "
+                    "persisting anyway",
+                    idx, len(krs),
+                )
 
     async def _persist_report(
         self,

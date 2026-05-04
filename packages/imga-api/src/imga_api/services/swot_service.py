@@ -297,11 +297,44 @@ class SwotService:
 
     @staticmethod
     def _validate_swot_response(payload: dict[str, Any]) -> None:
+        """Defence-in-depth validation. Two layers, each with a
+        deliberately different posture:
+
+          * **Required-field shape (strict):** missing top-level keys
+            mean the LLM ignored the schema entirely; that's a hard
+            error — the row would be unrenderable.
+          * **Per-section counts (permissive):** the count window
+            (2-6 SWOT items, 3-5 recommendations) used to live in the
+            response_schema as ``minItems`` / ``maxItems`` until the
+            Gemini SDK crashed on those keys (8.3.6.6 round-1
+            production). It now lives in the system prompt + this
+            soft check: out-of-range counts log a warning but the
+            row still gets persisted. Worst case a user sees one
+            section with a single item; that's strictly better than a
+            500 with no row at all.
+        """
         required = SWOT_RESPONSE_SCHEMA["required"]
         missing = [k for k in required if k not in payload]
         if missing:
             raise SwotResponseInvalidError(
                 f"SWOT response missing required fields: {missing}"
+            )
+
+        for section in ("strengths", "weaknesses", "opportunities", "threats"):
+            items = payload.get(section, [])
+            if not (2 <= len(items) <= 6):
+                _logger.warning(
+                    "SWOT response %s has %d items, expected 2-6 — "
+                    "persisting anyway",
+                    section, len(items),
+                )
+
+        recs = payload.get("strategic_recommendations", [])
+        if not (3 <= len(recs) <= 5):
+            _logger.warning(
+                "SWOT response strategic_recommendations has %d items, "
+                "expected 3-5 — persisting anyway",
+                len(recs),
             )
 
     async def _persist_report(
