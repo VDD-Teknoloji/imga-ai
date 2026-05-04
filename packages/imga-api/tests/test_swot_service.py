@@ -229,6 +229,30 @@ def test_swot_schema_does_not_use_minitems() -> None:
     assert "maxItems" not in schema_str
 
 
+def test_swot_schema_priority_enum_has_explicit_string_type() -> None:
+    """Sprint 8.3.6.6 round-3 — Gemini API rejects ``enum`` properties
+    that don't carry an explicit ``type: "string"`` ("enum: only
+    allowed for STRING type", 400 INVALID_ARGUMENT). JSON Schema
+    treats ``type`` as optional alongside ``enum``; the SDK does not.
+    """
+    rec_props = (
+        SWOT_RESPONSE_SCHEMA["properties"]["strategic_recommendations"]
+        ["items"]["properties"]
+    )
+    priority = rec_props["priority"]
+    impact = rec_props["estimated_impact"]
+    assert priority.get("type") == "string", (
+        "priority must carry type: 'string' for the Gemini SDK to "
+        "accept the enum"
+    )
+    assert impact.get("type") == "string", (
+        "estimated_impact must carry type: 'string' for the Gemini "
+        "SDK to accept the enum"
+    )
+    assert priority.get("enum") == ["yüksek", "orta", "düşük"]
+    assert impact.get("enum") == ["yüksek", "orta", "düşük"]
+
+
 # ---------------------------------------------------------------------------
 # DB + provider-mock + fakeredis integration tests
 # ---------------------------------------------------------------------------
