@@ -22,6 +22,7 @@ which already has those packs from the same Dockerfile path.
 
 from __future__ import annotations
 
+import contextlib
 import logging
 import pathlib
 from datetime import UTC, datetime
@@ -83,13 +84,57 @@ class PdfRenderService:
                 f"render_okr called with report_type={report.get('report_type')!r}"
             )
         payload = report.get("output_payload") or {}
+        # Sprint 8.3.6.6 round-6 — the route layer hands us source_swot
+        # as a Pydantic ``model_dump(mode="json")`` result, which
+        # serialises datetimes to ISO strings. okr.html calls
+        # ``source_swot.created_at.strftime(...)`` and crashes with
+        # ``UndefinedError: 'str object' has no attribute 'strftime'``.
+        # Hydrate the well-known datetime fields back to datetime so
+        # the template's strftime works regardless of caller shape.
+        hydrated_source = self._hydrate_datetime_fields(
+            source_swot, ("created_at", "date_from", "date_to")
+        )
         return self._render_template(
             "okr.html",
             report=report,
             payload=payload,
-            source_swot=source_swot,
+            source_swot=hydrated_source,
             generated_at=datetime.now(UTC),
         )
+
+    @staticmethod
+    def _hydrate_datetime_fields(
+        payload: dict[str, Any] | None, fields: tuple[str, ...]
+    ) -> dict[str, Any] | None:
+        """Convert ISO-string datetimes back to ``datetime`` objects on
+        a shallow copy of ``payload``. Already-datetime values pass
+        through; malformed strings are left as strings so the eventual
+        Jinja error surfaces the bad data rather than being swallowed
+        here. Missing keys are filled in with ``None`` so the
+        ``StrictUndefined`` env can still do ``if source_swot.created
+        _at`` truthiness checks without raising on the lookup.
+
+        Returns ``None`` when input is ``None`` so the caller can keep
+        the "no source_swot" branch coherent without an extra guard.
+        """
+        if payload is None:
+            return None
+        out = dict(payload)
+        for key in fields:
+            value = out.get(key)
+            if value is None or value == "":
+                # Pin the key so the Jinja truthiness check works
+                # under StrictUndefined regardless of caller shape.
+                out[key] = None
+                continue
+            if isinstance(value, str):
+                # Malformed strings stay as-is; downstream Jinja will
+                # surface the format error rather than us hiding it.
+                with contextlib.suppress(ValueError):
+                    out[key] = datetime.fromisoformat(
+                        value.replace("Z", "+00:00")
+                    )
+        return out
 
     @staticmethod
     def _render_template(template_name: str, **context: Any) -> bytes:
