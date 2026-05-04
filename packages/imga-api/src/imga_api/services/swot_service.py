@@ -46,21 +46,18 @@ from __future__ import annotations
 import json
 import logging
 import time
-from datetime import UTC, date, datetime
+from datetime import date
 from typing import Any
 from uuid import UUID
 
 from imga_core.llm import (
     AllKeysExhaustedError,
-    GeminiKey,
     GeminiKeyRotator,
     InvalidKeyError,
     LLMError,
 )
 from imga_core.llm.gemini import GeminiProvider
-from imga_core.security.encryption import EncryptionError, decrypt
-from imga_db.models import StrategicReport, TenantLlmCredential
-from sqlalchemy import select, update
+from imga_db.models import StrategicReport
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from imga_api.cache.redis_client import get_redis_client
@@ -68,6 +65,11 @@ from imga_api.llm.prompts.swot_v1 import (
     SWOT_RESPONSE_SCHEMA,
     SWOT_SYSTEM_PROMPT,
     render_swot_user_prompt,
+)
+from imga_api.services.llm_credentials import (
+    NoCredentialsError,
+    load_active_gemini_keys,
+    mark_keys_failed,
 )
 from imga_api.services.stats_aggregator import (
     StatsAggregator,
@@ -88,11 +90,6 @@ DEFAULT_MODEL_NAME = "gemini-2.5-pro"
 class SwotServiceError(Exception):
     """Base for SWOT generator failures the route layer must map to
     HTTP responses."""
-
-
-class NoCredentialsError(SwotServiceError):
-    """Tenant has no active LLM credential rows. Surfaces as 412
-    Precondition Failed; frontend redirects to /settings/integrations."""
 
 
 class SwotResponseInvalidError(SwotServiceError):
@@ -150,7 +147,7 @@ class SwotService:
                 return cached
 
         # 4. Credentials → rotator
-        keys = await self._load_active_keys()
+        keys = await load_active_gemini_keys(self._session, self._tenant_id)
         if not keys:
             raise NoCredentialsError(
                 "Tenant has no active LLM API keys configured"
@@ -189,7 +186,7 @@ class SwotService:
             response, key_used = await rotator.call_with_rotation(_call)
         except AllKeysExhaustedError:
             # Mark every key we identified as InvalidKey before re-raising.
-            await self._mark_keys_failed(failed_invalid_key_ids)
+            await mark_keys_failed(self._session, failed_invalid_key_ids)
             raise
         except LLMError:
             # Other LLMError (Malformed, generic) — propagate without
@@ -202,7 +199,7 @@ class SwotService:
         # higher-priority key, mark that one as failed so the UI can
         # surface "needs attention".
         if failed_invalid_key_ids:
-            await self._mark_keys_failed(failed_invalid_key_ids)
+            await mark_keys_failed(self._session, failed_invalid_key_ids)
 
         # 7. Validate
         self._validate_swot_response(response)
@@ -272,53 +269,6 @@ class SwotService:
             await client.set(key, _to_json(payload), ex=CACHE_TTL_SECONDS)
         except Exception as exc:
             _logger.warning("SWOT cache set failed (%s); continuing", exc)
-
-    async def _load_active_keys(self) -> list[GeminiKey]:
-        """Load + decrypt all active gemini credentials for the
-        tenant, ordered by priority asc. Decryption failures (master
-        key mismatch, corrupt ciphertext) skip the row and warn —
-        we'd rather try the remaining keys than fail the entire run
-        when one row is bad."""
-        stmt = (
-            select(TenantLlmCredential)
-            .where(TenantLlmCredential.tenant_id == self._tenant_id)
-            .where(TenantLlmCredential.provider == "gemini")
-            .where(TenantLlmCredential.is_active.is_(True))
-            .order_by(TenantLlmCredential.priority.asc())
-        )
-        rows = (await self._session.execute(stmt)).scalars().all()
-        out: list[GeminiKey] = []
-        for row in rows:
-            try:
-                plaintext = decrypt(row.encrypted_value)
-            except EncryptionError as exc:
-                _logger.warning(
-                    "SWOT: skipping credential id=%s — decrypt failed (%s)",
-                    row.id, exc,
-                )
-                continue
-            out.append(
-                GeminiKey(
-                    id=str(row.id),
-                    value=plaintext,
-                    label=row.label,
-                    priority=row.priority,
-                )
-            )
-        return out
-
-    async def _mark_keys_failed(self, key_ids: list[UUID]) -> None:
-        """Stamp ``last_failed_at`` on the given credential rows. Used
-        for keys that hit InvalidKeyError (not transient rate-limits).
-        The /settings/integrations page reads this column to surface
-        "needs attention"."""
-        if not key_ids:
-            return
-        await self._session.execute(
-            update(TenantLlmCredential)
-            .where(TenantLlmCredential.id.in_(key_ids))
-            .values(last_failed_at=datetime.now(UTC))
-        )
 
     @staticmethod
     def _render_context(stats: StrategicStatsSnapshot) -> dict[str, Any]:
