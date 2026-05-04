@@ -15,6 +15,7 @@ Same fixture rules as SWOT tests:
 
 from __future__ import annotations
 
+import json
 from typing import Any
 from unittest.mock import AsyncMock
 from uuid import UUID, uuid4
@@ -202,6 +203,17 @@ def test_okr_response_validation_rejects_missing_objectives() -> None:
 
 def test_okr_response_validation_accepts_complete_payload() -> None:
     OkrService._validate_okr_response({"objectives": []})
+
+
+def test_okr_schema_does_not_use_minitems() -> None:
+    """Schema regression guard. Same Gemini SDK proto-Schema crash as
+    SWOT — ``minItems`` / ``maxItems`` raise ``ValueError: Unknown
+    field for Schema: minItems`` at validation time. The 2-4 / 2-4
+    OKR spec lives in OKR_SYSTEM_PROMPT + a permissive service-side
+    guard instead."""
+    schema_str = json.dumps(OKR_RESPONSE_SCHEMA)
+    assert "minItems" not in schema_str
+    assert "maxItems" not in schema_str
 
 
 # ---------------------------------------------------------------------------

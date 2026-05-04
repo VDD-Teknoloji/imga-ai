@@ -24,6 +24,8 @@ service expects.
 
 from __future__ import annotations
 
+import json
+import logging
 from datetime import date
 from typing import Any
 from unittest.mock import AsyncMock
@@ -150,6 +152,81 @@ def test_response_validation_accepts_complete_payload() -> None:
     good = {k: [] for k in SWOT_RESPONSE_SCHEMA["required"]}
     # Should not raise.
     SwotService._validate_swot_response(good)
+
+
+# Sprint 8.3.6.6 round-2 regression — 8.3.6.5 shipped SWOT_RESPONSE_SCHEMA
+# with ``minItems`` / ``maxItems`` per JSON Schema; the Gemini SDK's
+# proto-based Schema type rejects those keywords and crashed every
+# generate-SWOT call in production with ``ValueError: Unknown field for
+# Schema: minItems``. The fix moved count constraints to the system
+# prompt + a permissive service-side guard. These three tests pin both
+# halves of the contract: schema is SDK-clean, and the soft guard logs
+# without raising.
+
+
+def _swot_item() -> dict[str, str]:
+    return {"title": "T", "description": "D", "evidence": "E"}
+
+
+def _swot_rec() -> dict[str, str]:
+    return {
+        "title": "A",
+        "description": "B",
+        "priority": "yüksek",
+        "estimated_impact": "orta",
+    }
+
+
+def test_swot_response_with_one_strength_logs_warning_but_succeeds(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Below-floor count (1 strength) must NOT raise — better a partial
+    dashboard than a 500. Warning is logged so an ops alert can pick
+    up degraded model behaviour."""
+    payload = {
+        "strengths": [_swot_item()],
+        "weaknesses": [_swot_item(), _swot_item()],
+        "opportunities": [_swot_item(), _swot_item()],
+        "threats": [_swot_item(), _swot_item()],
+        "strategic_recommendations": [_swot_rec(), _swot_rec(), _swot_rec()],
+    }
+    with caplog.at_level(logging.WARNING, logger="imga_api.services.swot_service"):
+        SwotService._validate_swot_response(payload)
+    assert any(
+        "strengths has 1 items" in rec.getMessage()
+        for rec in caplog.records
+    )
+
+
+def test_swot_response_with_seven_strengths_logs_warning_but_succeeds(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Above-ceiling count (7 strengths) must NOT raise either —
+    permissive in both directions."""
+    payload = {
+        "strengths": [_swot_item() for _ in range(7)],
+        "weaknesses": [_swot_item(), _swot_item()],
+        "opportunities": [_swot_item(), _swot_item()],
+        "threats": [_swot_item(), _swot_item()],
+        "strategic_recommendations": [_swot_rec(), _swot_rec(), _swot_rec()],
+    }
+    with caplog.at_level(logging.WARNING, logger="imga_api.services.swot_service"):
+        SwotService._validate_swot_response(payload)
+    assert any(
+        "strengths has 7 items" in rec.getMessage()
+        for rec in caplog.records
+    )
+
+
+def test_swot_schema_does_not_use_minitems() -> None:
+    """Schema regression guard. ``minItems`` / ``maxItems`` are JSON
+    Schema keywords the Gemini SDK's proto-based Schema rejects
+    (``ValueError: Unknown field for Schema: minItems``). Recursive
+    walk via JSON dump catches a future copy-paste from the JSON
+    Schema reference at any nesting level."""
+    schema_str = json.dumps(SWOT_RESPONSE_SCHEMA)
+    assert "minItems" not in schema_str
+    assert "maxItems" not in schema_str
 
 
 # ---------------------------------------------------------------------------
