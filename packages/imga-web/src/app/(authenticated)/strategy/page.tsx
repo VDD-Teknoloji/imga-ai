@@ -972,7 +972,9 @@ async function downloadStrategicPdf(
     toast.error("Oturum süresi dolmuş, lütfen tekrar giriş yapın.");
     return;
   }
-  const path = `/tenants/me/strategic-reports/${reportId}/pdf`;
+  // Backend route is /download.pdf (per imga-api routes/strategic_
+  // reports.py); the bare /pdf shape returned 404 in production.
+  const path = `/tenants/me/strategic-reports/${reportId}/download.pdf`;
   try {
     const res = await fetch(`${API_BASE}${path}`, {
       headers: { Authorization: `Bearer ${accessToken}` },
