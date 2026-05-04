@@ -143,6 +143,7 @@ services:
           tests/test_encryption_smoke.py \
           tests/test_stats_aggregator.py \
           tests/test_swot_service.py \
+          tests/test_okr_service.py \
           tests-core/test_key_rotation.py \
           tests-core/test_gemini_swot_okr.py \
           -v --tb=short
