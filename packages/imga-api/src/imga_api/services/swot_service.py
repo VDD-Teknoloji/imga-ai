@@ -84,7 +84,11 @@ _logger = logging.getLogger(__name__)
 
 CACHE_TTL_SECONDS = 86400
 CACHE_KEY_PREFIX = "swot"
-DEFAULT_MODEL_NAME = "gemini-2.5-pro"
+# Sprint 8.3.6.6 round-4 — flash is the free-tier default. The
+# Google AI Pro consumer subscription does NOT include API quota, so
+# gemini-2.5-pro returns 429 on every free-tier tenant. Tenant-level
+# model_name override lands in Sprint 9.x.
+DEFAULT_MODEL_NAME = "gemini-2.5-flash"
 
 
 class SwotServiceError(Exception):

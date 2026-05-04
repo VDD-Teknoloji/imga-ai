@@ -46,6 +46,7 @@ from imga_api.llm.prompts.swot_v1 import (
     render_swot_user_prompt,
 )
 from imga_api.services.swot_service import (
+    DEFAULT_MODEL_NAME,
     NoCredentialsError,
     SwotResponseInvalidError,
     SwotService,
@@ -475,7 +476,10 @@ async def test_swot_service_persists_report_to_db(
             )
         ).scalar_one()
         assert row.report_type == "swot"
-        assert row.model_name == "gemini-2.5-pro"
+        # Pin against the module constant so a future default flip
+        # (Sprint 8.3.6.6 round-4 went pro → flash) keeps this test
+        # aligned without a literal-string update.
+        assert row.model_name == DEFAULT_MODEL_NAME
         assert row.output_payload == payload
         # input_stats has the snapshot fields we documented.
         assert "stats_hash" in row.input_stats

@@ -68,7 +68,9 @@ from imga_api.services.strategic_constants import (
 
 _logger = logging.getLogger(__name__)
 
-DEFAULT_MODEL_NAME = "gemini-2.5-pro"
+# Sprint 8.3.6.6 round-4 — same flash default as SwotService. See
+# that module's note for the free-tier rationale.
+DEFAULT_MODEL_NAME = "gemini-2.5-flash"
 
 
 class OkrServiceError(Exception):

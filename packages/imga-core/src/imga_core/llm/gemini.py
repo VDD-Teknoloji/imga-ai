@@ -174,7 +174,13 @@ class GeminiProvider(LLMProvider):
         system_prompt: str,
         user_prompt: str,
         response_schema: dict[str, Any],
-        model_name: str = "gemini-2.5-pro",
+        # Sprint 8.3.6.6 round-4 — flash is the free-tier default;
+        # gemini-2.5-pro requires a paid Google AI Studio billing setup
+        # (the consumer "Google AI Pro" subscription does NOT carry an
+        # API quota). Flash is fast enough for SWOT/OKR with the
+        # current prompt length and gives free-tier tenants a working
+        # path. Tenant-level model_name override lands in Sprint 9.x.
+        model_name: str = "gemini-2.5-flash",
         temperature: float = 0.2,
         top_p: float = 0.9,
         max_output_tokens: int = 8192,
@@ -222,7 +228,9 @@ class GeminiProvider(LLMProvider):
         system_prompt: str,
         user_prompt: str,
         response_schema: dict[str, Any],
-        model_name: str = "gemini-2.5-pro",
+        # Same free-tier flash default as ``generate_swot`` (Sprint
+        # 8.3.6.6 round-4). See that method's docstring for context.
+        model_name: str = "gemini-2.5-flash",
         temperature: float = 0.3,
         top_p: float = 0.9,
         max_output_tokens: int = 4096,
