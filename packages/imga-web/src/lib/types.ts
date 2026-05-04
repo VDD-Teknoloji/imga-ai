@@ -714,3 +714,167 @@ export interface CategoryTaxonomyView {
   priority: number;
   is_default_seed: boolean;
 }
+
+// ---------------------------------------------------------------------------
+// Sprint 8.3.6.6 — Strategic reports + LLM credentials + tenant profile
+// ---------------------------------------------------------------------------
+
+/** Tenant context enums — must stay in sync with imga-api's
+ *  services/strategic_constants.py. The 12th industry option,
+ *  ``other``, is a hybrid: when selected, ``industry_other_text``
+ *  carries the free-form Türkçe label. */
+export const INDUSTRY_OPTIONS: ReadonlyArray<{ code: string; label: string }> = [
+  { code: "e_commerce", label: "E-ticaret" },
+  { code: "retail", label: "Perakende" },
+  { code: "telecom", label: "Telekomünikasyon" },
+  { code: "banking", label: "Bankacılık" },
+  { code: "insurance", label: "Sigortacılık" },
+  { code: "services", label: "Hizmet sektörü" },
+  { code: "healthcare", label: "Sağlık" },
+  { code: "education", label: "Eğitim" },
+  { code: "manufacturing", label: "Üretim" },
+  { code: "food_beverage", label: "Yiyecek-içecek" },
+  { code: "logistics", label: "Lojistik-kargo" },
+  { code: "other", label: "Diğer" },
+];
+
+export const COMPANY_SIZE_OPTIONS: ReadonlyArray<{ code: string; label: string }> = [
+  { code: "solo", label: "Tek kişi (1)" },
+  { code: "small", label: "Küçük (2-10)" },
+  { code: "medium", label: "Orta (11-50)" },
+  { code: "large", label: "Büyük (51-250)" },
+  { code: "enterprise", label: "Kurumsal (251+)" },
+];
+
+export interface TenantProfile {
+  industry: string | null;
+  industry_other_text: string | null;
+  company_size: string | null;
+  business_description: string | null;
+}
+
+export interface TenantProfileUpdateRequest {
+  industry?: string | null;
+  industry_other_text?: string | null;
+  company_size?: string | null;
+  business_description?: string | null;
+}
+
+// --- LLM credentials -------------------------------------------------
+
+export interface LlmCredential {
+  id: string;
+  label: string;
+  provider: string;
+  priority: number;
+  is_active: boolean;
+  /** ``"...AB12"`` — last 4 chars of the plaintext, prefixed with
+   *  ``...``. Backend never returns the full key after create. */
+  value_preview: string;
+  last_failed_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface LlmCredentialCreateRequest {
+  label: string;
+  api_key: string;
+}
+
+export interface LlmCredentialUpdateRequest {
+  label?: string;
+  is_active?: boolean;
+}
+
+export interface LlmCredentialReorderRequest {
+  ordered_ids: string[];
+}
+
+// --- Strategic reports -----------------------------------------------
+
+/** SWOT row's ``output_payload`` shape. Mirrors the response_schema
+ *  the backend enforces — keep both in sync. */
+export interface SwotItem {
+  title: string;
+  description: string;
+  evidence: string;
+}
+
+export interface SwotRecommendation {
+  title: string;
+  description: string;
+  /** Backend enum: "yüksek" | "orta" | "düşük" */
+  priority: string;
+  /** Backend enum: "yüksek" | "orta" | "düşük" */
+  estimated_impact: string;
+}
+
+export interface SwotPayload {
+  strengths: SwotItem[];
+  weaknesses: SwotItem[];
+  opportunities: SwotItem[];
+  threats: SwotItem[];
+  strategic_recommendations: SwotRecommendation[];
+}
+
+/** OKR row's ``output_payload`` shape. */
+export interface OkrKeyResult {
+  text: string;
+  metric: string;
+  baseline: string;
+  target: string;
+}
+
+export interface OkrObjective {
+  objective: string;
+  rationale: string;
+  key_results: OkrKeyResult[];
+}
+
+export interface OkrPayload {
+  objectives: OkrObjective[];
+}
+
+export type StrategicReportType = "swot" | "okr";
+
+export interface StrategicReportSummary {
+  id: string;
+  report_type: StrategicReportType;
+  date_from: string | null;
+  date_to: string | null;
+  source_report_id: string | null;
+  model_name: string;
+  generation_duration_ms: number | null;
+  created_at: string;
+}
+
+export interface StrategicReportDetail {
+  id: string;
+  report_type: StrategicReportType;
+  date_from: string | null;
+  date_to: string | null;
+  source_report_id: string | null;
+  input_stats: Record<string, unknown>;
+  output_payload: Record<string, unknown>;
+  model_name: string;
+  token_usage: { input: number; output: number; total: number } | null;
+  generation_duration_ms: number | null;
+  created_at: string;
+  created_by_user_id: string | null;
+}
+
+export interface StrategicReportListResponse {
+  items: StrategicReportSummary[];
+  total: number;
+  has_more: boolean;
+}
+
+export interface SwotGenerateRequest {
+  date_from?: string | null; // YYYY-MM-DD
+  date_to?: string | null;
+  force_refresh?: boolean;
+}
+
+export interface OkrGenerateRequest {
+  source_report_id: string;
+}
