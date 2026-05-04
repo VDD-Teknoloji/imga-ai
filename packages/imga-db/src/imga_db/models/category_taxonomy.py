@@ -57,6 +57,24 @@ class CategoryTaxonomy(Base):
     is_default_seed: Mapped[bool] = mapped_column(
         Boolean(), nullable=False, default=False
     )
+    # Sprint 8.3.7-A — optional self-reference into another taxonomy
+    # row's ``code`` for hierarchy display. NULL = top-level. The
+    # column is just a string (no FK): the unique constraint sits on
+    # ``(tenant_id, code)``, so a real FK would need a composite. The
+    # API validates that the referenced code exists in the same
+    # tenant before persisting.
+    parent_code: Mapped[str | None] = mapped_column(
+        String(64), nullable=True
+    )
+    # Soft delete — Sprint 8.3.7-A. Rows are flipped to ``False`` via
+    # the DELETE endpoint and restored via the POST /restore endpoint;
+    # the heuristic reranker filters on ``is_active`` so retired rows
+    # stop matching incoming reviews without losing their audit trail.
+    # Backed by the same column the migration adds; default ``True``
+    # mirrors the historical "every existing row is active" baseline.
+    is_active: Mapped[bool] = mapped_column(
+        Boolean(), nullable=False, default=True, server_default="true"
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )

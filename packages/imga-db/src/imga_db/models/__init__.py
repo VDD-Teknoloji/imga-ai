@@ -8,6 +8,7 @@ from imga_db.models.category_taxonomy import CategoryTaxonomy
 from imga_db.models.comment import TicketComment, TicketCommentKind
 from imga_db.models.invitation import Invitation
 from imga_db.models.mixins import SoftDeleteMixin, TenantOwnedMixin, TimestampMixin
+from imga_db.models.prompt_template import PromptTemplate
 from imga_db.models.refresh_token import RefreshTokenRecord
 from imga_db.models.report_job import (
     ReportFormat,
@@ -15,9 +16,10 @@ from imga_db.models.report_job import (
     ReportStatus,
     ReportType,
 )
-from imga_db.models.prompt_template import PromptTemplate
 from imga_db.models.review import Review, ReviewDecision
+from imga_db.models.sla_rule import SlaRule
 from imga_db.models.strategic_report import StrategicReport
+from imga_db.models.taxonomy_edit_audit import TaxonomyEditAudit
 from imga_db.models.tenant import AutomationMode, Tenant, TenantPlanTier
 from imga_db.models.tenant_llm_credential import TenantLlmCredential
 from imga_db.models.ticket import (
@@ -46,8 +48,10 @@ __all__ = [
     "ReportType",
     "Review",
     "ReviewDecision",
+    "SlaRule",
     "SoftDeleteMixin",
     "StrategicReport",
+    "TaxonomyEditAudit",
     "Tenant",
     "TenantCategory",
     "TenantLlmCredential",
