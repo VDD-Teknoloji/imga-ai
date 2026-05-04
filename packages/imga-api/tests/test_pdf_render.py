@@ -9,6 +9,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 import pytest
+
 from imga_api.services.pdf_render import PdfRenderError, PdfRenderService
 
 
@@ -134,3 +135,33 @@ def test_render_swot_rejects_wrong_report_type() -> None:
     renderer = PdfRenderService()
     with pytest.raises(PdfRenderError, match="report_type"):
         renderer.render_swot(_okr_report())
+
+
+def test_render_okr_accepts_source_swot_with_iso_string_datetime() -> None:
+    """Sprint 8.3.6.6 round-6 regression — the route layer hands
+    ``source_swot`` to the renderer as a Pydantic
+    ``model_dump(mode='json')`` result, where ``created_at`` is an
+    ISO string instead of a ``datetime``. Production crashed with
+    ``UndefinedError: 'str object' has no attribute 'strftime'``;
+    the renderer now hydrates the field before passing to Jinja."""
+    renderer = _pdf_or_skip()
+    source = {
+        "id": "11111111-1111-1111-1111-111111111111",
+        # ISO 8601 with offset — exactly the shape Pydantic emits.
+        "created_at": "2026-03-01T09:00:00+00:00",
+    }
+    pdf_bytes = renderer.render_okr(_okr_report(), source)
+    assert pdf_bytes[:5] == b"%PDF-"
+
+
+def test_render_okr_handles_source_swot_without_created_at() -> None:
+    """Defensive: when source_swot omits ``created_at`` the template
+    falls through to the "tarih belirsiz" branch via Jinja's
+    truthiness guard. Renderer must not crash on the missing field."""
+    renderer = _pdf_or_skip()
+    source = {
+        "id": "11111111-1111-1111-1111-111111111111",
+        # created_at intentionally absent
+    }
+    pdf_bytes = renderer.render_okr(_okr_report(), source)
+    assert pdf_bytes[:5] == b"%PDF-"
