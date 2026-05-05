@@ -34,6 +34,7 @@ from imga_api.routes import tenant_analyze as tenant_analyze_routes
 from imga_api.routes import tenant_batch as tenant_batch_routes
 from imga_api.routes import tenant_config as tenant_config_routes
 from imga_api.routes import tenant_directory as tenant_directory_routes
+from imga_api.routes import tenant_insights as tenant_insights_routes
 from imga_api.routes import tenant_llm_credentials as tenant_llm_credentials_routes
 from imga_api.routes import tenant_profile as tenant_profile_routes
 from imga_api.routes import tenant_reports as tenant_reports_routes
@@ -254,6 +255,7 @@ app.include_router(tenant_analytics_routes.router)
 app.include_router(tenant_directory_routes.router)
 app.include_router(tenant_taxonomies_routes.router)
 app.include_router(tenant_sla_rules_routes.router)
+app.include_router(tenant_insights_routes.router)
 app.include_router(tickets_routes.router)
 # Sprint 8.3.6.5 — strategic reports + LLM credentials + tenant profile.
 app.include_router(tenant_profile_routes.router)
