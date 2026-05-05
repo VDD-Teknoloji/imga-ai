@@ -199,6 +199,11 @@ def _breach_severity(rule: SlaRule) -> str:
 async def execute_action(
     match: SlaMatch,
     payload: Any | None = None,
+    *,
+    session: AsyncSession | None = None,
+    tenant_id: UUID | None = None,
+    review_id: UUID | None = None,
+    dispatch_mode: str = "automatic",
 ) -> None:
     """Run the matched rule's action. ``warn_only`` no-ops (the
     engine already logged). ``slack_webhook`` / ``teams_webhook``
@@ -212,14 +217,31 @@ async def execute_action(
     the caller — typed loosely here so the engine module doesn't
     take a hard dependency on the dispatcher (and tests can pass a
     stub without importing httpx).
+
+    Sprint 9.0 — when ``dispatch_mode == 'manual'`` and the matched
+    action is a webhook, the call queues into ``pending_webhook_events``
+    instead of firing httpx.post; the operator approves / dismisses
+    from /pending-webhooks. ``session`` + ``tenant_id`` are required
+    for the manual path so the queue insert can use the RLS-bound
+    transaction the caller already opened. Falling back to the
+    automatic path when either is missing keeps the call site simple
+    for legacy code paths that haven't migrated yet.
     """
     if match.action_type == "warn_only":
         return
     if match.action_type == "slack_webhook":
-        await _dispatch_webhook("slack", match, payload)
+        await _route_webhook(
+            "slack", match, payload,
+            session=session, tenant_id=tenant_id,
+            review_id=review_id, dispatch_mode=dispatch_mode,
+        )
         return
     if match.action_type == "teams_webhook":
-        await _dispatch_webhook("teams", match, payload)
+        await _route_webhook(
+            "teams", match, payload,
+            session=session, tenant_id=tenant_id,
+            review_id=review_id, dispatch_mode=dispatch_mode,
+        )
         return
     if match.action_type in {"create_ticket", "escalate"}:
         raise NotImplementedError(
@@ -232,15 +254,19 @@ async def execute_action(
     raise ValueError(f"unknown action_type={match.action_type!r}")
 
 
-async def _dispatch_webhook(
-    kind: str, match: SlaMatch, payload: Any | None
+async def _route_webhook(
+    kind: str,
+    match: SlaMatch,
+    payload: Any | None,
+    *,
+    session: AsyncSession | None,
+    tenant_id: UUID | None,
+    review_id: UUID | None,
+    dispatch_mode: str,
 ) -> None:
-    """Lazy-import the dispatcher so importing sla_engine doesn't
-    pull httpx into the call graph for warn_only-only deployments.
-    ``payload`` is the SlaWebhookPayload built by the caller; if
-    ``None`` we log + skip rather than raise (the SLA matching
-    succeeded; missing payload is a caller-config issue, not a user-
-    facing failure)."""
+    """Route a matched webhook action to the right dispatch path —
+    automatic (live POST) or manual (queue into pending_webhook_events).
+    Sprint 9.0."""
     if payload is None:
         _logger.warning(
             "sla_engine: %s_webhook fired without payload — skipping dispatch",
@@ -248,7 +274,6 @@ async def _dispatch_webhook(
             extra={"rule_id": str(match.rule_id)},
         )
         return
-    from imga_api.services.webhook_dispatcher import WebhookDispatcher
 
     config = match.action_config or {}
     url = config.get("webhook_url")
@@ -259,12 +284,43 @@ async def _dispatch_webhook(
         )
         return
 
+    can_queue = (
+        dispatch_mode == "manual"
+        and session is not None
+        and tenant_id is not None
+    )
+    if can_queue:
+        await _queue_pending_webhook(
+            kind=kind,
+            session=session,  # type: ignore[arg-type]
+            tenant_id=tenant_id,  # type: ignore[arg-type]
+            review_id=review_id,
+            match=match,
+            url=url,
+            channel=config.get("channel"),
+            payload=payload,
+        )
+        return
+
+    await _dispatch_webhook(kind, url, match, payload, channel=config.get("channel"))
+
+
+async def _dispatch_webhook(
+    kind: str,
+    url: str,
+    match: SlaMatch,
+    payload: Any,
+    *,
+    channel: str | None = None,
+) -> None:
+    """Live dispatch via WebhookDispatcher. Lazy-imported so the
+    warn_only-only deployment path doesn't pull httpx in."""
+    from imga_api.services.webhook_dispatcher import WebhookDispatcher
+
     dispatcher = WebhookDispatcher()
     try:
         if kind == "slack":
-            await dispatcher.dispatch_slack(
-                url, payload, channel=config.get("channel"),
-            )
+            await dispatcher.dispatch_slack(url, payload, channel=channel)
         else:
             await dispatcher.dispatch_teams(url, payload)
     except Exception:
@@ -272,6 +328,52 @@ async def _dispatch_webhook(
             "%s webhook dispatch swallowed",
             kind,
             extra={"rule_id": str(match.rule_id)},
+        )
+
+
+async def _queue_pending_webhook(
+    *,
+    kind: str,
+    session: AsyncSession,
+    tenant_id: UUID,
+    review_id: UUID | None,
+    match: SlaMatch,
+    url: str,
+    channel: str | None,
+    payload: Any,
+) -> None:
+    """Insert a queued pending_webhook_events row. Sprint 9.0 manual
+    dispatch path. Lazy-imports the service module to keep the engine
+    layer free of explicit DB-model dependencies."""
+    from imga_db.models import PendingWebhookTarget
+
+    from imga_api.services.audit_service import AuditService
+    from imga_api.services.pending_webhook_service import PendingWebhookService
+
+    target = (
+        PendingWebhookTarget.SLACK if kind == "slack"
+        else PendingWebhookTarget.TEAMS
+    )
+    audit = AuditService(session)
+    service = PendingWebhookService(session, audit)
+    try:
+        await service.queue_event(
+            tenant_id=tenant_id,
+            sla_rule_id=match.rule_id,
+            review_id=review_id,
+            target=target,
+            webhook_url=url,
+            channel=channel,
+            payload=payload,
+        )
+    except Exception:
+        _logger.exception(
+            "sla_engine: failed to queue pending %s webhook",
+            kind,
+            extra={
+                "tenant_id": str(tenant_id),
+                "rule_id": str(match.rule_id),
+            },
         )
 
 

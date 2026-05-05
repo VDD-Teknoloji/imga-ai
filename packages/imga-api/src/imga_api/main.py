@@ -40,6 +40,9 @@ from imga_api.routes import (
 )
 from imga_api.routes import tenant_insights as tenant_insights_routes
 from imga_api.routes import tenant_llm_credentials as tenant_llm_credentials_routes
+from imga_api.routes import (
+    tenant_pending_webhooks as tenant_pending_webhooks_routes,
+)
 from imga_api.routes import tenant_profile as tenant_profile_routes
 from imga_api.routes import tenant_reports as tenant_reports_routes
 from imga_api.routes import tenant_reviews as tenant_reviews_routes
@@ -269,6 +272,7 @@ app.include_router(tickets_routes.router)
 app.include_router(tenant_profile_routes.router)
 app.include_router(tenant_llm_credentials_routes.router)
 app.include_router(tenant_strategic_reports_routes.router)
+app.include_router(tenant_pending_webhooks_routes.router)
 app.include_router(admin_tenant_routes.router)
 app.include_router(admin_invitation_routes.router)
 app.include_router(admin_prompt_templates_routes.router)
