@@ -29,11 +29,15 @@ from imga_api.dependencies import (
 )
 from imga_api.routes import auth as auth_routes
 from imga_api.routes import invitations as public_invitation_routes
+from imga_api.routes import tenant_action_items as tenant_action_items_routes
 from imga_api.routes import tenant_analytics as tenant_analytics_routes
 from imga_api.routes import tenant_analyze as tenant_analyze_routes
 from imga_api.routes import tenant_batch as tenant_batch_routes
 from imga_api.routes import tenant_config as tenant_config_routes
 from imga_api.routes import tenant_directory as tenant_directory_routes
+from imga_api.routes import (
+    tenant_executive_briefings as tenant_executive_briefings_routes,
+)
 from imga_api.routes import tenant_insights as tenant_insights_routes
 from imga_api.routes import tenant_llm_credentials as tenant_llm_credentials_routes
 from imga_api.routes import tenant_profile as tenant_profile_routes
@@ -44,6 +48,7 @@ from imga_api.routes import (
     tenant_strategic_reports as tenant_strategic_reports_routes,
 )
 from imga_api.routes import tenant_taxonomies as tenant_taxonomies_routes
+from imga_api.routes import tenant_trend_alerts as tenant_trend_alerts_routes
 from imga_api.routes import tickets as tickets_routes
 from imga_api.routes.admin import invitations as admin_invitation_routes
 from imga_api.routes.admin import (
@@ -256,6 +261,9 @@ app.include_router(tenant_directory_routes.router)
 app.include_router(tenant_taxonomies_routes.router)
 app.include_router(tenant_sla_rules_routes.router)
 app.include_router(tenant_insights_routes.router)
+app.include_router(tenant_executive_briefings_routes.router)
+app.include_router(tenant_action_items_routes.router)
+app.include_router(tenant_trend_alerts_routes.router)
 app.include_router(tickets_routes.router)
 # Sprint 8.3.6.5 — strategic reports + LLM credentials + tenant profile.
 app.include_router(tenant_profile_routes.router)

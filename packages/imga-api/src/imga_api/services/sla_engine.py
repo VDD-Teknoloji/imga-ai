@@ -196,22 +196,83 @@ def _breach_severity(rule: SlaRule) -> str:
     return "unknown"
 
 
-async def execute_action(match: SlaMatch) -> None:
+async def execute_action(
+    match: SlaMatch,
+    payload: Any | None = None,
+) -> None:
     """Run the matched rule's action. ``warn_only`` no-ops (the
-    engine already logged); the other action types raise
-    NotImplementedError until Sprint 8.3.9 / 8.6 wire them. Kept as a
-    free function so the engine layer stays focused on matching."""
+    engine already logged). ``slack_webhook`` / ``teams_webhook``
+    dispatch via the shared WebhookDispatcher when ``payload`` is
+    provided. ``create_ticket`` / ``escalate`` stay deferred
+    (Sprint 8.3.x roadmap); ``notify_email`` stays deferred
+    (Sprint 8.6, alongside Mailcow). Kept as a free function so
+    the engine layer stays focused on matching.
+
+    The ``payload`` argument carries the SlaWebhookPayload built by
+    the caller — typed loosely here so the engine module doesn't
+    take a hard dependency on the dispatcher (and tests can pass a
+    stub without importing httpx).
+    """
     if match.action_type == "warn_only":
+        return
+    if match.action_type == "slack_webhook":
+        await _dispatch_webhook("slack", match, payload)
+        return
+    if match.action_type == "teams_webhook":
+        await _dispatch_webhook("teams", match, payload)
         return
     if match.action_type in {"create_ticket", "escalate"}:
         raise NotImplementedError(
-            f"action_type={match.action_type!r} lands in Sprint 8.3.9"
+            f"action_type={match.action_type!r} lands in Sprint 8.3.x"
         )
     if match.action_type == "notify_email":
         raise NotImplementedError(
             "action_type='notify_email' lands in Sprint 8.6 alongside Mailcow"
         )
     raise ValueError(f"unknown action_type={match.action_type!r}")
+
+
+async def _dispatch_webhook(
+    kind: str, match: SlaMatch, payload: Any | None
+) -> None:
+    """Lazy-import the dispatcher so importing sla_engine doesn't
+    pull httpx into the call graph for warn_only-only deployments.
+    ``payload`` is the SlaWebhookPayload built by the caller; if
+    ``None`` we log + skip rather than raise (the SLA matching
+    succeeded; missing payload is a caller-config issue, not a user-
+    facing failure)."""
+    if payload is None:
+        _logger.warning(
+            "sla_engine: %s_webhook fired without payload — skipping dispatch",
+            kind,
+            extra={"rule_id": str(match.rule_id)},
+        )
+        return
+    from imga_api.services.webhook_dispatcher import WebhookDispatcher
+
+    config = match.action_config or {}
+    url = config.get("webhook_url")
+    if not isinstance(url, str) or not url.strip():
+        _logger.warning(
+            "sla_engine: %s_webhook rule %s missing webhook_url",
+            kind, match.rule_id,
+        )
+        return
+
+    dispatcher = WebhookDispatcher()
+    try:
+        if kind == "slack":
+            await dispatcher.dispatch_slack(
+                url, payload, channel=config.get("channel"),
+            )
+        else:
+            await dispatcher.dispatch_teams(url, payload)
+    except Exception:
+        _logger.exception(
+            "%s webhook dispatch swallowed",
+            kind,
+            extra={"rule_id": str(match.rule_id)},
+        )
 
 
 __all__ = [

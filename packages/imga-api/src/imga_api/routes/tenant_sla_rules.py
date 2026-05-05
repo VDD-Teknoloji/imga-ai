@@ -47,7 +47,17 @@ _AnyMember = Depends(require_role(
 _AdminOnly = Depends(require_role(UserTenantRole.TENANT_ADMIN))
 
 ALLOWED_PRIORITIES = {"low", "normal", "high", "urgent"}
-ALLOWED_ACTIONS = {"warn_only", "create_ticket", "escalate", "notify_email"}
+# Sprint 8.3.10 — slack_webhook + teams_webhook wired in this sprint.
+# create_ticket / escalate stay deferred (Sprint 8.3.x roadmap);
+# notify_email stays deferred (Sprint 8.6, alongside Mailcow).
+ALLOWED_ACTIONS = {
+    "warn_only",
+    "create_ticket",
+    "escalate",
+    "notify_email",
+    "slack_webhook",
+    "teams_webhook",
+}
 
 
 # --------------------------------------------------------------------- #
