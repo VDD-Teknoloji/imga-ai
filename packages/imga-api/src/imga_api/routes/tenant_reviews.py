@@ -165,6 +165,14 @@ async def list_reviews(
             "match any code (NULL company_perspective_code)."
         ),
     ),
+    primary_categories: str | None = Query(
+        default=None,
+        description=(
+            "Sprint 8.3.10 — CSV of BERT primary_category codes. The "
+            "/insights cross-analysis heatmap drill-down passes this "
+            "to scope the listing to the clicked cell's category."
+        ),
+    ),
     search: str | None = Query(default=None, max_length=200),
     limit: int = Query(default=100, ge=1, le=500),
     offset: int = Query(default=0, ge=0),
@@ -181,6 +189,7 @@ async def list_reviews(
         source_types=_split_csv(source_types),
         decisions=_split_csv(decisions),
         perspective_codes=_split_csv(perspective_codes),
+        primary_categories=_split_csv(primary_categories),
         search=search,
         order_by=order_by,
         order=order,

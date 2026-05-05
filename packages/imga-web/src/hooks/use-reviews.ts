@@ -50,6 +50,9 @@ function buildQueryString(filters: ReviewListFilters, offset: number, limit: num
   if (filters.perspective_codes?.length) {
     params.set("perspective_codes", filters.perspective_codes.join(","));
   }
+  if (filters.primary_categories?.length) {
+    params.set("primary_categories", filters.primary_categories.join(","));
+  }
   if (filters.search) params.set("search", filters.search);
   if (filters.order_by) params.set("order_by", filters.order_by);
   if (filters.order) params.set("order", filters.order);

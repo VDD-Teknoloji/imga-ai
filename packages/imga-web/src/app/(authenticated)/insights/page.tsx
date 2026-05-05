@@ -654,8 +654,12 @@ function CrossAnalysisTab({
                 const cat = d.categories[i];
                 const sent = d.sentiments[j];
                 if (!cat || !sent) return;
+                // Sprint 8.3.10 — pre-fix this URL silently dropped
+                // ``category`` (the /reviews page never read it). The
+                // backend now accepts ``primary_categories`` (CSV) and
+                // the page parses it into the filter chain.
                 router.push(
-                  `/reviews?sentiment_labels=${encodeURIComponent(sent)}&category=${encodeURIComponent(cat)}`,
+                  `/reviews?sentiment_labels=${encodeURIComponent(sent)}&primary_categories=${encodeURIComponent(cat)}`,
                 );
               }}
             />

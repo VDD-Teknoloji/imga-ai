@@ -38,6 +38,11 @@ class ReviewListFilters:
     # mixing it with real codes yields the union (matched in X, Y OR
     # unmatched).
     perspective_codes: tuple[str, ...] = ()
+    # Sprint 8.3.10 — primary BERT category filter for the cross-
+    # analysis heatmap drill-down. CSV of category codes
+    # (Review.primary_category values). Empty tuple disables the
+    # filter; one or more entries OR-match.
+    primary_categories: tuple[str, ...] = ()
     search: str | None = None  # ILIKE %term% over text
     order_by: OrderField = "created_at"
     order: OrderDir = "desc"
@@ -131,6 +136,11 @@ class ReviewListService:
                 persp_clauses.append(Review.company_perspective_code.is_(None))
             if persp_clauses:
                 conditions.append(or_(*persp_clauses))
+        # Sprint 8.3.10 — cross-analysis heatmap drill-down lands here.
+        if filters.primary_categories:
+            conditions.append(
+                Review.primary_category.in_(filters.primary_categories)
+            )
 
         where_clause = and_(*conditions)
 

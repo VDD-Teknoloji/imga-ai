@@ -76,6 +76,7 @@ function readFiltersFromParams(params: URLSearchParams): ReviewListFilters {
   const sentimentRaw = params.get("sentiment_labels");
   const sourceRaw = params.get("source_types");
   const perspectiveRaw = params.get("perspective_codes");
+  const primaryCatsRaw = params.get("primary_categories");
   const sourceTypes = sourceRaw
     ? (sourceRaw.split(",").filter(Boolean) as ReviewSourceType[])
     : undefined;
@@ -83,6 +84,7 @@ function readFiltersFromParams(params: URLSearchParams): ReviewListFilters {
     sentiment_labels: sentimentRaw?.split(",").filter(Boolean),
     source_types: sourceTypes,
     perspective_codes: perspectiveRaw?.split(",").filter(Boolean),
+    primary_categories: primaryCatsRaw?.split(",").filter(Boolean),
     has_ticket: params.has("has_ticket") ? params.get("has_ticket") === "true" : undefined,
     batch_job_id: params.get("batch_job_id") ?? undefined,
     search: params.get("search") ?? undefined,
@@ -103,6 +105,7 @@ function filtersEq(a: ReviewListFilters, b: ReviewListFilters): boolean {
     arrEq(a.sentiment_labels, b.sentiment_labels) &&
     arrEq(a.source_types as string[] | undefined, b.source_types as string[] | undefined) &&
     arrEq(a.perspective_codes, b.perspective_codes) &&
+    arrEq(a.primary_categories, b.primary_categories) &&
     a.has_ticket === b.has_ticket &&
     a.batch_job_id === b.batch_job_id &&
     a.search === b.search
@@ -146,6 +149,9 @@ function ReviewsPageInner() {
       }
       if (next.perspective_codes?.length) {
         params.set("perspective_codes", next.perspective_codes.join(","));
+      }
+      if (next.primary_categories?.length) {
+        params.set("primary_categories", next.primary_categories.join(","));
       }
       if (next.has_ticket !== undefined) {
         params.set("has_ticket", String(next.has_ticket));

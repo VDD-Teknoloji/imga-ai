@@ -465,6 +465,10 @@ export interface ReviewListFilters {
    * fire (NULL company_perspective_code). Mixing it with real codes is
    * an OR. */
   perspective_codes?: string[];
+  /** Sprint 8.3.10 — CSV of BERT primary_category codes. Cross-analysis
+   * heatmap drill-down on /insights passes this to scope the listing
+   * to the clicked cell's category. */
+  primary_categories?: string[];
   search?: string;
   limit?: number;
   offset?: number;
@@ -1094,4 +1098,139 @@ export interface HeatmapResponse {
   values: Array<Array<number | null>>;
   metric_min: number;
   metric_max: number;
+}
+
+// ---------------------------------------------------------------------------
+// Sprint 8.3.10 — executive briefing + action items + trend alerts
+// ---------------------------------------------------------------------------
+
+export type BriefingPeriod = "week" | "month" | "quarter";
+
+export const BRIEFING_PERIOD_LABELS: Record<BriefingPeriod, string> = {
+  week: "Hafta",
+  month: "Ay",
+  quarter: "Çeyrek",
+};
+
+export interface BriefingKpiChange {
+  metric: string;
+  current: number;
+  previous: number;
+  change_pct: number;
+  direction: "up" | "down" | "flat";
+}
+
+export interface BriefingTopAction {
+  title: string;
+  rationale: string;
+}
+
+export interface ExecutiveBriefing {
+  id: string;
+  period: BriefingPeriod;
+  date_from: string;
+  date_to: string;
+  batch_id: string | null;
+  headline: string;
+  kpi_changes: BriefingKpiChange[];
+  critical_insights: string[];
+  top_actions: BriefingTopAction[];
+  model_name: string;
+  token_usage: { input: number; output: number; total: number } | null;
+  generated_at: string;
+}
+
+export interface BriefingListItem {
+  id: string;
+  period: BriefingPeriod;
+  date_from: string;
+  date_to: string;
+  batch_id: string | null;
+  headline: string;
+  model_name: string;
+  generated_at: string;
+}
+
+export interface BriefingGenerateRequest {
+  period: BriefingPeriod;
+  date_from?: string | null;
+  date_to?: string | null;
+  batch_id?: string | null;
+  force_refresh?: boolean;
+}
+
+export type ActionItemStatus = "open" | "in_progress" | "done" | "cancelled";
+export type ActionItemPriority = "high" | "medium" | "low";
+
+export const ACTION_ITEM_STATUS_LABELS: Record<ActionItemStatus, string> = {
+  open: "Açık",
+  in_progress: "Devam Ediyor",
+  done: "Tamamlandı",
+  cancelled: "İptal",
+};
+
+export const ACTION_ITEM_PRIORITY_LABELS: Record<ActionItemPriority, string> = {
+  high: "Yüksek",
+  medium: "Orta",
+  low: "Düşük",
+};
+
+export interface ActionItem {
+  id: string;
+  title: string;
+  description: string;
+  rationale: string | null;
+  priority: ActionItemPriority;
+  estimated_impact: ActionItemPriority | null;
+  status: ActionItemStatus;
+  source_report_id: string | null;
+  source_briefing_id: string | null;
+  assignee_user_id: string | null;
+  due_date: string | null;
+  created_at: string;
+  updated_at: string;
+  completed_at: string | null;
+}
+
+export interface ActionItemCreateRequest {
+  title: string;
+  description: string;
+  rationale?: string | null;
+  priority?: ActionItemPriority;
+  estimated_impact?: ActionItemPriority | null;
+  assignee_user_id?: string | null;
+  due_date?: string | null;
+}
+
+export interface ActionItemUpdateRequest {
+  title?: string;
+  description?: string;
+  rationale?: string | null;
+  priority?: ActionItemPriority;
+  estimated_impact?: ActionItemPriority | null;
+  status?: ActionItemStatus;
+  assignee_user_id?: string | null;
+  due_date?: string | null;
+}
+
+export type TrendAlertStatus = "active" | "acknowledged" | "dismissed";
+export type TrendAlertSeverity = "info" | "warning" | "critical";
+
+export const TREND_ALERT_SEVERITY_LABELS: Record<TrendAlertSeverity, string> = {
+  info: "Bilgi",
+  warning: "Uyarı",
+  critical: "Kritik",
+};
+
+export interface TrendAlert {
+  id: string;
+  alert_type: string;
+  severity: TrendAlertSeverity;
+  title: string;
+  description: string;
+  evidence: Record<string, unknown>;
+  status: TrendAlertStatus;
+  acknowledged_by_user_id: string | null;
+  acknowledged_at: string | null;
+  created_at: string;
 }
