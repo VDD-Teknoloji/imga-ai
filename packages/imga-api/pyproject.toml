@@ -48,6 +48,17 @@ dependencies = [
     # tenant_pending_webhooks. Staging deploy of 23a6371 surfaced
     # the ModuleNotFoundError; this restores the contract.
     "httpx>=0.27",
+    # Sprint 9.0.5-A — arq for the out-of-process batch worker. arq
+    # uses Redis (we already have a managed Redis container) and is
+    # async-native, so the worker function signature matches the
+    # existing ``process_batch_job`` coroutine 1:1. Celery would mean
+    # a broker swap + sync→async bridging.
+    "arq>=0.26,<1.0",
+    # Sprint 9.0.5-A — server-sent events for live batch progress.
+    # sse-starlette wraps the EventSourceResponse contract +
+    # auto-keepalive so the SSE endpoint doesn't have to hand-roll
+    # the wire format.
+    "sse-starlette>=2.1,<3.0",
 ]
 
 [project.optional-dependencies]
