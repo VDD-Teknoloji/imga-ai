@@ -90,6 +90,10 @@ class BatchJobResponse(BaseModel):
     completed_at: str | None
     cancelled_at: str | None
     created_at: str
+    # Sprint 9.0 — recovery surface.
+    last_checkpoint_row: int = 0
+    retry_count: int = 0
+    last_error: str | None = None
 
 
 class BatchJobListResponse(BaseModel):
@@ -174,6 +178,9 @@ def _job_view(job: Any) -> BatchJobResponse:
         completed_at=job.completed_at.isoformat() if job.completed_at else None,
         cancelled_at=job.cancelled_at.isoformat() if job.cancelled_at else None,
         created_at=job.created_at.isoformat(),
+        last_checkpoint_row=job.last_checkpoint_row,
+        retry_count=job.retry_count,
+        last_error=job.last_error,
     )
 
 
@@ -523,6 +530,59 @@ async def cancel_batch(
     with contextlib.suppress(Exception):
         scheduler.remove_job(f"batch-{job_id}")
     return _job_view(job)
+
+
+@router.post(
+    "/{job_id}/retry",
+    response_model=BatchJobResponse,
+    summary="Sprint 9.0 — re-queue a FAILED / CANCELLED job from its checkpoint.",
+    description=(
+        "Resumes processing from ``last_checkpoint_row`` so already-"
+        "processed rows aren't double-counted. Counters (succeeded_rows, "
+        "tickets_created, etc.) preserve their failure-time values; "
+        "``retry_count`` increments. The worker picks up the re-queued "
+        "job subject to the same per-tenant + global concurrency caps "
+        "as the initial submission."
+    ),
+    responses={
+        404: {"description": "Job not found."},
+        409: {"description": "Job not in a retryable state."},
+    },
+)
+async def retry_batch(
+    job_id: UUID,
+    request: Request,
+    current: Annotated[CurrentUser, _TenantMember],
+    app_session: Annotated[AsyncSession, Depends(get_app_session)],
+) -> BatchJobResponse:
+    _require_active_tenant(current)
+    async with app_session.begin():
+        await bind_tenant(app_session, current)
+        audit = AuditService(app_session)
+        service = BatchAnalyzeService(app_session, audit)
+        try:
+            job = await service.retry_job(
+                job_id=job_id,
+                actor_user_id=current.user_id,
+                ip_address=_client_ip(request),
+            )
+        except BatchJobNotFoundError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="batch job not found",
+            ) from exc
+        except BatchJobNotCancellableError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT, detail=str(exc)
+            ) from exc
+        view = _job_view(job)
+
+    # Re-submit to the scheduler — same path as the initial create
+    # endpoint so the worker picks the resume up immediately.
+    scheduler = request.app.state.batch_scheduler
+    worker_context = request.app.state.batch_worker_context
+    submit_batch_job(scheduler, job_id=view.job_id, context=worker_context)
+    return view
 
 
 def _client_ip(request: Request) -> str | None:

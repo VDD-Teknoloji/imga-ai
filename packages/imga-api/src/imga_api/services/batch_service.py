@@ -45,6 +45,12 @@ class BatchProgress:
     Counts are *deltas* — service adds them onto the row to avoid
     losing concurrent ticket-bridge writes that race the chunk update.
     Use 0 for fields that didn't change in the current chunk.
+
+    ``checkpoint_row`` is *absolute* — the row_number of the last row
+    processed in the chunk. The service stores ``max(existing, new)``
+    so retries can resume from the next row instead of replaying from
+    the start (Sprint 9.0). 0 means "no advance" (chunk had no valid
+    rows or the worker doesn't track checkpoints yet).
     """
 
     processed_delta: int = 0
@@ -54,6 +60,7 @@ class BatchProgress:
     duplicates_skipped_delta: int = 0
     rows_with_nps_delta: int = 0
     error_entries: list[dict[str, Any]] | None = None
+    checkpoint_row: int = 0
 
 
 class BatchAnalyzeService:
@@ -214,6 +221,10 @@ class BatchAnalyzeService:
         existing = list(job.error_summary or [])
         existing.append({"row": None, "error": reason})
         job.error_summary = existing[:100]
+        # Sprint 9.0 — job-level last_error so the /batches detail UI
+        # can show a single human message at the top instead of forcing
+        # users to scroll error_summary.
+        job.last_error = reason[:2048]
         await self._session.flush()
         await self._audit.log(
             action="batch.failed",
@@ -270,6 +281,11 @@ class BatchAnalyzeService:
         job.tickets_created += progress.tickets_created_delta
         job.duplicates_skipped += progress.duplicates_skipped_delta
         job.rows_with_nps += progress.rows_with_nps_delta
+        # Sprint 9.0 — checkpoint advances monotonically. Take max so
+        # a late-arriving progress write from a stale chunk can't
+        # rewind a later checkpoint that's already landed.
+        if progress.checkpoint_row > job.last_checkpoint_row:
+            job.last_checkpoint_row = progress.checkpoint_row
         if progress.error_entries:
             current = list(job.error_summary or [])
             for entry in progress.error_entries:
@@ -278,6 +294,56 @@ class BatchAnalyzeService:
                 current.append(entry)
             job.error_summary = current
         await self._session.flush()
+        return job
+
+    # ------------------------------------------------------------------
+    # Retry (Sprint 9.0)
+    # ------------------------------------------------------------------
+
+    async def retry_job(
+        self,
+        *,
+        job_id: UUID,
+        actor_user_id: UUID,
+        ip_address: str | None = None,
+    ) -> AnalyzeBatchJob:
+        """Re-queue a FAILED / CANCELLED job. The worker resumes from
+        ``last_checkpoint_row`` so already-processed rows aren't double-
+        counted. Counters preserved (succeeded_rows etc. stay frozen at
+        the failure-time values); ``retry_count`` increments so the UI
+        can flag chronic failures.
+
+        Raises BatchJobNotCancellableError when the job is in a state
+        from which retry doesn't make sense (queued / processing /
+        completed).
+        """
+        job = await self.get_job(job_id)
+        if job.status not in (
+            BatchJobStatus.FAILED,
+            BatchJobStatus.CANCELLED,
+        ):
+            raise BatchJobNotCancellableError(
+                f"job {job_id} is not retryable in state {job.status}"
+            )
+        job.status = BatchJobStatus.QUEUED
+        job.completed_at = None
+        job.cancelled_at = None
+        job.retry_count = (job.retry_count or 0) + 1
+        # last_error and error_summary are kept for the audit trail —
+        # the worker overwrites them as new errors land.
+        await self._session.flush()
+        await self._audit.log(
+            action="batch.retry",
+            resource_type="batch_job",
+            resource_id=job.id,
+            tenant_id=job.tenant_id,
+            actor_user_id=actor_user_id,
+            ip_address=ip_address,
+            details={
+                "retry_count": job.retry_count,
+                "resume_from_row": job.last_checkpoint_row,
+            },
+        )
         return job
 
 

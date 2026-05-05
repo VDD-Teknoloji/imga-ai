@@ -260,6 +260,13 @@ async def _run_job(
         auto_create = job.auto_create_tickets
         triggered_by_user_id = job.triggered_by_user_id
         chunk_size = context.settings.chunk_size
+        # Sprint 9.0 — resume support. last_checkpoint_row > 0 means a
+        # previous run made it through that row before failing /
+        # being cancelled; the operator hit /retry to pick up here.
+        # The worker streams the file from the start (the parser has
+        # no native seek for XLSX) and skips rows whose row_number is
+        # at or below the checkpoint.
+        resume_from_row = job.last_checkpoint_row
 
     # Open the file outside the transaction (streaming).
     if not file_path.exists():
@@ -298,6 +305,15 @@ async def _run_job(
     # Intra-batch dedup — same text twice in the same upload collapses
     # to one review (the second is counted as duplicates_skipped).
     seen_hashes_in_batch: set[str] = set()
+
+    # Sprint 9.0 — resume filter. When resume_from_row > 0 we drop
+    # already-processed rows from the iterator before they hit
+    # _chunked, so the worker only burns BERT inference on rows
+    # the previous run hadn't reached.
+    if resume_from_row > 0:
+        rows_iter = (
+            row for row in rows_iter if row.row_number > resume_from_row
+        )
 
     for chunk in _chunked(rows_iter, chunk_size):
         # Cancel check before every chunk.
@@ -368,6 +384,12 @@ async def _process_chunk(
             continue
         valid_rows.append(parsed)
 
+    # Sprint 9.0 — checkpoint = highest row_number in this chunk.
+    # The chunk is ordered by row_number (iter_rows is sequential), so
+    # max() == chunk[-1].row_number; computing max defensively in case
+    # a later refactor shuffles ordering.
+    chunk_checkpoint = max((p.row_number for p in chunk), default=0)
+
     if not valid_rows:
         await _commit_progress(
             job_id=job_id,
@@ -377,6 +399,7 @@ async def _process_chunk(
                 processed_delta=len(chunk),
                 failed_delta=failed,
                 error_entries=error_entries or None,
+                checkpoint_row=chunk_checkpoint,
             ),
         )
         return
@@ -400,6 +423,7 @@ async def _process_chunk(
                 processed_delta=len(chunk),
                 failed_delta=failed,
                 error_entries=error_entries or None,
+                checkpoint_row=chunk_checkpoint,
             ),
         )
         return
@@ -575,6 +599,7 @@ async def _process_chunk(
             duplicates_skipped_delta=duplicates,
             rows_with_nps_delta=rows_with_nps_in_chunk,
             error_entries=error_entries or None,
+            checkpoint_row=chunk_checkpoint,
         ),
     )
 
