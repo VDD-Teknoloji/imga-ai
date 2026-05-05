@@ -41,7 +41,19 @@ import {
   useSentimentTimeline,
   useTicketResolutionTime,
 } from "@/hooks/use-analytics";
-import type { AnalyticsFilters } from "@/lib/types";
+import type {
+  AnalyticsFilters,
+  CohortDimension,
+  CohortPeriod,
+  HeatmapMetric,
+  HeatmapXAxis,
+  HeatmapYAxis,
+  WordCloudSentiment,
+} from "@/lib/types";
+
+import { CohortTab } from "./_components/cohort-tab";
+import { HeatmapTab } from "./_components/heatmap-tab";
+import { WordCloudTab } from "./_components/word-cloud-tab";
 
 const SENTIMENT_COLOURS: Record<string, string> = {
   NEGATIF: "#dc2626",
@@ -49,7 +61,18 @@ const SENTIMENT_COLOURS: Record<string, string> = {
   POZITIF: "#16a34a",
 };
 
-type TabKey = "sentiment" | "category" | "cross" | "overrides" | "tickets" | "nps" | "perspective";
+type TabKey =
+  | "sentiment"
+  | "category"
+  | "cross"
+  | "overrides"
+  | "tickets"
+  | "nps"
+  | "perspective"
+  // Sprint 8.3.9 additions.
+  | "cohort"
+  | "wordcloud"
+  | "heatmap";
 
 const TAB_LABELS: Record<TabKey, string> = {
   sentiment: "Duygu",
@@ -59,6 +82,9 @@ const TAB_LABELS: Record<TabKey, string> = {
   tickets: "Biletler",
   nps: "NPS",
   perspective: "Şirket Perspektifi",
+  cohort: "Kohort",
+  wordcloud: "Kelime Bulutu",
+  heatmap: "Heatmap",
 };
 
 // Sprint 8.3.4 round-2 — wrap the search-params-reading subtree in
@@ -116,6 +142,39 @@ function InsightsContent() {
     () => searchParams.get("source_types") ?? "",
   );
 
+  // Sprint 8.3.9 — per-tab URL state for the new visualization tabs.
+  // Each tab owns a small slice of params; the parent page is the
+  // single owner so back/forward and F5 stay coherent (Path B
+  // mirror, same as the date filter above).
+  const [cohortPeriod, setCohortPeriodState] = useState<CohortPeriod>(
+    () => (searchParams.get("cohort_period") as CohortPeriod) || "month",
+  );
+  const [cohortDimension, setCohortDimensionState] = useState<CohortDimension>(
+    () =>
+      (searchParams.get("cohort_dimension") as CohortDimension) || "taxonomy",
+  );
+  const [cohortLimit, setCohortLimitState] = useState<number>(
+    () => Number(searchParams.get("cohort_limit") ?? "10") || 10,
+  );
+  const [wcSentiment, setWcSentimentState] = useState<WordCloudSentiment>(
+    () => (searchParams.get("wc_sentiment") as WordCloudSentiment) || "all",
+  );
+  const [wcTaxonomy, setWcTaxonomyState] = useState<string>(
+    () => searchParams.get("wc_taxonomy") ?? "",
+  );
+  const [wcBigrams, setWcBigramsState] = useState<boolean>(
+    () => searchParams.get("wc_bigrams") !== "false",
+  );
+  const [hmX, setHmXState] = useState<HeatmapXAxis>(
+    () => (searchParams.get("hm_x") as HeatmapXAxis) || "hour_of_day",
+  );
+  const [hmY, setHmYState] = useState<HeatmapYAxis>(
+    () => (searchParams.get("hm_y") as HeatmapYAxis) || "day_of_week",
+  );
+  const [hmMetric, setHmMetricState] = useState<HeatmapMetric>(
+    () => (searchParams.get("hm_metric") as HeatmapMetric) || "count",
+  );
+
   // Sync FROM URL → state for external navigations (back/forward, deep
   // links, /reviews drilldown navigating back here). Functional setter
   // form keeps the eslint deps array honest while still no-op'ing when
@@ -138,6 +197,38 @@ function InsightsContent() {
     setDateToState((prev) => (prev === urlTo ? prev : urlTo));
     const urlSrc = searchParams.get("source_types") ?? "";
     setSourceTypesState((prev) => (prev === urlSrc ? prev : urlSrc));
+    // Sprint 8.3.9 mirrors.
+    const urlCohortPeriod =
+      (searchParams.get("cohort_period") as CohortPeriod) || "month";
+    setCohortPeriodState((prev) =>
+      prev === urlCohortPeriod ? prev : urlCohortPeriod,
+    );
+    const urlCohortDimension =
+      (searchParams.get("cohort_dimension") as CohortDimension) || "taxonomy";
+    setCohortDimensionState((prev) =>
+      prev === urlCohortDimension ? prev : urlCohortDimension,
+    );
+    const urlCohortLimit =
+      Number(searchParams.get("cohort_limit") ?? "10") || 10;
+    setCohortLimitState((prev) =>
+      prev === urlCohortLimit ? prev : urlCohortLimit,
+    );
+    const urlWcSent =
+      (searchParams.get("wc_sentiment") as WordCloudSentiment) || "all";
+    setWcSentimentState((prev) => (prev === urlWcSent ? prev : urlWcSent));
+    const urlWcTax = searchParams.get("wc_taxonomy") ?? "";
+    setWcTaxonomyState((prev) => (prev === urlWcTax ? prev : urlWcTax));
+    const urlWcBg = searchParams.get("wc_bigrams") !== "false";
+    setWcBigramsState((prev) => (prev === urlWcBg ? prev : urlWcBg));
+    const urlHmX =
+      (searchParams.get("hm_x") as HeatmapXAxis) || "hour_of_day";
+    setHmXState((prev) => (prev === urlHmX ? prev : urlHmX));
+    const urlHmY =
+      (searchParams.get("hm_y") as HeatmapYAxis) || "day_of_week";
+    setHmYState((prev) => (prev === urlHmY ? prev : urlHmY));
+    const urlHmMetric =
+      (searchParams.get("hm_metric") as HeatmapMetric) || "count";
+    setHmMetricState((prev) => (prev === urlHmMetric ? prev : urlHmMetric));
   }, [searchParams]);
   /* eslint-enable react-hooks/set-state-in-effect */
 
@@ -202,7 +293,7 @@ function InsightsContent() {
       />
 
       <Tabs value={tab} onValueChange={(v) => handleTabChange(v as TabKey)}>
-        <TabsList className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-7">
+        <TabsList className="grid grid-cols-3 sm:grid-cols-5 lg:grid-cols-10">
           {(Object.keys(TAB_LABELS) as TabKey[]).map((k) => (
             <TabsTrigger key={k} value={k}>
               {TAB_LABELS[k]}
@@ -230,6 +321,72 @@ function InsightsContent() {
         </TabsContent>
         <TabsContent value="perspective">
           <PerspectiveTab filters={filters} router={router} />
+        </TabsContent>
+        <TabsContent value="cohort">
+          <CohortTab
+            period={cohortPeriod}
+            dimension={cohortDimension}
+            dateFrom={dateFrom}
+            dateTo={dateTo}
+            limitCohorts={cohortLimit}
+            onPeriodChange={(next) => {
+              setCohortPeriodState(next);
+              pushParam("cohort_period", next === "month" ? null : next);
+            }}
+            onDimensionChange={(next) => {
+              setCohortDimensionState(next);
+              pushParam(
+                "cohort_dimension",
+                next === "taxonomy" ? null : next,
+              );
+            }}
+            onLimitChange={(next) => {
+              setCohortLimitState(next);
+              pushParam("cohort_limit", next === 10 ? null : String(next));
+            }}
+          />
+        </TabsContent>
+        <TabsContent value="wordcloud">
+          <WordCloudTab
+            sentiment={wcSentiment}
+            taxonomyCode={wcTaxonomy}
+            includeBigrams={wcBigrams}
+            dateFrom={dateFrom}
+            dateTo={dateTo}
+            onSentimentChange={(next) => {
+              setWcSentimentState(next);
+              pushParam("wc_sentiment", next === "all" ? null : next);
+            }}
+            onTaxonomyChange={(next) => {
+              setWcTaxonomyState(next);
+              pushParam("wc_taxonomy", next || null);
+            }}
+            onBigramsChange={(next) => {
+              setWcBigramsState(next);
+              pushParam("wc_bigrams", next ? null : "false");
+            }}
+          />
+        </TabsContent>
+        <TabsContent value="heatmap">
+          <HeatmapTab
+            xAxis={hmX}
+            yAxis={hmY}
+            metric={hmMetric}
+            dateFrom={dateFrom}
+            dateTo={dateTo}
+            onXAxisChange={(next) => {
+              setHmXState(next);
+              pushParam("hm_x", next === "hour_of_day" ? null : next);
+            }}
+            onYAxisChange={(next) => {
+              setHmYState(next);
+              pushParam("hm_y", next === "day_of_week" ? null : next);
+            }}
+            onMetricChange={(next) => {
+              setHmMetricState(next);
+              pushParam("hm_metric", next === "count" ? null : next);
+            }}
+          />
         </TabsContent>
       </Tabs>
     </main>
