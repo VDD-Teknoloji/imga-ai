@@ -14,7 +14,12 @@ from typing import Annotated, Any
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from imga_core.llm import AllKeysExhaustedError, LLMError
+from imga_core.llm import (
+    AllKeysExhaustedError,
+    LLMError,
+    LLMResponseBlockedError,
+    LLMTokenLimitError,
+)
 from imga_db.models import ExecutiveBriefing, UserTenantRole
 from pydantic import BaseModel, field_validator
 from sqlalchemy import select
@@ -161,6 +166,19 @@ async def generate_briefing(
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="all_keys_exhausted",
+        ) from exc
+    except LLMTokenLimitError as exc:
+        # Sprint 8.3.11 R2 — distinct surface for the truncation case
+        # so the frontend can show a "tekrar deneyin / dönemi daraltın"
+        # toast rather than a generic 502.
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=str(exc),
+        ) from exc
+    except LLMResponseBlockedError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=str(exc),
         ) from exc
     except BriefingResponseInvalidError as exc:
         raise HTTPException(

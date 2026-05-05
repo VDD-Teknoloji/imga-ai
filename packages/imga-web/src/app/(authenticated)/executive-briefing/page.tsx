@@ -307,12 +307,26 @@ function KpiCard({ kpi }: { kpi: BriefingKpiChange }) {
         : "bg-zinc-50 border-zinc-300 text-zinc-700";
   const arrow =
     kpi.direction === "up" ? "↑" : kpi.direction === "down" ? "↓" : "→";
+  // Sprint 8.3.11 R2 — change_pct can be null when previous was 0 or
+  // missing; the server-computed payload sets ``change_label = "yeni
+  // başlangıç"`` for that case. Render the label instead of an
+  // arithmetic-looking percentage.
+  const hasChange = kpi.change_pct !== null && kpi.change_pct !== undefined;
   return (
     <li className={`rounded-md border p-3 ${tone}`}>
       <p className="text-xs">{kpi.metric}</p>
       <p className="text-sm font-semibold tabular-nums">
-        {kpi.current.toFixed(2)} {arrow} ({kpi.change_pct >= 0 ? "+" : ""}
-        {kpi.change_pct.toFixed(1)}%)
+        {kpi.current.toFixed(2)}{" "}
+        {hasChange ? (
+          <>
+            {arrow} ({(kpi.change_pct ?? 0) >= 0 ? "+" : ""}
+            {(kpi.change_pct ?? 0).toFixed(1)}%)
+          </>
+        ) : (
+          <span className="text-xs italic">
+            ({kpi.change_label ?? "yeni başlangıç"})
+          </span>
+        )}
       </p>
       <p className="text-xs">önceki: {kpi.previous.toFixed(2)}</p>
     </li>

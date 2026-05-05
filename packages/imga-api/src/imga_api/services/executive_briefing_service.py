@@ -196,6 +196,16 @@ class ExecutiveBriefingService:
 
         self._validate_response(response)
 
+        # Sprint 8.3.11 R2 — replace the LLM's kpi_changes with the
+        # server-computed list. The LLM occasionally hallucinated
+        # change_pct on previous=0 rows (Inf% / NaN); computing
+        # locally + overriding gives us deterministic numbers and a
+        # "yeni başlangıç" label for the new-period case the LLM
+        # otherwise mishandled. Headline / insights / top_actions
+        # from the LLM still pass through unchanged.
+        response = dict(response)
+        response["kpi_changes"] = _compute_kpi_changes(current, previous)
+
         report_dict = await self._persist(
             response=response,
             period=period,
@@ -374,6 +384,86 @@ class ExecutiveBriefingService:
 
 def _build_provider_without_key() -> GeminiProvider:
     return GeminiProvider(api_key="x", model_name=DEFAULT_MODEL_NAME)
+
+
+# Sprint 8.3.11 R2 — server-computed KPI deltas. The LLM occasionally
+# hallucinated values for the previous=0 case (Inf% / NaN / fabricated
+# numbers); computing here gives us deterministic numbers + a clear
+# "yeni başlangıç" label that the response model + frontend can
+# render without additional logic. The LLM's kpi_changes output is
+# discarded in favour of this list.
+_KPI_METRICS: tuple[tuple[str, str], ...] = (
+    ("total_reviews", "Toplam Yorum"),
+    ("nps_score", "NPS"),
+    ("avg_sentiment", "Ortalama Duygu"),
+    ("negative_share", "Negatif Yorum Oranı"),
+)
+
+
+def _compute_kpi_changes(
+    current: _PeriodStats,
+    previous: _PeriodStats,
+) -> list[dict[str, Any]]:
+    """Build the kpi_changes payload from raw period stats.
+
+    For each metric in ``_KPI_METRICS``:
+      * If both values are present and previous != 0 →
+        ``change_pct = round((current - previous) / previous * 100, 1)``
+        with direction inferred from the sign.
+      * If previous is missing OR zero → ``change_pct = None`` plus a
+        ``change_label = "yeni başlangıç"`` so the UI renders the
+        no-comparison state correctly.
+      * If both values are missing (None for nps_score on a no-NPS
+        tenant) → omit the metric entirely.
+    """
+    out: list[dict[str, Any]] = []
+    for key, label in _KPI_METRICS:
+        cur_val = _attr(current, key)
+        prev_val = _attr(previous, key)
+        if cur_val is None and prev_val is None:
+            continue
+        # Coerce to float for the arithmetic; keep None for "no data".
+        cur_f = float(cur_val) if cur_val is not None else None
+        prev_f = float(prev_val) if prev_val is not None else None
+
+        if prev_f is None or prev_f == 0:
+            change_pct: float | None = None
+            change_label: str | None = "yeni başlangıç"
+            direction = "flat"
+        else:
+            current_anchored = cur_f if cur_f is not None else 0.0
+            change_pct = round((current_anchored - prev_f) / prev_f * 100, 1)
+            change_label = None
+            if change_pct > 0:
+                direction = "up"
+            elif change_pct < 0:
+                direction = "down"
+            else:
+                direction = "flat"
+
+        out.append(
+            {
+                "metric": label,
+                "current": _round_for_wire(cur_f) if cur_f is not None else 0.0,
+                "previous": _round_for_wire(prev_f) if prev_f is not None else 0.0,
+                "change_pct": change_pct,
+                "change_label": change_label,
+                "direction": direction,
+            }
+        )
+    return out
+
+
+def _attr(stats: _PeriodStats, key: str) -> Any:
+    """Field accessor that maps wire keys (``total_reviews``,
+    ``nps_score`` …) to the dataclass attribute."""
+    return getattr(stats, key, None)
+
+
+def _round_for_wire(value: float) -> float:
+    """Round to 2 decimals so the JSON payload stays tidy in
+    cache dumps and DB rows."""
+    return round(value, 2)
 
 
 __all__ = [

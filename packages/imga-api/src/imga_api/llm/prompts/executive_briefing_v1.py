@@ -21,11 +21,17 @@ EXECUTIVE_BRIEFING_RESPONSE_SCHEMA: dict[str, Any] = {
     "required": ["headline", "kpi_changes", "critical_insights", "top_actions"],
     "properties": {
         "headline": {"type": "string"},
+        # Sprint 8.3.11 R2 — the server-computed kpi_changes override
+        # the LLM's output before persistence; the LLM still emits
+        # this field to keep the contract intact, but we don't trust
+        # its numeric edge-case handling. ``change_pct`` is permissive
+        # here (number; the override may set it to null which the
+        # Pydantic response model accepts).
         "kpi_changes": {
             "type": "array",
             "items": {
                 "type": "object",
-                "required": ["metric", "current", "previous", "change_pct", "direction"],
+                "required": ["metric", "current", "previous", "direction"],
                 "properties": {
                     "metric": {"type": "string"},
                     "current": {"type": "number"},

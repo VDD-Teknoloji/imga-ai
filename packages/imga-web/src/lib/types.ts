@@ -1119,7 +1119,11 @@ export interface BriefingKpiChange {
   metric: string;
   current: number;
   previous: number;
-  change_pct: number;
+  /** Sprint 8.3.11 R2 — null when ``previous`` was 0 or missing
+   *  (the server-side computer flags these with ``change_label =
+   *  "yeni başlangıç"`` so the UI renders the no-comparison state). */
+  change_pct: number | null;
+  change_label?: string | null;
   direction: "up" | "down" | "flat";
 }
 
