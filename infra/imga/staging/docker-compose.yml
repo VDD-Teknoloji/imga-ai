@@ -114,6 +114,47 @@ services:
           memory: 2G
           cpus: '2'
 
+  # Sprint 9.0.5-A — same arq worker as production, scaled for
+  # staging traffic. Smaller pipeline pool (2 instead of 4) so the
+  # combined api + api-worker memory footprint fits the staging VPS
+  # budget. See production compose for the freeze-fix rationale.
+  api-worker:
+    image: imga-api:staging
+    build:
+      context: ../../..
+      dockerfile: packages/imga-api/Dockerfile
+    container_name: imga-staging-api-worker
+    restart: unless-stopped
+    env_file: /etc/imga/staging/api.env
+    environment:
+      IMGA_MASTER_KEY_PATH: /run/secrets/imga/master.key
+      REDIS_URL: redis://redis:6379/0
+      IMGA_BATCH_CHUNK_CONCURRENCY: "2"
+    secrets:
+      - source: imga_master_key
+        target: imga/master.key
+        mode: 0400
+    networks:
+      - imga-staging-internal
+    volumes:
+      - /var/imga-staging/uploads:/var/imga/uploads
+      - /var/imga-staging/reports:/var/imga/reports
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command:
+      - python
+      - -m
+      - arq
+      - imga_api.workers.arq_worker.WorkerSettings
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '1'
+
   web:
     image: imga-web:staging
     build:

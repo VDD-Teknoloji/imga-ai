@@ -119,6 +119,61 @@ services:
           memory: 3G
           cpus: '2'
 
+  # Sprint 9.0.5-A — out-of-process batch worker (arq).
+  #
+  # Today's incident: a 2852-row CSV upload sat at processed_rows=0
+  # for 21 min while the API container itself stopped serving
+  # /reviews / /insights — the in-process APScheduler ran BERT
+  # inference on the request handlers' event loop and the sync
+  # transformers C extension never yielded. arq moves BERT work to a
+  # separate process; even a wedged worker can't take the API down.
+  #
+  # Same image as the api service (worker reuses imga-core +
+  # imga-db + the imga-api install). The CMD override switches it
+  # from uvicorn to the arq worker entrypoint. Memory limit covers 4
+  # parallel BERT pipelines (B3 chunk concurrency) + asyncpg pool +
+  # Python overhead with margin.
+  api-worker:
+    image: imga-api:production
+    build:
+      context: ../../..
+      dockerfile: packages/imga-api/Dockerfile
+    container_name: imga-prod-api-worker
+    restart: unless-stopped
+    env_file: /etc/imga/production/api.env
+    environment:
+      IMGA_MASTER_KEY_PATH: /run/secrets/imga/master.key
+      REDIS_URL: redis://redis:6379/0
+      # Default 4 parallel chunks; bump only if you also bump the
+      # memory limit below (each pipeline ≈ 350-400 MiB).
+      IMGA_BATCH_CHUNK_CONCURRENCY: "4"
+    secrets:
+      - source: imga_master_key
+        target: imga/master.key
+        mode: 0400
+    networks:
+      - imga-prod-internal
+    # Same upload + report mounts as the api so the worker can read
+    # the CSV/XLSX the API wrote on POST /analyze/batch.
+    volumes:
+      - /var/imga/uploads:/var/imga/uploads
+      - /var/imga/reports:/var/imga/reports
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command:
+      - python
+      - -m
+      - arq
+      - imga_api.workers.arq_worker.WorkerSettings
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: '2'
+
   web:
     image: imga-web:production
     build:
