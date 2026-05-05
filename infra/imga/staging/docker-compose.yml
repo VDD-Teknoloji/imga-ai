@@ -22,6 +22,30 @@ services:
     environment:
       POSTGRES_DB: imga
       POSTGRES_USER: imga_owner
+    # Sprint 9.0 — same shape as production tuning, scaled to the 1G
+    # ceiling. Staging traffic is light so 25% shared_buffers (256MB)
+    # is plenty; pg_stat_statements still loaded so migration 0022 and
+    # the slow-query review behave identically across environments.
+    command:
+      - postgres
+      - -c
+      - shared_preload_libraries=pg_stat_statements
+      - -c
+      - shared_buffers=256MB
+      - -c
+      - effective_cache_size=768MB
+      - -c
+      - work_mem=8MB
+      - -c
+      - maintenance_work_mem=64MB
+      - -c
+      - max_connections=50
+      - -c
+      - pg_stat_statements.max=2000
+      - -c
+      - pg_stat_statements.track=all
+      - -c
+      - random_page_cost=1.1
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ../../../packages/imga-db/sql:/docker-entrypoint-initdb.d:ro
@@ -35,8 +59,8 @@ services:
     deploy:
       resources:
         limits:
-          # Staging trafiği düşük; production'ın yarısı yeterli.
-          memory: 512M
+          # Staging trafiği düşük; production'ın çeyreği yeterli.
+          memory: 1G
           cpus: '1'
 
   api:

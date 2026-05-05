@@ -26,6 +26,32 @@ services:
     environment:
       POSTGRES_DB: imga
       POSTGRES_USER: imga_owner
+    # Sprint 9.0 — Postgres tuning for the 10K-row batch demo workload.
+    # The container memory limit jumps 1G -> 4G so the BERT inference
+    # path on the api side isn't fighting the DB for page cache. Tuning
+    # values follow the 25% / 75% rule (shared_buffers / effective_cache_size)
+    # off the new 4G ceiling. pg_stat_statements is preloaded here so
+    # migration 0022's CREATE EXTENSION succeeds on first run.
+    command:
+      - postgres
+      - -c
+      - shared_preload_libraries=pg_stat_statements
+      - -c
+      - shared_buffers=1GB
+      - -c
+      - effective_cache_size=3GB
+      - -c
+      - work_mem=16MB
+      - -c
+      - maintenance_work_mem=256MB
+      - -c
+      - max_connections=200
+      - -c
+      - pg_stat_statements.max=5000
+      - -c
+      - pg_stat_statements.track=all
+      - -c
+      - random_page_cost=1.1
     volumes:
       - postgres_data:/var/lib/postgresql/data
       # imga-db init script (3 rolü ilk başlatmada yaratır: owner / app / admin)
@@ -40,7 +66,7 @@ services:
     deploy:
       resources:
         limits:
-          memory: 1G
+          memory: 4G
           cpus: '2'
 
   api:
