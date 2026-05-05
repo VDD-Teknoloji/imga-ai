@@ -86,6 +86,7 @@ class HeatmapGenerator:
         date_from: date | None = None,
         date_to: date | None = None,
         taxonomy_top_n: int = 12,
+        batch_id: UUID | None = None,
     ) -> dict[str, Any]:
         """Return the heatmap payload (cache-aware).
 
@@ -111,7 +112,7 @@ class HeatmapGenerator:
 
         cache_key = self._cache_key(
             tenant_id, x_axis, y_axis, metric,
-            date_from, date_to, taxonomy_top_n,
+            date_from, date_to, taxonomy_top_n, batch_id,
         )
 
         async def _compute() -> dict[str, Any]:
@@ -124,6 +125,7 @@ class HeatmapGenerator:
                     date_from=date_from,
                     date_to=date_to,
                     taxonomy_top_n=taxonomy_top_n,
+                    batch_id=batch_id,
                 )
             except Exception:
                 _logger.exception(
@@ -154,6 +156,7 @@ class HeatmapGenerator:
         date_from: date | None,
         date_to: date | None,
         taxonomy_top_n: int,
+        batch_id: UUID | None,
     ) -> dict[str, Any]:
         x_expr, x_resolver = self._axis_expr(x_axis)
         y_expr, y_resolver = self._axis_expr(y_axis)
@@ -173,6 +176,8 @@ class HeatmapGenerator:
             stmt = stmt.where(Review.created_at >= date_from)
         if date_to is not None:
             stmt = stmt.where(Review.created_at <= date_to)
+        if batch_id is not None:
+            stmt = stmt.where(Review.batch_job_id == batch_id)
         # NPS metric ignores rows where nps_score is NULL — without
         # this, the AVG produces NULL cells we'd then have to filter
         # client-side.
@@ -341,12 +346,14 @@ class HeatmapGenerator:
         date_from: date | None,
         date_to: date | None,
         taxonomy_top_n: int,
+        batch_id: UUID | None,
     ) -> str:
         df = date_from.isoformat() if date_from else "all"
         dt = date_to.isoformat() if date_to else "all"
+        bid = str(batch_id) if batch_id else "all"
         return (
             f"heatmap:{tenant_id}:{x_axis}:{y_axis}:{metric}:"
-            f"{df}:{dt}:{taxonomy_top_n}"
+            f"{df}:{dt}:{taxonomy_top_n}:{bid}"
         )
 
 

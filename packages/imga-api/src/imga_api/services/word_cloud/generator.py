@@ -98,6 +98,7 @@ class WordCloudGenerator:
         date_to: date | None = None,
         limit_words: int = 100,
         include_bigrams: bool = True,
+        batch_id: UUID | None = None,
     ) -> dict[str, Any]:
         if sentiment not in ALLOWED_SENTIMENTS:
             raise ValueError(
@@ -108,7 +109,7 @@ class WordCloudGenerator:
 
         cache_key = self._cache_key(
             tenant_id, sentiment, taxonomy_code,
-            date_from, date_to, limit_words, include_bigrams,
+            date_from, date_to, limit_words, include_bigrams, batch_id,
         )
 
         async def _compute() -> dict[str, Any]:
@@ -121,6 +122,7 @@ class WordCloudGenerator:
                     date_to=date_to,
                     limit_words=limit_words,
                     include_bigrams=include_bigrams,
+                    batch_id=batch_id,
                 )
             except Exception:
                 _logger.exception(
@@ -149,6 +151,7 @@ class WordCloudGenerator:
         date_to: date | None,
         limit_words: int,
         include_bigrams: bool,
+        batch_id: UUID | None,
     ) -> dict[str, Any]:
         stmt = (
             select(Review.text, Review.sentiment_score)
@@ -165,6 +168,8 @@ class WordCloudGenerator:
             stmt = stmt.where(Review.created_at >= date_from)
         if date_to is not None:
             stmt = stmt.where(Review.created_at <= date_to)
+        if batch_id is not None:
+            stmt = stmt.where(Review.batch_job_id == batch_id)
 
         rows = (await self._session.execute(stmt)).all()
         total_reviews = len(rows)
@@ -250,14 +255,16 @@ class WordCloudGenerator:
         date_to: date | None,
         limit_words: int,
         include_bigrams: bool,
+        batch_id: UUID | None,
     ) -> str:
         df = date_from.isoformat() if date_from else "all"
         dt = date_to.isoformat() if date_to else "all"
         tax = taxonomy_code or "all"
         bg = "1" if include_bigrams else "0"
+        bid = str(batch_id) if batch_id else "all"
         return (
             f"wordcloud:{tenant_id}:{sentiment}:{tax}:"
-            f"{df}:{dt}:{limit_words}:{bg}"
+            f"{df}:{dt}:{limit_words}:{bg}:{bid}"
         )
 
 

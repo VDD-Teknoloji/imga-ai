@@ -130,6 +130,7 @@ async def get_cohort(
     date_from: date | None = None,
     date_to: date | None = None,
     limit_cohorts: Annotated[int, Query(ge=1, le=50)] = 10,
+    batch_id: UUID | None = None,
 ) -> CohortResponse:
     if period not in ALLOWED_PERIODS:
         raise HTTPException(
@@ -152,6 +153,7 @@ async def get_cohort(
                 date_from=date_from,
                 date_to=date_to,
                 limit_cohorts=limit_cohorts,
+                batch_id=batch_id,
             )
         return CohortResponse(**_strip_for_response(payload))
     except HTTPException:
@@ -181,6 +183,7 @@ async def get_word_cloud(
     date_to: date | None = None,
     limit_words: Annotated[int, Query(ge=5, le=500)] = 100,
     include_bigrams: bool = True,
+    batch_id: UUID | None = None,
 ) -> WordCloudResponse:
     if sentiment not in ALLOWED_SENTIMENTS:
         raise HTTPException(
@@ -199,6 +202,7 @@ async def get_word_cloud(
                 date_to=date_to,
                 limit_words=limit_words,
                 include_bigrams=include_bigrams,
+                batch_id=batch_id,
             )
         return WordCloudResponse(**_strip_for_response(payload))
     except HTTPException:
@@ -234,6 +238,7 @@ async def get_heatmap(
     date_from: date | None = None,
     date_to: date | None = None,
     taxonomy_top_n: Annotated[int, Query(ge=1, le=50)] = 12,
+    batch_id: UUID | None = None,
 ) -> HeatmapResponse:
     if x_axis not in ALLOWED_X_AXES:
         raise HTTPException(
@@ -267,6 +272,7 @@ async def get_heatmap(
                 date_from=date_from,
                 date_to=date_to,
                 taxonomy_top_n=taxonomy_top_n,
+                batch_id=batch_id,
             )
         return HeatmapResponse(**_strip_for_response(payload))
     except HTTPException:

@@ -64,6 +64,7 @@ class CohortAnalyzer:
         date_from: date | None = None,
         date_to: date | None = None,
         limit_cohorts: int = 10,
+        batch_id: UUID | None = None,
     ) -> dict[str, Any]:
         """Return the cohort payload (cache-aware).
 
@@ -81,7 +82,8 @@ class CohortAnalyzer:
             raise ValueError("limit_cohorts must be 1..50")
 
         cache_key = self._cache_key(
-            tenant_id, period, dimension, date_from, date_to, limit_cohorts
+            tenant_id, period, dimension, date_from, date_to,
+            limit_cohorts, batch_id,
         )
 
         async def _compute() -> dict[str, Any]:
@@ -93,6 +95,7 @@ class CohortAnalyzer:
                     date_from=date_from,
                     date_to=date_to,
                     limit_cohorts=limit_cohorts,
+                    batch_id=batch_id,
                 )
             except Exception:
                 _logger.exception(
@@ -121,6 +124,7 @@ class CohortAnalyzer:
         date_from: date | None,
         date_to: date | None,
         limit_cohorts: int,
+        batch_id: UUID | None,
     ) -> dict[str, Any]:
         # 1. Resolve the dimension column on Review.
         dim_col = self._dimension_column(dimension)
@@ -147,6 +151,10 @@ class CohortAnalyzer:
         if date_to is not None:
             cohort_totals_stmt = cohort_totals_stmt.where(
                 Review.created_at <= date_to
+            )
+        if batch_id is not None:
+            cohort_totals_stmt = cohort_totals_stmt.where(
+                Review.batch_job_id == batch_id
             )
         top_cohorts = (await self._session.execute(cohort_totals_stmt)).all()
 
@@ -181,6 +189,10 @@ class CohortAnalyzer:
         if date_to is not None:
             per_period_stmt = per_period_stmt.where(
                 Review.created_at <= date_to
+            )
+        if batch_id is not None:
+            per_period_stmt = per_period_stmt.where(
+                Review.batch_job_id == batch_id
             )
         rows = (await self._session.execute(per_period_stmt)).all()
 
@@ -263,12 +275,14 @@ class CohortAnalyzer:
         date_from: date | None,
         date_to: date | None,
         limit_cohorts: int,
+        batch_id: UUID | None,
     ) -> str:
         df = date_from.isoformat() if date_from else "all"
         dt = date_to.isoformat() if date_to else "all"
+        bid = str(batch_id) if batch_id else "all"
         return (
             f"cohort:{tenant_id}:{period}:{dimension}:"
-            f"{df}:{dt}:{limit_cohorts}"
+            f"{df}:{dt}:{limit_cohorts}:{bid}"
         )
 
 
