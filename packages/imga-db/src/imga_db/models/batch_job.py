@@ -136,3 +136,16 @@ class AnalyzeBatchJob(Base):
     last_error: Mapped[str | None] = mapped_column(
         String(2048), nullable=True
     )
+
+    # Sprint 9.0.5-A — arq worker handle. ``worker_job_id`` is the
+    # arq-side enqueue id (non-null once the route enqueued the job;
+    # null on the legacy in-process scheduler path that tests still
+    # use). ``queued_at`` separates "row created" from "queued for
+    # work" so a route crash between create + enqueue leaves a
+    # consistent QUEUED row that an operator can re-submit.
+    worker_job_id: Mapped[str | None] = mapped_column(
+        String(64), nullable=True
+    )
+    queued_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
