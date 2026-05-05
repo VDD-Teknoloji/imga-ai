@@ -5,6 +5,7 @@ import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useState } from "react";
 
+import { BatchFilterDropdown } from "@/components/reviews/batch-filter-dropdown";
 import { OverrideChip } from "@/components/reviews/override-display";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -191,6 +192,16 @@ function ReviewsPageInner() {
               perspective_codes: next.length > 0 ? next : undefined,
             })
           }
+        />
+        <BatchFilterDropdown
+          selected={filters.batch_job_id}
+          onChange={(next) =>
+            applyFilters({
+              ...filters,
+              batch_job_id: next ?? undefined,
+            })
+          }
+          inline
         />
         <FilterPills filters={filters} />
       </div>
