@@ -8,6 +8,7 @@ the call site (HybridClassifier).
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import re
@@ -21,6 +22,13 @@ from imga_core.llm.errors import (
     MalformedResponseError,
     RateLimitError,
 )
+
+# Sprint 9.0 — soft retry policy for transient Gemini errors. Only
+# LLMProviderError (network blip, 5xx) is retried; InvalidKeyError /
+# RateLimitError stay rotator-routed and Malformed/TokenLimit/Blocked
+# are deterministic so retry is wasted work.
+_TRANSIENT_RETRY_ATTEMPTS = 3
+_TRANSIENT_RETRY_BASE_SECONDS = 1.0
 from imga_core.llm.prompts import (
     CLASSIFICATION_RESPONSE_SCHEMA,
     build_classification_prompt,
@@ -327,19 +335,20 @@ class GeminiProvider(LLMProvider):
             system_instruction=system_prompt,
         )
 
-        try:
-            response = await model.generate_content_async(
-                user_prompt,
-                generation_config={
-                    "response_mime_type": "application/json",
-                    "response_schema": response_schema,
-                    "temperature": temperature,
-                    "top_p": top_p,
-                    "max_output_tokens": max_output_tokens,
-                },
-            )
-        except Exception as exc:
-            self._raise_mapped_sdk_error(exc)
+        # Sprint 9.0 — soft retry on transient errors. We try up to
+        # _TRANSIENT_RETRY_ATTEMPTS times with exponential backoff.
+        # Rotator-relevant errors (RateLimit / InvalidKey) and
+        # deterministic errors (Malformed / TokenLimit / Blocked) skip
+        # the retry path so the rotator decides + the user sees the
+        # actionable surface immediately.
+        response = await self._call_with_soft_retry(
+            model=model,
+            user_prompt=user_prompt,
+            response_schema=response_schema,
+            temperature=temperature,
+            top_p=top_p,
+            max_output_tokens=max_output_tokens,
+        )
 
         # Sprint 8.3.11 R2 — surface MAX_TOKENS / SAFETY / RECITATION
         # finish reasons as distinct, actionable errors BEFORE the
@@ -353,6 +362,70 @@ class GeminiProvider(LLMProvider):
             self._parse_structured_response(response),
             self._extract_usage_metadata(response),
         )
+
+    async def _call_with_soft_retry(
+        self,
+        *,
+        model: Any,
+        user_prompt: str,
+        response_schema: dict[str, Any],
+        temperature: float,
+        top_p: float,
+        max_output_tokens: int,
+    ) -> Any:
+        """Call ``generate_content_async`` with a soft-retry on transient
+        failures. Sprint 9.0 — investor-demo runs hit Google's edge
+        intermittently; a single retry cycle masks blips without
+        disturbing the rotator's logic.
+
+        Mapping rules:
+            * RateLimitError / InvalidKeyError → re-raise immediately
+              (the rotator must walk to the next priority key).
+            * MalformedResponseError / LLMTokenLimitError /
+              LLMResponseBlockedError → raised by other code paths;
+              not relevant here.
+            * LLMProviderError (network / 5xx) → retry with backoff.
+        """
+        last_error: LLMProviderError | None = None
+        for attempt in range(_TRANSIENT_RETRY_ATTEMPTS):
+            try:
+                return await model.generate_content_async(
+                    user_prompt,
+                    generation_config={
+                        "response_mime_type": "application/json",
+                        "response_schema": response_schema,
+                        "temperature": temperature,
+                        "top_p": top_p,
+                        "max_output_tokens": max_output_tokens,
+                    },
+                )
+            except (RateLimitError, InvalidKeyError):
+                # Rotator concerns — propagate unchanged.
+                raise
+            except Exception as exc:
+                # Map first; rotator-relevant leaves go straight up.
+                try:
+                    self._raise_mapped_sdk_error(exc)
+                except (RateLimitError, InvalidKeyError):
+                    raise
+                except LLMProviderError as mapped:
+                    last_error = mapped
+                    if attempt + 1 >= _TRANSIENT_RETRY_ATTEMPTS:
+                        raise
+                    delay = _TRANSIENT_RETRY_BASE_SECONDS * (2 ** attempt)
+                    _logger.warning(
+                        "Gemini transient error (attempt %d/%d): %s; "
+                        "retrying in %.1fs",
+                        attempt + 1,
+                        _TRANSIENT_RETRY_ATTEMPTS,
+                        mapped,
+                        delay,
+                    )
+                    await asyncio.sleep(delay)
+        # Loop only exits via return / raise — this line is defensive.
+        if last_error is not None:
+            raise last_error
+        raise LLMProviderError("Gemini retry loop exited unexpectedly")
 
     @staticmethod
     def _raise_mapped_sdk_error(exc: Exception) -> None:

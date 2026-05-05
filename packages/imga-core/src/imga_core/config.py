@@ -51,7 +51,13 @@ TOP_BOTTLENECKS_N: Final[int] = 3
 
 # --- BERT model ------------------------------------------------------------
 DEFAULT_BERT_MODEL: Final[str] = "savasy/bert-base-turkish-sentiment-cased"
-DEFAULT_BERT_BATCH_SIZE: Final[int] = 32
+# Sprint 9.0 — bumped 32 -> 128. Single biggest immediate win for the
+# 10K-row batch demo path: the HF pipeline groups ~4x more texts into
+# one forward pass, slashing per-row Python/tokenizer overhead. Memory
+# headroom on the api container (3 GiB limit) absorbs the wider tensor
+# without spilling. If a downstream model with smaller context shows
+# OOMs, drop the per-instance kwarg in `BertSentimentAnalyzer(...)`.
+DEFAULT_BERT_BATCH_SIZE: Final[int] = 128
 BERT_MAX_LENGTH: Final[int] = 512
 
 # --- Knowledge base CSV schema --------------------------------------------
