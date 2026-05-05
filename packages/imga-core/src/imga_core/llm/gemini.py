@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from typing import Any, cast
 
 from imga_core.llm.base import LLMProvider, LLMProviderError
@@ -265,13 +266,15 @@ class GeminiProvider(LLMProvider):
         system_prompt: str,
         user_prompt: str,
         response_schema: dict[str, Any],
-        # Sprint 8.3.10 — same flash default as SWOT/OKR. Briefings
-        # are short (1 paragraph + 3-5 KPIs + 2-3 insights + 3 actions)
-        # so max_output_tokens stays low.
+        # Sprint 8.3.10 — same flash default as SWOT/OKR.
+        # Sprint 8.3.11 — bumped to 4096 (was 2048). Real Türkçe
+        # briefings with full KPI cards + insights + 3-action cards
+        # routinely emit ~3000 tokens; 2048 truncated mid-JSON which
+        # hit the parser as "non-JSON text" (browser smoke fail).
         model_name: str = "gemini-2.5-flash",
         temperature: float = 0.25,
         top_p: float = 0.9,
-        max_output_tokens: int = 2048,
+        max_output_tokens: int = 4096,
     ) -> tuple[dict[str, Any], dict[str, int] | None]:
         """Sprint 8.3.10 — generate a 1-page executive briefing JSON.
         Same return + error contract as ``generate_swot`` /
@@ -376,15 +379,43 @@ class GeminiProvider(LLMProvider):
 
     @staticmethod
     def _parse_structured_response(response: Any) -> dict[str, Any]:
+        """Parse the Gemini response as a JSON object.
+
+        Sprint 8.3.11 — defensive about two known SDK quirks:
+
+          1. ``response_mime_type=application/json`` is supposed to
+             prevent it, but Gemini Flash occasionally still wraps the
+             payload in a markdown ``​```json ... ​``` `` fence
+             (production saw this on the executive briefing path on
+             8.3.10 deploy). Strip the fence before attempting
+             json.loads so a perfectly-valid JSON body doesn't turn
+             into a 502.
+          2. Some responses arrive with leading / trailing whitespace
+             or stray prose (e.g. ``"Sure, here is the JSON: { ... }"``).
+             We isolate the outermost ``{`` … ``}`` slice as a final
+             fallback before raising.
+        """
         raw = getattr(response, "text", None)
         if not raw:
             raise MalformedResponseError("Empty response text from Gemini")
+        cleaned = _strip_markdown_fences(raw)
         try:
-            data = json.loads(raw)
-        except json.JSONDecodeError as exc:
-            raise MalformedResponseError(
-                f"Gemini returned non-JSON text: {raw!r}"
-            ) from exc
+            data = json.loads(cleaned)
+        except json.JSONDecodeError:
+            # Fallback: extract the outermost JSON object substring.
+            start = cleaned.find("{")
+            end = cleaned.rfind("}")
+            if start != -1 and end > start:
+                try:
+                    data = json.loads(cleaned[start : end + 1])
+                except json.JSONDecodeError as exc:
+                    raise MalformedResponseError(
+                        f"Gemini returned non-JSON text: {raw!r}"
+                    ) from exc
+            else:
+                raise MalformedResponseError(
+                    f"Gemini returned non-JSON text: {raw!r}"
+                ) from None
         if not isinstance(data, dict):
             raise MalformedResponseError(
                 f"Expected JSON object, got {type(data).__name__}"
@@ -423,3 +454,26 @@ class GeminiProvider(LLMProvider):
             "output": int(candidates) if candidates is not None else 0,
             "total": int(total) if total is not None else 0,
         }
+
+
+# Sprint 8.3.11 — Markdown fence stripper for the executive briefing
+# 502 root cause. ``response_mime_type=application/json`` is supposed
+# to suppress this on the Gemini side, but Flash occasionally still
+# wraps the payload in ``​```json ... ​``` `` (or just ``​``` ... ​``` ``)
+# fences. The regex is permissive: optional ``json`` language tag,
+# optional CR/LF on either side, both opening and closing required.
+_MARKDOWN_FENCE_OPEN = re.compile(r"^```(?:json)?\s*\r?\n?", re.IGNORECASE)
+_MARKDOWN_FENCE_CLOSE = re.compile(r"\r?\n?\s*```\s*$")
+
+
+def _strip_markdown_fences(text: str) -> str:
+    """Strip a leading ``​```json`` / ``​```​`` and a trailing ``​```​``
+    if both are present. No-op when the input is already clean JSON.
+    """
+    stripped = text.strip()
+    has_open = bool(_MARKDOWN_FENCE_OPEN.match(stripped))
+    has_close = bool(_MARKDOWN_FENCE_CLOSE.search(stripped))
+    if has_open and has_close:
+        stripped = _MARKDOWN_FENCE_OPEN.sub("", stripped, count=1)
+        stripped = _MARKDOWN_FENCE_CLOSE.sub("", stripped, count=1)
+    return stripped.strip()
