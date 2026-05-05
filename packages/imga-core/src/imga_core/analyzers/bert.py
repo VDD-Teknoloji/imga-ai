@@ -3,7 +3,22 @@
 from __future__ import annotations
 
 import logging
+import threading
 from typing import TYPE_CHECKING, Any
+
+# Sprint 9.0.5-A R2 — eager module-level import of `pipeline`.
+# Previous version imported lazily inside `_ensure_loaded`; under
+# Sprint 9.0.5-A B3's parallel chunk path (4 worker threads each
+# building a separate BertSentimentAnalyzer) the transformers
+# `_LazyModule` initialisation raced — thread 1 held the init,
+# threads 2-4 saw an "import name 'pipeline' not found" ImportError
+# and the entire batch crashed before a single review was inserted.
+# Module-level imports complete during the single-threaded module-
+# load phase, so the lazy module is fully resolved before any
+# worker thread touches it. The factory lock below adds a second
+# layer for the actual `hf_pipeline(...)` call (in case
+# transformers' model construction itself has internal races).
+from transformers import pipeline as hf_pipeline
 
 from imga_core.analyzers.base import AnalyzerPrediction, SentimentAnalyzer
 from imga_core.config import (
@@ -21,12 +36,29 @@ if TYPE_CHECKING:
 
 _logger = logging.getLogger(__name__)
 
+# Sprint 9.0.5-A R2 — module-level Lock guarding the
+# `hf_pipeline(...)` factory call. Per-chunk model instances are
+# still independent (each chunk gets its own Pipeline); this lock
+# only serialises construction so two threads never reach
+# transformers internals concurrently while warming up the same
+# model. Construction runs ~once per worker process at startup —
+# four serial constructions at ~2-3s each (cached) cost a handful
+# of seconds and buy us safety against any internal race we don't
+# know about.
+_PIPELINE_FACTORY_LOCK = threading.Lock()
+
 
 class BertSentimentAnalyzer(SentimentAnalyzer):
     """Turkish BERT classifier wrapper.
 
     Loads the HuggingFace pipeline lazily on the first analyze_batch call so
     that import-time costs are zero and the model can be mocked in tests.
+
+    Sprint 9.0.5-A R2 — `_ensure_loaded` is concurrency-safe via the
+    module-level factory lock. Multiple instances built from
+    different worker threads coexist safely; each ends up with its
+    own Pipeline (the per-chunk model instance pattern Sprint
+    9.0.5-A B3 relies on).
     """
 
     def __init__(
@@ -42,15 +74,20 @@ class BertSentimentAnalyzer(SentimentAnalyzer):
 
     def _ensure_loaded(self) -> Pipeline:
         if self._pipeline is None:
-            _logger.info("Loading BERT model %s", self.model_name)
-            from transformers import pipeline as hf_pipeline
-
-            self._pipeline = hf_pipeline(  # type: ignore[call-overload]
-                "sentiment-analysis",
-                model=self.model_name,
-                truncation=True,
-                max_length=self.max_length,
-            )
+            with _PIPELINE_FACTORY_LOCK:
+                # Double-checked under the lock — another thread may
+                # have populated `self._pipeline` while this thread
+                # was waiting (won't happen for distinct instances,
+                # but cheap defensiveness if a future refactor moves
+                # to a shared instance + lock).
+                if self._pipeline is None:
+                    _logger.info("Loading BERT model %s", self.model_name)
+                    self._pipeline = hf_pipeline(  # type: ignore[call-overload]
+                        "sentiment-analysis",
+                        model=self.model_name,
+                        truncation=True,
+                        max_length=self.max_length,
+                    )
         return self._pipeline
 
     def analyze_batch(self, texts: list[str]) -> list[AnalyzerPrediction]:

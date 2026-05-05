@@ -12,7 +12,22 @@ import asyncio
 import json
 import logging
 import re
+import threading
 from typing import Any, cast
+
+# Sprint 9.0.5-A R2 — eager module-level import to mirror the
+# bert.py fix. Same lazy-module race could fire when a future
+# code path constructs multiple GeminiProvider instances in
+# parallel (today's worker startup is sequential, but the lock +
+# eager import means we don't owe future code a follow-up R3).
+# ImportError at module load surfaces immediately during install
+# checks instead of mid-request.
+try:
+    import google.generativeai as _genai_module  # noqa: N813 — vendor name
+except ImportError:  # pragma: no cover — exercised only when the
+    # optional [gemini] extra isn't installed; the per-instance
+    # constructor below re-raises with the install hint.
+    _genai_module = None  # type: ignore[assignment]
 
 from imga_core.llm.base import LLMProvider, LLMProviderError
 from imga_core.llm.errors import (
@@ -29,6 +44,14 @@ from imga_core.llm.errors import (
 # are deterministic so retry is wasted work.
 _TRANSIENT_RETRY_ATTEMPTS = 3
 _TRANSIENT_RETRY_BASE_SECONDS = 1.0
+
+# Sprint 9.0.5-A R2 — serialise the global `genai.configure(api_key=...)`
+# call. The SDK keeps a process-wide singleton; concurrent
+# reconfigure from parallel worker threads (Sprint 9.0.5-A B3
+# chunk pool) could swap keys mid-flight on a peer thread. The
+# rotator only walks one key at a time per logical call so this
+# lock is uncontended in practice; it just removes a sharp edge.
+_GENAI_CONFIGURE_LOCK = threading.Lock()
 from imga_core.llm.prompts import (
     CLASSIFICATION_RESPONSE_SCHEMA,
     build_classification_prompt,
@@ -57,18 +80,22 @@ class GeminiProvider(LLMProvider):
         if not api_key:
             raise ValueError("Gemini API key is required")
 
-        try:
-            import google.generativeai as genai
-        except ImportError as exc:
+        # Sprint 9.0.5-A R2 — module-level eager import resolved at
+        # module load time (single-threaded). If the optional extra
+        # wasn't installed we still raise here with the same hint
+        # the legacy method-level import did, so install-time
+        # observability is unchanged.
+        if _genai_module is None:
             raise ImportError(
                 "google-generativeai is not installed. "
                 "Install with: pip install 'imga-core[gemini]'"
-            ) from exc
+            )
 
-        genai.configure(api_key=api_key)
-        self._genai = genai
+        with _GENAI_CONFIGURE_LOCK:
+            _genai_module.configure(api_key=api_key)
+        self._genai = _genai_module
         self._model_name = model_name
-        self._model = genai.GenerativeModel(model_name)
+        self._model = _genai_module.GenerativeModel(model_name)
         self._timeout = timeout_seconds
 
     @property
@@ -324,12 +351,16 @@ class GeminiProvider(LLMProvider):
         if not user_prompt or not user_prompt.strip():
             raise MalformedResponseError("user_prompt must be non-empty")
 
-        # Reconfigure the SDK with this attempt's key. Sequential by
-        # construction (rotator walks one key at a time), so the global
-        # ``configure`` call is safe; concurrent generation across
-        # tenants is out of scope for Sprint 8.3.6 (manual-only
-        # trigger).
-        self._genai.configure(api_key=api_key)
+        # Reconfigure the SDK with this attempt's key. The rotator
+        # walks one key at a time per logical call, so this is
+        # uncontended in normal flow; the lock just removes a
+        # window where a peer worker thread (Sprint 9.0.5-A B3
+        # parallel chunks) could race a configure() call mid-flight
+        # and swap api_key under another thread's pending request.
+        # Construction of GenerativeModel reads no module-level
+        # state so it stays outside the critical section.
+        with _GENAI_CONFIGURE_LOCK:
+            self._genai.configure(api_key=api_key)
         model = self._genai.GenerativeModel(
             model_name,
             system_instruction=system_prompt,
