@@ -152,6 +152,7 @@ class StatsAggregator:
         self,
         date_from: date | None = None,
         date_to: date | None = None,
+        batch_id: UUID | None = None,
     ) -> StrategicStatsSnapshot:
         # Tenant context fetched directly — we just need the four
         # 8.3.6.1-added columns; no service abstraction worth wrapping.
@@ -170,6 +171,14 @@ class StatsAggregator:
         # Headline metrics: a single round-trip carries 6 of the 8
         # numbers we need (total, crisis, avg_sentiment, nps_score,
         # nps_coverage, sensitive_topics).
+        # Sprint 8.3.11 — compute_headline_metrics doesn't accept
+        # batch_job_id today (Sprint 8.3.5 added the eight-field
+        # bundle without a batch dimension). For batch-scoped SWOTs
+        # the headline counts stay tenant-wide; the dominant signals
+        # (sentiment dist + top categories + NPS detail) all flow
+        # through AnalyticsFilters below and DO scope to batch_id.
+        # Future tightening lives behind a compute_headline_metrics
+        # signature change; out of scope for this fix.
         headline = await self._analytics.compute_headline_metrics(
             tenant_id=self.tenant_id,
             date_from=date_from,
@@ -182,6 +191,7 @@ class StatsAggregator:
             tenant_id=self.tenant_id,
             date_from=date_from,
             date_to=date_to,
+            batch_job_id=batch_id,
         )
         nps_distribution = {
             "detractor": nps_summary.detractor_count,
@@ -212,7 +222,9 @@ class StatsAggregator:
 
         # Sentiment distribution (legacy envelope wants datetime). We
         # only need the three labels normalized to lowercase keys.
-        sd_filters = self._build_legacy_filters(date_from, date_to)
+        # Sprint 8.3.11 — batch_id flows through the AnalyticsFilters
+        # bundle so all four downstream calls see the same scope.
+        sd_filters = self._build_legacy_filters(date_from, date_to, batch_id)
         sentiment_dist = await self._analytics.sentiment_distribution(
             tenant_id=self.tenant_id, filters=sd_filters
         )
@@ -279,11 +291,18 @@ class StatsAggregator:
 
     @staticmethod
     def _build_legacy_filters(
-        date_from: date | None, date_to: date | None
+        date_from: date | None,
+        date_to: date | None,
+        batch_id: UUID | None = None,
     ) -> AnalyticsFilters:
         """Expand date → datetime so the legacy AnalyticsFilters
         envelope (analyzed_at >= / <=) hits the right window. Same
-        widening rule the headline path uses for created_at."""
+        widening rule the headline path uses for created_at.
+
+        Sprint 8.3.11 — accepts ``batch_id`` so SWOT/OKR generated
+        with a batch scope filters every analytics call to that
+        single upload's reviews.
+        """
         from_dt = (
             datetime.combine(date_from, datetime.min.time(), tzinfo=UTC)
             if date_from is not None
@@ -294,4 +313,6 @@ class StatsAggregator:
             if date_to is not None
             else None
         )
-        return AnalyticsFilters(date_from=from_dt, date_to=to_dt)
+        return AnalyticsFilters(
+            date_from=from_dt, date_to=to_dt, batch_job_id=batch_id,
+        )

@@ -128,19 +128,25 @@ class SwotService:
         date_to: date | None = None,
         *,
         force_refresh: bool = False,
+        batch_id: UUID | None = None,
     ) -> dict[str, Any]:
         """Generate (or fetch from cache) one SWOT report. Returns the
         persisted row as a serialisable dict (see ``_serialise_report``)
-        — the caller maps it to the wire shape."""
+        — the caller maps it to the wire shape.
+
+        Sprint 8.3.11 — ``batch_id`` scopes every stats call to a
+        single upload, so the SWOT can be ran "for this batch only"
+        rather than the full tenant history.
+        """
         # 1. Stats
         stats = await StatsAggregator(self._session, self._tenant_id).collect(
-            date_from=date_from, date_to=date_to
+            date_from=date_from, date_to=date_to, batch_id=batch_id,
         )
 
         # 2/3. Cache key + lookup. Cache miss / Redis down both fall
         # through to the slow path; ``force_refresh`` skips the lookup
         # but still writes on the way out.
-        cache_key = self._cache_key(stats, date_from, date_to)
+        cache_key = self._cache_key(stats, date_from, date_to, batch_id)
         if not force_refresh:
             cached = await self._cache_get(cache_key)
             if cached is not None:
@@ -235,10 +241,19 @@ class SwotService:
         stats: StrategicStatsSnapshot,
         date_from: date | None,
         date_to: date | None,
+        batch_id: UUID | None = None,
     ) -> str:
         df = date_from.isoformat() if date_from else "all"
         dt = date_to.isoformat() if date_to else "all"
-        return f"{CACHE_KEY_PREFIX}:{self._tenant_id}:{df}:{dt}:{stats.stats_hash()}"
+        # Sprint 8.3.11 — batch_id partitions the cache so a switch
+        # between full-tenant and batch-scoped views doesn't share
+        # state. ``"all"`` keeps the legacy key shape stable for
+        # tenants who never use batch scope.
+        bid = str(batch_id) if batch_id is not None else "all"
+        return (
+            f"{CACHE_KEY_PREFIX}:{self._tenant_id}:{df}:{dt}:"
+            f"{bid}:{stats.stats_hash()}"
+        )
 
     async def _cache_get(self, key: str) -> dict[str, Any] | None:
         """Best-effort Redis lookup. Any exception → None (treat as

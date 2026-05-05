@@ -877,6 +877,9 @@ export interface SwotGenerateRequest {
   date_from?: string | null; // YYYY-MM-DD
   date_to?: string | null;
   force_refresh?: boolean;
+  /** Sprint 8.3.11 — optional batch scope. When set, the SWOT
+   *  reflects only that upload's reviews. */
+  batch_id?: string | null;
 }
 
 export interface OkrGenerateRequest {

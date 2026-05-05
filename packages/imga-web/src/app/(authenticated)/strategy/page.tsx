@@ -30,6 +30,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 
+import { BatchFilterDropdown } from "@/components/reviews/batch-filter-dropdown";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -301,6 +302,13 @@ function SwotTab({
   const generate = useGenerateSwot();
   const detail = useStrategicReport(reportId || null);
   const [forceRefresh, setForceRefresh] = useState(false);
+  // Sprint 8.3.11 — optional batch scope. When set, the SWOT only
+  // reflects that upload's reviews. The state lives in this tab
+  // (not the parent) because /strategy doesn't otherwise share the
+  // batch param across tabs — OKR inherits via source SWOT.
+  const [batchScopeId, setBatchScopeId] = useState<string | undefined>(
+    undefined,
+  );
 
   const generateDisabled =
     generate.isPending || !credentialsLoaded || !hasActiveKey;
@@ -311,6 +319,7 @@ function SwotTab({
         date_from: dateFrom || null,
         date_to: dateTo || null,
         force_refresh: forceRefresh,
+        batch_id: batchScopeId ?? null,
       },
       {
         onSuccess: (report) => {
@@ -378,6 +387,18 @@ function SwotTab({
                 Önbelleği atla (yeniden üret)
               </label>
             </div>
+          </div>
+          <div className="space-y-1">
+            <Label className="text-xs">Yükleme kapsamı (opsiyonel)</Label>
+            <BatchFilterDropdown
+              selected={batchScopeId}
+              onChange={(next) => setBatchScopeId(next)}
+            />
+            <p className="text-muted-foreground text-xs">
+              Bir yükleme seçerseniz SWOT sadece o yüklemenin
+              yorumlarını analiz eder; aksi halde tarih aralığı
+              içindeki tüm yorumlar kullanılır.
+            </p>
           </div>
           <div>
             <Button

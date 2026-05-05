@@ -78,6 +78,10 @@ class SwotGenerateRequest(BaseModel):
     date_from: date | None = None
     date_to: date | None = None
     force_refresh: bool = False
+    # Sprint 8.3.11 — optional batch scope. When set, every stats
+    # call inside SwotService filters to ``Review.batch_job_id ==
+    # batch_id`` so the SWOT reflects a single upload's data.
+    batch_id: UUID | None = None
 
     @model_validator(mode="after")
     def _date_range(self) -> SwotGenerateRequest:
@@ -229,6 +233,7 @@ async def generate_swot(
                 date_from=body.date_from,
                 date_to=body.date_to,
                 force_refresh=body.force_refresh,
+                batch_id=body.batch_id,
             )
         except Exception as exc:
             raise _llm_error_to_http(exc) from exc
