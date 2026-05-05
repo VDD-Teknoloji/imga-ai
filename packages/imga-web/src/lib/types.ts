@@ -1039,3 +1039,59 @@ export interface SmartPreviewResponse {
    *  proceeds. Today only customer_name emits these. */
   pii_warnings: string[];
 }
+
+// ---------------------------------------------------------------------------
+// Sprint 8.3.9 — insights expansion (cohort, word cloud, heatmap)
+// ---------------------------------------------------------------------------
+
+export type CohortPeriod = "week" | "month" | "quarter";
+export type CohortDimension = "taxonomy" | "company_perspective" | "nps_bucket";
+
+export interface CohortDataPoint {
+  period_start: string;
+  count: number;
+  avg_sentiment: number | null;
+  avg_nps: number | null;
+}
+
+export interface CohortSeries {
+  key: string;
+  label: string;
+  data_points: CohortDataPoint[];
+}
+
+export interface CohortResponse {
+  period: CohortPeriod;
+  dimension: CohortDimension;
+  cohorts: CohortSeries[];
+}
+
+export type WordCloudSentiment = "positive" | "negative" | "neutral" | "all";
+
+export interface WordCloudWord {
+  text: string;
+  weight: number;
+  sentiment_skew: number;
+  is_bigram: boolean;
+}
+
+export interface WordCloudResponse {
+  words: WordCloudWord[];
+  total_reviews_analyzed: number;
+}
+
+export type HeatmapXAxis = "hour_of_day" | "day_of_week" | "week_of_year";
+export type HeatmapYAxis = "day_of_week" | "month" | "taxonomy_code";
+export type HeatmapMetric = "count" | "avg_sentiment" | "avg_nps";
+
+export interface HeatmapResponse {
+  x_axis: HeatmapXAxis;
+  y_axis: HeatmapYAxis;
+  metric: HeatmapMetric;
+  metric_label: string;
+  x_labels: string[];
+  y_labels: string[];
+  values: Array<Array<number | null>>;
+  metric_min: number;
+  metric_max: number;
+}
