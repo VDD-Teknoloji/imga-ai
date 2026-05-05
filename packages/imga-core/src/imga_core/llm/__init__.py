@@ -20,6 +20,8 @@ from imga_core.llm.errors import (
     AllKeysExhaustedError,
     InvalidKeyError,
     LLMError,
+    LLMResponseBlockedError,
+    LLMTokenLimitError,
     MalformedResponseError,
     RateLimitError,
 )
@@ -34,6 +36,8 @@ __all__ = [
     "LLMError",
     "LLMProvider",
     "LLMProviderError",
+    "LLMResponseBlockedError",
+    "LLMTokenLimitError",
     "MalformedResponseError",
     "RateLimitError",
     "create_llm_provider",

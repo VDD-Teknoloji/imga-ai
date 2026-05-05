@@ -75,3 +75,21 @@ class MalformedResponseError(LLMError):
     to the user as "model output rejected, please retry"; the
     rotator passes it through unchanged.
     """
+
+
+class LLMTokenLimitError(LLMError):
+    """Sprint 8.3.11 R2 — provider truncated the response because the
+    output hit ``max_output_tokens``. Surfaces as a distinct error
+    from MalformedResponseError because the fix is operational
+    (bump the cap or shorten the prompt), not "retry with a
+    different key". Same not-a-rotation-trigger semantics as
+    MalformedResponseError.
+    """
+
+
+class LLMResponseBlockedError(LLMError):
+    """Sprint 8.3.11 R2 — provider's safety / recitation filter
+    blocked the response. Service layer surfaces a Türkçe
+    "yanıt engellendi" toast; user can retry with a tweaked prompt
+    if needed. Not a rotation trigger.
+    """

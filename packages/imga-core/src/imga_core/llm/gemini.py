@@ -16,6 +16,8 @@ from typing import Any, cast
 from imga_core.llm.base import LLMProvider, LLMProviderError
 from imga_core.llm.errors import (
     InvalidKeyError,
+    LLMResponseBlockedError,
+    LLMTokenLimitError,
     MalformedResponseError,
     RateLimitError,
 )
@@ -267,14 +269,17 @@ class GeminiProvider(LLMProvider):
         user_prompt: str,
         response_schema: dict[str, Any],
         # Sprint 8.3.10 — same flash default as SWOT/OKR.
-        # Sprint 8.3.11 — bumped to 4096 (was 2048). Real Türkçe
-        # briefings with full KPI cards + insights + 3-action cards
-        # routinely emit ~3000 tokens; 2048 truncated mid-JSON which
-        # hit the parser as "non-JSON text" (browser smoke fail).
+        # Sprint 8.3.11 R1 — bumped 2048 → 4096; R2 — 4096 → 8192.
+        # Real Türkçe briefings emit ~30-40% more tokens than English
+        # for the same content (UTF-8 byte-pair count + agglutinative
+        # morphology). 4096 still truncated on production-sized
+        # payloads (browser smoke fail #2). 8192 matches SWOT's cap;
+        # finish_reason check in _generate_structured catches any
+        # further truncation before the parser sees a partial body.
         model_name: str = "gemini-2.5-flash",
         temperature: float = 0.25,
         top_p: float = 0.9,
-        max_output_tokens: int = 4096,
+        max_output_tokens: int = 8192,
     ) -> tuple[dict[str, Any], dict[str, int] | None]:
         """Sprint 8.3.10 — generate a 1-page executive briefing JSON.
         Same return + error contract as ``generate_swot`` /
@@ -336,6 +341,14 @@ class GeminiProvider(LLMProvider):
         except Exception as exc:
             self._raise_mapped_sdk_error(exc)
 
+        # Sprint 8.3.11 R2 — surface MAX_TOKENS / SAFETY / RECITATION
+        # finish reasons as distinct, actionable errors BEFORE the
+        # parser tries to read a truncated body. Without this guard
+        # the parse path saw a half-JSON string and reported it as
+        # generic non-JSON text, which obscured the real fix
+        # (operational: bump max_output_tokens or shorten the prompt).
+        self._check_finish_reason(response)
+
         return (
             self._parse_structured_response(response),
             self._extract_usage_metadata(response),
@@ -376,6 +389,57 @@ class GeminiProvider(LLMProvider):
         # Everything else propagates to the legacy provider error so
         # the service layer's catch-all logging handles it.
         raise LLMProviderError(f"Gemini SWOT/OKR call failed: {exc}") from exc
+
+    @staticmethod
+    def _check_finish_reason(response: Any) -> None:
+        """Sprint 8.3.11 R2 — raise distinct errors for the two
+        non-STOP finish reasons that produce truncated / blocked
+        bodies. The Gemini SDK exposes ``finish_reason`` as an enum
+        with a ``.name`` attribute (``STOP`` / ``MAX_TOKENS`` /
+        ``SAFETY`` / ``RECITATION`` / ``OTHER``).
+
+        ``STOP`` is the happy path. Everything else surfaces as a
+        provider-level error so the service layer can decide what to
+        show the user without the parser turning a partial body into
+        a generic "non-JSON text" 502.
+        """
+        candidates = getattr(response, "candidates", None)
+        if not candidates:
+            return
+        first = candidates[0]
+        finish = getattr(first, "finish_reason", None)
+        if finish is None:
+            return
+        # ``finish.name`` for proto-enum, str(finish) for plain str.
+        name = getattr(finish, "name", str(finish)).upper()
+        if name in {"STOP", "FINISH_REASON_UNSPECIFIED", ""}:
+            return
+        if name == "MAX_TOKENS":
+            partial_len = len(getattr(response, "text", "") or "")
+            _logger.error(
+                "Gemini response truncated (MAX_TOKENS); "
+                "partial_len=%d. Bump max_output_tokens or "
+                "shorten the prompt.",
+                partial_len,
+            )
+            raise LLMTokenLimitError(
+                "Gemini yanıtı token sınırına takıldı; raporu "
+                "tekrar oluşturun veya dönemi daraltın."
+            )
+        if name in {"SAFETY", "RECITATION"}:
+            _logger.error(
+                "Gemini response blocked: finish_reason=%s", name,
+            )
+            raise LLMResponseBlockedError(
+                f"Gemini yanıtı engellendi ({name})."
+            )
+        # Other finish reasons (OTHER, anything new) — log + let the
+        # parser try; if it produces malformed text we'll surface
+        # MalformedResponseError downstream.
+        _logger.warning(
+            "Gemini finish_reason=%s (unhandled); falling through to parse",
+            name,
+        )
 
     @staticmethod
     def _parse_structured_response(response: Any) -> dict[str, Any]:
