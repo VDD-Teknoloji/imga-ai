@@ -979,3 +979,63 @@ export interface SlaRuleUpdateRequest {
   action_config?: Record<string, unknown>;
   is_active?: boolean;
 }
+
+// ---------------------------------------------------------------------------
+// Sprint 8.3.8 — smart parser preview
+// ---------------------------------------------------------------------------
+
+/** Logical field name the smart_parser can recognise. ``ignore`` is
+ *  a frontend-only sentinel for the manual-override dropdown
+ *  ("don't import this column"). */
+export type SmartFieldName =
+  | "review_text"
+  | "nps_score"
+  | "date"
+  | "customer_id"
+  | "order_id"
+  | "product_name"
+  | "customer_name"
+  | "price"
+  | "ignore";
+
+export const SMART_FIELD_LABELS: Record<SmartFieldName, string> = {
+  review_text: "Yorum",
+  nps_score: "NPS Skoru",
+  date: "Tarih",
+  customer_id: "Müşteri ID",
+  order_id: "Sipariş ID",
+  product_name: "Ürün Adı",
+  customer_name: "Müşteri Adı",
+  price: "Fiyat",
+  ignore: "Yoksay",
+};
+
+/** UI confidence bands — must stay in sync with imga_api.services
+ *  .smart_parser.types CONFIDENCE_HIGH / MEDIUM / LOW. */
+export const CONFIDENCE_HIGH = 0.85;
+export const CONFIDENCE_MEDIUM = 0.55;
+export const CONFIDENCE_LOW = 0.3;
+
+export interface DetectorAlternative {
+  field_name: SmartFieldName;
+  confidence: number;
+}
+
+export interface DetectedColumn {
+  column_name: string;
+  field_name: SmartFieldName | null;
+  confidence: number;
+  sample_values: string[];
+  alternatives: DetectorAlternative[];
+  metadata: Record<string, unknown>;
+}
+
+export interface SmartPreviewResponse {
+  headers: string[];
+  row_count: number;
+  detected: DetectedColumn[];
+  /** ``"<field>:<column_header>"`` strings — when this list is non-
+   *  empty the UI shows the PII consent banner before the upload
+   *  proceeds. Today only customer_name emits these. */
+  pii_warnings: string[];
+}
