@@ -120,3 +120,19 @@ class AnalyzeBatchJob(Base):
     rows_with_nps: Mapped[int] = mapped_column(
         Integer, default=0, nullable=False
     )
+
+    # Sprint 9.0 — recovery + retry. last_checkpoint_row advances on
+    # every chunk commit so a worker restart can resume from the next
+    # row instead of replaying from the start. retry_count counts
+    # operator-initiated retries from /batches/{id}/retry. last_error
+    # is the human-readable failure message (job-level summary
+    # complementing error_summary's per-row entries).
+    last_checkpoint_row: Mapped[int] = mapped_column(
+        Integer, default=0, nullable=False
+    )
+    retry_count: Mapped[int] = mapped_column(
+        Integer, default=0, nullable=False
+    )
+    last_error: Mapped[str | None] = mapped_column(
+        String(2048), nullable=True
+    )

@@ -33,6 +33,19 @@ class AutomationMode(StrEnum):
     FULL_AUTO = "full_auto"  # Every NEGATIF complaint becomes a ticket
 
 
+class SlaWebhookDispatchMode(StrEnum):
+    """Per-tenant SLA webhook dispatch policy (Sprint 9.0).
+
+    AUTOMATIC: matching SLA rule fires httpx.post immediately (8.3.10
+    behaviour, default).
+    MANUAL: SLA engine queues a row in pending_webhook_events; an
+    operator approves or dismisses it from /pending-webhooks.
+    """
+
+    AUTOMATIC = "automatic"
+    MANUAL = "manual"
+
+
 class Tenant(Base, TimestampMixin, SoftDeleteMixin):
     __tablename__ = "tenants"
 
@@ -88,4 +101,14 @@ class Tenant(Base, TimestampMixin, SoftDeleteMixin):
     )
     business_description: Mapped[str | None] = mapped_column(
         String(500), nullable=True
+    )
+
+    # --- Sprint 9.0 — SLA webhook dispatch mode ------------------------
+    # Default 'automatic' so existing tenants keep firing webhooks
+    # synchronously. Migration 0022 adds the column with this default;
+    # the engine reads it via TenantConfigService.
+    sla_webhook_dispatch_mode: Mapped[SlaWebhookDispatchMode] = mapped_column(
+        String(16),
+        default=SlaWebhookDispatchMode.AUTOMATIC,
+        nullable=False,
     )

@@ -10,6 +10,11 @@ from imga_db.models.comment import TicketComment, TicketCommentKind
 from imga_db.models.executive_briefing import ExecutiveBriefing
 from imga_db.models.invitation import Invitation
 from imga_db.models.mixins import SoftDeleteMixin, TenantOwnedMixin, TimestampMixin
+from imga_db.models.pending_webhook import (
+    PendingWebhookEvent,
+    PendingWebhookStatus,
+    PendingWebhookTarget,
+)
 from imga_db.models.prompt_template import PromptTemplate
 from imga_db.models.refresh_token import RefreshTokenRecord
 from imga_db.models.report_job import (
@@ -22,7 +27,12 @@ from imga_db.models.review import Review, ReviewDecision
 from imga_db.models.sla_rule import SlaRule
 from imga_db.models.strategic_report import StrategicReport
 from imga_db.models.taxonomy_edit_audit import TaxonomyEditAudit
-from imga_db.models.tenant import AutomationMode, Tenant, TenantPlanTier
+from imga_db.models.tenant import (
+    AutomationMode,
+    SlaWebhookDispatchMode,
+    Tenant,
+    TenantPlanTier,
+)
 from imga_db.models.tenant_llm_credential import TenantLlmCredential
 from imga_db.models.trend_alert import TrendAlert
 from imga_db.models.ticket import (
@@ -45,6 +55,9 @@ __all__ = [
     "CategoryTaxonomy",
     "ExecutiveBriefing",
     "Invitation",
+    "PendingWebhookEvent",
+    "PendingWebhookStatus",
+    "PendingWebhookTarget",
     "PromptTemplate",
     "RefreshTokenRecord",
     "ReportFormat",
@@ -54,6 +67,7 @@ __all__ = [
     "Review",
     "ReviewDecision",
     "SlaRule",
+    "SlaWebhookDispatchMode",
     "SoftDeleteMixin",
     "StrategicReport",
     "TaxonomyEditAudit",
