@@ -39,6 +39,15 @@ dependencies = [
     # Cairo, GdkPixbuf) + Türkçe-capable fonts; weasyprint itself
     # is the Python wheel.
     "weasyprint>=60.0,<70.0",
+    # Sprint 8.3.10 + 9.0 D — httpx for outbound SLA webhook dispatch
+    # (Slack / Teams) and the manual pending_webhook_events approval
+    # path. Was inadvertently dev-only: 8.3.10 dispatcher usage was
+    # all lazy-imported, so prod startup never resolved httpx and
+    # the missing dep stayed hidden until Sprint 9.0 D added top-
+    # level imports through pending_webhook_service +
+    # tenant_pending_webhooks. Staging deploy of 23a6371 surfaced
+    # the ModuleNotFoundError; this restores the contract.
+    "httpx>=0.27",
 ]
 
 [project.optional-dependencies]
@@ -48,7 +57,6 @@ dev = [
     "pytest-cov>=5.0",
     "pytest-timeout>=2.3",
     "factory-boy>=3.3",
-    "httpx>=0.27",
     "mypy>=1.10",
     "ruff>=0.5",
     # Sprint 8.3.6 — in-process Redis fake for SWOT cache tests; avoids
