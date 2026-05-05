@@ -15,6 +15,8 @@ import * as React from "react";
 import { useEffect, useMemo, useState, type ChangeEvent } from "react";
 import { toast } from "sonner";
 
+import { ColumnMappingPreview } from "@/components/analyze/column-mapping-preview";
+import { PiiWarningBanner } from "@/components/analyze/pii-warning-banner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
@@ -23,8 +25,13 @@ import {
   useBatchUploadMutation,
   useCancelBatchJobMutation,
 } from "@/hooks/use-batch-uploads";
+import { useSmartPreview } from "@/hooks/use-smart-preview";
 import { ApiError } from "@/lib/api-client";
-import type { BatchJob } from "@/lib/types";
+import type {
+  BatchJob,
+  SmartFieldName,
+  SmartPreviewResponse,
+} from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 type Step = 1 | 2 | 3 | 4;
@@ -48,9 +55,21 @@ export default function BatchUploadPage() {
   const [autoCreateTickets, setAutoCreateTickets] = useState(false);
   const [activeJobId, setActiveJobId] = useState<string | null>(null);
 
+  // Sprint 8.3.8 — preview state. ``overrides`` lets the user
+  // change a column's detected field via the dropdown; ``preview``
+  // is the detector verdict; ``piiConsented`` gates the submit
+  // button when the file carries PII columns (currently only
+  // customer_name).
+  const [preview, setPreview] = useState<SmartPreviewResponse | null>(null);
+  const [overrides, setOverrides] = useState<
+    Record<string, SmartFieldName | undefined>
+  >({});
+  const [piiConsented, setPiiConsented] = useState(false);
+
   const upload = useBatchUploadMutation();
   const cancel = useCancelBatchJobMutation();
   const job = useBatchJob(activeJobId);
+  const previewMutation = useSmartPreview();
 
   // Auto-advance to step 4 when the polled job hits a terminal status.
   // Mirror of an async result onto sync UI state — the standard
@@ -72,7 +91,43 @@ export default function BatchUploadPage() {
     setSourceColumn("");
     setAutoCreateTickets(false);
     setActiveJobId(null);
+    setPreview(null);
+    setOverrides({});
+    setPiiConsented(false);
     setStep(1);
+  }
+
+  function handleFilePicked(picked: File | null) {
+    setFile(picked);
+    setPreview(null);
+    setOverrides({});
+    setPiiConsented(false);
+    if (!picked) return;
+    setStep(2);
+    // Fire detection — best-effort. On failure the user still sees
+    // the manual text_column input below.
+    previewMutation.mutate(picked, {
+      onSuccess: (data) => {
+        setPreview(data);
+        // Auto-set text_column from detector verdict + auto-set
+        // source_column if a customer_id column was detected.
+        const reviewText = data.detected.find(
+          (d) => d.field_name === "review_text",
+        );
+        if (reviewText) setTextColumn(reviewText.column_name);
+        const customerId = data.detected.find(
+          (d) => d.field_name === "customer_id",
+        );
+        if (customerId) setSourceColumn(customerId.column_name);
+      },
+      onError: (err) => {
+        if (err instanceof ApiError) {
+          toast.error("Önizleme alınamadı: " + err.detail);
+        } else {
+          toast.error("Önizleme alınamadı.");
+        }
+      },
+    });
   }
 
   return (
@@ -94,13 +149,7 @@ export default function BatchUploadPage() {
       <StepIndicator step={step} />
 
       {step === 1 && (
-        <Step1FilePick
-          file={file}
-          setFile={(f) => {
-            setFile(f);
-            if (f) setStep(2);
-          }}
-        />
+        <Step1FilePick file={file} setFile={handleFilePicked} />
       )}
 
       {step === 2 && file && (
@@ -112,6 +161,14 @@ export default function BatchUploadPage() {
           setTextColumn={setTextColumn}
           setSourceColumn={setSourceColumn}
           setAutoCreateTickets={setAutoCreateTickets}
+          preview={preview}
+          previewLoading={previewMutation.isPending}
+          overrides={overrides}
+          onOverrideChange={(column, next) =>
+            setOverrides((prev) => ({ ...prev, [column]: next }))
+          }
+          piiConsented={piiConsented}
+          onPiiConsentChange={setPiiConsented}
           onBack={() => setStep(1)}
           onSubmit={() => {
             upload.mutate(
@@ -282,6 +339,12 @@ function Step2ColumnMapping({
   setTextColumn,
   setSourceColumn,
   setAutoCreateTickets,
+  preview,
+  previewLoading,
+  overrides,
+  onOverrideChange,
+  piiConsented,
+  onPiiConsentChange,
   onBack,
   onSubmit,
   submitting,
@@ -293,10 +356,42 @@ function Step2ColumnMapping({
   setTextColumn: (v: string) => void;
   setSourceColumn: (v: string) => void;
   setAutoCreateTickets: (v: boolean) => void;
+  preview: SmartPreviewResponse | null;
+  previewLoading: boolean;
+  overrides: Record<string, SmartFieldName | undefined>;
+  onOverrideChange: (column: string, next: SmartFieldName | undefined) => void;
+  piiConsented: boolean;
+  onPiiConsentChange: (next: boolean) => void;
   onBack: () => void;
   onSubmit: () => void;
   submitting: boolean;
 }) {
+  // Sprint 8.3.8 — derive the canonical text column from the
+  // detector verdict + the user's overrides. The textColumn local
+  // state stays the source of truth for the upload mutation; the
+  // preview just nudges it. If the user clears overrides AND the
+  // detector finds review_text, that column becomes the value.
+  const derivedTextColumn = useMemo(() => {
+    if (!preview) return null;
+    for (const col of preview.detected) {
+      const override = overrides[col.column_name];
+      const effective = override ?? col.field_name;
+      if (effective === "review_text") return col.column_name;
+    }
+    return null;
+  }, [preview, overrides]);
+
+  // Auto-sync derivedTextColumn → textColumn while the user hasn't
+  // typed manually. Keep the existing input as the override path so
+  // a tenant whose CSV uses an unusual header can still type it.
+  useEffect(() => {
+    if (derivedTextColumn && derivedTextColumn !== textColumn) {
+      setTextColumn(derivedTextColumn);
+    }
+  }, [derivedTextColumn, textColumn, setTextColumn]);
+
+  const piiBlocked = preview !== null && preview.pii_warnings.length > 0 && !piiConsented;
+
   return (
     <Card>
       <CardHeader>
@@ -306,7 +401,36 @@ function Step2ColumnMapping({
         <p className="text-muted-foreground text-sm">
           <span className="font-medium text-foreground">{file.name}</span>{" "}
           ({(file.size / 1024 / 1024).toFixed(1)} MB)
+          {preview && (
+            <>
+              <span className="text-muted-foreground"> · </span>
+              {preview.row_count} satır
+            </>
+          )}
         </p>
+
+        {previewLoading ? (
+          <div className="bg-muted/30 flex items-center gap-2 rounded-md border p-4 text-sm">
+            <Loader2 className="size-4 animate-spin" /> Sütunlar analiz ediliyor…
+          </div>
+        ) : preview ? (
+          <>
+            <PiiWarningBanner
+              preview={preview}
+              consented={piiConsented}
+              onConsentChange={onPiiConsentChange}
+            />
+            <ColumnMappingPreview
+              preview={preview}
+              overrides={overrides}
+              onOverrideChange={onOverrideChange}
+            />
+          </>
+        ) : (
+          <div className="bg-muted/30 rounded-md border p-3 text-xs text-muted-foreground">
+            Otomatik tespit alınamadı; sütunları aşağıdan elle girebilirsiniz.
+          </div>
+        )}
 
         <div className="space-y-3">
           <Label htmlFor="text-column">Metin sütunu</Label>
@@ -319,6 +443,12 @@ function Step2ColumnMapping({
           />
           <p className="text-muted-foreground text-xs">
             Analiz edilecek metni içeren sütunun başlığı.
+            {derivedTextColumn && (
+              <>
+                {" "}Otomatik tespit:{" "}
+                <code className="font-mono">{derivedTextColumn}</code>
+              </>
+            )}
           </p>
         </div>
 
@@ -354,7 +484,12 @@ function Step2ColumnMapping({
           <Button variant="outline" type="button" onClick={onBack}>
             Geri
           </Button>
-          <Button type="button" onClick={onSubmit} disabled={submitting}>
+          <Button
+            type="button"
+            onClick={onSubmit}
+            disabled={submitting || piiBlocked}
+            title={piiBlocked ? "Önce PII onayı verin" : undefined}
+          >
             {submitting ? (
               <>
                 <Loader2 className="size-4 animate-spin" /> Yükleniyor…
