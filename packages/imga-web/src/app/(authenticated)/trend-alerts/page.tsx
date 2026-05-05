@@ -1,0 +1,217 @@
+"use client";
+
+// Sprint 8.3.10 — /trend-alerts.
+//
+// KPI deviation alert log. Manual evaluate trigger (admin only;
+// the cron driver lands in Sprint 8.6 alongside Prometheus).
+
+import { Bell, Check, Loader2, X } from "lucide-react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { Suspense, useEffect, useState } from "react";
+import { toast } from "sonner";
+
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Label } from "@/components/ui/label";
+import {
+  useEvaluateTrendAlerts,
+  useTrendAlerts,
+  useUpdateTrendAlert,
+} from "@/hooks/use-trend-alerts";
+import {
+  TREND_ALERT_SEVERITY_LABELS,
+  type TrendAlert,
+  type TrendAlertSeverity,
+  type TrendAlertStatus,
+} from "@/lib/types";
+
+const SEVERITY_TONE: Record<TrendAlertSeverity, string> = {
+  info: "border-blue-300 bg-blue-50 text-blue-800",
+  warning: "border-amber-300 bg-amber-50 text-amber-800",
+  critical: "border-red-300 bg-red-50 text-red-800",
+};
+
+export default function TrendAlertsPage() {
+  return (
+    <Suspense fallback={<HeaderSkeleton />}>
+      <Content />
+    </Suspense>
+  );
+}
+
+function HeaderSkeleton() {
+  return (
+    <main className="mx-auto w-full max-w-4xl space-y-6 p-6 md:p-8">
+      <header className="flex items-center gap-2">
+        <Bell className="text-primary size-6" aria-hidden />
+        <div>
+          <h1 className="text-2xl font-semibold">Trend Uyarıları</h1>
+          <p className="text-muted-foreground text-sm">Yükleniyor…</p>
+        </div>
+      </header>
+    </main>
+  );
+}
+
+function Content() {
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+
+  const [statusFilter, setStatusFilterState] = useState<
+    TrendAlertStatus | "all"
+  >(
+    () =>
+      (searchParams.get("status") as TrendAlertStatus | "all" | null) ||
+      "active",
+  );
+
+  /* eslint-disable react-hooks/set-state-in-effect */
+  useEffect(() => {
+    const url =
+      (searchParams.get("status") as TrendAlertStatus | "all" | null) ||
+      "active";
+    setStatusFilterState((prev) => (prev === url ? prev : url));
+  }, [searchParams]);
+  /* eslint-enable react-hooks/set-state-in-effect */
+
+  function pushParam(value: string) {
+    const params = new URLSearchParams(searchParams.toString());
+    if (value === "active") params.delete("status");
+    else params.set("status", value);
+    const qs = params.toString();
+    router.push(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+  }
+
+  const list = useTrendAlerts(statusFilter);
+  const evaluate = useEvaluateTrendAlerts();
+
+  return (
+    <main className="mx-auto w-full max-w-4xl space-y-6 p-6 md:p-8">
+      <header className="flex flex-wrap items-start justify-between gap-3">
+        <div className="flex items-start gap-2">
+          <Bell className="text-primary mt-1 size-6" aria-hidden />
+          <div>
+            <h1 className="text-2xl font-semibold tracking-tight md:text-3xl">
+              Trend Uyarıları
+            </h1>
+            <p className="text-muted-foreground text-sm">
+              KPI sapması eşiklerini geçen değişimler. Manuel evaluate
+              ile yeni uyarıları yenileyebilirsiniz.
+            </p>
+          </div>
+        </div>
+        <Button
+          onClick={() =>
+            evaluate.mutate(undefined, {
+              onSuccess: (rows) =>
+                toast.success(`${rows.length} yeni uyarı.`),
+              onError: () => toast.error("Değerlendirme başarısız."),
+            })
+          }
+          disabled={evaluate.isPending}
+          className="gap-2"
+        >
+          {evaluate.isPending && <Loader2 className="size-4 animate-spin" />}
+          Şimdi Değerlendir
+        </Button>
+      </header>
+
+      <div className="bg-card flex flex-wrap items-center gap-3 rounded-lg border p-3">
+        <Label className="text-xs">Durum</Label>
+        <select
+          value={statusFilter}
+          onChange={(e) => {
+            const next = e.target.value as TrendAlertStatus | "all";
+            setStatusFilterState(next);
+            pushParam(next);
+          }}
+          className="border-input bg-background rounded-md border px-2 py-1 text-sm"
+        >
+          <option value="active">Aktif</option>
+          <option value="acknowledged">Onaylanmış</option>
+          <option value="dismissed">Atılmış</option>
+          <option value="all">Tümü</option>
+        </select>
+      </div>
+
+      {list.isLoading ? (
+        <p className="text-sm">Yükleniyor…</p>
+      ) : list.isError ? (
+        <p className="text-destructive text-sm">Liste yüklenemedi.</p>
+      ) : !list.data || list.data.length === 0 ? (
+        <p className="text-muted-foreground p-6 text-center text-sm">
+          Bu filtrelerle uyarı yok.
+        </p>
+      ) : (
+        <ul className="space-y-2">
+          {list.data.map((a) => (
+            <AlertRow key={a.id} alert={a} />
+          ))}
+        </ul>
+      )}
+    </main>
+  );
+}
+
+function AlertRow({ alert }: { alert: TrendAlert }) {
+  const update = useUpdateTrendAlert();
+  return (
+    <Card>
+      <CardHeader className="flex flex-row items-start justify-between gap-2">
+        <div>
+          <CardTitle className="text-base">{alert.title}</CardTitle>
+          <p className="text-muted-foreground text-xs">
+            {new Date(alert.created_at).toLocaleString("tr-TR")} ·{" "}
+            <code>{alert.alert_type}</code>
+          </p>
+        </div>
+        <Badge
+          variant="outline"
+          className={`text-xs ${SEVERITY_TONE[alert.severity]}`}
+        >
+          {TREND_ALERT_SEVERITY_LABELS[alert.severity]}
+        </Badge>
+      </CardHeader>
+      <CardContent>
+        <p className="text-sm">{alert.description}</p>
+        {alert.status === "active" && (
+          <div className="mt-3 flex gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() =>
+                update.mutate({ id: alert.id, status: "acknowledged" })
+              }
+              disabled={update.isPending}
+              className="gap-1"
+            >
+              <Check className="size-3.5" /> Onayla
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() =>
+                update.mutate({ id: alert.id, status: "dismissed" })
+              }
+              disabled={update.isPending}
+              className="gap-1"
+            >
+              <X className="size-3.5" /> At
+            </Button>
+          </div>
+        )}
+        {alert.status !== "active" && (
+          <p className="text-muted-foreground mt-2 text-xs">
+            {alert.status === "acknowledged"
+              ? "Onaylandı"
+              : "Atıldı"}{" "}
+            {alert.acknowledged_at &&
+              new Date(alert.acknowledged_at).toLocaleString("tr-TR")}
+          </p>
+        )}
+      </CardContent>
+    </Card>
+  );
+}

@@ -35,6 +35,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { useExtractFromReport } from "@/hooks/use-action-items";
 import { useLlmCredentials } from "@/hooks/use-llm-credentials";
 import {
   useGenerateOkr,
@@ -452,7 +453,10 @@ function SwotViewer({ report }: { report: StrategicReportDetail }) {
             <ReportMeta report={report} />
           </p>
         </div>
-        <DownloadPdfButton reportId={report.id} reportType="swot" />
+        <div className="flex items-center gap-2">
+          <ExtractActionItemsButton reportId={report.id} />
+          <DownloadPdfButton reportId={report.id} reportType="swot" />
+        </div>
       </CardHeader>
       <CardContent className="space-y-6">
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
@@ -1000,4 +1004,42 @@ async function downloadStrategicPdf(
   } catch {
     toast.error("İndirme başlatılamadı.");
   }
+}
+
+
+// Sprint 8.3.10 — extract SWOT recommendations into trackable
+// action items. Uses the dedicated useExtractFromReport hook so
+// the cache invalidation lines up with /action-items.
+function ExtractActionItemsButton({ reportId }: { reportId: string }) {
+  const router = useRouter();
+  const extract = useExtractFromReport();
+  return (
+    <Button
+      variant="outline"
+      size="sm"
+      disabled={extract.isPending}
+      onClick={() =>
+        extract.mutate(reportId, {
+          onSuccess: (rows) => {
+            toast.success(
+              `${rows.length} aksiyon eklendi.`,
+              {
+                action: {
+                  label: "Görüntüle",
+                  onClick: () => router.push("/action-items"),
+                },
+              },
+            );
+          },
+          onError: () => toast.error("Aksiyon çıkarma başarısız."),
+        })
+      }
+      className="gap-1"
+    >
+      {extract.isPending && (
+        <Loader2 className="size-3.5 animate-spin" aria-hidden />
+      )}
+      Aksiyon olarak çıkar
+    </Button>
+  );
 }

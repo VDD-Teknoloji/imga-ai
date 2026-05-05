@@ -1,9 +1,12 @@
 import {
+  Bell,
   Building2,
+  ClipboardList,
   Compass,
   FileBarChart,
   FileSearch,
   LayoutDashboard,
+  ListChecks,
   Settings,
   Sparkles,
   Ticket,
@@ -32,6 +35,9 @@ export const NAV_ITEMS: ReadonlyArray<NavItem> = [
   { label: "Raporlar", href: "/reports", icon: FileBarChart },
   { label: "İçgörüler", href: "/insights", icon: TrendingUp },
   { label: "Strateji", href: "/strategy", icon: Compass },
+  { label: "Brifing", href: "/executive-briefing", icon: ClipboardList },
+  { label: "Aksiyonlar", href: "/action-items", icon: ListChecks },
+  { label: "Uyarılar", href: "/trend-alerts", icon: Bell },
   { label: "Ayarlar", href: "/settings", icon: Settings },
 ];
 
