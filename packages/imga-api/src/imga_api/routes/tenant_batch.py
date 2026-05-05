@@ -26,8 +26,9 @@ from fastapi import (
     UploadFile,
     status,
 )
-from imga_db.models import BatchJobStatus, UserTenantRole
+from imga_db.models import AnalyzeBatchJob, BatchJobStatus, UserTenantRole
 from pydantic import BaseModel, Field
+from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from imga_api.auth_deps import CurrentUser, bind_tenant, require_role
@@ -48,7 +49,7 @@ from imga_api.workers.file_parser import (
     count_rows,
     peek_header,
 )
-from imga_api.workers.scheduler import submit_batch_job
+from imga_api.workers.scheduler import enqueue_batch_job
 
 log = logging.getLogger("imga-api.routes.batch")
 
@@ -94,6 +95,9 @@ class BatchJobResponse(BaseModel):
     last_checkpoint_row: int = 0
     retry_count: int = 0
     last_error: str | None = None
+    # Sprint 9.0.5-A — arq worker handle.
+    worker_job_id: str | None = None
+    queued_at: str | None = None
 
 
 class BatchJobListResponse(BaseModel):
@@ -181,6 +185,12 @@ def _job_view(job: Any) -> BatchJobResponse:
         last_checkpoint_row=job.last_checkpoint_row,
         retry_count=job.retry_count,
         last_error=job.last_error,
+        worker_job_id=getattr(job, "worker_job_id", None),
+        queued_at=(
+            job.queued_at.isoformat()
+            if getattr(job, "queued_at", None) is not None
+            else None
+        ),
     )
 
 
@@ -429,13 +439,32 @@ async def create_batch(
             total_rows=total_rows,
             ip_address=_client_ip(request),
         )
-        view = _job_view(job)
 
-    # Hand off to the scheduler. Keeping this OUTSIDE the transaction
-    # is intentional — the scheduler may dispatch immediately.
-    scheduler = request.app.state.batch_scheduler
-    worker_context = request.app.state.batch_worker_context
-    submit_batch_job(scheduler, job_id=view.job_id, context=worker_context)
+    # Sprint 9.0.5-A — enqueue via arq if the prod pool is wired,
+    # else fall back to the in-process APScheduler (test stack +
+    # legacy single-process deploys). The helper persists the
+    # worker handle on a best-effort basis — failure to write the
+    # handle doesn't fail the upload (the queue accepted the job
+    # already; the column is just for observability + targeted
+    # cancel later).
+    worker_job_id, queued_at = await enqueue_batch_job(
+        request.app, job_id=job.id, tenant_id=tenant_id,
+    )
+    if worker_job_id is not None or queued_at is not None:
+        async with app_session.begin():
+            await bind_tenant(app_session, current)
+            await app_session.execute(
+                update(AnalyzeBatchJob)
+                .where(AnalyzeBatchJob.id == job.id)
+                .values(
+                    worker_job_id=worker_job_id,
+                    queued_at=queued_at,
+                )
+            )
+    async with app_session.begin():
+        await bind_tenant(app_session, current)
+        refreshed = await app_session.get(AnalyzeBatchJob, job.id)
+        view = _job_view(refreshed if refreshed is not None else job)
 
     return view
 
@@ -575,13 +604,28 @@ async def retry_batch(
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT, detail=str(exc)
             ) from exc
-        view = _job_view(job)
+        tenant_id_for_dispatch = job.tenant_id
 
-    # Re-submit to the scheduler — same path as the initial create
-    # endpoint so the worker picks the resume up immediately.
-    scheduler = request.app.state.batch_scheduler
-    worker_context = request.app.state.batch_worker_context
-    submit_batch_job(scheduler, job_id=view.job_id, context=worker_context)
+    # Re-submit via the same dispatch path as create — arq if wired,
+    # else in-process scheduler. Sprint 9.0.5-A.
+    worker_job_id, queued_at = await enqueue_batch_job(
+        request.app, job_id=job.id, tenant_id=tenant_id_for_dispatch,
+    )
+    if worker_job_id is not None or queued_at is not None:
+        async with app_session.begin():
+            await bind_tenant(app_session, current)
+            await app_session.execute(
+                update(AnalyzeBatchJob)
+                .where(AnalyzeBatchJob.id == job.id)
+                .values(
+                    worker_job_id=worker_job_id,
+                    queued_at=queued_at,
+                )
+            )
+    async with app_session.begin():
+        await bind_tenant(app_session, current)
+        refreshed = await app_session.get(AnalyzeBatchJob, job.id)
+        view = _job_view(refreshed if refreshed is not None else job)
     return view
 
 

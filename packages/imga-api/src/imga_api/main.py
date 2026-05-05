@@ -33,6 +33,9 @@ from imga_api.routes import tenant_action_items as tenant_action_items_routes
 from imga_api.routes import tenant_analytics as tenant_analytics_routes
 from imga_api.routes import tenant_analyze as tenant_analyze_routes
 from imga_api.routes import tenant_batch as tenant_batch_routes
+from imga_api.routes import (
+    tenant_batch_progress as tenant_batch_progress_routes,
+)
 from imga_api.routes import tenant_config as tenant_config_routes
 from imga_api.routes import tenant_directory as tenant_directory_routes
 from imga_api.routes import (
@@ -89,6 +92,13 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     log.info("Booting imga-api %s with model=%s", __version__, settings.bert_model)
     app.state.settings = settings
     app.state.pipeline = build_pipeline(settings)
+    # Sprint 9.0.5-A — arq pool is created later in this lifespan
+    # (after the scheduler primitives) so routes can pick the
+    # background worker path when Redis is reachable. Initialise
+    # to None up front so the ``getattr(app.state, 'arq_pool',
+    # None)`` checks in scheduler.enqueue_batch_job and the SSE
+    # endpoint always have something to read.
+    app.state.arq_pool = None
     # Per-tenant config cache (Sprint 7.4). Single-process for now;
     # Sprint 8 swaps to Redis behind the same get_tenant_config_cache
     # dependency. 5-minute TTL is short enough that audit/observability
@@ -174,11 +184,44 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             exc,
         )
 
+    # Sprint 9.0.5-A — arq pool for the api-worker container. The API
+    # itself doesn't run BERT here in production (the worker
+    # container does); this pool is purely for enqueueing jobs onto
+    # the shared queue. Best-effort: a missed pool falls back to the
+    # legacy in-process APScheduler path so the API stays writable
+    # even without Redis (operationally degraded — batch jobs will
+    # block the API event loop again, the very freeze this sprint
+    # fixes — but at least new uploads succeed).
+    try:
+        from arq import create_pool
+
+        from imga_api.workers.arq_worker import _redis_settings
+
+        app.state.arq_pool = await create_pool(_redis_settings())
+        log.info("arq batch pool ready (queue=imga-batch)")
+    except Exception as exc:
+        log.warning(
+            "arq batch pool unavailable at startup (%s); falling "
+            "back to in-process APScheduler dispatch — batch jobs "
+            "will run inside the API process",
+            exc,
+        )
+        app.state.arq_pool = None
+
     try:
         yield
     finally:
         log.info("Shutting down imga-api")
         scheduler.shutdown(wait=False)
+        # Sprint 9.0.5-A — close the arq pool if it ever opened.
+        # ``aclose`` ships on arq's ArqRedis (>=0.26); idempotent on
+        # a never-opened pool because we early-return when None.
+        if app.state.arq_pool is not None:
+            try:
+                await app.state.arq_pool.aclose()
+            except Exception:
+                log.exception("arq pool close failed")
+            app.state.arq_pool = None
         # Dispose worker engines so asyncpg pools close cleanly.
         # In prod this is end-of-process (a no-op for behaviour); in
         # tests it's mandatory — the next test's lifespan must start
@@ -257,6 +300,7 @@ app.include_router(auth_routes.router)
 app.include_router(tenant_config_routes.router)
 app.include_router(tenant_analyze_routes.router)
 app.include_router(tenant_batch_routes.router)
+app.include_router(tenant_batch_progress_routes.router)
 app.include_router(tenant_reviews_routes.router)
 app.include_router(tenant_reports_routes.router)
 app.include_router(tenant_analytics_routes.router)

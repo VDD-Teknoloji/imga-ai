@@ -11,12 +11,15 @@ is a one-file change.
 from __future__ import annotations
 
 import logging
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 if TYPE_CHECKING:
+    from fastapi import FastAPI
+
     from imga_api.workers.batch_analyzer import WorkerContext
     from imga_api.workers.report_generator import ReportContext
 
@@ -113,8 +116,70 @@ def schedule_cleanup(
     _job()
 
 
+async def enqueue_batch_job(
+    app: FastAPI,
+    *,
+    job_id: UUID,
+    tenant_id: UUID,
+) -> tuple[str | None, datetime | None]:
+    """Sprint 9.0.5-A — pick the right dispatch path.
+
+    Production wires ``app.state.arq_pool`` in the lifespan; this
+    enqueues into the arq queue and returns the arq job id +
+    queued-at timestamp so the route can persist them on the
+    ``analyze_batch_jobs`` row (operator can later inspect / cancel
+    a specific arq run).
+
+    Test stack and any deploy that didn't manage to bring up Redis at
+    startup falls back to the in-process APScheduler — same behaviour
+    as before this sprint, no regression for the existing test seam
+    (``run_worker`` / ``RecordingScheduler``).
+
+    Returns:
+        ``(worker_job_id, queued_at)``. Both ``None`` on the
+        scheduler-fallback path so the route doesn't accidentally
+        persist a fake arq id.
+    """
+    arq_pool = getattr(app.state, "arq_pool", None)
+    if arq_pool is not None:
+        try:
+            job = await arq_pool.enqueue_job(
+                "process_batch_task",
+                str(job_id),
+                str(tenant_id),
+                _job_id=f"batch:{job_id}",
+                _queue_name="imga-batch",
+            )
+        except Exception:
+            log.exception(
+                "scheduler: arq enqueue failed; falling back to in-process",
+                extra={"job_id": str(job_id)},
+            )
+        else:
+            if job is not None:
+                queued_at = datetime.now(UTC)
+                worker_job_id = getattr(job, "job_id", None)
+                log.info(
+                    "scheduler: enqueued batch job %s on arq (worker_job_id=%s)",
+                    job_id,
+                    worker_job_id,
+                )
+                return worker_job_id, queued_at
+
+    scheduler = getattr(app.state, "batch_scheduler", None)
+    worker_context = getattr(app.state, "batch_worker_context", None)
+    if scheduler is None or worker_context is None:
+        raise RuntimeError(
+            "no dispatch target available — neither arq_pool nor "
+            "batch_scheduler is wired on app.state"
+        )
+    submit_batch_job(scheduler, job_id=job_id, context=worker_context)
+    return None, None
+
+
 __all__ = [
     "build_scheduler",
+    "enqueue_batch_job",
     "schedule_cleanup",
     "submit_batch_job",
     "submit_report_job",
