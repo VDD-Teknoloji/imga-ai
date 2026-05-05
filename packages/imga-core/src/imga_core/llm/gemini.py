@@ -258,6 +258,37 @@ class GeminiProvider(LLMProvider):
             max_output_tokens=max_output_tokens,
         )
 
+    async def generate_executive_briefing(
+        self,
+        *,
+        api_key: str,
+        system_prompt: str,
+        user_prompt: str,
+        response_schema: dict[str, Any],
+        # Sprint 8.3.10 — same flash default as SWOT/OKR. Briefings
+        # are short (1 paragraph + 3-5 KPIs + 2-3 insights + 3 actions)
+        # so max_output_tokens stays low.
+        model_name: str = "gemini-2.5-flash",
+        temperature: float = 0.25,
+        top_p: float = 0.9,
+        max_output_tokens: int = 2048,
+    ) -> tuple[dict[str, Any], dict[str, int] | None]:
+        """Sprint 8.3.10 — generate a 1-page executive briefing JSON.
+        Same return + error contract as ``generate_swot`` /
+        ``generate_okr``. Lower temperature to keep the headline
+        deterministic-ish; briefings benefit from concrete framing
+        more than from variation."""
+        return await self._generate_structured(
+            api_key=api_key,
+            system_prompt=system_prompt,
+            user_prompt=user_prompt,
+            response_schema=response_schema,
+            model_name=model_name,
+            temperature=temperature,
+            top_p=top_p,
+            max_output_tokens=max_output_tokens,
+        )
+
     async def _generate_structured(
         self,
         *,
