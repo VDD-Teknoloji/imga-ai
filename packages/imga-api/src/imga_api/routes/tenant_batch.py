@@ -38,6 +38,8 @@ from imga_api.services import (
     BatchJobNotCancellableError,
     BatchJobNotFoundError,
 )
+from imga_api.services.smart_parser import SmartColumnDetector
+from imga_api.services.smart_parser.sampler import sample_columns
 from imga_api.settings import Settings
 from imga_api.workers.file_parser import (
     FileParseError,
@@ -95,6 +97,34 @@ class BatchJobListResponse(BaseModel):
     total: int
 
 
+# --- Sprint 8.3.8 — preview endpoint response models ----------------
+
+
+class DetectorAlternative(BaseModel):
+    """One non-winning detector verdict for a column. The UI surfaces
+    these as dropdown options ("or it could be …") without re-running
+    detection."""
+
+    field_name: str
+    confidence: float
+
+
+class DetectedColumnResponse(BaseModel):
+    column_name: str
+    field_name: str | None
+    confidence: float
+    sample_values: list[str]
+    alternatives: list[DetectorAlternative]
+    metadata: dict[str, Any]
+
+
+class PreviewResponse(BaseModel):
+    headers: list[str]
+    row_count: int
+    detected: list[DetectedColumnResponse]
+    pii_warnings: list[str]
+
+
 # --- helpers ----------------------------------------------------------
 
 
@@ -148,6 +178,123 @@ def _job_view(job: Any) -> BatchJobResponse:
 
 
 # --- endpoints --------------------------------------------------------
+
+
+@router.post(
+    "/preview",
+    response_model=PreviewResponse,
+    summary="Sprint 8.3.8 — detect column types from a sample upload.",
+    description=(
+        "Multipart upload that runs the smart_parser detector ensemble "
+        "against the file's first 50 data rows and returns proposed "
+        "column-to-field assignments + sample values + PII warnings. "
+        "Does NOT persist the file or create a job — the response "
+        "drives the /analyze/upload Step 2 preview UI; the user "
+        "confirms / overrides and the actual upload happens via "
+        "POST /tenants/me/analyze/batch."
+    ),
+)
+async def preview_batch_columns(
+    request: Request,
+    current: Annotated[CurrentUser, _AnyMember],
+    file: Annotated[UploadFile, File(...)],
+) -> PreviewResponse:
+    """Returns a preview snapshot — no DB writes, no job row.
+
+    The file is streamed to a temp path inside the tenant's upload
+    directory, sampled, then deleted. Same size/extension caps as
+    the real upload endpoint apply (the user's first round of
+    bytes-on-the-wire validation should be identical regardless of
+    which path they hit)."""
+    _ = _require_active_tenant(current)
+    settings: Settings = request.app.state.settings
+    batch_settings = settings.batch
+
+    if file.filename is None or not file.filename.strip():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="dosya adı boş olamaz",
+        )
+    safe_name = Path(file.filename).name
+    suffix = Path(safe_name).suffix.lower()
+    if suffix not in (".csv", ".xlsx"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="desteklenmeyen dosya türü; sadece .csv ve .xlsx kabul edilir",
+        )
+
+    # Temp path inside the tenant's upload dir so disk quotas + path
+    # rules already configured for the real upload also apply here.
+    tmp_dir = batch_settings.upload_dir / "preview" / str(uuid4())
+    tmp_dir.mkdir(parents=True, exist_ok=True)
+    file_path = tmp_dir / safe_name
+
+    written = 0
+    try:
+        with file_path.open("wb") as out:
+            while True:
+                chunk = await file.read(1024 * 1024)
+                if not chunk:
+                    break
+                written += len(chunk)
+                if written > batch_settings.max_file_bytes:
+                    raise HTTPException(
+                        status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                        detail=(
+                            f"dosya boyutu "
+                            f"{batch_settings.max_file_bytes // (1024 * 1024)} "
+                            "MB sınırını aşıyor"
+                        ),
+                    )
+                out.write(chunk)
+
+        try:
+            headers, samples, row_count = sample_columns(file_path)
+        except (FileParseError, UnsupportedFormatError) as exc:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)
+            ) from exc
+
+        detector = SmartColumnDetector()
+        result = detector.detect(headers, samples, row_count)
+
+        return PreviewResponse(
+            headers=result.headers,
+            row_count=result.row_count,
+            detected=[
+                DetectedColumnResponse(
+                    column_name=col.column_name,
+                    field_name=(
+                        col.field_name.value if col.field_name else None
+                    ),
+                    confidence=col.confidence,
+                    sample_values=col.sample_values,
+                    alternatives=[
+                        DetectorAlternative(
+                            field_name=alt.field_name.value,
+                            confidence=alt.confidence,
+                        )
+                        for alt in col.alternatives
+                    ],
+                    metadata=col.metadata,
+                )
+                for col in result.detected
+            ],
+            pii_warnings=result.pii_warnings,
+        )
+    except HTTPException:
+        raise
+    except Exception:
+        log.exception(
+            "preview_batch_columns failed",
+            extra={"filename": safe_name},
+        )
+        raise
+    finally:
+        # Best-effort cleanup — preview never persists the file.
+        with contextlib.suppress(OSError):
+            file_path.unlink(missing_ok=True)
+            tmp_dir.rmdir()
 
 
 @router.post(
