@@ -6,11 +6,23 @@ Strategy:
     3. Otherwise call the LLM provider; on success merge result
     4. If LLM fails or is None, return keyword result with the
        requires_manual_review flag so the operator can step in
+
+Sprint 9.0.5-A R4 — added ``classify_batch_async`` with parallel
+LLM dispatch + circuit breaker + per-batch telemetry. The legacy
+sync ``classify_batch`` (default loop) ran 98 LLM fallbacks in
+sequence — on a Gemini-bound demo tenant that was 161 sec wall-
+clock for what should be ~15-25 sec. The async path bounds
+parallel LLM calls by ``LLM_CONCURRENCY`` (default 8 — paid Tier
+1 supplies ~16 RPS, so 8 in flight stays well under quota with
+margin for the ~2 sec/call latency).
 """
 
 from __future__ import annotations
 
+import asyncio
 import logging
+import time
+from typing import TYPE_CHECKING
 
 from imga_core.categories.taxonomy import GLOBAL_CATEGORY_CODES
 from imga_core.classifiers.base import CategoryClassifier
@@ -19,7 +31,30 @@ from imga_core.config import CATEGORY_LLM_FALLBACK_THRESHOLD
 from imga_core.llm.base import LLMProvider, LLMProviderError
 from imga_core.models import CategoryClassification
 
+if TYPE_CHECKING:
+    pass
+
 _logger = logging.getLogger(__name__)
+
+
+# Sprint 9.0.5-A R4 — parallel LLM dispatch defaults.
+#
+# LLM_CONCURRENCY: max simultaneous Gemini calls per batch. Paid Tier 1
+# is 1000 RPM ≈ 16 RPS; with ~2 sec/call latency, 8 in flight averages
+# 4 RPS sustained — well under the ceiling and leaves headroom for
+# burst, the SWOT/OKR path, and any other tenants sharing the key.
+# Override per-instance (HybridClassifier(..., llm_concurrency=N)) when
+# a deployment moves to a different tier.
+DEFAULT_LLM_CONCURRENCY = 8
+
+# Circuit breaker — kicks in on N consecutive provider failures so a
+# Gemini outage in the middle of a 10K-row batch doesn't burn through
+# the rest of the rows on doomed retries. Cooldown is generous (30s)
+# because the upstream is usually a multi-minute outage when it
+# happens; a single connection blip earlier than the 5-fail threshold
+# self-heals without ever opening the circuit.
+CIRCUIT_BREAKER_FAIL_THRESHOLD = 5
+CIRCUIT_BREAKER_COOLDOWN_SECONDS = 30.0
 
 
 class HybridClassifier(CategoryClassifier):
@@ -33,6 +68,9 @@ class HybridClassifier(CategoryClassifier):
             available) is consulted. Default 0.7 from config.
         available_categories: Codes the LLM is allowed to choose from. If
             None, defaults to the global taxonomy.
+        llm_concurrency: Max parallel LLM calls in
+            ``classify_batch_async``. Default 8 (see
+            DEFAULT_LLM_CONCURRENCY rationale).
     """
 
     def __init__(
@@ -41,11 +79,20 @@ class HybridClassifier(CategoryClassifier):
         llm_provider: LLMProvider | None = None,
         confidence_threshold: float = CATEGORY_LLM_FALLBACK_THRESHOLD,
         available_categories: list[str] | None = None,
+        llm_concurrency: int = DEFAULT_LLM_CONCURRENCY,
     ) -> None:
         self.keyword = keyword_classifier
         self.llm = llm_provider
         self.threshold = confidence_threshold
         self._available_categories = available_categories or list(GLOBAL_CATEGORY_CODES)
+        self._llm_concurrency = max(1, llm_concurrency)
+        # Sprint 9.0.5-A R4 — circuit-breaker state. Keep on the
+        # instance so a fresh classifier per batch (test path) starts
+        # closed; production keeps a long-lived classifier on the
+        # WorkerContext, so failures + cooldowns persist across
+        # batches as intended.
+        self._consecutive_llm_failures = 0
+        self._llm_circuit_open_until: float | None = None
 
     def classify(self, text: str) -> CategoryClassification:
         keyword_result = self.keyword.classify(text)
@@ -73,12 +120,269 @@ class HybridClassifier(CategoryClassifier):
             return keyword_result.model_copy(update={"requires_manual_review": True})
 
         # Merge: LLM picks primary + confidence, keyword keeps secondaries.
-        return CategoryClassification(
-            primary=llm_result.primary,
-            primary_confidence=llm_result.confidence,
-            primary_matched_keywords=(),  # LLM doesn't surface keyword hits
-            secondaries=keyword_result.secondaries,
-            method="ensemble",
-            requires_manual_review=False,
-            llm_result=llm_result,
+        return _merge_with_llm(keyword_result, llm_result)
+
+    # ------------------------------------------------------------------
+    # Sprint 9.0.5-A R4 — async batch with parallel LLM fallback
+    # ------------------------------------------------------------------
+
+    async def classify_batch_async(
+        self, texts: list[str]
+    ) -> list[CategoryClassification]:
+        """Async batch classification with bounded parallel LLM dispatch.
+
+        Steps:
+          1. Run keyword classify on every text (sync, microseconds — no
+             network).
+          2. Identify the indices whose keyword confidence is below
+             threshold (LLM fallback candidates).
+          3. Fan out the LLM calls through ``asyncio.to_thread`` bounded
+             by ``self._llm_concurrency``. Failures don't fail the batch
+             — the row falls back to keyword + ``requires_manual_review``,
+             same contract as the sync ``classify``.
+          4. Circuit breaker: ``CIRCUIT_BREAKER_FAIL_THRESHOLD`` (5)
+             consecutive failures opens the circuit for
+             ``CIRCUIT_BREAKER_COOLDOWN_SECONDS`` (30s); pending LLM
+             calls (and any subsequent batch in the cooldown window)
+             skip the LLM hop entirely so an outage doesn't burn the
+             rest of a 10K-row run on doomed retries.
+          5. Telemetry: one INFO log per batch with throughput +
+             keyword/LLM split + duration so an operator can see the
+             demo's classifier breakdown live in journalctl.
+
+        Demo target: 98-row LLM-bound batch was 161 sec sequential
+        (Sprint 9.0.5-A R4 incident); 8 in flight × 2 sec/call × 13
+        batches ≈ 26 sec wall-clock + keyword overhead. ~6× faster
+        without touching Gemini quota.
+        """
+        batch_started_at = time.monotonic()
+        total = len(texts)
+
+        # Step 1: keyword pass (sync, fast).
+        keyword_results = [self.keyword.classify(t) for t in texts]
+
+        # Step 2: identify LLM candidates.
+        llm_candidates = [
+            i
+            for i, r in enumerate(keyword_results)
+            if r.primary_confidence < self.threshold
+            and texts[i] is not None
+            and texts[i].strip()
+        ]
+
+        # Early-exit branches — no LLM work to dispatch.
+        if not llm_candidates:
+            self._log_batch_summary(
+                total=total,
+                llm_attempted=0,
+                llm_success=0,
+                duration_seconds=time.monotonic() - batch_started_at,
+                mode="keyword-only",
+            )
+            return _mark_review_for_low_confidence(
+                keyword_results, self.threshold,
+            )
+
+        if self.llm is None:
+            self._log_batch_summary(
+                total=total,
+                llm_attempted=0,
+                llm_success=0,
+                duration_seconds=time.monotonic() - batch_started_at,
+                mode="llm-disabled",
+            )
+            return _mark_review_for_low_confidence(
+                keyword_results, self.threshold,
+            )
+
+        if self._is_circuit_open():
+            _logger.warning(
+                "LLM circuit open — skipping %d LLM fallback calls "
+                "(cooldown ends in %.1fs)",
+                len(llm_candidates),
+                self._cooldown_remaining_seconds(),
+            )
+            self._log_batch_summary(
+                total=total,
+                llm_attempted=0,
+                llm_success=0,
+                duration_seconds=time.monotonic() - batch_started_at,
+                mode="circuit-open",
+            )
+            return _mark_review_for_low_confidence(
+                keyword_results, self.threshold,
+            )
+
+        # Step 3: fan out LLM calls bounded by concurrency.
+        semaphore = asyncio.Semaphore(self._llm_concurrency)
+
+        async def _llm_one(idx: int) -> tuple[int, CategoryClassification | None]:
+            async with semaphore:
+                # Re-check circuit after the wait — a flood of
+                # failures from the first few in-flight calls may
+                # have opened it while this task was queued.
+                if self._is_circuit_open():
+                    return idx, None
+                try:
+                    llm_result = await asyncio.to_thread(
+                        self.llm.classify,  # type: ignore[union-attr]
+                        texts[idx],
+                        self._available_categories,
+                    )
+                except LLMProviderError as exc:
+                    self._record_llm_failure()
+                    _logger.warning(
+                        "LLM classification failed for row %d (%s); "
+                        "falling back to keyword result",
+                        idx,
+                        exc,
+                    )
+                    return idx, None
+                except Exception:
+                    # Anything non-LLMProviderError still counts as a
+                    # provider failure for the circuit-breaker purposes
+                    # (a malformed-input crash from the provider SDK
+                    # is just as much a signal as a network timeout).
+                    self._record_llm_failure()
+                    _logger.exception(
+                        "Unexpected LLM error for row %d", idx
+                    )
+                    return idx, None
+                self._record_llm_success()
+                return idx, _merge_with_llm(
+                    keyword_results[idx], llm_result,
+                )
+
+        llm_outcomes = await asyncio.gather(
+            *(_llm_one(i) for i in llm_candidates)
         )
+
+        # Step 4: assemble final list.
+        final = list(keyword_results)
+        llm_success = 0
+        for idx, merged in llm_outcomes:
+            if merged is not None:
+                final[idx] = merged
+                llm_success += 1
+            else:
+                # LLM failed or was skipped — surface for manual review.
+                final[idx] = keyword_results[idx].model_copy(
+                    update={"requires_manual_review": True},
+                )
+
+        self._log_batch_summary(
+            total=total,
+            llm_attempted=len(llm_candidates),
+            llm_success=llm_success,
+            duration_seconds=time.monotonic() - batch_started_at,
+            mode="hybrid-parallel",
+        )
+        return final
+
+    # ------------------------------------------------------------------
+    # Circuit breaker helpers
+    # ------------------------------------------------------------------
+
+    def _is_circuit_open(self) -> bool:
+        """Return True while the circuit is in cooldown. Auto-closes
+        once the cooldown window ends (resets the failure counter)."""
+        if self._llm_circuit_open_until is None:
+            return False
+        if time.monotonic() >= self._llm_circuit_open_until:
+            self._llm_circuit_open_until = None
+            self._consecutive_llm_failures = 0
+            _logger.info("LLM circuit breaker closed; retrying LLM fallback")
+            return False
+        return True
+
+    def _cooldown_remaining_seconds(self) -> float:
+        if self._llm_circuit_open_until is None:
+            return 0.0
+        return max(0.0, self._llm_circuit_open_until - time.monotonic())
+
+    def _record_llm_failure(self) -> None:
+        self._consecutive_llm_failures += 1
+        if (
+            self._consecutive_llm_failures
+            >= CIRCUIT_BREAKER_FAIL_THRESHOLD
+            and self._llm_circuit_open_until is None
+        ):
+            self._llm_circuit_open_until = (
+                time.monotonic() + CIRCUIT_BREAKER_COOLDOWN_SECONDS
+            )
+            _logger.warning(
+                "LLM circuit breaker OPEN for %.0fs after %d "
+                "consecutive failures — falling back to keyword-only "
+                "classification until cooldown ends",
+                CIRCUIT_BREAKER_COOLDOWN_SECONDS,
+                self._consecutive_llm_failures,
+            )
+
+    def _record_llm_success(self) -> None:
+        self._consecutive_llm_failures = 0
+
+    # ------------------------------------------------------------------
+    # Telemetry
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _log_batch_summary(
+        *,
+        total: int,
+        llm_attempted: int,
+        llm_success: int,
+        duration_seconds: float,
+        mode: str,
+    ) -> None:
+        keyword_ok = total - llm_attempted
+        throughput = (total / duration_seconds) if duration_seconds > 0 else 0.0
+        _logger.info(
+            "HybridClassifier batch | total=%d keyword_ok=%d "
+            "llm_attempted=%d llm_success=%d/%d "
+            "duration=%.2fs throughput=%.1f rows/s mode=%s",
+            total,
+            keyword_ok,
+            llm_attempted,
+            llm_success,
+            llm_attempted,
+            duration_seconds,
+            throughput,
+            mode,
+        )
+
+
+def _merge_with_llm(
+    keyword_result: CategoryClassification,
+    llm_result: object,
+) -> CategoryClassification:
+    """LLM picks primary + confidence; keyword keeps secondaries.
+    Mirrors the merge in the legacy sync ``classify`` so async + sync
+    batches produce identical outputs for the same input."""
+    return CategoryClassification(
+        primary=llm_result.primary,  # type: ignore[attr-defined]
+        primary_confidence=llm_result.confidence,  # type: ignore[attr-defined]
+        primary_matched_keywords=(),
+        secondaries=keyword_result.secondaries,
+        method="ensemble",
+        requires_manual_review=False,
+        llm_result=llm_result,  # type: ignore[arg-type]
+    )
+
+
+def _mark_review_for_low_confidence(
+    results: list[CategoryClassification],
+    threshold: float,
+) -> list[CategoryClassification]:
+    """Apply the ``requires_manual_review`` flag to every keyword
+    result whose confidence sits below the threshold. Used on the
+    early-exit branches of ``classify_batch_async`` (no LLM
+    candidates / LLM disabled / circuit open) so the contract
+    matches the row-level ``classify`` path."""
+    return [
+        (
+            r.model_copy(update={"requires_manual_review": True})
+            if r.primary_confidence < threshold
+            else r
+        )
+        for r in results
+    ]

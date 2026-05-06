@@ -108,6 +108,17 @@ class AnalysisPipeline:
         async def _run_classifier() -> list[CategoryClassification | None]:
             if self.classifier is None:
                 return [None] * n
+            # Sprint 9.0.5-A R4 — prefer classify_batch_async when the
+            # classifier exposes it. HybridClassifier's async path
+            # parallelises the LLM fallback (8-way bounded) which was
+            # the dominant wall-clock cost on Gemini-bound batches
+            # (98-row test went 161s -> ~25s). Keyword-only and
+            # other classifiers fall through to the sync path via
+            # to_thread (unchanged from R1's analyze_batch_async).
+            async_batch = getattr(self.classifier, "classify_batch_async", None)
+            if async_batch is not None and asyncio.iscoroutinefunction(async_batch):
+                result = await async_batch(normalized)
+                return list(result)
             result = await asyncio.to_thread(
                 self.classifier.classify_batch, normalized
             )
