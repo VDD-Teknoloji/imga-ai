@@ -166,6 +166,7 @@ services:
           tests-core/test_gemini_swot_okr.py \
           tests-core/test_bert_thread_safety.py \
           tests-core/test_hybrid_parallel_batch.py \
+          tests-core/test_rotating_gemini_provider.py \
           -v --tb=short
 
 networks:
