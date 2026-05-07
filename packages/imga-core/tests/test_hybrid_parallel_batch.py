@@ -180,9 +180,11 @@ async def test_classify_batch_async_no_llm_provider_marks_for_review() -> None:
 
 @pytest.mark.asyncio
 async def test_circuit_breaker_opens_after_consecutive_failures() -> None:
-    """5 consecutive LLM failures opens the circuit; subsequent rows
-    in the same batch + the next batch within the cooldown window
-    skip the LLM call entirely."""
+    """``CIRCUIT_BREAKER_FAIL_THRESHOLD`` consecutive LLM failures
+    opens the circuit; subsequent rows in the same batch + the
+    next batch within the cooldown window skip the LLM call
+    entirely. (Sprint 9.0.5-A R7 lowered the threshold 5 -> 3, so
+    this test reads the constant rather than hard-coding 5.)"""
     keyword = _StubKeyword(confidence=0.3)
     llm = _FailingLLM()
     classifier = HybridClassifier(
@@ -228,10 +230,16 @@ async def test_circuit_breaker_resets_on_success() -> None:
     threshold doesn't trip the breaker; one success in between
     resets the counter so the next failure stretch starts fresh."""
 
+    # Sprint 9.0.5-A R7 — fail count is parameterised on the
+    # threshold constant so the test self-adjusts when R7 tightened
+    # 5 -> 3. We need fewer failures than threshold so the breaker
+    # never trips; one success then resets the counter.
+    fail_count = max(1, CIRCUIT_BREAKER_FAIL_THRESHOLD - 1)
+
     class _FlakyLLM(LLMProvider):
         def __init__(self) -> None:
             self.call_count = 0
-            self.fail_first_n = 3
+            self.fail_first_n = fail_count
 
         def classify(
             self, text: str, available_categories: list[str]
@@ -259,14 +267,16 @@ async def test_circuit_breaker_resets_on_success() -> None:
         llm_concurrency=1,
     )
 
+    total_rows = 10
     results = await classifier.classify_batch_async(
-        [f"r{i}" for i in range(10)]
+        [f"r{i}" for i in range(total_rows)]
     )
-    # 3 fails (< 5 threshold) + 7 successes; circuit never opens, all
-    # 10 rows hit LLM, last 7 succeed.
-    assert llm.call_count == 10
+    # fail_count fails (< threshold) + (total - fail_count) successes;
+    # circuit never opens, all rows hit LLM, the trailing block
+    # succeeds.
+    assert llm.call_count == total_rows
     successes = [r for r in results if not r.requires_manual_review]
-    assert len(successes) == 7
+    assert len(successes) == total_rows - fail_count
     # Internal: counter is back to zero after the success run.
     assert classifier._consecutive_llm_failures == 0
     assert classifier._llm_circuit_open_until is None
