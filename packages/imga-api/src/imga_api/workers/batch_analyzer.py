@@ -41,8 +41,15 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
-from imga_core import AnalysisPipeline, AnalysisResult
+from imga_core import (
+    AnalysisPipeline,
+    AnalysisResult,
+    CategoryClassifier,
+    HybridClassifier,
+    KeywordCategoryClassifier,
+)
 from imga_core.categorizers import TaxonomyEntry, apply_company_heuristic
+from imga_core.llm import RotatingGeminiProvider
 from imga_db import create_engine, create_session_factory, set_current_tenant
 from imga_db.models import (
     AnalyzeBatchJob,
@@ -369,6 +376,13 @@ async def _run_job(
     # to one review (the second is counted as duplicates_skipped).
     seen_hashes_in_batch: set[str] = set()
 
+    # Sprint 9.0.5-A R5 — per-job tenant-scoped classifier with
+    # rotator-aware Gemini provider. None means "use the pipeline's
+    # default classifier" (the lifespan-built ENV-driven one). Built
+    # ONCE per job so the rotator state (priority order + RateLimit
+    # fall-through) lives for the full run.
+    tenant_classifier = await _build_tenant_classifier(tenant_id, context)
+
     # Sprint 9.0 — resume filter. When resume_from_row > 0 we drop
     # already-processed rows from the iterator before they hit
     # _chunked, so the worker only burns BERT inference on rows
@@ -400,6 +414,7 @@ async def _run_job(
                 triggered_by_user_id=triggered_by_user_id,
                 seen_hashes=seen_hashes_in_batch,
                 context=context,
+                classifier_override=tenant_classifier,
             )
     else:
         # Sprint 9.0.5-A B3 — bounded parallel path. Up to
@@ -421,6 +436,7 @@ async def _run_job(
             seen_hashes=seen_hashes_in_batch,
             context=context,
             chunk_concurrency=chunk_concurrency,
+            classifier_override=tenant_classifier,
         )
         if await _is_cancelled(job_id, tenant_id, context):
             log.info("batch worker: job %s cancelled (parallel)", job_id)
@@ -447,6 +463,7 @@ async def _run_chunks_parallel(
     seen_hashes: set[str],
     context: WorkerContext,
     chunk_concurrency: int,
+    classifier_override: CategoryClassifier | None = None,
 ) -> None:
     """Drive ``_process_chunk`` in parallel with a bounded in-flight
     set. Each task acquires the pool semaphore before invoking
@@ -473,6 +490,7 @@ async def _run_chunks_parallel(
                 auto_create=auto_create,
                 triggered_by_user_id=triggered_by_user_id,
                 seen_hashes=seen_hashes, context=context,
+                classifier_override=classifier_override,
             )
         return
 
@@ -489,6 +507,7 @@ async def _run_chunks_parallel(
                 seen_hashes=seen_hashes,
                 context=context,
                 chunk_index=idx,
+                classifier_override=classifier_override,
             )
 
     in_flight: set[asyncio.Task[None]] = set()
@@ -585,6 +604,7 @@ async def _process_chunk(
     seen_hashes: set[str],
     context: WorkerContext,
     chunk_index: int | None = None,
+    classifier_override: CategoryClassifier | None = None,
 ) -> None:
     """Analyze and persist one chunk worth of rows. Each chunk is its
     own transaction so a row-level error rolls back ONLY the bad row,
@@ -650,7 +670,7 @@ async def _process_chunk(
         # the proximate cause of today's 21-min freeze on a 2852-row
         # CSV.
         analyses: list[AnalysisResult] = await pipeline.analyze_batch_async(
-            texts
+            texts, classifier=classifier_override,
         )
     except Exception as exc:
         log.exception("batch chunk inference failed: %s", exc)
@@ -964,6 +984,61 @@ async def recover_orphans(context: WorkerContext) -> int:
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+
+async def _build_tenant_classifier(
+    tenant_id: UUID, context: WorkerContext
+) -> CategoryClassifier | None:
+    """Sprint 9.0.5-A R5 — load the tenant's active Gemini credentials
+    and assemble a per-job ``HybridClassifier`` with a
+    ``RotatingGeminiProvider``.
+
+    Returns:
+        * A ``HybridClassifier`` wrapping the tenant's keys when at
+          least one decryptable credential exists.
+        * ``None`` when the tenant has no active credentials — the
+          caller falls back to the pipeline's default classifier
+          (lifespan-built; ENV-driven for the api-worker container).
+
+    The classifier is single-use per job: rotator state (priority
+    order, RateLimit fall-through) is built fresh from the current
+    ``tenant_llm_credentials`` rows so a credential added /
+    rotated mid-day takes effect on the next job without an api-
+    worker restart. Cost is one admin-session DB query +
+    decryption — milliseconds against a multi-minute batch.
+    """
+    from imga_api.services.llm_credentials import load_active_gemini_keys
+
+    try:
+        async with context.admin_session_factory() as session, session.begin():
+            await set_current_tenant(session, tenant_id)
+            keys = await load_active_gemini_keys(session, tenant_id)
+    except Exception:
+        log.exception(
+            "batch worker: failed to load tenant Gemini keys; "
+            "falling back to default classifier",
+            extra={"tenant_id": str(tenant_id)},
+        )
+        return None
+
+    if not keys:
+        log.info(
+            "batch worker: tenant has no active Gemini credentials; "
+            "falling back to keyword-only classifier",
+            extra={"tenant_id": str(tenant_id)},
+        )
+        return None
+
+    log.info(
+        "batch worker: tenant classifier built with %d Gemini key(s) "
+        "(rotator active)",
+        len(keys),
+        extra={"tenant_id": str(tenant_id)},
+    )
+    return HybridClassifier(
+        keyword_classifier=KeywordCategoryClassifier(),
+        llm_provider=RotatingGeminiProvider(keys=keys),
+    )
 
 
 async def _load_taxonomy_payload(
