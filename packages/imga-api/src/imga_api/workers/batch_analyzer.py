@@ -1029,15 +1029,23 @@ async def _build_tenant_classifier(
         )
         return None
 
+    # Sprint 9.0.5-A R7 — pull the parallel-LLM cap from
+    # BatchSettings so a deploy can override
+    # IMGA_BATCH_LLM_CONCURRENCY without code changes. Default 4
+    # (R7 down from 8) keeps in-flight state bounded during a
+    # provider outage so the circuit breaker can react fast.
+    llm_concurrency = context.settings.llm_concurrency
     log.info(
         "batch worker: tenant classifier built with %d Gemini key(s) "
-        "(rotator active)",
+        "(rotator active, llm_concurrency=%d)",
         len(keys),
+        llm_concurrency,
         extra={"tenant_id": str(tenant_id)},
     )
     return HybridClassifier(
         keyword_classifier=KeywordCategoryClassifier(),
         llm_provider=RotatingGeminiProvider(keys=keys),
+        llm_concurrency=llm_concurrency,
     )
 
 
