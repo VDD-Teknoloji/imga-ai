@@ -78,7 +78,8 @@ class BatchSettings:
     upload_dir: Path = Path("/var/imga/uploads")
     max_file_bytes: int = 50 * 1024 * 1024  # 50 MB
     max_rows: int = 10_000
-    chunk_size: int = 1000
+    # Sprint 9.0.5-A R6 — was 1000; see from_env() comment.
+    chunk_size: int = 200
     retention_hours: int = 24
     global_concurrency: int = 2  # server-wide simultaneous batch jobs
     per_tenant_concurrency: int = 1  # one batch per tenant at a time
@@ -146,7 +147,16 @@ class Settings:
             upload_dir=Path(batch_upload_dir) if batch_upload_dir else Path("/var/imga/uploads"),
             max_file_bytes=_int("IMGA_BATCH_MAX_FILE_BYTES", 50 * 1024 * 1024),
             max_rows=_int("IMGA_BATCH_MAX_ROWS", 10_000),
-            chunk_size=_int("IMGA_BATCH_CHUNK_SIZE", 1000),
+            # Sprint 9.0.5-A R6 — default 1000 -> 200. The earlier
+            # default produced one chunk-end progress write every
+            # ~9 minutes on a 2852-row LLM-bound run, leaving the
+            # SSE / polling UI showing 0/2852 for the first commit
+            # window. 200 commits every ~30s, so the demo's live
+            # progress UI updates several times per minute. The
+            # extra DB transactions per chunk are dwarfed by the
+            # BERT + LLM time. Override via env when a deploy needs
+            # different granularity.
+            chunk_size=_int("IMGA_BATCH_CHUNK_SIZE", 200),
             retention_hours=_int("IMGA_BATCH_RETENTION_HOURS", 24),
             global_concurrency=_int("IMGA_BATCH_GLOBAL_CONCURRENCY", 2),
             per_tenant_concurrency=_int("IMGA_BATCH_PER_TENANT_CONCURRENCY", 1),
