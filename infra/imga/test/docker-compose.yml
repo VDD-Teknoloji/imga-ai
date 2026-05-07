@@ -168,6 +168,7 @@ services:
           tests-core/test_hybrid_parallel_batch.py \
           tests-core/test_rotating_gemini_provider.py \
           tests-core/test_rotating_gemini_async_loop.py \
+          tests-core/test_hybrid_key_telemetry.py \
           -v --tb=short
 
 networks:
