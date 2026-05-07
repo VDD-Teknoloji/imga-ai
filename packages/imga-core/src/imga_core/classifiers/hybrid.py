@@ -45,16 +45,30 @@ _logger = logging.getLogger(__name__)
 # burst, the SWOT/OKR path, and any other tenants sharing the key.
 # Override per-instance (HybridClassifier(..., llm_concurrency=N)) when
 # a deployment moves to a different tier.
-DEFAULT_LLM_CONCURRENCY = 8
+# Sprint 9.0.5-A R7 — was 8; dropped to 4 after the 504 storm
+# regression. Paid Gemini Tier 1 still has plenty of RPM budget,
+# but a smaller fan-out means less in-flight state piling up
+# during an outage and faster wall-clock cancellation when the
+# circuit breaker opens. Override per-instance via the
+# ``llm_concurrency`` constructor arg or the BatchSettings
+# ``llm_concurrency`` field on the worker.
+DEFAULT_LLM_CONCURRENCY = 4
 
-# Circuit breaker — kicks in on N consecutive provider failures so a
-# Gemini outage in the middle of a 10K-row batch doesn't burn through
-# the rest of the rows on doomed retries. Cooldown is generous (30s)
-# because the upstream is usually a multi-minute outage when it
-# happens; a single connection blip earlier than the 5-fail threshold
-# self-heals without ever opening the circuit.
-CIRCUIT_BREAKER_FAIL_THRESHOLD = 5
-CIRCUIT_BREAKER_COOLDOWN_SECONDS = 30.0
+# Sprint 9.0.5-A R4 — circuit breaker — kicks in on N consecutive
+# provider failures so a Gemini outage in the middle of a 10K-row
+# batch doesn't burn through the rest of the rows on doomed retries.
+#
+# Sprint 9.0.5-A R7 — tightened thresholds after a 504-storm smoke
+# test:
+#  * threshold 5 -> 3: the older value let a hung batch keep firing
+#    LLM calls long enough for in-flight tasks + SDK retry state to
+#    grow memory from 252 MiB to 3+ GiB. Three failures is enough
+#    signal of a real problem.
+#  * cooldown 30s -> 60s: Gemini server outages typically last
+#    multiple minutes; 30s reopened the circuit before the upstream
+#    recovered and the batch immediately got stuck again.
+CIRCUIT_BREAKER_FAIL_THRESHOLD = 3
+CIRCUIT_BREAKER_COOLDOWN_SECONDS = 60.0
 
 
 class HybridClassifier(CategoryClassifier):
@@ -288,9 +302,68 @@ class HybridClassifier(CategoryClassifier):
                     keyword_results[idx], llm_result,
                 )
 
-        llm_outcomes = await asyncio.gather(
-            *(_llm_one(i) for i in llm_candidates)
-        )
+        # Sprint 9.0.5-A R7 — track tasks so the circuit breaker can
+        # cancel pending work mid-batch. Earlier the gather() awaited
+        # every task to completion even after the circuit opened, so
+        # a 504 storm that tripped the breaker on row 3 still ran the
+        # remaining 197 rows of a 200-row chunk against a doomed
+        # provider before the batch summary line emitted. With
+        # cancellation, the chunk surfaces partial-result with
+        # manual_review on the cancelled rows immediately.
+        pending: dict[asyncio.Task[tuple[int, CategoryClassification | None]], int] = {}
+        for cand_idx in llm_candidates:
+            task = asyncio.create_task(_llm_one(cand_idx))
+            pending[task] = cand_idx
+
+        llm_outcomes: list[tuple[int, CategoryClassification | None]] = []
+        cancelled_indices: set[int] = set()
+
+        while pending:
+            done, _waiting = await asyncio.wait(
+                pending.keys(), return_when=asyncio.FIRST_COMPLETED
+            )
+            for finished in done:
+                cand_idx = pending.pop(finished)
+                if finished.cancelled():
+                    cancelled_indices.add(cand_idx)
+                    continue
+                exc = finished.exception()
+                if exc is not None:
+                    # _llm_one swallows expected provider errors and
+                    # surfaces None; an exception escaping here is a
+                    # bug or an unexpected error type. Treat as a
+                    # provider failure for breaker accounting + log.
+                    self._record_llm_failure()
+                    _logger.exception(
+                        "Unexpected error in _llm_one (idx %d)",
+                        cand_idx,
+                        exc_info=exc,
+                    )
+                    llm_outcomes.append((cand_idx, None))
+                    continue
+                llm_outcomes.append(finished.result())
+
+            # Mid-batch breaker check. Newly opened circuit means
+            # pending LLM tasks are rolling toward an upstream we
+            # know is down — cancel them to free memory + wall-clock.
+            if self._is_circuit_open() and pending:
+                _logger.warning(
+                    "LLM circuit opened mid-batch — cancelling %d "
+                    "pending tasks",
+                    len(pending),
+                )
+                for task in pending:
+                    task.cancel()
+                # Drain so the loop exits cleanly + thread-pool
+                # futures release their references.
+                drain_results = await asyncio.gather(
+                    *pending.keys(), return_exceptions=True,
+                )
+                for (task, cand_idx), _outcome in zip(
+                    list(pending.items()), drain_results, strict=False,
+                ):
+                    cancelled_indices.add(cand_idx)
+                pending.clear()
 
         # Step 4: assemble final list.
         final = list(keyword_results)
@@ -300,10 +373,16 @@ class HybridClassifier(CategoryClassifier):
                 final[idx] = merged
                 llm_success += 1
             else:
-                # LLM failed or was skipped — surface for manual review.
+                # LLM failed — surface for manual review.
                 final[idx] = keyword_results[idx].model_copy(
                     update={"requires_manual_review": True},
                 )
+        for idx in cancelled_indices:
+            # Cancelled (circuit open mid-batch) — same review fate
+            # as a hard LLM failure.
+            final[idx] = keyword_results[idx].model_copy(
+                update={"requires_manual_review": True},
+            )
 
         self._log_batch_summary(
             total=total,
