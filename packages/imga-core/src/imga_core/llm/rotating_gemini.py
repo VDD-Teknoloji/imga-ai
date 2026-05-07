@@ -62,6 +62,14 @@ if TYPE_CHECKING:
 
 _logger = logging.getLogger(__name__)
 
+# Sprint 9.0.5-A R7 — defensive asyncio-level safety net over the
+# SDK's own ``timeout`` (10s, set in GeminiProvider). Should the SDK
+# leak past its own deadline (gRPC layer, network buffering quirks),
+# this caps the wall-clock per attempt at the asyncio level so the
+# worker can move on. Set 5s above the SDK timeout to absorb normal
+# scheduling jitter without firing on the happy path.
+_HARD_ASYNCIO_TIMEOUT_SECONDS = 15.0
+
 
 class RotatingGeminiProvider(LLMProvider):
     """Multi-key Gemini provider for category classification.
@@ -84,7 +92,10 @@ class RotatingGeminiProvider(LLMProvider):
         self,
         keys: list[GeminiKey],
         model_name: str = "gemini-2.5-flash",
-        timeout_seconds: float = 5.0,
+        # Sprint 9.0.5-A R7 — match GeminiProvider's 10s default
+        # (was 5s); see that constructor's comment for the SDK
+        # retry-disable rationale.
+        timeout_seconds: float = 10.0,
     ) -> None:
         if not keys:
             raise ValueError(
@@ -202,16 +213,30 @@ class RotatingGeminiProvider(LLMProvider):
                 # ``asyncio.to_thread`` parks the work on the
                 # default executor so peer LLM tasks (parallel
                 # rotator-driven calls from HybridClassifier's
-                # batch path) actually overlap. The R5 build called
-                # this synchronously inside an ``async def`` —
-                # technically a coroutine but the body never
-                # yielded, holding the loop for the duration of
-                # each request and producing 165s on a 98-row
-                # LLM-bound batch where 8-way parallel should land
-                # in ~25s.
-                return await asyncio.to_thread(
-                    provider.classify, text, available_categories,
+                # batch path) actually overlap.
+                # Sprint 9.0.5-A R7 — wrap with asyncio.wait_for as
+                # a defensive cap over the SDK's own timeout. If the
+                # SDK leaks past its 10s deadline (network layer
+                # quirks, gRPC keepalive), this surfaces a
+                # ``TimeoutError`` we can map to a non-rotator
+                # provider failure so the worker doesn't pile up
+                # in-flight futures during a 504 storm.
+                return await asyncio.wait_for(
+                    asyncio.to_thread(
+                        provider.classify, text, available_categories,
+                    ),
+                    timeout=_HARD_ASYNCIO_TIMEOUT_SECONDS,
                 )
+            except asyncio.TimeoutError as exc:
+                # Server timed out / SDK hung. Server-side, NOT a
+                # per-key issue — propagate as plain
+                # LLMProviderError so the rotator passes it through
+                # unchanged (no key penalty) and the
+                # HybridClassifier circuit breaker counts it.
+                raise LLMProviderError(
+                    "Gemini call timed out at asyncio safety net "
+                    f"({_HARD_ASYNCIO_TIMEOUT_SECONDS:.0f}s)"
+                ) from exc
             except RateLimitError:
                 # Direct RateLimitError (rare — GeminiProvider's
                 # SDK error mapping bubbles through LLMProviderError
@@ -295,8 +320,30 @@ def _maybe_rotate(exc: LLMProviderError) -> None:
     No-op when the message looks like something else (parser /
     network / generic provider failure) — the original exception
     propagates and the rotator passes it through unchanged.
+
+    Sprint 9.0.5-A R7 — explicit early-exit for server-side timeouts
+    (504 / DEADLINE_EXCEEDED) that wouldn't be solved by trying a
+    different key. The earlier sniff matched ``resource_exhausted``
+    aggressively, and certain SDK error wrappings around 504s
+    surfaced that exact phrase — every key got "rate-limited" and
+    AllKeysExhaustedError fired even though the actual issue was a
+    Gemini server outage. Now those messages stay
+    LLMProviderError so the rotator passes through and the
+    circuit breaker counts the failure.
     """
     text = str(exc).lower()
+    if (
+        "504" in text
+        or "deadline_exceeded" in text
+        or "deadline exceeded" in text
+        or "timed out" in text
+        or "request timeout" in text
+        or "asyncio safety net" in text
+        or "internal server error" in text
+        or "503" in text
+    ):
+        # Server-side fault, not a key problem — propagate as-is.
+        return
     if (
         "429" in text
         or "rate limit" in text

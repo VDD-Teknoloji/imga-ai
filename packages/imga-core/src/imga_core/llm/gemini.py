@@ -52,6 +52,47 @@ _TRANSIENT_RETRY_BASE_SECONDS = 1.0
 # rotator only walks one key at a time per logical call so this
 # lock is uncontended in practice; it just removes a sharp edge.
 _GENAI_CONFIGURE_LOCK = threading.Lock()
+
+
+def _build_no_retry_request_options(timeout_seconds: float) -> dict[str, Any]:
+    """Sprint 9.0.5-A R7 — build a ``request_options`` dict that
+    disables the SDK's default retry policy and caps the wall-clock
+    per call.
+
+    The R7 incident: a 98-row LLM-bound batch went 252 MiB -> 3.03 GiB
+    of resident memory while ``processed_rows`` stayed at 0. Root
+    cause: ``google-generativeai`` defaults to retrying on 5xx with
+    exponential backoff inside its gRPC layer; on a Gemini 504
+    storm each call ate ~90s (3-5 retries × 30s timeout) before
+    surfacing an error. Our outer ``asyncio.to_thread`` couldn't
+    cancel the in-flight thread, so future chains plus the SDK's
+    retry state piled up while the worker waited.
+
+    With ``Retry(predicate=if_exception_type())`` (empty tuple), the
+    predicate evaluates False for every exception and the SDK's
+    retry loop short-circuits to a single attempt. Combined with
+    the explicit ``timeout`` field, the worst case per call is
+    bounded at ~``timeout_seconds``.
+    """
+    try:
+        from google.api_core import retry as google_retry  # type: ignore[import-untyped]
+    except ImportError:
+        # google-generativeai always pulls google-api-core in as a
+        # dep; if it's missing we still want the timeout field so
+        # the SDK at least caps its single attempt.
+        return {"timeout": timeout_seconds}
+
+    no_retry = google_retry.Retry(
+        predicate=google_retry.if_exception_type(),
+        initial=0.0,
+        maximum=0.0,
+        multiplier=1.0,
+        deadline=timeout_seconds,
+    )
+    return {
+        "timeout": timeout_seconds,
+        "retry": no_retry,
+    }
 from imga_core.llm.prompts import (
     CLASSIFICATION_RESPONSE_SCHEMA,
     build_classification_prompt,
@@ -75,7 +116,12 @@ class GeminiProvider(LLMProvider):
         self,
         api_key: str,
         model_name: str = "gemini-2.5-flash",
-        timeout_seconds: float = 5.0,
+        # Sprint 9.0.5-A R7 — bumped 5s -> 10s. The SDK's retry path
+        # was previously turning a single 30s timeout into a 90+s
+        # wall-clock through its default exponential backoff (3-5x).
+        # With retry now disabled (see request_options), the SDK is
+        # capped at a single attempt at this wall-clock.
+        timeout_seconds: float = 10.0,
     ) -> None:
         if not api_key:
             raise ValueError("Gemini API key is required")
@@ -121,7 +167,11 @@ class GeminiProvider(LLMProvider):
                     "response_schema": CLASSIFICATION_RESPONSE_SCHEMA,
                     "temperature": 0.1,
                 },
-                request_options={"timeout": self._timeout},
+                # Sprint 9.0.5-A R7 — disable SDK's default retry on
+                # 5xx + cap per-call wall-clock. See
+                # _build_no_retry_request_options for rationale (504
+                # storm OOM incident).
+                request_options=_build_no_retry_request_options(self._timeout),
             )
         except Exception as exc:
             raise LLMProviderError(f"Gemini API call failed: {exc}") from exc
