@@ -224,10 +224,15 @@ class HybridClassifier(CategoryClassifier):
                 if self._is_circuit_open():
                     return idx, None
                 try:
-                    llm_result = await asyncio.to_thread(
-                        self.llm.classify,  # type: ignore[union-attr]
-                        texts[idx],
-                        self._available_categories,
+                    # Sprint 9.0.5-A R5 — call the provider's async
+                    # surface so multi-key implementations
+                    # (RotatingGeminiProvider) can use the async
+                    # rotator natively. The default LLMProvider
+                    # implementation routes back through
+                    # ``asyncio.to_thread(self.classify, ...)`` so
+                    # single-key providers behave the same as before.
+                    llm_result = await self.llm.classify_async(  # type: ignore[union-attr]
+                        texts[idx], self._available_categories,
                     )
                 except LLMProviderError as exc:
                     self._record_llm_failure()

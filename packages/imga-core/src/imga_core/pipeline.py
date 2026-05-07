@@ -65,7 +65,10 @@ class AnalysisPipeline:
         return self.analyze_batch([text])[0]
 
     async def analyze_batch_async(
-        self, texts: list[str]
+        self,
+        texts: list[str],
+        *,
+        classifier: CategoryClassifier | None = None,
     ) -> list[AnalysisResult]:
         """Sprint 9.0.5-A B2 — async variant that runs BERT inference
         and category classification in parallel.
@@ -80,12 +83,23 @@ class AnalysisPipeline:
         dashboard, simple scripts). The batch worker uses this async
         variant after Sprint 9.0.5-A so the event loop is also
         available to peer chunks while BERT runs in its thread.
+
+        Sprint 9.0.5-A R5 — optional ``classifier`` override. When
+        non-None, takes precedence over ``self.classifier`` for the
+        duration of this call. Used by the batch worker to inject a
+        per-tenant ``HybridClassifier`` whose ``RotatingGeminiProvider``
+        carries the active rows from ``tenant_llm_credentials`` so
+        rotation kicks in transparently as more keys land. ``None``
+        keeps the legacy (lifespan-built) classifier on the pipeline.
         """
         n = len(texts)
         if n == 0:
             return []
 
         normalized = [t if isinstance(t, str) else "" for t in texts]
+        active_classifier = (
+            classifier if classifier is not None else self.classifier
+        )
 
         pre_overrides: list[OverrideHit | None] = [None] * n
         bert_indices: list[int] = []
@@ -106,7 +120,7 @@ class AnalysisPipeline:
             return dict(zip(bert_indices, preds, strict=True))
 
         async def _run_classifier() -> list[CategoryClassification | None]:
-            if self.classifier is None:
+            if active_classifier is None:
                 return [None] * n
             # Sprint 9.0.5-A R4 — prefer classify_batch_async when the
             # classifier exposes it. HybridClassifier's async path
@@ -115,12 +129,14 @@ class AnalysisPipeline:
             # (98-row test went 161s -> ~25s). Keyword-only and
             # other classifiers fall through to the sync path via
             # to_thread (unchanged from R1's analyze_batch_async).
-            async_batch = getattr(self.classifier, "classify_batch_async", None)
+            async_batch = getattr(
+                active_classifier, "classify_batch_async", None
+            )
             if async_batch is not None and asyncio.iscoroutinefunction(async_batch):
                 result = await async_batch(normalized)
                 return list(result)
             result = await asyncio.to_thread(
-                self.classifier.classify_batch, normalized
+                active_classifier.classify_batch, normalized
             )
             return list(result)
 
