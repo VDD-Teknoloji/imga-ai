@@ -86,6 +86,18 @@ class HybridClassifier(CategoryClassifier):
         self.threshold = confidence_threshold
         self._available_categories = available_categories or list(GLOBAL_CATEGORY_CODES)
         self._llm_concurrency = max(1, llm_concurrency)
+        # Sprint 9.0.5-A R6 — instance-level semaphore so all
+        # classify_batch_async calls on the SAME classifier share
+        # one cap. R5 created a fresh ``asyncio.Semaphore`` inside
+        # every call, which meant each chunk got its own 8-cap and
+        # the worker's 4-chunk parallel path could fan out 32
+        # concurrent LLM requests — well beyond paid Tier 1's
+        # comfortable burst window. With one classifier per job
+        # (worker integration), this gives true job-level global
+        # concurrency. Lazy init so the Semaphore binds to the
+        # event loop the first batch runs on (test isolation +
+        # production lifespan loop both work).
+        self._llm_semaphore: asyncio.Semaphore | None = None
         # Sprint 9.0.5-A R4 — circuit-breaker state. Keep on the
         # instance so a fresh classifier per batch (test path) starts
         # closed; production keeps a long-lived classifier on the
@@ -93,6 +105,16 @@ class HybridClassifier(CategoryClassifier):
         # batches as intended.
         self._consecutive_llm_failures = 0
         self._llm_circuit_open_until: float | None = None
+
+    def _get_llm_semaphore(self) -> asyncio.Semaphore:
+        """Sprint 9.0.5-A R6 — lazy-init so the Semaphore's loop
+        binding picks up the first event loop the classifier is
+        used on. Constructed once per instance; concurrent
+        classify_batch_async calls reuse it, capping total in-
+        flight LLM calls across the whole classifier lifetime."""
+        if self._llm_semaphore is None:
+            self._llm_semaphore = asyncio.Semaphore(self._llm_concurrency)
+        return self._llm_semaphore
 
     def classify(self, text: str) -> CategoryClassification:
         keyword_result = self.keyword.classify(text)
@@ -214,7 +236,12 @@ class HybridClassifier(CategoryClassifier):
             )
 
         # Step 3: fan out LLM calls bounded by concurrency.
-        semaphore = asyncio.Semaphore(self._llm_concurrency)
+        # Sprint 9.0.5-A R6 — instance-level semaphore so all batches
+        # on this classifier share one cap (job-level global
+        # concurrency on the worker). R5's per-call construction
+        # gave each chunk its own 8-cap which compounded to 32 in
+        # flight under 4-way chunk parallelism.
+        semaphore = self._get_llm_semaphore()
 
         async def _llm_one(idx: int) -> tuple[int, CategoryClassification | None]:
             async with semaphore:

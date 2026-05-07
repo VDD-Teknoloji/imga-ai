@@ -15,7 +15,8 @@ classification:
 
   1. Async rotator picks the next priority key.
   2. A short-lived ``GeminiProvider`` is constructed with that key,
-     a single ``classify`` call runs through it.
+     a single ``classify`` call runs through it via
+     ``asyncio.to_thread`` so the event loop stays free.
   3. RateLimit / InvalidKey errors propagate to the rotator which
      falls through to the next priority.
   4. Other errors (Malformed, network 5xx, etc.) propagate unchanged.
@@ -27,12 +28,22 @@ swaps keys frequently. Cost: one configure() + one model
 construction per call, ~ms — negligible against the network round-
 trip.
 
+Sprint 9.0.5-A R6 — the operation closure now wraps the sync
+``provider.classify(...)`` in ``asyncio.to_thread``. R5 shipped
+the closure as ``async def`` but the body never awaited anything,
+so the GIL-holding sync SDK call (``genai.generate_content``)
+blocked the event loop for the duration. Result: peer LLM calls
+in HybridClassifier's batch path serialised behind each other and
+the demo measured 165s on a 98-row LLM-bound batch (vs. R4's
+expected 25s with 8-way parallelism).
+
 logger.exception() in every catch path — Sprint 8.3.6.6 round-3
 baseline note.
 """
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import TYPE_CHECKING
 
@@ -142,7 +153,22 @@ class RotatingGeminiProvider(LLMProvider):
                 timeout_seconds=self._timeout_seconds,
             )
             try:
-                return provider.classify(text, available_categories)
+                # Sprint 9.0.5-A R6 — sync ``provider.classify`` runs
+                # inside the Gemini SDK's blocking
+                # ``generate_content`` call. Awaiting through
+                # ``asyncio.to_thread`` parks the work on the
+                # default executor so peer LLM tasks (parallel
+                # rotator-driven calls from HybridClassifier's
+                # batch path) actually overlap. The R5 build called
+                # this synchronously inside an ``async def`` —
+                # technically a coroutine but the body never
+                # yielded, holding the loop for the duration of
+                # each request and producing 165s on a 98-row
+                # LLM-bound batch where 8-way parallel should land
+                # in ~25s.
+                return await asyncio.to_thread(
+                    provider.classify, text, available_categories,
+                )
             except LLMProviderError as exc:
                 # Map the legacy single-error type to the rotator's
                 # vocabulary. The rotator only acts on RateLimitError
