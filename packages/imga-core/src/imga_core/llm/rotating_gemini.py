@@ -95,6 +95,16 @@ class RotatingGeminiProvider(LLMProvider):
         self._rotator = GeminiKeyRotator(keys)
         self._model_name = model_name
         self._timeout_seconds = timeout_seconds
+        # Sprint 9.0.5-A R6 follow-up — batch stats. Cumulative over
+        # the provider's lifetime; the worker creates one provider
+        # per job (via _build_tenant_classifier), so the values
+        # mirror per-job totals once the job is over. Updates happen
+        # exclusively on the asyncio loop thread (after to_thread
+        # returns), so a plain set + int is safe without a Lock —
+        # asyncio is single-threaded between awaits and the
+        # mutations don't span an await point.
+        self._keys_used: set[str] = set()
+        self._rate_limit_events: int = 0
 
     @property
     def keys(self) -> list[GeminiKey]:
@@ -106,6 +116,39 @@ class RotatingGeminiProvider(LLMProvider):
     @property
     def model_name(self) -> str:
         return self._model_name
+
+    def get_batch_stats(self) -> dict[str, int]:
+        """Sprint 9.0.5-A R6 follow-up — return cumulative key-usage
+        telemetry since this provider was constructed.
+
+        Fields:
+          * ``keys_used`` — count of distinct rotator key ids that
+            successfully served at least one classify_async call.
+          * ``rate_limit_events`` — total ``RateLimitError`` hits
+            (each one represents one rotator fall-through; with N
+            keys, at most N events fire per call).
+          * ``keys_total`` — count of keys configured on the rotator
+            (for log denominators: "5/12 keys touched this job").
+
+        ``HybridClassifier.classify_batch_async`` reads this at the
+        end of every batch and folds it into the per-batch summary
+        log line so an operator can see live key fan-out via
+        journalctl during the demo.
+        """
+        return {
+            "keys_used": len(self._keys_used),
+            "rate_limit_events": self._rate_limit_events,
+            "keys_total": len(self._rotator.keys),
+        }
+
+    def reset_batch_stats(self) -> None:
+        """Clear the cumulative counters. The worker doesn't call
+        this in the current design (one provider per job means
+        per-instance totals == per-job totals at shutdown), but the
+        method exists so a future scheduler that reuses providers
+        across jobs can scope the telemetry properly."""
+        self._keys_used = set()
+        self._rate_limit_events = 0
 
     def classify(
         self,
@@ -169,6 +212,13 @@ class RotatingGeminiProvider(LLMProvider):
                 return await asyncio.to_thread(
                     provider.classify, text, available_categories,
                 )
+            except RateLimitError:
+                # Direct RateLimitError (rare — GeminiProvider's
+                # SDK error mapping bubbles through LLMProviderError
+                # in practice) still counts toward the telemetry
+                # before the rotator falls through.
+                self._rate_limit_events += 1
+                raise
             except LLMProviderError as exc:
                 # Map the legacy single-error type to the rotator's
                 # vocabulary. The rotator only acts on RateLimitError
@@ -176,7 +226,11 @@ class RotatingGeminiProvider(LLMProvider):
                 # unchanged. We sniff the exception text the same
                 # way the SWOT path does so a 429 surfaced via
                 # LLMProviderError still triggers rotation.
-                _maybe_rotate(exc)
+                try:
+                    _maybe_rotate(exc)
+                except RateLimitError:
+                    self._rate_limit_events += 1
+                    raise
                 raise
 
         try:
@@ -197,6 +251,11 @@ class RotatingGeminiProvider(LLMProvider):
                 "All Gemini keys exhausted (rate-limited or invalid)"
             ) from None
 
+        # Sprint 9.0.5-A R6 follow-up — telemetry. Recorded after
+        # call_with_rotation returns success so transient
+        # rate-limit fall-throughs (counted above in _operation)
+        # don't pollute the "keys that actually served" set.
+        self._keys_used.add(winning_key.id)
         _logger.debug(
             "RotatingGeminiProvider: served by key id=%s label=%s",
             winning_key.id,

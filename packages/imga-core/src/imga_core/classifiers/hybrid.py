@@ -200,6 +200,7 @@ class HybridClassifier(CategoryClassifier):
                 llm_success=0,
                 duration_seconds=time.monotonic() - batch_started_at,
                 mode="keyword-only",
+                keys_stats=self._read_provider_stats(),
             )
             return _mark_review_for_low_confidence(
                 keyword_results, self.threshold,
@@ -212,6 +213,7 @@ class HybridClassifier(CategoryClassifier):
                 llm_success=0,
                 duration_seconds=time.monotonic() - batch_started_at,
                 mode="llm-disabled",
+                keys_stats=None,
             )
             return _mark_review_for_low_confidence(
                 keyword_results, self.threshold,
@@ -230,6 +232,7 @@ class HybridClassifier(CategoryClassifier):
                 llm_success=0,
                 duration_seconds=time.monotonic() - batch_started_at,
                 mode="circuit-open",
+                keys_stats=self._read_provider_stats(),
             )
             return _mark_review_for_low_confidence(
                 keyword_results, self.threshold,
@@ -308,8 +311,32 @@ class HybridClassifier(CategoryClassifier):
             llm_success=llm_success,
             duration_seconds=time.monotonic() - batch_started_at,
             mode="hybrid-parallel",
+            keys_stats=self._read_provider_stats(),
         )
         return final
+
+    def _read_provider_stats(self) -> dict[str, int] | None:
+        """Sprint 9.0.5-A R6 follow-up — pull cumulative key-usage
+        telemetry from the LLM provider when it exposes it (today:
+        RotatingGeminiProvider; future: any provider implementing
+        ``get_batch_stats``). Returns None for providers that don't
+        — the legacy single-key GeminiProvider stays mute and the
+        log line drops the key fields gracefully."""
+        if self.llm is None:
+            return None
+        getter = getattr(self.llm, "get_batch_stats", None)
+        if getter is None:
+            return None
+        try:
+            stats = getter()
+        except Exception:
+            _logger.exception(
+                "HybridClassifier: failed to read provider batch stats"
+            )
+            return None
+        if not isinstance(stats, dict):
+            return None
+        return stats
 
     # ------------------------------------------------------------------
     # Circuit breaker helpers
@@ -365,13 +392,26 @@ class HybridClassifier(CategoryClassifier):
         llm_success: int,
         duration_seconds: float,
         mode: str,
+        keys_stats: dict[str, int] | None = None,
     ) -> None:
         keyword_ok = total - llm_attempted
         throughput = (total / duration_seconds) if duration_seconds > 0 else 0.0
+        # Sprint 9.0.5-A R6 follow-up — fold provider key-usage stats
+        # into the same log line so an operator tailing journalctl
+        # during the demo sees rotator fan-out alongside the
+        # batch-level breakdown. Empty / missing stats produce a
+        # blank suffix (legacy single-key providers).
+        keys_suffix = ""
+        if keys_stats:
+            keys_suffix = (
+                f" keys_used={keys_stats.get('keys_used', 0)}"
+                f"/{keys_stats.get('keys_total', 0)}"
+                f" rate_limit_events={keys_stats.get('rate_limit_events', 0)}"
+            )
         _logger.info(
             "HybridClassifier batch | total=%d keyword_ok=%d "
             "llm_attempted=%d llm_success=%d/%d "
-            "duration=%.2fs throughput=%.1f rows/s mode=%s",
+            "duration=%.2fs throughput=%.1f rows/s mode=%s%s",
             total,
             keyword_ok,
             llm_attempted,
@@ -380,6 +420,7 @@ class HybridClassifier(CategoryClassifier):
             duration_seconds,
             throughput,
             mode,
+            keys_suffix,
         )
 
 
