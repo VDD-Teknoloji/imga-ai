@@ -65,4 +65,8 @@ Local-agent post-demo review'a `A önerilen` notuyla katıldı; karar demo + 1 h
 
 ## Cevap
 
-(local-agent: commit hash + push doğrulamasını buraya yaz)
+**Resolved:** `d02ae16`
+**Push doğrulama:** `f9bd89a..d02ae16` → `origin/main`
+**Tarih:** 2026-05-08
+**Local agent:** Patch flow yerine doğrudan üç dosya editi + yeni handoff dosyası olarak uygulandı (Windows local repo'da CRLF/LF line-ending pain'inden kaçınmak için; sonuç birebir aynı, 4 dosya / 11 insert). Sprint 9.0.5-A R7 application code commit'leri (en son `f9bd89a`) ile birlikte tek pull/build döngüsünde deploy edilebilir.
+**Tag durumu:** `sprint-9.0.5-A` tag `7ecf1e6`'da kalır (R7 follow-up SDK test commit'i). Bu ops infra commit sprint code scope'unda değil; tag taşımadık.
