@@ -21,7 +21,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import {
-  useBatchJob,
+  useBatchProgressStream,
   useBatchUploadMutation,
   useCancelBatchJobMutation,
 } from "@/hooks/use-batch-uploads";
@@ -68,7 +68,11 @@ export default function BatchUploadPage() {
 
   const upload = useBatchUploadMutation();
   const cancel = useCancelBatchJobMutation();
-  const job = useBatchJob(activeJobId);
+  // Sprint 9.0.5-B A — was useBatchJob(activeJobId) (3s polling);
+  // SSE stream gives sub-second progress updates while the worker
+  // commits chunks, plus a clean terminal event so we don't keep
+  // hitting the API after the job finishes.
+  const job = useBatchProgressStream(activeJobId);
   const previewMutation = useSmartPreview();
 
   // Auto-advance to step 4 when the polled job hits a terminal status.
