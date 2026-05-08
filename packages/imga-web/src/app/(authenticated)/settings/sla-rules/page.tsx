@@ -39,6 +39,10 @@ import {
   useSlaRules,
   useUpdateSlaRule,
 } from "@/hooks/use-sla-rules";
+import {
+  useSlaDispatchMode,
+  useUpdateSlaDispatchMode,
+} from "@/hooks/use-sla-dispatch-mode";
 import { useTaxonomies } from "@/hooks/use-taxonomies";
 import { ApiError } from "@/lib/api-client";
 import {
@@ -129,6 +133,8 @@ function SlaRulesContent() {
           <Plus className="size-4" aria-hidden /> Kural ekle
         </Button>
       </header>
+
+      <DispatchModeCard />
 
       <div className="bg-card flex flex-wrap items-center gap-3 rounded-lg border p-3">
         <label className="flex items-center gap-2 text-sm">
@@ -709,6 +715,98 @@ function RuleFormFields({
         />
         Etkin
       </label>
+    </div>
+  );
+}
+
+function DispatchModeCard() {
+  const dispatchMode = useSlaDispatchMode();
+  const updateMode = useUpdateSlaDispatchMode();
+  const [confirmOpen, setConfirmOpen] = useState<"automatic" | "manual" | null>(
+    null,
+  );
+
+  const current = dispatchMode.data?.sla_webhook_dispatch_mode ?? "automatic";
+
+  const onToggle = () => {
+    const next: "automatic" | "manual" =
+      current === "automatic" ? "manual" : "automatic";
+    if (next === "manual") {
+      // Manual mode is the operator-visible change — confirm before
+      // flipping. Auto -> Manual means new SLA webhooks pile up in
+      // /pending-webhooks until the operator dispatches them.
+      setConfirmOpen("manual");
+    } else {
+      // Manual -> Auto: revert is safe, no queue side-effects.
+      updateMode.mutate("automatic");
+    }
+  };
+
+  const confirm = () => {
+    if (confirmOpen === null) return;
+    updateMode.mutate(confirmOpen, {
+      onSettled: () => setConfirmOpen(null),
+      onError: (err) =>
+        toast.error(
+          err instanceof ApiError
+            ? err.detail
+            : "Dispatch mode değişikliği başarısız.",
+        ),
+    });
+  };
+
+  return (
+    <div className="bg-card flex flex-wrap items-start gap-4 rounded-lg border p-4">
+      <div className="flex-1 space-y-1">
+        <div className="flex items-center gap-2">
+          <Clock className="size-4 text-muted-foreground" aria-hidden />
+          <h2 className="text-base font-semibold">SLA webhook gönderim modu</h2>
+          <Badge variant={current === "automatic" ? "default" : "secondary"}>
+            {current === "automatic" ? "Otomatik" : "Manuel"}
+          </Badge>
+        </div>
+        <p className="text-muted-foreground text-sm">
+          {current === "automatic"
+            ? "Otomatik mod: Slack/Teams webhook'ları SLA ihlal anında doğrudan gönderilir."
+            : "Manuel mod: webhook'lar /pending-webhooks sayfasında bekler, operatör gönderir."}
+        </p>
+      </div>
+      <Button
+        variant={current === "automatic" ? "outline" : "default"}
+        onClick={onToggle}
+        disabled={dispatchMode.isLoading || updateMode.isPending}
+      >
+        {updateMode.isPending ? (
+          <Loader2 className="size-4 animate-spin" aria-hidden />
+        ) : current === "automatic" ? (
+          "Manuel'e geç"
+        ) : (
+          "Otomatik'e geri dön"
+        )}
+      </Button>
+
+      <Dialog
+        open={confirmOpen === "manual"}
+        onOpenChange={(open) => !open && setConfirmOpen(null)}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Manuel moda geç?</DialogTitle>
+            <DialogDescription>
+              Bu mod aktifken SLA ihlal anında webhook&apos;lar
+              <strong> doğrudan gönderilmez</strong>.
+              Bekleyen Bildirimler sayfasında listelenir; gönderim için her
+              birini operatör onaylamalıdır.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setConfirmOpen(null)}>
+              Vazgeç
+            </Button>
+            <Button onClick={confirm}>Manuel moda geç</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

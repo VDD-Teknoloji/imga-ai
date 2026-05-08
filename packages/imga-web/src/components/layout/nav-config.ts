@@ -7,6 +7,7 @@ import {
   FileSearch,
   LayoutDashboard,
   ListChecks,
+  Send,
   Settings,
   Sparkles,
   Ticket,
@@ -38,6 +39,10 @@ export const NAV_ITEMS: ReadonlyArray<NavItem> = [
   { label: "Brifing", href: "/executive-briefing", icon: ClipboardList },
   { label: "Aksiyonlar", href: "/action-items", icon: ListChecks },
   { label: "Uyarılar", href: "/trend-alerts", icon: Bell },
+  // Sprint 9.0.5-B B — manuel SLA webhook dispatch kuyruğu. Sidebar
+  // badge'i pending count'u live tutuyor (use-pending-webhooks hook
+  // 30s polling).
+  { label: "Bekleyen Bildirimler", href: "/pending-webhooks", icon: Send },
   { label: "Ayarlar", href: "/settings", icon: Settings },
 ];
 
