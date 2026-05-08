@@ -65,10 +65,23 @@ class BriefingResponseInvalidError(BriefingServiceError):
 @dataclass(frozen=True)
 class _PeriodStats:
     total_reviews: int
+    # Sprint 9.0.5-B E — ``nps_score`` is now the canonical NPS in
+    # the -100..100 range (AnalyticsService.compute_nps_summary
+    # output), NOT the raw 0-10 average that the previous
+    # implementation produced. The new ``nps_coverage_percent`` +
+    # ``nps_bearing_count`` fields surface the denominator so the
+    # prompt can say "%82 of reviews carried an NPS this period"
+    # instead of pretending every row had a score. Both default to
+    # 0.0 / 0 so the kpi_compute unit tests (and any other in-
+    # process construction site) don't have to thread the new
+    # fields through — production callers always set them via
+    # ``_compute_stats``.
     nps_score: float | None
     avg_sentiment: float | None
     negative_share: float
     top_categories: list[dict[str, Any]]
+    nps_coverage_percent: float = 0.0
+    nps_bearing_count: int = 0
 
 
 _PERIOD_DAYS = {"week": 7, "month": 30, "quarter": 90}
@@ -229,10 +242,27 @@ class ExecutiveBriefingService:
         date_to: date,
         batch_id: UUID | None,
     ) -> _PeriodStats:
-        # Aggregate stats over the window. Single SQL hit.
+        # Sprint 9.0.5-B E — NPS is computed via the canonical
+        # ``AnalyticsService.compute_nps_summary`` rather than
+        # ``func.avg(nps_score)``. The earlier raw-average produced a
+        # 0-10 number that callers misread as canonical NPS (which is
+        # promoter% - detractor% on the -100..100 scale). The
+        # dashboard, executive briefing, and trend alerts now share
+        # the same definition.
+        from imga_api.services.analytics_service import AnalyticsService
+
+        analytics = AnalyticsService(self._session)
+        nps_summary = await analytics.compute_nps_summary(
+            tenant_id=self._tenant_id,
+            date_from=date_from,
+            date_to=date_to,
+            batch_job_id=batch_id,
+        )
+
+        # Volume + sentiment + negative share remain a single SQL hit;
+        # NPS already came back from compute_nps_summary above.
         stmt = select(
             func.count().label("cnt"),
-            func.avg(Review.nps_score).label("nps_avg"),
             func.avg(Review.sentiment_score).label("sent_avg"),
             func.sum(
                 case(
@@ -276,7 +306,9 @@ class ExecutiveBriefingService:
 
         return _PeriodStats(
             total_reviews=cnt,
-            nps_score=float(agg.nps_avg) if agg.nps_avg is not None else None,
+            nps_score=nps_summary.score,
+            nps_coverage_percent=nps_summary.coverage_percent,
+            nps_bearing_count=nps_summary.total_count,
             avg_sentiment=(
                 float(agg.sent_avg) if agg.sent_avg is not None else None
             ),
