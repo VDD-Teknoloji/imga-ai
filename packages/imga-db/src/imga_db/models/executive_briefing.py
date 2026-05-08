@@ -12,7 +12,7 @@ from typing import Any
 from uuid import UUID, uuid4
 
 from sqlalchemy import Date, DateTime, ForeignKey, Integer, String, Text, func
-from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.dialects.postgresql import ARRAY, JSONB
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -65,4 +65,13 @@ class ExecutiveBriefing(Base):
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+    # Sprint 9.0.5-B G — top_actions linkage. ``top_actions`` JSONB
+    # stays the LLM-authored prose payload; this column carries the
+    # ActionItem row ids that the action-extraction pipeline
+    # produced from that prose, so the frontend can JOIN to render
+    # status/priority/assignee on each "follow up" card.
+    top_action_item_ids: Mapped[list[UUID]] = mapped_column(
+        ARRAY(PG_UUID(as_uuid=True)), nullable=False, default=list
     )

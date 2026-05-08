@@ -53,3 +53,17 @@ class TrendAlert(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
+
+    # Sprint 9.0.5-B I — dedupe support. ``fingerprint`` is a stable
+    # hash of (alert_type, metric_breach_band, window_start,
+    # window_end) so the same condition firing on the same day can
+    # be ON CONFLICT DO NOTHING'd; ``evaluated_at`` anchors the
+    # per-day uniqueness window. Empty fingerprint (legacy rows
+    # pre-9.0.5-B + the partial-index WHERE clause) opts out of the
+    # uniqueness so historical data isn't retroactively de-duped.
+    fingerprint: Mapped[str] = mapped_column(
+        String(64), nullable=False, server_default=""
+    )
+    evaluated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
