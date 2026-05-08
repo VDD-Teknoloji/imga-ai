@@ -84,11 +84,16 @@ class BatchSettings:
     global_concurrency: int = 2  # server-wide simultaneous batch jobs
     per_tenant_concurrency: int = 1  # one batch per tenant at a time
     # Sprint 9.0.5-A R7 — bound on parallel LLM (Gemini) calls per
-    # job. Was 8 in the module default; dropped to 4 after the 504
-    # storm regression so a Gemini outage piles up less in-flight
-    # state before the circuit breaker can react. Worker passes
-    # this through to HybridClassifier.
-    llm_concurrency: int = 4
+    # job. R7 dropped this 8 -> 4 as a defensive measure during the
+    # 504-storm fix; py-spy validation post-deploy (Pattern A
+    # confirmation) showed the SDK retry-disable + asyncio safety
+    # net + mid-batch cancel are doing their job — fan-out can go
+    # back to 8 without re-introducing the OOM regression. Paid
+    # Gemini Tier 1 is 1000 RPM ≈ 16 RPS, so 8 in flight averages
+    # ~8 RPS sustained — well under the ceiling and ~2× faster on
+    # the 98-row demo. Worker passes this through to
+    # HybridClassifier.
+    llm_concurrency: int = 8
 
 
 @dataclass(frozen=True, slots=True)
@@ -166,7 +171,7 @@ class Settings:
             retention_hours=_int("IMGA_BATCH_RETENTION_HOURS", 24),
             global_concurrency=_int("IMGA_BATCH_GLOBAL_CONCURRENCY", 2),
             per_tenant_concurrency=_int("IMGA_BATCH_PER_TENANT_CONCURRENCY", 1),
-            llm_concurrency=_int("IMGA_BATCH_LLM_CONCURRENCY", 4),
+            llm_concurrency=_int("IMGA_BATCH_LLM_CONCURRENCY", 8),
         )
 
         reports_dir_env = os.environ.get("IMGA_REPORTS_DIR")

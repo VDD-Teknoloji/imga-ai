@@ -45,14 +45,17 @@ _logger = logging.getLogger(__name__)
 # burst, the SWOT/OKR path, and any other tenants sharing the key.
 # Override per-instance (HybridClassifier(..., llm_concurrency=N)) when
 # a deployment moves to a different tier.
-# Sprint 9.0.5-A R7 — was 8; dropped to 4 after the 504 storm
-# regression. Paid Gemini Tier 1 still has plenty of RPM budget,
-# but a smaller fan-out means less in-flight state piling up
-# during an outage and faster wall-clock cancellation when the
-# circuit breaker opens. Override per-instance via the
+# Sprint 9.0.5-A R7 → R7 follow-up: 8 → 4 → 8.
+# R7 dropped 8 to 4 as a defensive measure during the 504-storm
+# fix. py-spy Pattern A validation post-deploy confirmed the SDK
+# retry-disable + asyncio safety net + mid-batch cancel are doing
+# their job — fan-out goes back to 8 to recover the demo's
+# throughput target without re-introducing the OOM regression.
+# Paid Gemini Tier 1 is 1000 RPM ≈ 16 RPS; 8 in flight averages
+# ~8 RPS sustained. Override per-instance via the
 # ``llm_concurrency`` constructor arg or the BatchSettings
 # ``llm_concurrency`` field on the worker.
-DEFAULT_LLM_CONCURRENCY = 4
+DEFAULT_LLM_CONCURRENCY = 8
 
 # Sprint 9.0.5-A R4 — circuit breaker — kicks in on N consecutive
 # provider failures so a Gemini outage in the middle of a 10K-row

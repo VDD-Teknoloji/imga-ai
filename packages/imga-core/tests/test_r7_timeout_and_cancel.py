@@ -311,21 +311,27 @@ def test_maybe_rotate_still_translates_real_rate_limit() -> None:
 # --- 5. settings llm_concurrency default ----------------------------
 
 
-def test_batch_settings_llm_concurrency_default_is_4() -> None:
-    """Sprint 9.0.5-A R7 — locked the default down 8 -> 4. Surfaces
-    a regression that bumps it back without explicit acknowledgement."""
+def test_batch_settings_llm_concurrency_default_is_8() -> None:
+    """Sprint 9.0.5-A R7 → R7 follow-up: default went 8 -> 4 -> 8.
+    R7 dropped to 4 as defensive headroom during the 504-storm
+    fix; py-spy Pattern A validation post-deploy confirmed the
+    SDK retry-disable + asyncio safety net + mid-batch cancel
+    are doing their job, so fan-out goes back to 8 to hit the
+    demo's throughput target. Pin the new default so a future
+    refactor that changes it again does so explicitly."""
     from imga_api.settings import BatchSettings
 
-    assert BatchSettings().llm_concurrency == 4
+    assert BatchSettings().llm_concurrency == 8
 
 
-def test_default_llm_concurrency_constant_is_4() -> None:
+def test_default_llm_concurrency_constant_is_8() -> None:
     """The module-level constant on hybrid.py mirrors the settings
     default so a HybridClassifier built without an explicit kwarg
-    (e.g. tests, ad-hoc tooling) doesn't silently fan out at 8."""
+    (e.g. tests, ad-hoc tooling) fans out the same as the
+    worker-built one. R7 follow-up bumped 4 -> 8."""
     from imga_core.classifiers.hybrid import DEFAULT_LLM_CONCURRENCY
 
-    assert DEFAULT_LLM_CONCURRENCY == 4
+    assert DEFAULT_LLM_CONCURRENCY == 8
 
 
 # Reference the threshold so its import isn't reported unused when
