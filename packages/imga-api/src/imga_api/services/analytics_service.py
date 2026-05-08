@@ -927,6 +927,7 @@ class AnalyticsService:
         tenant_id: UUID,
         date_from: date | None = None,
         date_to: date | None = None,
+        batch_id: UUID | None = None,
         now: datetime | None = None,
     ) -> HeadlineMetrics:
         """Eight headline values for the dashboard's top row.
@@ -944,7 +945,24 @@ class AnalyticsService:
         tickets right now, today's intake from the Istanbul-local
         midnight boundary — so the dashboard doesn't pretend "Açık
         Bilet" is the count from a historical date range.
+
+        Sprint 9.0.5-B H — optional ``batch_id`` scopes the review
+        metrics + NPS summary to a single batch job. Used by the
+        strategy page when a batch-scoped SWOT/OKR is rendered so
+        the headline numbers match the report's input universe
+        (tenant-wide otherwise — backward compat for the dashboard's
+        default page load). Ticket-side metrics stay tenant-wide
+        because tickets aren't batch-scoped.
         """
+        def _scope_to_batch(stmt: Any) -> Any:
+            """Sprint 9.0.5-B H — sub-query helper. When ``batch_id``
+            is set, every review-side metric scopes to that batch's
+            row set; otherwise the statement passes through unchanged
+            (tenant-wide default)."""
+            if batch_id is not None:
+                return stmt.where(Review.batch_job_id == batch_id)
+            return stmt
+
         # --- review-side metrics ----------------------------------
         # 1. total_reviews (date-filtered)
         total_stmt = (
@@ -956,6 +974,7 @@ class AnalyticsService:
         total_stmt = self._apply_review_date_window(
             total_stmt, date_from=date_from, date_to=date_to
         )
+        total_stmt = _scope_to_batch(total_stmt)
         total_reviews: int = (await self._session.execute(total_stmt)).scalar_one() or 0
 
         # 2. crisis_count — sentiment_score <= -0.80
@@ -969,6 +988,7 @@ class AnalyticsService:
         crisis_stmt = self._apply_review_date_window(
             crisis_stmt, date_from=date_from, date_to=date_to
         )
+        crisis_stmt = _scope_to_batch(crisis_stmt)
         crisis_count: int = (await self._session.execute(crisis_stmt)).scalar_one() or 0
 
         # 3. avg_sentiment_score — None when no scored rows match.
@@ -981,6 +1001,7 @@ class AnalyticsService:
         avg_stmt = self._apply_review_date_window(
             avg_stmt, date_from=date_from, date_to=date_to
         )
+        avg_stmt = _scope_to_batch(avg_stmt)
         avg_raw = (await self._session.execute(avg_stmt)).scalar_one_or_none()
         avg_sentiment_score: float | None = (
             round(float(avg_raw), 3) if avg_raw is not None else None
@@ -1015,13 +1036,20 @@ class AnalyticsService:
         sensitive_stmt = self._apply_review_date_window(
             sensitive_stmt, date_from=date_from, date_to=date_to
         )
+        sensitive_stmt = _scope_to_batch(sensitive_stmt)
         sensitive_topics_count: int = (
             await self._session.execute(sensitive_stmt)
         ).scalar_one() or 0
 
         # 5 + 6. NPS via the existing summary aggregator (date-filtered).
+        # Sprint 9.0.5-B H — batch_id flows into the NPS summary too,
+        # so a batch-scoped headline shows the NPS of just that
+        # batch's rows.
         nps = await self.compute_nps_summary(
-            tenant_id=tenant_id, date_from=date_from, date_to=date_to
+            tenant_id=tenant_id,
+            date_from=date_from,
+            date_to=date_to,
+            batch_job_id=batch_id,
         )
 
         # --- ticket-side metrics (no date filter) -----------------
