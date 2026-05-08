@@ -114,16 +114,37 @@ class PendingWebhookService:
         tenant_id: UUID,
         status_filter: PendingWebhookStatus | None = None,
         limit: int = 100,
+        offset: int = 0,
     ) -> list[PendingWebhookEvent]:
         stmt = (
             select(PendingWebhookEvent)
             .where(PendingWebhookEvent.tenant_id == tenant_id)
             .order_by(desc(PendingWebhookEvent.created_at))
             .limit(limit)
+            .offset(max(0, offset))
         )
         if status_filter is not None:
             stmt = stmt.where(PendingWebhookEvent.status == status_filter)
         return list((await self._session.execute(stmt)).scalars().all())
+
+    async def count_events(
+        self,
+        *,
+        tenant_id: UUID,
+        status_filter: PendingWebhookStatus | None = None,
+    ) -> int:
+        """Sprint 9.0.5-B B — total count for pagination metadata.
+        Same WHERE shape as list_events sans pagination."""
+        from sqlalchemy import func
+
+        stmt = (
+            select(func.count())
+            .select_from(PendingWebhookEvent)
+            .where(PendingWebhookEvent.tenant_id == tenant_id)
+        )
+        if status_filter is not None:
+            stmt = stmt.where(PendingWebhookEvent.status == status_filter)
+        return int((await self._session.execute(stmt)).scalar_one() or 0)
 
     async def get_event(self, event_id: UUID) -> PendingWebhookEvent:
         row = await self._session.get(PendingWebhookEvent, event_id)

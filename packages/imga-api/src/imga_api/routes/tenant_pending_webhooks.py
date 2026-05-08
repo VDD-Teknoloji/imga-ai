@@ -75,6 +75,12 @@ class PendingWebhookView(BaseModel):
 
 class PendingWebhookListResponse(BaseModel):
     events: list[PendingWebhookView]
+    # Sprint 9.0.5-B B — pagination metadata for the
+    # /pending-webhooks page; ``total`` reflects the row count
+    # under the same status_filter, not the whole table.
+    total: int = 0
+    page: int = 1
+    page_size: int = 100
 
 
 class DispatchModeResponse(BaseModel):
@@ -200,12 +206,18 @@ async def list_pending_webhooks(
     app_session: Annotated[AsyncSession, Depends(get_app_session)],
     status_filter: str | None = None,
     limit: int = 100,
+    page: int = 1,
 ) -> PendingWebhookListResponse:
     tenant_id = _require_active_tenant(current)
     if not 1 <= limit <= 500:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="limit 1..500 olmalı",
+        )
+    if page < 1:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="page 1'den küçük olamaz",
         )
     parsed_status: PendingWebhookStatus | None = None
     if status_filter is not None:
@@ -217,17 +229,28 @@ async def list_pending_webhooks(
                 detail=f"unknown status_filter={status_filter!r}",
             ) from exc
 
+    offset = (page - 1) * limit
     async with app_session.begin():
         await bind_tenant(app_session, current)
         audit = AuditService(app_session)
         service = PendingWebhookService(app_session, audit)
+        total = await service.count_events(
+            tenant_id=tenant_id,
+            status_filter=parsed_status,
+        )
         rows = await service.list_events(
             tenant_id=tenant_id,
             status_filter=parsed_status,
             limit=limit,
+            offset=offset,
         )
         views = [_to_view(r) for r in rows]
-    return PendingWebhookListResponse(events=views)
+    return PendingWebhookListResponse(
+        events=views,
+        total=total,
+        page=page,
+        page_size=limit,
+    )
 
 
 @router.post(
@@ -280,6 +303,52 @@ async def approve_pending_webhook(
                 status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)
             ) from exc
         return _to_view(event)
+
+
+@router.post(
+    "/{event_id}/dispatch",
+    response_model=PendingWebhookView,
+    summary="Sprint 9.0.5-B B alias for approve — dispatch a queued webhook.",
+    description=(
+        "Identical behaviour to ``/{id}/approve``. The frontend "
+        "/pending-webhooks page uses this name because it matches "
+        "the operator's mental model (\"dispatch this webhook\")."
+    ),
+    responses={
+        404: {"description": "Pending webhook not found."},
+        409: {"description": "Already in a terminal state."},
+        502: {"description": "Webhook destination returned non-2xx."},
+    },
+)
+async def dispatch_pending_webhook(
+    event_id: UUID,
+    request: Request,
+    current: Annotated[CurrentUser, _WriteMember],
+    app_session: Annotated[AsyncSession, Depends(get_app_session)],
+) -> PendingWebhookView:
+    return await approve_pending_webhook(
+        event_id, request, current, app_session,
+    )
+
+
+@router.post(
+    "/{event_id}/cancel",
+    response_model=PendingWebhookView,
+    summary="Sprint 9.0.5-B B alias for dismiss — cancel a queued webhook.",
+    responses={
+        404: {"description": "Pending webhook not found."},
+        409: {"description": "Already in a terminal state."},
+    },
+)
+async def cancel_pending_webhook(
+    event_id: UUID,
+    request: Request,
+    current: Annotated[CurrentUser, _WriteMember],
+    app_session: Annotated[AsyncSession, Depends(get_app_session)],
+) -> PendingWebhookView:
+    return await dismiss_pending_webhook(
+        event_id, request, current, app_session,
+    )
 
 
 @router.post(
