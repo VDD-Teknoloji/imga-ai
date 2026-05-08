@@ -1,14 +1,13 @@
 // Sprint 9.0.5-B A — reusable Server-Sent Events client.
 //
 // The browser's native EventSource API doesn't support custom
-// HTTP headers; our backend authenticates with
-// ``Authorization: Bearer …`` so we'd otherwise have to smuggle
-// the token through a query param (visible in proxy logs) or
-// switch the entire auth surface to cookies. Neither fits the
-// demo deadline.
+// HTTP headers, and (Sprint 9.0.6 B) auth now rides on HttpOnly
+// cookies. The two together actually simplify things: ``fetch()``
+// with ``credentials: "include"`` ships the session cookie
+// automatically, and we still get to parse the SSE wire format
+// by hand for full control over reconnect / parse errors.
 //
-// Instead we use ``fetch()`` with a ``ReadableStream`` body and
-// parse the SSE wire format by hand. The format is small:
+// The format is small:
 //
 //     event: progress
 //     data: {"processed": 123, "total": 5000}
@@ -39,8 +38,6 @@ export interface SseClientOptions {
   onOpen?: () => void;
   /** Called on a network / parse / non-2xx error. */
   onError?: (error: unknown) => void;
-  /** Bearer token for the ``Authorization`` header. */
-  token?: string | null;
   /** Set true to auto-reconnect on transport errors. */
   reconnect?: boolean;
 }
@@ -128,11 +125,9 @@ export function openSseStream(
     try {
       const response = await fetch(url, {
         signal: abort.signal,
+        credentials: "include",
         headers: {
           Accept: "text/event-stream",
-          ...(options.token
-            ? { Authorization: `Bearer ${options.token}` }
-            : {}),
         },
         cache: "no-store",
       });

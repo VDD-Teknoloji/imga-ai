@@ -45,7 +45,6 @@ import {
   useStrategicReports,
 } from "@/hooks/use-strategic-reports";
 import { ApiError } from "@/lib/api-client";
-import { tokenStorage } from "@/lib/token-storage";
 import type {
   OkrPayload,
   StrategicReportDetail,
@@ -990,19 +989,15 @@ async function downloadStrategicPdf(
   reportId: string,
   reportType: StrategicReportType,
 ): Promise<void> {
-  // Same fetch+blob+anchor pattern as /reports — bearer header has to
-  // travel on the request, which a plain <a download> can't do.
-  const accessToken = tokenStorage.getAccessToken();
-  if (!accessToken) {
-    toast.error("Oturum süresi dolmuş, lütfen tekrar giriş yapın.");
-    return;
-  }
+  // Same fetch+blob+anchor pattern as /reports — credentials:'include'
+  // ships the auth cookie on this cross-origin XHR; a plain
+  // <a download> can't.
   // Backend route is /download.pdf (per imga-api routes/strategic_
   // reports.py); the bare /pdf shape returned 404 in production.
   const path = `/tenants/me/strategic-reports/${reportId}/download.pdf`;
   try {
     const res = await fetch(`${API_BASE}${path}`, {
-      headers: { Authorization: `Bearer ${accessToken}` },
+      credentials: "include",
     });
     if (!res.ok) {
       const detail = await res.text().catch(() => "");

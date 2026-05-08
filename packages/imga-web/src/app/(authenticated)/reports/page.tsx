@@ -33,7 +33,6 @@ import {
   useReports,
 } from "@/hooks/use-reports";
 import { ApiError } from "@/lib/api-client";
-import { tokenStorage } from "@/lib/token-storage";
 import type {
   GenerateReportRequest,
   ReportEstimateResponse,
@@ -245,22 +244,14 @@ function StatusBadge({
 }
 
 function downloadReport(reportId: string): void {
-  // Browser-native <a download> can't carry the bearer header — every
-  // request hit /reports/{id}/download as anonymous and got 401. We
-  // fetch the bytes ourselves with the token from `tokenStorage`
-  // (canonical key `imga_access_token`; the previous attempt used
-  // `imga.access_token` and silently sent an empty Authorization
-  // header), then trigger a synthetic anchor-click against an
+  // Browser-native <a download> can't ride credentials:'include', so
+  // we fetch the bytes ourselves (the cookie does flow on fetch with
+  // credentials), then trigger a synthetic anchor-click against an
   // ObjectURL so Chrome / Firefox / Safari all save the file with
   // the right content-disposition filename.
   const path = `/tenants/me/reports/${reportId}/download`;
-  const accessToken = tokenStorage.getAccessToken();
-  if (!accessToken) {
-    toast.error("Oturum süresi dolmuş, lütfen tekrar giriş yapın.");
-    return;
-  }
   fetch(`${API_BASE}${path}`, {
-    headers: { Authorization: `Bearer ${accessToken}` },
+    credentials: "include",
   })
     .then(async (res) => {
       if (!res.ok) {

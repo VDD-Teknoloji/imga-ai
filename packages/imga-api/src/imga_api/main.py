@@ -353,7 +353,17 @@ def health(
     )
 
 
-@app.post(
+# Sprint 9.0.6 D — legacy public demo endpoints. Pre-tenant-scoped
+# surface (/analyze, /analyze/batch, /classify, /metrics); kept
+# behind a default-off env flag so production servers 404 these
+# paths until an integration explicitly opts in. The tenant-scoped
+# /tenants/me/analyze stays unconditionally registered above.
+from fastapi import APIRouter as _LegacyAPIRouter
+
+_legacy_router = _LegacyAPIRouter()
+
+
+@_legacy_router.post(
     "/analyze",
     response_model=AnalysisResult,
     tags=["Analyze"],
@@ -361,9 +371,8 @@ def health(
     description=(
         "Returns sentiment label (POZITIF / NEGATIF / NÖTR), confidence, "
         "primary category, secondary categories, and any rule hits "
-        "(e.g. SLA breach signals). The auto-ticket bridge that writes "
-        "the result back as a ticket is Sprint 7.5.5 / Sprint 8 work; "
-        "today the call is read-only."
+        "(e.g. SLA breach signals). Legacy public surface — gated on "
+        "``IMGA_ENABLE_PUBLIC_DEMO_ENDPOINTS=true`` (default false)."
     ),
 )
 def analyze(
@@ -373,7 +382,7 @@ def analyze(
     return pipeline.analyze(body.text)
 
 
-@app.post(
+@_legacy_router.post(
     "/analyze/batch",
     response_model=list[AnalysisResult],
     tags=["Analyze"],
@@ -386,7 +395,7 @@ def analyze_batch(
     return pipeline.analyze_batch(body.texts)
 
 
-@app.post(
+@_legacy_router.post(
     "/classify",
     response_model=CategoryClassification,
     tags=["Analyze"],
@@ -399,7 +408,7 @@ def classify(
     return classifier.classify(body.text)
 
 
-@app.post(
+@_legacy_router.post(
     "/metrics",
     response_model=MetricsResponse,
     tags=["Analyze"],
@@ -414,4 +423,17 @@ def metrics(body: MetricsRequest) -> MetricsResponse:
         negative_rate=m.negative_rate,
         top_bottlenecks=m.top_bottlenecks,
         alert=is_alert_state(body.results),
+    )
+
+
+# Sprint 9.0.6 D — gate the legacy router. Settings.from_env reads
+# IMGA_ENABLE_PUBLIC_DEMO_ENDPOINTS before route registration runs;
+# the conditional wires the router only when the deploy explicitly
+# opts in.
+if Settings.from_env().enable_public_demo_endpoints:
+    app.include_router(_legacy_router)
+    log.warning(
+        "IMGA_ENABLE_PUBLIC_DEMO_ENDPOINTS=true — legacy public "
+        "/analyze, /analyze/batch, /classify, /metrics endpoints "
+        "are exposed without authentication.",
     )

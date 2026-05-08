@@ -15,7 +15,6 @@
 
 import { useEffect, useRef, useState } from "react";
 
-import { tokenStorage } from "@/lib/token-storage";
 import type { BatchJob } from "@/lib/types";
 import { openSseStream, type SseHandle } from "@/lib/sse-client";
 
@@ -78,11 +77,9 @@ export function BatchProgressStream({
     }
     setError(null);
     completedRef.current = false;
-    const token = tokenStorage.getAccessToken();
     const url = `${API_BASE}/tenants/me/analyze/batch/${jobId}/progress`;
 
     const handle = openSseStream(url, {
-      token: token ?? null,
       reconnect: true,
       handlers: {
         progress: (payload) => {

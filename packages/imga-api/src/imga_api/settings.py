@@ -57,6 +57,29 @@ class JWTSettings:
 
 
 @dataclass(frozen=True, slots=True)
+class CookieSettings:
+    """Sprint 9.0.6 B — HttpOnly auth-cookie configuration.
+
+    The defaults are dev-safe: same-host, no Secure flag (so plain
+    http://localhost works), SameSite=Lax. Production overrides via
+    env: IMGA_COOKIE_SECURE=true + IMGA_COOKIE_DOMAIN=.imga.ai so the
+    same cookie covers app.imga.ai + api.imga.ai (cross-subdomain
+    same-site).
+
+    ``access_name`` / ``refresh_name`` are kept distinct from common
+    third-party names (no plain ``access_token``) so a future shared
+    Caddy / proxy can't accidentally intercept or strip them.
+    """
+
+    access_name: str = "imga_access"
+    refresh_name: str = "imga_refresh"
+    secure: bool = False
+    samesite: str = "lax"  # "lax" | "strict" | "none"
+    domain: str | None = None
+    path: str = "/"
+
+
+@dataclass(frozen=True, slots=True)
 class BatchSettings:
     """Sprint 8.3.1 bulk upload + worker configuration.
 
@@ -125,8 +148,16 @@ class Settings:
     max_shipping_days: int = DEFAULT_MAX_SHIPPING_DAYS
     max_warehouse_days: int = DEFAULT_MAX_WAREHOUSE_DAYS
     jwt: JWTSettings = JWTSettings()
+    cookies: CookieSettings = CookieSettings()
     batch: BatchSettings = BatchSettings()
     report: ReportSettings = ReportSettings()
+    # Sprint 9.0.6 D — gate the legacy public demo endpoints
+    # (/analyze, /analyze/batch, /classify, /metrics) that pre-date
+    # the tenant-scoped surface. Default false: production servers
+    # 404 these paths so an unauthenticated probe can't burn BERT
+    # inference. Flip to true only when an external integration
+    # explicitly relies on the legacy contract.
+    enable_public_demo_endpoints: bool = False
 
     @classmethod
     def from_env(cls) -> Settings:
@@ -151,6 +182,18 @@ class Settings:
             algorithm=os.environ.get("JWT_ALGORITHM", "HS256"),
             access_token_ttl_minutes=_int("JWT_ACCESS_TOKEN_TTL_MINUTES", 15),
             refresh_token_ttl_days=_int("JWT_REFRESH_TOKEN_TTL_DAYS", 7),
+        )
+
+        cookie_samesite_raw = os.environ.get("IMGA_COOKIE_SAMESITE", "lax").lower()
+        if cookie_samesite_raw not in ("lax", "strict", "none"):
+            cookie_samesite_raw = "lax"
+        cookies = CookieSettings(
+            access_name=os.environ.get("IMGA_COOKIE_ACCESS_NAME", "imga_access"),
+            refresh_name=os.environ.get("IMGA_COOKIE_REFRESH_NAME", "imga_refresh"),
+            secure=os.environ.get("IMGA_COOKIE_SECURE", "false").lower() == "true",
+            samesite=cookie_samesite_raw,
+            domain=os.environ.get("IMGA_COOKIE_DOMAIN") or None,
+            path=os.environ.get("IMGA_COOKIE_PATH", "/"),
         )
 
         batch_upload_dir = os.environ.get("IMGA_UPLOAD_DIR")
@@ -182,6 +225,11 @@ class Settings:
             max_rows=_int("IMGA_REPORT_MAX_ROWS", 50_000),
         )
 
+        enable_public_demo_endpoints = (
+            os.environ.get("IMGA_ENABLE_PUBLIC_DEMO_ENDPOINTS", "false").lower()
+            == "true"
+        )
+
         return cls(
             bert_model=os.environ.get("IMGA_BERT_MODEL", DEFAULT_BERT_MODEL),
             knowledge_base_path=_opt_path("IMGA_KB_PATH"),
@@ -189,6 +237,8 @@ class Settings:
             max_shipping_days=_int("IMGA_MAX_SHIPPING_DAYS", DEFAULT_MAX_SHIPPING_DAYS),
             max_warehouse_days=_int("IMGA_MAX_WAREHOUSE_DAYS", DEFAULT_MAX_WAREHOUSE_DAYS),
             jwt=jwt,
+            cookies=cookies,
             batch=batch,
             report=report,
+            enable_public_demo_endpoints=enable_public_demo_endpoints,
         )

@@ -12,6 +12,17 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci
 
+# Sprint 9.0.6 E — typecheck-only stage. The test compose stack targets
+# this stage so a CI run blocks on TS errors without paying for a full
+# Next.js bundle. ``tsc --noEmit`` is what ``npm run typecheck`` already
+# runs; we surface it as its own image so it can be invoked from
+# anywhere a docker build is available.
+FROM node:22-alpine AS typecheck
+WORKDIR /app
+COPY --from=deps /app/node_modules ./node_modules
+COPY . .
+RUN npm run typecheck
+
 FROM node:22-alpine AS builder
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules

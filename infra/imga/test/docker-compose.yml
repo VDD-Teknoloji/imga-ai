@@ -163,6 +163,7 @@ services:
           tests/test_batch_freeze_regression.py \
           tests/test_batch_parallel_dispatch.py \
           tests/test_batch_sse.py \
+          tests/test_auth.py \
           tests-core/test_key_rotation.py \
           tests-core/test_gemini_swot_okr.py \
           tests-core/test_bert_thread_safety.py \
@@ -173,6 +174,27 @@ services:
           tests-core/test_r7_timeout_and_cancel.py \
           tests-core/test_gemini_sdk_timeout_actually_applied.py \
           -v --tb=short
+
+  # Sprint 9.0.6 E — frontend TS typecheck guard. Builds the
+  # ``typecheck`` stage of packages/imga-web/Dockerfile, which runs
+  # ``npm run typecheck`` (tsc --noEmit) and exits non-zero on the
+  # first TS error. We keep it separate from api-test so a Python-only
+  # change still runs the full suite without paying the npm install
+  # cost — invoke explicitly with ``--profile typecheck`` or build the
+  # service by name.
+  web-typecheck:
+    profiles:
+      - typecheck
+    image: imga-web:typecheck
+    build:
+      context: ../../../packages/imga-web
+      dockerfile: Dockerfile
+      target: typecheck
+    container_name: imga-test-web-typecheck
+    # The build step IS the test — if it succeeds there's nothing for
+    # the container to do. ``true`` exits 0 so compose --abort-on-
+    # container-exit doesn't treat a successful build as a failure.
+    command: ["true"]
 
 networks:
   imga-test-net:

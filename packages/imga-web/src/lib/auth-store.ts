@@ -1,19 +1,25 @@
 // Zustand store for the authentication state.
 //
-// Owns: current user, active tenant context, list of tenants the
-// user can switch to, and the four flow methods (login, logout,
-// switchTenant, initialize). Tokens themselves live in tokenStorage
-// (localStorage); the store keeps only the decoded /me snapshot.
+// Sprint 9.0.6 B — auth state of record is the HttpOnly cookie pair
+// (``imga_access`` + ``imga_refresh``) the API sets on /auth/login.
+// JS can't read those cookies, so the store no longer caches tokens
+// at all — it only holds the decoded /me snapshot. Every cross-tab
+// behaviour falls out of the cookie: another tab logs in, the cookie
+// updates, this tab's next API call rides the new session.
 //
-// initialize() is called once at mount by AuthProvider — it tries
-// /auth/me with the persisted access token, populates the store on
-// success, or quietly clears tokens on 401.
+// initialize() unconditionally hits /auth/me — if the cookie is
+// present and valid the user / context populate; on 401 we leave the
+// store empty and let ProtectedRoute redirect.
 
 import { create } from "zustand";
 
 import { ApiError, apiRequest } from "./api-client";
-import { tokenStorage } from "./token-storage";
-import type { ActiveContext, MeResponse, TenantSummary, TokenPair, UserSummary } from "./types";
+import type {
+  ActiveContext,
+  MeResponse,
+  TenantSummary,
+  UserSummary,
+} from "./types";
 
 interface AuthState {
   user: UserSummary | null;
@@ -28,10 +34,10 @@ interface AuthState {
   initialize: () => Promise<void>;
   /**
    * Public invite-accept flow for a brand-new user. Hits
-   * POST /invitations/{token}/accept with full_name + password,
-   * stores the returned token pair, and populates user / context
-   * via /auth/me. Mirrors `login()` semantics so the caller can
-   * redirect to "/" right after.
+   * POST /invitations/{token}/accept with full_name + password.
+   * The backend sets the auth cookies on the response; the store
+   * then reads /auth/me to populate user / context. Mirrors `login()`
+   * semantics so the caller can redirect to "/" right after.
    */
   acceptInvitationAsNewUser: (
     token: string,
@@ -41,9 +47,9 @@ interface AuthState {
   /**
    * Already-logged-in user accepts an invitation for a different
    * tenant. POST /invitations/{token}/accept-existing with the
-   * password (re-auth). The token pair the backend re-issues
-   * carries the same active_tenant_id/role; the new tenant lands
-   * in /auth/me's available_tenants without a logout cycle.
+   * password (re-auth). The token pair the backend re-issues lands
+   * as fresh cookies; the new tenant appears in available_tenants on
+   * the next /auth/me read.
    */
   joinTenantViaInvitation: (token: string, password: string) => Promise<void>;
 }
@@ -58,13 +64,13 @@ export const useAuthStore = create<AuthState>((set) => ({
   login: async (email, password) => {
     set({ isLoading: true });
     try {
-      const tokens = await apiRequest<TokenPair>("/auth/login", {
+      // Server sets the auth cookies on the response; the JSON body is
+      // still emitted for Bearer-style integrations but we don't read it.
+      await apiRequest<unknown>("/auth/login", {
         method: "POST",
         body: { email, password },
         skipAuth: true,
       });
-      tokenStorage.setTokens(tokens.access_token, tokens.refresh_token);
-
       const me = await apiRequest<MeResponse>("/auth/me");
       set({
         user: me.user,
@@ -78,30 +84,27 @@ export const useAuthStore = create<AuthState>((set) => ({
   },
 
   logout: async () => {
-    const refreshToken = tokenStorage.getRefreshToken();
     try {
-      if (refreshToken) {
-        await apiRequest<void>("/auth/logout", {
-          method: "POST",
-          body: { refresh_token: refreshToken },
-        });
-      }
+      // Empty body — the refresh token rides on the cookie. The server
+      // revokes the family AND clears both cookies on the response.
+      await apiRequest<void>("/auth/logout", {
+        method: "POST",
+        body: {},
+      });
     } catch {
       // logout is idempotent on the backend; failing here just means
-      // the token was already revoked. We still clear local state.
+      // the cookie was already missing or revoked. We still clear UI
+      // state below.
     } finally {
-      tokenStorage.clear();
       set({ user: null, activeContext: null, availableTenants: [] });
     }
   },
 
   switchTenant: async (tenantId) => {
-    const tokens = await apiRequest<TokenPair>("/auth/switch-tenant", {
+    await apiRequest<unknown>("/auth/switch-tenant", {
       method: "POST",
       body: { tenant_id: tenantId },
     });
-    tokenStorage.setTokens(tokens.access_token, tokens.refresh_token);
-
     const me = await apiRequest<MeResponse>("/auth/me");
     set({
       user: me.user,
@@ -113,7 +116,7 @@ export const useAuthStore = create<AuthState>((set) => ({
   acceptInvitationAsNewUser: async (token, fullName, password) => {
     set({ isLoading: true });
     try {
-      const tokens = await apiRequest<TokenPair>(
+      await apiRequest<unknown>(
         `/invitations/${encodeURIComponent(token)}/accept`,
         {
           method: "POST",
@@ -121,8 +124,6 @@ export const useAuthStore = create<AuthState>((set) => ({
           skipAuth: true,
         },
       );
-      tokenStorage.setTokens(tokens.access_token, tokens.refresh_token);
-
       const me = await apiRequest<MeResponse>("/auth/me");
       set({
         user: me.user,
@@ -136,19 +137,17 @@ export const useAuthStore = create<AuthState>((set) => ({
   },
 
   joinTenantViaInvitation: async (token, password) => {
-    // Caller is already authenticated (bearer is attached by the
-    // api-client). The backend re-issues a token pair preserving the
-    // current active tenant context; the new tenant just appears in
-    // available_tenants on the next /auth/me read.
-    const tokens = await apiRequest<TokenPair>(
+    // Caller is already authenticated (cookie rides credentials:include).
+    // The backend re-issues a token pair preserving the current active
+    // tenant context; the new tenant appears in available_tenants on
+    // the next /auth/me read.
+    await apiRequest<unknown>(
       `/invitations/${encodeURIComponent(token)}/accept-existing`,
       {
         method: "POST",
         body: { password },
       },
     );
-    tokenStorage.setTokens(tokens.access_token, tokens.refresh_token);
-
     const me = await apiRequest<MeResponse>("/auth/me");
     set({
       user: me.user,
@@ -158,12 +157,6 @@ export const useAuthStore = create<AuthState>((set) => ({
   },
 
   initialize: async () => {
-    const token = tokenStorage.getAccessToken();
-    if (!token) {
-      set({ isInitialized: true });
-      return;
-    }
-
     try {
       const me = await apiRequest<MeResponse>("/auth/me");
       set({
@@ -173,11 +166,14 @@ export const useAuthStore = create<AuthState>((set) => ({
         isInitialized: true,
       });
     } catch (err) {
-      // 401 here means refresh has already failed too; clear tokens
-      // and let ProtectedRoute redirect to /login.
+      // 401 means there's no valid session cookie (or refresh failed
+      // too). Mark initialized so ProtectedRoute can redirect to login.
       if (err instanceof ApiError && err.status === 401) {
-        tokenStorage.clear();
+        set({ isInitialized: true });
+        return;
       }
+      // Network / 5xx — still flip to initialized; the page can show
+      // its own error banner instead of spinning forever.
       set({ isInitialized: true });
     }
   },

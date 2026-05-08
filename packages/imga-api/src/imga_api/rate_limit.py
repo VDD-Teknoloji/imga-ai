@@ -72,6 +72,14 @@ def reset_for_tests() -> None:
         _buckets.clear()
 
 
+def check_rate_limit(
+    dimension: str, key: str, *, max_calls: int, window_seconds: float
+) -> None:
+    """Public manual check — for routes that need a key derived from the
+    parsed body (e.g. login per-username) and so cannot use ``Depends``."""
+    _check(dimension, key, max_calls=max_calls, window_seconds=window_seconds)
+
+
 def _client_ip(request: Request) -> str:
     """X-Forwarded-For aware IP extraction. Trust the leftmost IP when
     the header is set; fall back to the socket peer otherwise. Sprint 8
@@ -84,12 +92,23 @@ def _client_ip(request: Request) -> str:
     return "unknown"
 
 
-def rate_limit_ip(*, max_calls: int, window_seconds: float = 60.0) -> Callable[[Request], None]:
-    """Per-IP limiter dependency factory."""
+def rate_limit_ip(
+    *,
+    max_calls: int,
+    window_seconds: float = 60.0,
+    dimension: str = "ip",
+) -> Callable[[Request], None]:
+    """Per-IP limiter dependency factory.
+
+    ``dimension`` namespaces the bucket so routes with different limits
+    (e.g. /auth/login at 5/min vs /auth/refresh at 30/min) don't share
+    state and trip each other. Default ``"ip"`` preserves Sprint 7.5.5
+    invitation-route behaviour where preview/accept/accept-existing
+    deliberately share a bucket."""
 
     def _dep(request: Request) -> None:
         _check(
-            "ip",
+            dimension,
             _client_ip(request),
             max_calls=max_calls,
             window_seconds=window_seconds,
@@ -118,6 +137,7 @@ def rate_limit_token(*, max_calls: int, window_seconds: float = 60.0) -> Callabl
 
 __all__ = [
     "RateLimitExceeded",
+    "check_rate_limit",
     "rate_limit_ip",
     "rate_limit_token",
     "reset_for_tests",

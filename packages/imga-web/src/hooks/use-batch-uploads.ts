@@ -23,7 +23,6 @@ import {
 
 import { apiRequest } from "@/lib/api-client";
 import { openSseStream, type SseHandle } from "@/lib/sse-client";
-import { tokenStorage } from "@/lib/token-storage";
 import type { BatchJob, BatchJobListResponse } from "@/lib/types";
 
 const API_BASE =
@@ -129,10 +128,8 @@ export function useBatchProgressStream(
         setIsLoading(false);
       });
 
-    const token = tokenStorage.getAccessToken();
     const url = `${API_BASE}/tenants/me/analyze/batch/${jobId}/progress`;
     const handle = openSseStream(url, {
-      token: token ?? null,
       reconnect: true,
       handlers: {
         progress: (payload) => {

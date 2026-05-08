@@ -60,6 +60,18 @@ class StubAnalyzer(SentimentAnalyzer):
         return out
 
 
+@pytest.fixture(autouse=True)
+def _reset_rate_limit_buckets() -> None:
+    """Sprint 9.0.6 C — auth endpoints (/login, /refresh, /change-password)
+    are rate-limited at the route level. Suite-wide bucket reset so a
+    test that hits the cap doesn't poison the next case (and so the
+    one-off test fixtures that already call this helper don't need to
+    duplicate the import)."""
+    from imga_api.rate_limit import reset_for_tests
+
+    reset_for_tests()
+
+
 @pytest.fixture
 def stub_classifier() -> KeywordCategoryClassifier:
     """Real keyword classifier — no LLM, fully deterministic for tests."""

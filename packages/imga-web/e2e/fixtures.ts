@@ -14,33 +14,29 @@
 
 import { expect, type Page } from "@playwright/test";
 
-/** Bypass the login form by writing the JWT pair directly into
- * localStorage, then navigate to /. Faster than typing the form
- * for every test, and keeps the auth flow tests focused on the
- * form itself. */
+/** Sprint 9.0.6 B — auth pivoted to HttpOnly cookies. ``page.request``
+ *  shares its cookie jar with the page's BrowserContext, so a POST to
+ *  /auth/login here lands the auth cookies on the context; the next
+ *  page.goto() navigation triggers /auth/me with credentials:include
+ *  and the dashboard hydrates without the form being typed.
+ */
 export async function loginAs(
   page: Page,
   email: string,
   password: string,
 ): Promise<void> {
-  // Hit /auth/login on the API directly to mint a token pair, then
-  // seed localStorage. Going through the UI in every test would slow
-  // the suite ~5×.
   const apiBase = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8003";
 
   const response = await page.request.post(`${apiBase}/auth/login`, {
     data: { email, password },
   });
-  expect(response.ok(), `login failed: ${response.status()} ${await response.text()}`).toBe(true);
-  const tokens = (await response.json()) as { access_token: string; refresh_token: string };
-
-  // Visit any same-origin page first so localStorage is reachable, then
-  // seed the tokens and reload to pick them up.
-  await page.goto("/login");
-  await page.evaluate((pair) => {
-    window.localStorage.setItem("imga_access_token", pair.access);
-    window.localStorage.setItem("imga_refresh_token", pair.refresh);
-  }, { access: tokens.access_token, refresh: tokens.refresh_token });
+  expect(
+    response.ok(),
+    `login failed: ${response.status()} ${await response.text()}`,
+  ).toBe(true);
+  // Cookies are now in the BrowserContext jar (host-bound to the API
+  // origin). Navigate; the auth-store's initialize() reads /auth/me
+  // and populates UI state.
   await page.goto("/");
 }
 

@@ -235,8 +235,12 @@ def test_refresh_rotates_token(
     )
     assert r.status_code == 200, r.text
     new_pair = r.json()
+    # Refresh token always rotates — JTI is unique per row.
     assert new_pair["refresh_token"] != login["refresh_token"]
-    assert new_pair["access_token"] != login["access_token"]
+    # Access tokens carry no JTI; if login + refresh land in the same
+    # Unix second AND the claims are identical, the encoded JWTs are
+    # byte-equal. Don't assert on byte difference — the rotation
+    # contract is on the refresh chain.
 
 
 def test_refresh_preserves_active_tenant_context(
@@ -493,3 +497,102 @@ async def test_refresh_token_records_carry_family_and_parent_links(
     assert rows[1].parent_jti == rows[0].jti
     assert rows[0].used_at is not None  # rotated
     assert rows[1].used_at is None       # newly minted
+
+
+# --- Sprint 9.0.6 C: rate limits ----------------------------------------
+
+
+def test_login_per_ip_rate_limit_returns_429(
+    client: TestClient,
+    seeded_user_and_tenant: tuple[User, UUID, str],
+) -> None:
+    """5/min/IP — sixth attempt against any user from one IP should 429."""
+    user, _tid, password = seeded_user_and_tenant
+    # Five wrong-password POSTs all 401, sixth tips into 429.
+    for _ in range(5):
+        r = client.post(
+            "/auth/login",
+            json={"email": user.email, "password": "WRONG"},
+        )
+        assert r.status_code == 401, r.text
+    blocked = client.post(
+        "/auth/login",
+        json={"email": user.email, "password": password},
+    )
+    assert blocked.status_code == 429, blocked.text
+    assert blocked.headers.get("Retry-After") == "60"
+
+
+def test_login_per_username_rate_limit_is_case_insensitive(
+    client: TestClient,
+    seeded_user_and_tenant: tuple[User, UUID, str],
+) -> None:
+    """Per-username cap (10/min) keyed lower-case so casing can't bypass."""
+    user, _tid, _pw = seeded_user_and_tenant
+    # Bypass the 5/min/IP cap by spoofing a fresh X-Forwarded-For per call.
+    # The username bucket is single-keyed regardless of IP, so we'll trip
+    # it on the 11th attempt.
+    upper_email = user.email.upper()
+    for i in range(10):
+        r = client.post(
+            "/auth/login",
+            headers={"X-Forwarded-For": f"10.0.0.{i + 1}"},
+            json={"email": upper_email, "password": "WRONG"},
+        )
+        # 401 (wrong password) is fine; what matters is that the per-IP
+        # cap doesn't fire because each request comes from a different IP.
+        assert r.status_code == 401, r.text
+    blocked = client.post(
+        "/auth/login",
+        headers={"X-Forwarded-For": "10.0.0.99"},
+        # Lower-case email — same bucket as the 10 upper-case attempts
+        # above, proving the limiter normalises.
+        json={"email": user.email, "password": "WRONG"},
+    )
+    assert blocked.status_code == 429, blocked.text
+
+
+def test_refresh_per_ip_rate_limit_returns_429(
+    client: TestClient,
+    seeded_user_and_tenant: tuple[User, UUID, str],
+) -> None:
+    """30/min/IP — past the cap any /auth/refresh hits return 429."""
+    user, _tid, password = seeded_user_and_tenant
+    login = client.post(
+        "/auth/login", json={"email": user.email, "password": password}
+    ).json()
+    # Send 30 invalid refreshes; the 31st should 429 (not 401).
+    for _ in range(30):
+        r = client.post(
+            "/auth/refresh", json={"refresh_token": "obviously-not-valid"}
+        )
+        assert r.status_code == 401, r.text
+    blocked = client.post(
+        "/auth/refresh", json={"refresh_token": login["refresh_token"]}
+    )
+    assert blocked.status_code == 429, blocked.text
+
+
+def test_change_password_per_user_rate_limit_returns_429(
+    client: TestClient,
+    seeded_user_and_tenant: tuple[User, UUID, str],
+) -> None:
+    """3/min/user — fourth change-password attempt 429s even with valid auth."""
+    user, _tid, password = seeded_user_and_tenant
+    login = client.post(
+        "/auth/login", json={"email": user.email, "password": password}
+    ).json()
+    headers = {"Authorization": f"Bearer {login['access_token']}"}
+    for _ in range(3):
+        r = client.post(
+            "/auth/change-password",
+            headers=headers,
+            json={"current_password": "wrong", "new_password": "Whatever-99!"},
+        )
+        assert r.status_code == 400, r.text
+    blocked = client.post(
+        "/auth/change-password",
+        headers=headers,
+        json={"current_password": password, "new_password": "Whatever-99!"},
+    )
+    assert blocked.status_code == 429, blocked.text

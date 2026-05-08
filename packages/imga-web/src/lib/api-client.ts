@@ -1,19 +1,22 @@
 // Thin fetch wrapper.
 //
+// Sprint 9.0.6 B: auth pivoted from localStorage Bearer tokens to
+// HttpOnly cookies. Every fetch sends ``credentials: "include"`` so
+// the browser ships the ``imga_access`` / ``imga_refresh`` cookies
+// the server set on /auth/login. The wrapper no longer reads or
+// writes any token — JS can't see HttpOnly cookies, which is the
+// whole point (XSS that lands in the page can't exfiltrate them).
+//
 // Three jobs:
 //   1. Prefix paths with NEXT_PUBLIC_API_URL.
-//   2. Attach the bearer token from tokenStorage on every request,
-//      unless skipAuth is set.
+//   2. Send credentials so the cookie rides along.
 //   3. On 401 from a non-/auth/refresh request, try one rotation
-//      and replay. If refresh also 401s, clear tokens and propagate
-//      the original 401 — caller decides whether to redirect.
+//      (the new pair lands as cookies on the response) and replay.
+//      If refresh also 401s, propagate — caller decides whether to
+//      redirect.
 //
 // We deliberately don't auto-redirect on 401 from this module —
-// that's the auth store / ProtectedRoute's job. Keeps the wrapper
-// stateless and easier to reason about.
-
-import { tokenStorage } from "./token-storage";
-import type { TokenPair } from "./types";
+// that's the auth store / ProtectedRoute's job.
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8003";
 
@@ -45,16 +48,13 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
     headers["Content-Type"] = "application/json";
   }
 
-  if (!options.skipAuth) {
-    const token = tokenStorage.getAccessToken();
-    if (token) {
-      headers.Authorization = `Bearer ${token}`;
-    }
-  }
-
   const response = await fetch(`${API_BASE}${path}`, {
     method: options.method ?? "GET",
     headers,
+    // ``include`` is required for cross-origin auth cookies. ``omit``
+    // when the caller has explicitly opted out (e.g. /auth/login
+    // before there's a session, public health checks).
+    credentials: options.skipAuth ? "omit" : "include",
     body:
       options.body === undefined
         ? undefined
@@ -94,27 +94,51 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
   throw new ApiError(response.status, detail, body);
 }
 
+// Sprint 9.0.6 A — module-level singleton so concurrent 401s coalesce
+// into a single /auth/refresh call. Without this, an N-pane dashboard
+// firing simultaneous 401s would race N rotations against the same
+// (single-use) refresh token; the second arrival hits chain-reuse
+// detection on the backend and the entire family is revoked, which
+// looks like a random forced logout to the user. The first 401 starts
+// the rotation; everyone else awaits the same Promise. The slot is
+// cleared only after the call settles, so a *later* 401 (after a
+// fresh access token expires) starts its own rotation.
+let inFlightRefresh: Promise<boolean> | null = null;
+
 async function tryRefresh(): Promise<boolean> {
-  const refreshToken = tokenStorage.getRefreshToken();
-  if (!refreshToken) return false;
-
-  try {
-    const response = await fetch(`${API_BASE}/auth/refresh`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ refresh_token: refreshToken }),
-    });
-
-    if (!response.ok) {
-      tokenStorage.clear();
+  if (inFlightRefresh) {
+    return inFlightRefresh;
+  }
+  inFlightRefresh = (async () => {
+    try {
+      // Empty body — the refresh token rides on the HttpOnly cookie
+      // and the server reads it via ``request.cookies``. Server
+      // rotates and writes the new pair as cookies on the response.
+      const response = await fetch(`${API_BASE}/auth/refresh`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: "{}",
+      });
+      if (!response.ok) {
+        return false;
+      }
+      // Body is still emitted for Bearer-style integrations; we don't
+      // need it (cookies were just rewritten) but drain the stream.
+      await response.json().catch(() => null);
+      return true;
+    } catch {
       return false;
     }
-
-    const tokens = (await response.json()) as TokenPair;
-    tokenStorage.setTokens(tokens.access_token, tokens.refresh_token);
-    return true;
-  } catch {
-    tokenStorage.clear();
-    return false;
+  })();
+  try {
+    return await inFlightRefresh;
+  } finally {
+    inFlightRefresh = null;
   }
+}
+
+/** Test-only — clears the in-flight refresh slot between cases. */
+export function _resetRefreshMutexForTests(): void {
+  inFlightRefresh = null;
 }

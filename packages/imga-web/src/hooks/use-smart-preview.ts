@@ -11,7 +11,6 @@
 import { useMutation } from "@tanstack/react-query";
 
 import { ApiError } from "@/lib/api-client";
-import { tokenStorage } from "@/lib/token-storage";
 import type { SmartPreviewResponse } from "@/lib/types";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8003";
@@ -20,15 +19,13 @@ const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8003";
  *  ``apiRequest`` wrapper because the body is multipart — same
  *  pattern as the existing batch upload mutation. */
 async function previewBatchColumns(file: File): Promise<SmartPreviewResponse> {
-  const accessToken = tokenStorage.getAccessToken();
-  if (!accessToken) {
-    throw new ApiError(401, "no access token");
-  }
   const form = new FormData();
   form.append("file", file);
+  // Auth rides on the HttpOnly session cookie — credentials:include is
+  // required for cross-origin (web :3000 → api :8003) cookie delivery.
   const res = await fetch(`${API_BASE}/tenants/me/analyze/batch/preview`, {
     method: "POST",
-    headers: { Authorization: `Bearer ${accessToken}` },
+    credentials: "include",
     body: form,
   });
   if (!res.ok) {

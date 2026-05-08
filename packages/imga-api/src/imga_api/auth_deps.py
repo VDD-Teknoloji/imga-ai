@@ -76,15 +76,26 @@ async def get_current_user(
     callers wrap their own queries in their own ``async with
     session.begin():`` and re-issue the bind via the same helper.
     """
-    if creds is None or creds.scheme.lower() != "bearer":
+    # Sprint 9.0.6 B — bearer header is the legacy / programmatic path;
+    # browser clients now ship the access token via an HttpOnly cookie.
+    # Bearer wins when both are present (callers that explicitly attach
+    # an Authorization header are signalling they want that exact token).
+    raw_token: str | None = None
+    if creds is not None and creds.scheme.lower() == "bearer":
+        raw_token = creds.credentials
+    else:
+        cookie_token = request.cookies.get(settings.cookies.access_name)
+        if cookie_token:
+            raw_token = cookie_token
+    if raw_token is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="missing bearer token",
+            detail="missing access token",
             headers={"WWW-Authenticate": "Bearer"},
         )
 
     try:
-        payload = decode_access_token(creds.credentials, settings.jwt)
+        payload = decode_access_token(raw_token, settings.jwt)
     except TokenError as exc:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
