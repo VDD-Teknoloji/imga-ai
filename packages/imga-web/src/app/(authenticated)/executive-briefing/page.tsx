@@ -23,6 +23,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import {
+  useBriefingTopActions,
   useExecutiveBriefing,
   useExecutiveBriefings,
   useGenerateBriefing,
@@ -279,22 +280,91 @@ function BriefingViewer({
         )}
 
         {briefing.top_actions.length > 0 && (
-          <div className="space-y-1">
-            <h3 className="text-sm font-semibold">Öncelikli Aksiyonlar</h3>
-            <ul className="space-y-2">
-              {briefing.top_actions.map((a, idx) => (
-                <li key={idx} className="bg-muted/40 rounded border p-3">
-                  <p className="text-sm font-medium">{a.title}</p>
-                  <p className="text-muted-foreground mt-1 text-xs">
-                    {a.rationale}
-                  </p>
-                </li>
-              ))}
-            </ul>
-          </div>
+          <TopActionsSection briefingId={briefing.id} fallback={briefing.top_actions} />
         )}
       </CardContent>
     </Card>
+  );
+}
+
+function TopActionsSection({
+  briefingId,
+  fallback,
+}: {
+  briefingId: string;
+  fallback: import("@/lib/types").ExecutiveBriefing["top_actions"];
+}) {
+  // Sprint 9.0.5-B G — prefer the linked ActionItem rows
+  // (clickable, status-aware) when the backend produced them; fall
+  // back to the raw LLM payload for legacy briefings (pre-9.0.5-B
+  // generation, no extraction log row) so the UI never goes blank.
+  const linked = useBriefingTopActions(briefingId);
+  const hasLinked = (linked.data?.items?.length ?? 0) > 0;
+  return (
+    <div className="space-y-1">
+      <h3 className="text-sm font-semibold">Öncelikli Aksiyonlar</h3>
+      {hasLinked ? (
+        <ul className="space-y-2">
+          {linked.data!.items.map((a) => (
+            <li key={a.id}>
+              <a
+                href={`/action-items/${a.id}`}
+                className="bg-muted/40 hover:bg-muted block rounded border p-3 transition-colors"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <p className="text-sm font-medium">{a.title}</p>
+                  <ActionStatusBadge status={a.status} priority={a.priority} />
+                </div>
+                <p className="text-muted-foreground mt-1 text-xs">
+                  {a.rationale ?? a.description}
+                </p>
+              </a>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <ul className="space-y-2">
+          {fallback.map((a, idx) => (
+            <li key={idx} className="bg-muted/40 rounded border p-3">
+              <p className="text-sm font-medium">{a.title}</p>
+              <p className="text-muted-foreground mt-1 text-xs">
+                {a.rationale}
+              </p>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+function ActionStatusBadge({
+  status,
+  priority,
+}: {
+  status: "open" | "in_progress" | "done" | "cancelled";
+  priority: "high" | "medium" | "low";
+}) {
+  const statusLabel: Record<typeof status, string> = {
+    open: "Açık",
+    in_progress: "Devam ediyor",
+    done: "Tamamlandı",
+    cancelled: "İptal",
+  };
+  const tone =
+    status === "done"
+      ? "bg-emerald-100 text-emerald-900"
+      : status === "in_progress"
+        ? "bg-blue-100 text-blue-900"
+        : status === "cancelled"
+          ? "bg-zinc-100 text-zinc-700"
+          : priority === "high"
+            ? "bg-red-100 text-red-900"
+            : "bg-amber-100 text-amber-900";
+  return (
+    <span className={`shrink-0 rounded px-2 py-0.5 text-xs ${tone}`}>
+      {statusLabel[status]}
+    </span>
   );
 }
 
