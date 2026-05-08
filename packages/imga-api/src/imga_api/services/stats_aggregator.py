@@ -171,18 +171,17 @@ class StatsAggregator:
         # Headline metrics: a single round-trip carries 6 of the 8
         # numbers we need (total, crisis, avg_sentiment, nps_score,
         # nps_coverage, sensitive_topics).
-        # Sprint 8.3.11 — compute_headline_metrics doesn't accept
-        # batch_job_id today (Sprint 8.3.5 added the eight-field
-        # bundle without a batch dimension). For batch-scoped SWOTs
-        # the headline counts stay tenant-wide; the dominant signals
-        # (sentiment dist + top categories + NPS detail) all flow
-        # through AnalyticsFilters below and DO scope to batch_id.
-        # Future tightening lives behind a compute_headline_metrics
-        # signature change; out of scope for this fix.
+        # Sprint 9.0.5-B H — compute_headline_metrics now accepts
+        # ``batch_id`` (8.3.11 documented limitation closed). When a
+        # batch-scoped SWOT/OKR generates, the headline counts now
+        # match the report's input universe instead of staying
+        # tenant-wide, so the strategy page header no longer shows
+        # 120K reviews next to a 5K-row batch SWOT.
         headline = await self._analytics.compute_headline_metrics(
             tenant_id=self.tenant_id,
             date_from=date_from,
             date_to=date_to,
+            batch_id=batch_id,
         )
 
         # NPS detail (bucket counts) — separate from headline because

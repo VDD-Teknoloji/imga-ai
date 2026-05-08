@@ -337,6 +337,7 @@ class ExecutiveBriefingService:
         duration_ms: int,
         token_usage: dict[str, int] | None,
     ) -> dict[str, Any]:
+        top_actions = list(response.get("top_actions") or [])
         row = ExecutiveBriefing(
             tenant_id=self._tenant_id,
             period=period,
@@ -346,7 +347,7 @@ class ExecutiveBriefingService:
             headline=str(response.get("headline", "")),
             kpi_changes=list(response.get("kpi_changes") or []),
             critical_insights=list(response.get("critical_insights") or []),
-            top_actions=list(response.get("top_actions") or []),
+            top_actions=top_actions,
             input_stats=input_stats,
             model_name=DEFAULT_MODEL_NAME,
             token_usage=token_usage,
@@ -355,6 +356,44 @@ class ExecutiveBriefingService:
         )
         self._session.add(row)
         await self._session.flush()
+
+        # Sprint 9.0.5-B G — extract ActionItem rows from the LLM's
+        # top_actions prose + persist the linkage on the briefing.
+        # Idempotent on the action-extraction side: a re-render of
+        # the same briefing returns the existing action_item_ids
+        # via the unique fingerprint constraint, so the
+        # top_action_item_ids column can be re-written safely.
+        action_item_ids: list[UUID] = []
+        if top_actions:
+            try:
+                from imga_api.services.action_extraction_service import (
+                    ActionExtractionService,
+                )
+
+                content_text = json.dumps(
+                    top_actions, sort_keys=True, ensure_ascii=False,
+                )
+                extractor = ActionExtractionService(self._session)
+                action_item_ids = await extractor.extract(
+                    tenant_id=self._tenant_id,
+                    source_type="executive_briefing",
+                    source_id=row.id,
+                    content_text=content_text,
+                    action_payloads=top_actions,
+                )
+                if action_item_ids:
+                    row.top_action_item_ids = list(action_item_ids)
+                    await self._session.flush()
+            except Exception:
+                _logger.exception(
+                    "executive briefing: action extraction failed; "
+                    "briefing row persisted without top_action_item_ids",
+                    extra={
+                        "tenant_id": str(self._tenant_id),
+                        "briefing_id": str(row.id),
+                    },
+                )
+
         return {
             "id": str(row.id),
             "tenant_id": str(self._tenant_id),
@@ -366,6 +405,7 @@ class ExecutiveBriefingService:
             "kpi_changes": list(row.kpi_changes),
             "critical_insights": list(row.critical_insights),
             "top_actions": list(row.top_actions),
+            "top_action_item_ids": [str(i) for i in action_item_ids],
             "model_name": row.model_name,
             "token_usage": dict(row.token_usage) if row.token_usage else None,
             "generation_duration_ms": duration_ms,

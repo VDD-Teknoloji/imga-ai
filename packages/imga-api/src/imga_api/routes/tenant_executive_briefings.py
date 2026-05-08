@@ -20,7 +20,7 @@ from imga_core.llm import (
     LLMResponseBlockedError,
     LLMTokenLimitError,
 )
-from imga_db.models import ExecutiveBriefing, UserTenantRole
+from imga_db.models import ActionItem, ExecutiveBriefing, UserTenantRole
 from pydantic import BaseModel, field_validator
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -75,6 +75,12 @@ class BriefingResponse(BaseModel):
     kpi_changes: list[dict[str, Any]]
     critical_insights: list[str]
     top_actions: list[dict[str, Any]]
+    # Sprint 9.0.5-B G — UUID list of ActionItem rows linked to
+    # this briefing's top_actions. Frontend uses GET
+    # /executive-briefings/{id}/top-actions to hydrate full
+    # ActionItem records; this surface lets the briefing detail
+    # page know up-front whether the section has any rows.
+    top_action_item_ids: list[UUID] = []
     model_name: str
     token_usage: dict[str, int] | None
     generated_at: datetime
@@ -111,6 +117,7 @@ def _row_to_response(row: ExecutiveBriefing) -> BriefingResponse:
         kpi_changes=list(row.kpi_changes),
         critical_insights=list(row.critical_insights),
         top_actions=list(row.top_actions),
+        top_action_item_ids=list(row.top_action_item_ids or []),
         model_name=row.model_name,
         token_usage=dict(row.token_usage) if row.token_usage else None,
         generated_at=row.created_at,
@@ -260,3 +267,74 @@ async def get_briefing(
                 detail="briefing bulunamadı",
             )
         return _row_to_response(row)
+
+
+class TopActionItemView(BaseModel):
+    id: UUID
+    title: str
+    description: str
+    rationale: str | None
+    priority: str
+    estimated_impact: str | None
+    status: str
+    due_date: date | None
+    assignee_user_id: UUID | None
+
+
+class TopActionsResponse(BaseModel):
+    briefing_id: UUID
+    items: list[TopActionItemView]
+
+
+@router.get(
+    "/{briefing_id}/top-actions",
+    response_model=TopActionsResponse,
+    summary="Sprint 9.0.5-B G — fetch ActionItem rows linked to a briefing.",
+    description=(
+        "Returns the ActionItems extracted from the briefing's "
+        "``top_actions`` field. The frontend renders each as a "
+        "clickable follow-up card with status / priority / "
+        "assignee."
+    ),
+    responses={404: {"description": "Briefing not found or hidden by RLS."}},
+)
+async def get_briefing_top_actions(
+    briefing_id: UUID,
+    current: Annotated[CurrentUser, _AnyMember],
+    app_session: Annotated[AsyncSession, Depends(get_app_session)],
+) -> TopActionsResponse:
+    tenant_id = _require_active_tenant(current)
+    async with app_session.begin():
+        await bind_tenant(app_session, current)
+        briefing = await app_session.get(ExecutiveBriefing, briefing_id)
+        if briefing is None or briefing.tenant_id != tenant_id:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="briefing bulunamadı",
+            )
+        ids = list(briefing.top_action_item_ids or [])
+        if not ids:
+            return TopActionsResponse(briefing_id=briefing_id, items=[])
+        stmt = select(ActionItem).where(ActionItem.id.in_(ids))
+        rows = (await app_session.execute(stmt)).scalars().all()
+        # Preserve the briefing's array order (the LLM ranked them)
+        # rather than ActionItem.id ordering.
+        by_id = {r.id: r for r in rows}
+        ordered = [by_id[i] for i in ids if i in by_id]
+        return TopActionsResponse(
+            briefing_id=briefing_id,
+            items=[
+                TopActionItemView(
+                    id=r.id,
+                    title=r.title,
+                    description=r.description,
+                    rationale=r.rationale,
+                    priority=r.priority,
+                    estimated_impact=r.estimated_impact,
+                    status=r.status,
+                    due_date=r.due_date,
+                    assignee_user_id=r.assignee_user_id,
+                )
+                for r in ordered
+            ],
+        )
