@@ -40,8 +40,10 @@ export function useUpdateSlaDispatchMode() {
         "/tenants/me/pending-webhooks/dispatch-mode",
         {
           method: "PATCH",
-          body: JSON.stringify({ sla_webhook_dispatch_mode: mode }),
-          headers: { "Content-Type": "application/json" },
+          // apiRequest wrapper auto-serialises JSON + sets the
+          // Content-Type header; passing the raw object is the
+          // canonical pattern (see other PATCH call sites).
+          body: { sla_webhook_dispatch_mode: mode },
         },
       ),
     onSuccess: (data) => {
