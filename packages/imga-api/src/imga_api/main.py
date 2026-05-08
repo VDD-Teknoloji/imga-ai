@@ -82,7 +82,15 @@ def _parse_cors_origins() -> list[str]:
         return ["http://localhost:3000", "http://127.0.0.1:3000"]
     return [origin.strip() for origin in raw.split(",") if origin.strip()]
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+# Sprint 9.0.5-B J — explicit project-namespace logging via the
+# shared configure_logging helper. Replaces the bare basicConfig
+# call so the api-worker (whose root logger is set to WARNING by
+# arq) also picks up imga_core / imga_api INFO messages — without
+# this, the HybridClassifier batch summary + rotator key usage
+# logs dropped silently in production.
+from imga_api.logging_config import configure_logging
+
+configure_logging()
 log = logging.getLogger("imga-api")
 
 

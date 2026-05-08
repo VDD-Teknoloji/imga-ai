@@ -88,7 +88,19 @@ async def process_batch_task(
         raise
 
 
-async def startup(ctx: dict[str, Any]) -> None:
+async def startup(ctx: dict[str, Any]) -> None:  # noqa: D401
+    # Sprint 9.0.5-B J — pin INFO on the project namespaces inside
+    # the arq worker process. arq's own logging defaults leave
+    # ``imga_core.*`` at WARNING, so the HybridClassifier batch
+    # summary + rotator key usage logs were dropping silently in
+    # production. Idempotent.
+    from imga_api.logging_config import configure_logging
+
+    configure_logging()
+    return await _startup_impl(ctx)
+
+
+async def _startup_impl(ctx: dict[str, Any]) -> None:
     """One-time worker process initialisation. Builds:
 
       * Settings (shared with the API container — same env vars).
