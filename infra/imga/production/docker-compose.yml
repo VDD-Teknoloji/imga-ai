@@ -174,6 +174,16 @@ services:
       - -m
       - arq
       - imga_api.workers.arq_worker.WorkerSettings
+    # Sprint 9.0.5-B J — disable the inherited image healthcheck.
+    # The shared imga-api image bakes ``HEALTHCHECK CMD curl
+    # http://localhost:8000/health`` for the api uvicorn container;
+    # this worker doesn't run uvicorn, so the inherited probe
+    # always fails and Docker flips the container to unhealthy
+    # (cosmetic but noisy in deploy/monitoring tooling). arq's own
+    # crash-on-error + restart: unless-stopped is the actual
+    # liveness signal here.
+    healthcheck:
+      test: ["NONE"]
     deploy:
       resources:
         limits:

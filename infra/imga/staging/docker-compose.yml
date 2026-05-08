@@ -153,6 +153,10 @@ services:
       - -m
       - arq
       - imga_api.workers.arq_worker.WorkerSettings
+    # Sprint 9.0.5-B J — disable inherited image healthcheck (see
+    # production compose for rationale).
+    healthcheck:
+      test: ["NONE"]
     deploy:
       resources:
         limits:

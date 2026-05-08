@@ -49,8 +49,12 @@ export function CategorySentimentMiniHeatmap() {
             const cat = matrix.data?.categories[i];
             const sent = matrix.data?.sentiments[j];
             if (!cat || !sent) return;
+            // Sprint 9.0.5-B F — was ?category=… which the
+            // /reviews filter parser doesn't read; the page reads
+            // ?primary_categories=… (comma-separated). The drill-
+            // down was silently landing on an unfiltered list.
             router.push(
-              `/reviews?sentiment_labels=${encodeURIComponent(sent)}&category=${encodeURIComponent(cat)}`,
+              `/reviews?sentiment_labels=${encodeURIComponent(sent)}&primary_categories=${encodeURIComponent(cat)}`,
             );
           }}
         />
