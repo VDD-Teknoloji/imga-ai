@@ -141,6 +141,12 @@ services:
     container_name: imga-prod-api-worker
     restart: unless-stopped
     env_file: /etc/imga/production/api.env
+    # Sprint 9.0.5-A R7 follow-up — py-spy stack-dump kapasitesi.
+    # Docker default cap set ptrace'i kısıtlıyor; SDK timeout / circuit
+    # breaker debug sırasında "py-spy dump --pid 1" çalışsın diye ekli.
+    # Sadece worker container'ı; api kullanıcı request'leri için kapalı.
+    cap_add:
+      - SYS_PTRACE
     environment:
       IMGA_MASTER_KEY_PATH: /run/secrets/imga/master.key
       REDIS_URL: redis://redis:6379/0

@@ -2,6 +2,7 @@
 
 | Tarih      | Başlık                                                                                       | Yazar         | Hedef         | Durum    | Öncelik |
 |------------|----------------------------------------------------------------------------------------------|---------------|---------------|----------|---------|
+| 2026-05-08 | [cap-sys-ptrace-for-api-worker](2026-05-08-cap-sys-ptrace-for-api-worker.md)                 | server-agent  | local-agent   | open     | orta    |
 | 2026-05-03 | [sprint-8.3-closure](2026-05-03-sprint-8.3-closure.md)                                       | server-agent  | claude-chat   | open     | yüksek  |
 | 2026-05-02 | [sprint-9.0-baseline](2026-05-02-sprint-9.0-baseline.md)                                     | server-agent  | claude-chat   | open     | normal  |
 | 2026-05-03 | [sprint-8.3.5-closure](2026-05-03-sprint-8.3.5-closure.md)                                   | server-agent  | claude-chat   | resolved | normal  |

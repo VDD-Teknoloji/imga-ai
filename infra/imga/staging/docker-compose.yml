@@ -126,6 +126,10 @@ services:
     container_name: imga-staging-api-worker
     restart: unless-stopped
     env_file: /etc/imga/staging/api.env
+    # Sprint 9.0.5-A R7 follow-up — production ile mirror; py-spy
+    # stack dump için ptrace cap. Detay için production compose'a bak.
+    cap_add:
+      - SYS_PTRACE
     environment:
       IMGA_MASTER_KEY_PATH: /run/secrets/imga/master.key
       REDIS_URL: redis://redis:6379/0
