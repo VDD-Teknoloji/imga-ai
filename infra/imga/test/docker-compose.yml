@@ -170,6 +170,7 @@ services:
           tests-core/test_rotating_gemini_async_loop.py \
           tests-core/test_hybrid_key_telemetry.py \
           tests-core/test_r7_timeout_and_cancel.py \
+          tests-core/test_gemini_sdk_timeout_actually_applied.py \
           -v --tb=short
 
 networks:
