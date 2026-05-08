@@ -43,7 +43,7 @@ export default function SettingsPage() {
   if (!isAdmin) return <ForbiddenNotice />;
 
   return (
-    <main className="mx-auto w-full max-w-3xl space-y-6 p-6 md:p-8">
+    <main className="mx-auto w-full max-w-3xl space-y-6 px-4 py-6 md:p-8">
       <header className="space-y-1">
         <h1 className="text-2xl font-semibold tracking-tight md:text-3xl">Ayarlar</h1>
         <p className="text-muted-foreground text-sm">

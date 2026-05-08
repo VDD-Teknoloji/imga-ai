@@ -75,7 +75,7 @@ export default function StrategyPage() {
 
 function HeaderSkeleton() {
   return (
-    <main className="mx-auto w-full max-w-5xl space-y-6 p-6 md:p-8">
+    <main className="mx-auto w-full max-w-5xl space-y-6 px-4 py-6 md:p-8">
       <header className="flex items-center gap-2">
         <Compass className="text-primary size-6" aria-hidden />
         <div>
@@ -168,7 +168,7 @@ function StrategyContent() {
   const credentialsLoaded = !credentials.isLoading;
 
   return (
-    <main className="mx-auto w-full max-w-5xl space-y-6 p-6 md:p-8">
+    <main className="mx-auto w-full max-w-5xl space-y-6 px-4 py-6 md:p-8">
       <header className="flex items-center gap-2">
         <Compass className="text-primary size-6" aria-hidden />
         <div>

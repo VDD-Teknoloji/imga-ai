@@ -54,7 +54,7 @@ export default function ActionItemsPage() {
 
 function HeaderSkeleton() {
   return (
-    <main className="mx-auto w-full max-w-5xl space-y-6 p-6 md:p-8">
+    <main className="mx-auto w-full max-w-5xl space-y-6 px-4 py-6 md:p-8">
       <header className="flex items-center gap-2">
         <ListChecks className="text-primary size-6" aria-hidden />
         <div>
@@ -106,7 +106,7 @@ function Content() {
   });
 
   return (
-    <main className="mx-auto w-full max-w-5xl space-y-6 p-6 md:p-8">
+    <main className="mx-auto w-full max-w-5xl space-y-6 px-4 py-6 md:p-8">
       <header className="flex flex-wrap items-start justify-between gap-3">
         <div className="flex items-start gap-2">
           <ListChecks className="text-primary mt-1 size-6" aria-hidden />

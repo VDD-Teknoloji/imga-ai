@@ -46,7 +46,7 @@ export default function ExecutiveBriefingPage() {
 
 function HeaderSkeleton() {
   return (
-    <main className="mx-auto w-full max-w-4xl space-y-6 p-6 md:p-8">
+    <main className="mx-auto w-full max-w-4xl space-y-6 px-4 py-6 md:p-8">
       <header className="flex items-center gap-2">
         <ClipboardList className="text-primary size-6" aria-hidden />
         <div>
@@ -119,7 +119,7 @@ function Content() {
   }
 
   return (
-    <main className="mx-auto w-full max-w-4xl space-y-6 p-6 md:p-8">
+    <main className="mx-auto w-full max-w-4xl space-y-6 px-4 py-6 md:p-8">
       <header className="flex items-center gap-2">
         <ClipboardList className="text-primary size-6" aria-hidden />
         <div>

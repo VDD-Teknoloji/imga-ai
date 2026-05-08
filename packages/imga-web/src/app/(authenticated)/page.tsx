@@ -28,7 +28,7 @@ export default function DashboardPage() {
   const tenantName = activeContext?.tenant_name ?? "Aktif tenant yok";
 
   return (
-    <main className="mx-auto w-full max-w-7xl space-y-6 p-6 md:p-8">
+    <main className="mx-auto w-full max-w-7xl space-y-6 px-4 py-6 md:p-8">
       <header className="space-y-1">
         <h1 className="text-2xl font-semibold tracking-tight md:text-3xl">
           Merhaba{user?.full_name ? `, ${user.full_name.split(" ")[0]}` : ""}
