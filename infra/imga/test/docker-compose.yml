@@ -170,6 +170,11 @@ services:
           tests/test_briefing_schedule_next_run.py \
           tests/test_prompt_resolver_render.py \
           tests/test_llm_audit_classifier.py \
+          tests/test_schedule_period_mapper.py \
+          tests/test_kpi_goal_period_aware_resolution.py \
+          tests/test_snapshot_period_window.py \
+          tests/test_file_parser_dimensions.py \
+          tests/test_llm_audit_savepoint_isolation.py \
           tests-core/test_key_rotation.py \
           tests-core/test_metrics_pure_formulas.py \
           tests-core/test_gemini_swot_okr.py \
