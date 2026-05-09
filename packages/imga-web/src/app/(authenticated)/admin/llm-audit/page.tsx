@@ -6,6 +6,9 @@
 //   1. Summary cards: total calls, total failures, total tokens.
 //   2. 30-day chart (text-grid for now — no recharts dep gymnastics).
 //   3. Filterable list with detail expand.
+//
+// Sprint 9.4 H — Suspense wrapper + Path B URL-state mirror so the
+// call_type + success filters survive F5 + back/forward + share-link.
 
 import {
   AlertTriangle,
@@ -13,7 +16,8 @@ import {
   Cpu,
   Loader2,
 } from "lucide-react";
-import { useState } from "react";
+import { Suspense, useCallback, useEffect, useState } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
@@ -34,8 +38,59 @@ const CALL_TYPES = [
 ];
 
 export default function LlmAuditPage() {
-  const [callType, setCallType] = useState<string>("");
-  const [successFilter, setSuccessFilter] = useState<string>("");
+  return (
+    <Suspense fallback={<PageSkeleton />}>
+      <LlmAuditPageInner />
+    </Suspense>
+  );
+}
+
+function PageSkeleton() {
+  return (
+    <main className="mx-auto w-full max-w-6xl space-y-6 px-4 py-6 md:p-8">
+      <p className="text-muted-foreground text-sm">Yükleniyor…</p>
+    </main>
+  );
+}
+
+function LlmAuditPageInner() {
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+
+  // Path B mirror — local state seeded from URL, re-synced on URL
+  // change (back/forward, deep-link). Empty string means "no filter"
+  // for both axes; success encodes ``ok`` / ``fail`` so the URL stays
+  // human-readable instead of ``success=true``.
+  const [callType, setCallType] = useState<string>(
+    () => searchParams.get("call_type") ?? "",
+  );
+  const [successFilter, setSuccessFilter] = useState<string>(
+    () => searchParams.get("success") ?? "",
+  );
+
+  useEffect(() => {
+    const ct = searchParams.get("call_type") ?? "";
+    setCallType((prev) => (prev === ct ? prev : ct));
+    const sf = searchParams.get("success") ?? "";
+    setSuccessFilter((prev) => (prev === sf ? prev : sf));
+  }, [searchParams]);
+
+  const updateFilter = useCallback(
+    (key: "call_type" | "success", next: string) => {
+      if (key === "call_type") setCallType(next);
+      else setSuccessFilter(next);
+      const params = new URLSearchParams(searchParams);
+      if (next === "") {
+        params.delete(key);
+      } else {
+        params.set(key, next);
+      }
+      const qs = params.toString();
+      router.push(qs ? `${pathname}?${qs}` : pathname);
+    },
+    [pathname, router, searchParams],
+  );
 
   const summary = useLlmAuditSummary();
   const list = useLlmAuditList({
@@ -134,7 +189,7 @@ export default function LlmAuditPage() {
       <div className="bg-card flex flex-wrap items-center gap-3 rounded-lg border p-3">
         <select
           value={callType}
-          onChange={(e) => setCallType(e.target.value)}
+          onChange={(e) => updateFilter("call_type", e.target.value)}
           className="border-input bg-background rounded-md border px-2 py-1 text-sm"
         >
           {CALL_TYPES.map((o) => (
@@ -145,7 +200,7 @@ export default function LlmAuditPage() {
         </select>
         <select
           value={successFilter}
-          onChange={(e) => setSuccessFilter(e.target.value)}
+          onChange={(e) => updateFilter("success", e.target.value)}
           className="border-input bg-background rounded-md border px-2 py-1 text-sm"
         >
           <option value="">Tüm sonuçlar</option>

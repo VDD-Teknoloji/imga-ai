@@ -1,9 +1,12 @@
 "use client";
 
 // Sprint 9.3 C — /admin/decision-audit timeline.
+// Sprint 9.4 H — Suspense wrapper + Path B URL-state mirror so the
+// decision_type filter survives F5 + back/forward + share-link.
 
 import { History, Loader2 } from "lucide-react";
-import { useState } from "react";
+import { Suspense, useCallback, useEffect, useState } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
 import { Badge } from "@/components/ui/badge";
 import {
@@ -26,7 +29,53 @@ const DECISION_LABELS: Record<string, string> = {
 };
 
 export default function DecisionAuditPage() {
-  const [decisionType, setDecisionType] = useState<string>("");
+  return (
+    <Suspense fallback={<PageSkeleton />}>
+      <DecisionAuditPageInner />
+    </Suspense>
+  );
+}
+
+function PageSkeleton() {
+  return (
+    <main className="mx-auto w-full max-w-5xl space-y-6 px-4 py-6 md:p-8">
+      <p className="text-muted-foreground text-sm">Yükleniyor…</p>
+    </main>
+  );
+}
+
+function DecisionAuditPageInner() {
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+
+  // Path B mirror — local state seeded from URL, kept in sync via the
+  // useEffect below so back/forward + deep-link land on the right
+  // filter without a flicker.
+  const [decisionType, setDecisionType] = useState<string>(
+    () => searchParams.get("decision_type") ?? "",
+  );
+
+  useEffect(() => {
+    const fromUrl = searchParams.get("decision_type") ?? "";
+    setDecisionType((prev) => (prev === fromUrl ? prev : fromUrl));
+  }, [searchParams]);
+
+  const updateFilter = useCallback(
+    (next: string) => {
+      setDecisionType(next);
+      const params = new URLSearchParams(searchParams);
+      if (next === "") {
+        params.delete("decision_type");
+      } else {
+        params.set("decision_type", next);
+      }
+      const qs = params.toString();
+      router.push(qs ? `${pathname}?${qs}` : pathname);
+    },
+    [pathname, router, searchParams],
+  );
+
   const list = useDecisionAuditList({
     decision_type: decisionType || undefined,
     limit: 200,
@@ -50,7 +99,7 @@ export default function DecisionAuditPage() {
       <div className="bg-card flex items-center gap-3 rounded-lg border p-3">
         <select
           value={decisionType}
-          onChange={(e) => setDecisionType(e.target.value)}
+          onChange={(e) => updateFilter(e.target.value)}
           className="border-input bg-background rounded-md border px-2 py-1 text-sm"
         >
           <option value="">Tüm karar tipleri</option>
