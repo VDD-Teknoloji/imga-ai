@@ -91,7 +91,12 @@ export default function PromptTemplatesPage() {
 
         <section>
           {selected ? (
-            <TemplateEditor template={selected} />
+            // Sprint 9.4 E — ``key`` forces the editor to remount when
+            // the operator switches templates. Without it React reuses
+            // the same component instance, useState keeps the previous
+            // template's edits, and the next save merges form state
+            // from template A onto template B's metadata.
+            <TemplateEditor key={selected.id} template={selected} />
           ) : (
             <Card>
               <CardContent className="p-6 text-center text-sm text-muted-foreground">
