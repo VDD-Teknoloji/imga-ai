@@ -297,10 +297,17 @@ async def run_schedule_now(
     tenant_id = _require_active_tenant(current)
     from datetime import UTC, timedelta
 
+    from imga_api.services.briefing_period_mapper import (
+        map_schedule_period_to_generate_period,
+    )
     from imga_api.services.executive_briefing_service import (
         ExecutiveBriefingService,
     )
 
+    # Sprint 9.4 A — DB period values (weekly/monthly) differ from
+    # ExecutiveBriefingService.generate() values (week/month/quarter).
+    # Pre-9.4 every run-now silently flipped last_run_status='failed'
+    # because of the mismatch; the mapper bridges the two shapes.
     period_days = {"weekly": 7, "monthly": 30}
     try:
         async with app_session.begin():
@@ -323,8 +330,11 @@ async def run_schedule_now(
             status_label = "success"
             error_text: str | None = None
             try:
+                generate_period = map_schedule_period_to_generate_period(
+                    row.period
+                )
                 payload = await briefing_service.generate(
-                    period=row.period,
+                    period=generate_period,
                     date_from=today - timedelta(days=window),
                     date_to=today,
                 )

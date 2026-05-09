@@ -38,6 +38,9 @@ from uuid import UUID
 from imga_db import set_current_tenant
 from imga_db.models import BriefingSchedule
 
+from imga_api.services.briefing_period_mapper import (
+    map_schedule_period_to_generate_period,
+)
 from imga_api.services.briefing_schedule_service import BriefingScheduleService
 from imga_api.services.executive_briefing_service import (
     ExecutiveBriefingService,
@@ -125,8 +128,13 @@ async def _run_schedule(
                     tenant_id=tenant_id,
                     user_id=None,  # System-driven; no actor user.
                 )
+                # Sprint 9.4 A — schedule.period is weekly/monthly;
+                # generate() expects week/month/quarter.
+                generate_period = map_schedule_period_to_generate_period(
+                    period
+                )
                 payload = await briefing_service.generate(
-                    period=period,
+                    period=generate_period,
                     date_from=date_from,
                     date_to=date_to,
                 )
