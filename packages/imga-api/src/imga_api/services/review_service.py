@@ -141,6 +141,10 @@ class ReviewService:
         actor_user_id: UUID | None,
         now: datetime | None = None,
         nps_score: int | None = None,
+        business_segment: str | None = None,
+        product_line: str | None = None,
+        channel: str | None = None,
+        customer_tier: str | None = None,
     ) -> ReviewBridgeResult:
         """Persist one review row and (on the CREATE branch) one ticket.
 
@@ -148,7 +152,12 @@ class ReviewService:
         batch worker when the upload's triggering user has been deleted
         between upload and processing). The audit row + Review row both
         accept NULL there; the FK constraint on ``users`` uses ON DELETE
-        SET NULL, so a valid UUID is not strictly required."""
+        SET NULL, so a valid UUID is not strictly required.
+
+        Sprint 9.4 D — the four dimension kwargs come from the batch
+        upload's per-row ParsedRow (or the single-review POST body's
+        dimension fields). Default None preserves the pre-9.4 contract
+        for callers that don't carry dimensions yet."""
         moment = now or datetime.now(UTC)
         text_hash = review_text_hash(text)
 
@@ -237,6 +246,10 @@ class ReviewService:
             overrides_applied=[hit.model_dump() for hit in analysis.overrides_applied],
             nps_score=nps_score,
             company_perspective_code=perspective_code,
+            business_segment=business_segment,
+            product_line=product_line,
+            channel=channel,
+            customer_tier=customer_tier,
         )
         self._session.add(review)
         await self._session.flush()

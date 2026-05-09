@@ -23,6 +23,7 @@ import csv
 from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 from imga_core.parsers import detect_nps_column, parse_nps_value
 from imga_core.text_utils import normalize_turkish
@@ -44,6 +45,14 @@ class UnsupportedFormatError(FileParseError):
     spreadsheet authors should rename, not us)."""
 
 
+_DIMENSION_KEYS: tuple[str, ...] = (
+    "business_segment",
+    "product_line",
+    "channel",
+    "customer_tier",
+)
+
+
 @dataclass(frozen=True, slots=True)
 class ParsedRow:
     """One non-header row from the upload, projected onto the columns
@@ -55,12 +64,22 @@ class ParsedRow:
     8.3.5). NULL covers both "no column detected" and "column detected
     but this row's value was empty / out of range / non-numeric" — the
     worker increments rows_with_nps only when this is non-null.
+
+    Sprint 9.4 D — ``business_segment`` / ``product_line`` / ``channel``
+    / ``customer_tier`` carry the per-tenant business-dimension values
+    pulled from the upload. Each is None when (a) the tenant doesn't
+    have a CSV column mapping for that dimension or (b) the row's cell
+    is empty.
     """
 
     row_number: int
     text: str
     source: str | None
     nps_score: int | None = None
+    business_segment: str | None = None
+    product_line: str | None = None
+    channel: str | None = None
+    customer_tier: str | None = None
 
 
 def _normalize_header(name: str) -> str:
@@ -72,15 +91,24 @@ def _resolve_columns(
     *,
     text_column: str,
     source_column: str | None,
-) -> tuple[int, int | None, int | None]:
-    """Return (text_idx, source_idx | None, nps_idx | None). Raises
-    UnknownColumnError if text/source column is absent. NPS is
-    auto-detected via the imga-core pattern set; missing NPS is fine
-    (returns None) — the upload doesn't have to carry an NPS column.
+    dimension_mapping: dict[str, str] | None = None,
+) -> tuple[int, int | None, int | None, dict[str, int]]:
+    """Return ``(text_idx, source_idx | None, nps_idx | None,
+    dimension_idx_by_key)``. Raises UnknownColumnError if text/source
+    column is absent. NPS is auto-detected via the imga-core pattern
+    set; missing NPS is fine (returns None) — the upload doesn't have
+    to carry an NPS column.
 
-    Match for text/source is case + accent + I/İ-insensitive (same fold
-    nps_detector applies to its own pattern set, so the two stay in
-    sync as the rules evolve).
+    Sprint 9.4 D — ``dimension_mapping`` is ``{dimension_key:
+    csv_column_name}`` (e.g. ``{"customer_tier": "tier"}``). A
+    dimension whose mapped column isn't in the header is silently
+    skipped (no UnknownColumnError) — uploads that don't carry every
+    configured dimension are common, and refusing them would break
+    tenants who add a dimension config before the next CSV cycle.
+
+    Match for text/source/dimensions is case + accent + I/İ-
+    insensitive (same fold nps_detector applies to its own pattern
+    set, so the two stay in sync as the rules evolve).
     """
     norm_header = [_normalize_header(c) for c in header]
     target_text = _normalize_header(text_column)
@@ -107,7 +135,38 @@ def _resolve_columns(
     if nps_header is not None:
         nps_idx = header.index(nps_header)
 
-    return text_idx, source_idx, nps_idx
+    dimension_idx_by_key: dict[str, int] = {}
+    if dimension_mapping:
+        for dim_key, csv_column in dimension_mapping.items():
+            if dim_key not in _DIMENSION_KEYS:
+                # Defensive: unknown dimension keys are ignored rather
+                # than raising — the CHECK constraint upstream rejects
+                # them at insert, so this is silent dead-code behaviour.
+                continue
+            target = _normalize_header(csv_column)
+            if target in norm_header:
+                dimension_idx_by_key[dim_key] = norm_header.index(target)
+
+    return text_idx, source_idx, nps_idx, dimension_idx_by_key
+
+
+def _extract_dimensions(
+    row: list[Any] | tuple[Any, ...],
+    dimension_idx_by_key: dict[str, int],
+) -> dict[str, str | None]:
+    """Pull dimension cell values out of a row given the resolved
+    indices. Empty cells / missing columns map to None; non-empty
+    cells are stripped of surrounding whitespace."""
+    out: dict[str, str | None] = {key: None for key in _DIMENSION_KEYS}
+    for dim_key, idx in dimension_idx_by_key.items():
+        if idx >= len(row):
+            continue
+        raw = row[idx]
+        if raw is None:
+            continue
+        value = str(raw).strip()
+        out[dim_key] = value or None
+    return out
 
 
 def _iter_csv(
@@ -115,6 +174,7 @@ def _iter_csv(
     *,
     text_column: str,
     source_column: str | None,
+    dimension_mapping: dict[str, str] | None = None,
 ) -> Iterator[ParsedRow]:
     with path.open("r", encoding="utf-8-sig", newline="") as fh:
         reader = csv.reader(fh)
@@ -123,8 +183,11 @@ def _iter_csv(
         except StopIteration as exc:
             raise FileParseError("file is empty") from exc
 
-        text_idx, source_idx, nps_idx = _resolve_columns(
-            header, text_column=text_column, source_column=source_column
+        text_idx, source_idx, nps_idx, dim_idx_by_key = _resolve_columns(
+            header,
+            text_column=text_column,
+            source_column=source_column,
+            dimension_mapping=dimension_mapping,
         )
         for i, row in enumerate(reader, start=1):
             if not row:
@@ -140,8 +203,16 @@ def _iter_csv(
             nps_score: int | None = None
             if nps_idx is not None and nps_idx < len(row):
                 nps_score = parse_nps_value(row[nps_idx])
+            dims = _extract_dimensions(row, dim_idx_by_key)
             yield ParsedRow(
-                row_number=i, text=text, source=source, nps_score=nps_score
+                row_number=i,
+                text=text,
+                source=source,
+                nps_score=nps_score,
+                business_segment=dims["business_segment"],
+                product_line=dims["product_line"],
+                channel=dims["channel"],
+                customer_tier=dims["customer_tier"],
             )
 
 
@@ -150,6 +221,7 @@ def _iter_xlsx(
     *,
     text_column: str,
     source_column: str | None,
+    dimension_mapping: dict[str, str] | None = None,
 ) -> Iterator[ParsedRow]:
     # read_only=True streams rows from disk; data_only collapses formulae
     # to their cached values so reviews aren't garbage like "=A1+B1".
@@ -166,8 +238,11 @@ def _iter_xlsx(
             raise FileParseError("file is empty") from exc
 
         header = [str(c) if c is not None else "" for c in raw_header]
-        text_idx, source_idx, nps_idx = _resolve_columns(
-            header, text_column=text_column, source_column=source_column
+        text_idx, source_idx, nps_idx, dim_idx_by_key = _resolve_columns(
+            header,
+            text_column=text_column,
+            source_column=source_column,
+            dimension_mapping=dimension_mapping,
         )
         for i, row in enumerate(rows_iter, start=1):
             if row is None:
@@ -182,8 +257,16 @@ def _iter_xlsx(
             nps_score: int | None = None
             if nps_idx is not None and nps_idx < len(row):
                 nps_score = parse_nps_value(row[nps_idx])
+            dims = _extract_dimensions(list(row), dim_idx_by_key)
             yield ParsedRow(
-                row_number=i, text=text, source=source, nps_score=nps_score
+                row_number=i,
+                text=text,
+                source=source,
+                nps_score=nps_score,
+                business_segment=dims["business_segment"],
+                product_line=dims["product_line"],
+                channel=dims["channel"],
+                customer_tier=dims["customer_tier"],
             )
     finally:
         workbook.close()
@@ -194,18 +277,35 @@ def iter_rows(
     *,
     text_column: str,
     source_column: str | None = None,
+    dimension_mapping: dict[str, str] | None = None,
 ) -> Iterator[ParsedRow]:
     """Stream rows from a CSV or XLSX upload.
 
     Caller decides when to chunk (e.g. ``chunked(iter_rows(...), 1000)``).
     Empty / blank rows are silently skipped — the worker counts them in
     ``failed_rows`` only if they have a row but no text.
+
+    Sprint 9.4 D — ``dimension_mapping`` is the per-tenant business
+    dimension config (``{dimension_key: csv_column_name}``). Pass the
+    fetched mapping in once at job start; the iterator does the per-
+    row column lookup. ``None`` (default) preserves the pre-9.4
+    behaviour for callers that haven't been migrated.
     """
     suffix = path.suffix.lower()
     if suffix == ".csv":
-        return _iter_csv(path, text_column=text_column, source_column=source_column)
+        return _iter_csv(
+            path,
+            text_column=text_column,
+            source_column=source_column,
+            dimension_mapping=dimension_mapping,
+        )
     if suffix == ".xlsx":
-        return _iter_xlsx(path, text_column=text_column, source_column=source_column)
+        return _iter_xlsx(
+            path,
+            text_column=text_column,
+            source_column=source_column,
+            dimension_mapping=dimension_mapping,
+        )
     raise UnsupportedFormatError(
         f"unsupported file extension {suffix!r}; expected .csv or .xlsx"
     )

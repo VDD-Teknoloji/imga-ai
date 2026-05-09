@@ -58,6 +58,7 @@ from imga_db.models import (
     CategoryTaxonomy,
     Review,
     ReviewDecision,
+    TenantBusinessDimension,
 )
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
@@ -368,9 +369,19 @@ async def _run_job(
                 .values(detected_nps_column=detected_nps)
             )
 
+    # Sprint 9.4 D — fetch the per-tenant business-dimension mapping
+    # once at job start. Each enabled dimension with a non-null
+    # ``csv_column_mapping`` contributes one entry; the file parser
+    # uses these to populate the four nullable Review columns
+    # (business_segment / product_line / channel / customer_tier).
+    dimension_mapping = await _fetch_dimension_mapping(tenant_id, context)
+
     try:
         rows_iter = iter_rows(
-            file_path, text_column=text_column, source_column=source_column
+            file_path,
+            text_column=text_column,
+            source_column=source_column,
+            dimension_mapping=dimension_mapping,
         )
     except (FileParseError, UnknownColumnError) as exc:
         await _record_catastrophic_failure(
@@ -845,6 +856,10 @@ async def _process_chunk(
                     overrides_applied=[hit.model_dump() for hit in analysis.overrides_applied],
                     nps_score=parsed.nps_score,
                     company_perspective_code=perspective_code,
+                    business_segment=parsed.business_segment,
+                    product_line=parsed.product_line,
+                    channel=parsed.channel,
+                    customer_tier=parsed.customer_tier,
                 )
                 app_session.add(review)
                 duplicates += 1
@@ -861,6 +876,10 @@ async def _process_chunk(
                         analysis=analysis,
                         actor_user_id=triggered_by_user_id,
                         nps_score=parsed.nps_score,
+                        business_segment=parsed.business_segment,
+                        product_line=parsed.product_line,
+                        channel=parsed.channel,
+                        customer_tier=parsed.customer_tier,
                     )
                 except Exception as exc:
                     log.exception("row %s record_and_decide", parsed.row_number)
@@ -917,6 +936,10 @@ async def _process_chunk(
                     overrides_applied=[hit.model_dump() for hit in analysis.overrides_applied],
                     nps_score=parsed.nps_score,
                     company_perspective_code=perspective_code,
+                    business_segment=parsed.business_segment,
+                    product_line=parsed.product_line,
+                    channel=parsed.channel,
+                    customer_tier=parsed.customer_tier,
                 )
                 app_session.add(review)
                 succeeded += 1
@@ -1139,6 +1162,43 @@ async def _build_tenant_classifier(
         llm_provider=RotatingGeminiProvider(keys=keys),
         llm_concurrency=llm_concurrency,
     )
+
+
+async def _fetch_dimension_mapping(
+    tenant_id: UUID, context: WorkerContext
+) -> dict[str, str]:
+    """Sprint 9.4 D — load the tenant's enabled business-dimension
+    config and return ``{dimension: csv_column_mapping}`` for every
+    dimension whose mapping is set. Disabled dimensions and
+    dimensions without a mapping are filtered out.
+
+    Returned dict is empty when the tenant has no dimensions
+    configured — the parser handles that as "no dimension columns",
+    keeping the four Review.dimension columns NULL. Best-effort: a
+    failure to load the config logs but doesn't break the upload —
+    dimension data is observability-grade, not contract.
+    """
+    try:
+        async with context.admin_session_factory() as session, session.begin():
+            await set_current_tenant(session, tenant_id)
+            stmt = (
+                select(
+                    TenantBusinessDimension.dimension,
+                    TenantBusinessDimension.csv_column_mapping,
+                )
+                .where(TenantBusinessDimension.tenant_id == tenant_id)
+                .where(TenantBusinessDimension.enabled.is_(True))
+                .where(TenantBusinessDimension.csv_column_mapping.is_not(None))
+            )
+            rows = (await session.execute(stmt)).all()
+    except Exception:
+        log.exception(
+            "batch worker: dimension mapping load failed; "
+            "reviews will land with NULL dimension columns",
+            extra={"tenant_id": str(tenant_id)},
+        )
+        return {}
+    return {dim: col for dim, col in rows if col}
 
 
 async def _load_taxonomy_payload(
