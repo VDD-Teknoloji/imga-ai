@@ -30,7 +30,6 @@ from imga_api.auth_deps import CurrentUser, bind_tenant, require_role
 from imga_api.db_deps import get_app_session
 from imga_api.services import (
     AnalyticsService,
-    AuditService,
     GoalAlreadyExists,
     KpiGoalNotFound,
     KpiGoalService,
@@ -284,14 +283,13 @@ async def bulk_progress(
         goals = await service.list_active(tenant_id=tenant_id)
         if not goals:
             return []
-        # Bulk-fetch the current value per metric_key. Goals on the
-        # same metric share a single fetch — important for
-        # ``review_volume`` where the count is identical across
-        # weekly + monthly goals.
-        keys = {g.metric_key for g in goals}
-        currents = await _resolve_current_values(app_session, tenant_id, keys)
+        # Sprint 9.4 B — per-goal current value, computed in each
+        # goal's own period window. Pre-9.4 every active goal shared
+        # one all-time value, so a monthly target was compared to
+        # an all-time number and the achievement % was nonsensical.
+        currents = await _resolve_current_values(app_session, tenant_id, goals)
         results = [
-            KpiGoalService.compute_progress(g, currents.get(g.metric_key))
+            KpiGoalService.compute_progress(g, currents.get(g.id))
             for g in goals
         ]
     return [_progress_to_response(r) for r in results]
@@ -300,63 +298,84 @@ async def bulk_progress(
 async def _resolve_current_values(
     session: AsyncSession,
     tenant_id: UUID,
-    metric_keys: set[str],
-) -> dict[str, float]:
-    """Sprint 9.2 B — bulk-fetch the headline value for each metric.
+    goals: list[TenantKpiGoal],
+) -> dict[UUID, float]:
+    """Sprint 9.4 B — bulk-fetch the headline value for each *goal*,
+    using the goal's own ``period_start`` / ``period_end`` window.
+    Returns ``{goal.id: current_value}`` so two goals on the same
+    metric but different windows each get their own value.
 
-    The full snapshot service (Sprint 9.2 C) lands a cached payload
-    that the dashboard would prefer; until that's wired into this
-    endpoint, we lean on AnalyticsService for the live value (NPS,
-    review_volume) and a small inline query for everything else.
-    """
-    out: dict[str, float] = {}
-    audit = AuditService(session)
-    analytics = AnalyticsService(session, audit)
-    if "nps" in metric_keys:
-        summary = await analytics.compute_nps_summary(tenant_id=tenant_id)
-        out["nps"] = float(summary.score) if summary.score is not None else 0.0
-    if "review_volume" in metric_keys:
-        total = (
-            await session.execute(
-                select(func.count())
-                .select_from(Review)
-                .where(Review.tenant_id == tenant_id)
-                .where(Review.deleted_at.is_(None))
+    The compute path is metric-specific: NPS hits AnalyticsService
+    (which already understands ``date_from`` / ``date_to``);
+    review_volume + manual_review_rate run small inline queries
+    that filter on ``Review.created_at`` against the goal's window."""
+    out: dict[UUID, float] = {}
+    # Sprint 9.4 B — AnalyticsService.__init__ now takes (session,)
+    # only (the second arg historically held an AuditService that the
+    # service didn't actually consume). Pre-9.4 the helper passed it
+    # anyway, but the bulk endpoint was never exercised with an
+    # active NPS goal in tests so the TypeError never surfaced.
+    analytics = AnalyticsService(session)
+    for goal in goals:
+        date_from = goal.period_start
+        date_to = goal.period_end
+        if goal.metric_key == "nps":
+            summary = await analytics.compute_nps_summary(
+                tenant_id=tenant_id,
+                date_from=date_from,
+                date_to=date_to,
             )
-        ).scalar_one() or 0
-        out["review_volume"] = float(total)
-    if "manual_review_rate" in metric_keys:
-        # Canonical proxy: rows the bridge couldn't auto-classify and
-        # routed to manual review (low-confidence threshold + the
-        # "belirsiz" unknown bucket). Sprint 9.2 — when a dedicated
-        # ``requires_manual_review`` column lands on Review, this
-        # query replaces the IN(...) with that column.
-        manual = (
-            await session.execute(
-                select(func.count())
-                .select_from(Review)
-                .where(Review.tenant_id == tenant_id)
-                .where(Review.deleted_at.is_(None))
-                .where(
-                    Review.decision.in_(
-                        ("skipped_threshold", "skipped_belirsiz")
+            out[goal.id] = (
+                float(summary.score) if summary.score is not None else 0.0
+            )
+        elif goal.metric_key == "review_volume":
+            total = (
+                await session.execute(
+                    select(func.count())
+                    .select_from(Review)
+                    .where(Review.tenant_id == tenant_id)
+                    .where(Review.deleted_at.is_(None))
+                    .where(func.date(Review.created_at) >= date_from)
+                    .where(func.date(Review.created_at) <= date_to)
+                )
+            ).scalar_one() or 0
+            out[goal.id] = float(total)
+        elif goal.metric_key == "manual_review_rate":
+            # Canonical proxy: rows the bridge couldn't auto-classify
+            # and routed to manual review (low-confidence threshold +
+            # the "belirsiz" unknown bucket). Both numerator + denom
+            # filter on the same window so the rate is meaningful.
+            manual = (
+                await session.execute(
+                    select(func.count())
+                    .select_from(Review)
+                    .where(Review.tenant_id == tenant_id)
+                    .where(Review.deleted_at.is_(None))
+                    .where(func.date(Review.created_at) >= date_from)
+                    .where(func.date(Review.created_at) <= date_to)
+                    .where(
+                        Review.decision.in_(
+                            ("skipped_threshold", "skipped_belirsiz")
+                        )
                     )
                 )
+            ).scalar_one() or 0
+            total = (
+                await session.execute(
+                    select(func.count())
+                    .select_from(Review)
+                    .where(Review.tenant_id == tenant_id)
+                    .where(Review.deleted_at.is_(None))
+                    .where(func.date(Review.created_at) >= date_from)
+                    .where(func.date(Review.created_at) <= date_to)
+                )
+            ).scalar_one() or 0
+            out[goal.id] = (
+                (manual / total) * 100.0 if total else 0.0
             )
-        ).scalar_one() or 0
-        total = (
-            await session.execute(
-                select(func.count())
-                .select_from(Review)
-                .where(Review.tenant_id == tenant_id)
-                .where(Review.deleted_at.is_(None))
-            )
-        ).scalar_one() or 0
-        out["manual_review_rate"] = (
-            (manual / total) * 100.0 if total else 0.0
-        )
-    # csat / category_concentration / sentiment_distribution — when
-    # the snapshot service lands they fold in here. For now the
-    # dashboard renders these as "no goal data yet" if a tenant sets
-    # one, surfaced via current_value=None on the response.
+        # csat / category_concentration / sentiment_distribution —
+        # when the snapshot service lands they fold in here. For now
+        # the dashboard renders these as "no goal data yet" if a
+        # tenant sets one, surfaced via current_value=None on the
+        # response.
     return out
