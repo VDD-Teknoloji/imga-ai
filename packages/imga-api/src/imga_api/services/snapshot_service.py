@@ -155,6 +155,16 @@ class SnapshotService:
         started = time.monotonic()
         days = _PERIOD_DAYS[period]
         date_from = snapshot_date - timedelta(days=days)
+        # Sprint 9.4 C — full-day inclusion. Pre-9.4 the SQL bound
+        # ``Review.created_at <= snapshot_date`` cast date → midnight
+        # so reviews created at 14:00 on the snapshot day fell out.
+        # Use explicit datetime bounds covering the entire day.
+        date_from_dt = datetime.combine(
+            date_from, datetime.min.time(), tzinfo=UTC
+        )
+        date_to_dt = datetime.combine(
+            snapshot_date, datetime.max.time(), tzinfo=UTC
+        )
 
         # NPS bucket counts via the same generated column the analytics
         # service reads. Sprint 9.2 routes the math through
@@ -165,8 +175,8 @@ class SnapshotService:
             .where(Review.tenant_id == tenant_id)
             .where(Review.deleted_at.is_(None))
             .where(Review.nps_score.is_not(None))
-            .where(Review.created_at >= date_from)
-            .where(Review.created_at <= snapshot_date)
+            .where(Review.created_at >= date_from_dt)
+            .where(Review.created_at <= date_to_dt)
             .group_by(Review.nps_category)
         )
         per_bucket = {"detractor": 0, "passive": 0, "promoter": 0}
@@ -174,9 +184,27 @@ class SnapshotService:
             if row.nps_category in per_bucket:
                 per_bucket[row.nps_category] = row.cnt
 
-        # Total review count + latest review id (cursor) for the
-        # tenant, regardless of date — the cursor is "most recent
-        # Review the tenant has seen", not "most recent in window".
+        # Sprint 9.4 C — review_volume must respect the snapshot
+        # window. Pre-9.4 used the all-time count (correct for the
+        # cache invariant column ``review_count_at_snapshot``, wrong
+        # for the period metric the briefing reads). We now compute
+        # both: ``period_count`` lands in the metric, ``total_count``
+        # stays in the cache row + drives NPS denominator.
+        period_total_stmt = (
+            select(func.count())
+            .select_from(Review)
+            .where(Review.tenant_id == tenant_id)
+            .where(Review.deleted_at.is_(None))
+            .where(Review.created_at >= date_from_dt)
+            .where(Review.created_at <= date_to_dt)
+        )
+        period_count = (
+            await self._session.execute(period_total_stmt)
+        ).scalar_one() or 0
+
+        # All-time count + latest review id (cursor) for the tenant,
+        # regardless of date — the cursor is "most recent Review the
+        # tenant has seen", not "most recent in window".
         total_stmt = (
             select(func.count())
             .select_from(Review)
@@ -197,14 +225,14 @@ class SnapshotService:
 
         scope = MetricScope(
             tenant_id=str(tenant_id),
-            date_from=datetime.combine(date_from, datetime.min.time(), tzinfo=UTC),
-            date_to=datetime.combine(snapshot_date, datetime.max.time(), tzinfo=UTC),
+            date_from=date_from_dt,
+            date_to=date_to_dt,
         )
         nps = nps_score_from_buckets(
             promoter_count=per_bucket["promoter"],
             passive_count=per_bucket["passive"],
             detractor_count=per_bucket["detractor"],
-            total_review_count=total_count,
+            total_review_count=period_count,
             scope=scope,
         )
 
@@ -212,9 +240,9 @@ class SnapshotService:
             "nps": nps.to_jsonable(),
             "review_volume": {
                 "metric_key": "review_volume",
-                "value": float(total_count),
+                "value": float(period_count),
                 "unit": "count",
-                "sample_count": total_count,
+                "sample_count": period_count,
                 "coverage_percent": 100.0,
                 "computed_at": datetime.now(UTC).isoformat(),
             },
