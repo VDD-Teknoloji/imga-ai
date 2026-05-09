@@ -173,8 +173,15 @@ class LLMCallAuditor:
 
     async def _insert_row(self) -> None:
         """Write the audit row. Best-effort: a failed insert logs
-        but doesn't propagate (auditing is observability, not the
-        request's primary contract)."""
+        but doesn't propagate.
+
+        Sprint 9.4 F — wraps the INSERT in ``begin_nested()``
+        (SAVEPOINT). Pre-9.4 a failed audit flush left the outer
+        SQLAlchemy transaction in a failed state — the request's
+        primary work (briefing INSERT, decision row, etc.) couldn't
+        commit afterward and the whole call surfaced as 500. The
+        savepoint isolates the failure so the auditor stays the
+        observability tier it's meant to be."""
         if self._recorded:
             return
         self._recorded = True
@@ -184,41 +191,44 @@ class LLMCallAuditor:
             else None
         )
         try:
-            row = LlmCallAudit(
-                tenant_id=self._ctx.tenant_id,
-                call_type=self._ctx.call_type,
-                related_entity_type=self._ctx.related_entity_type,
-                related_entity_id=self._ctx.related_entity_id,
-                prompt_template_key=self._ctx.prompt_template_key,
-                prompt_template_version=self._ctx.prompt_template_version,
-                prompt_hash=self._prompt_hash,
-                model_name=self._ctx.model_name,
-                model_provider=self._ctx.model_provider,
-                model_temperature=(
-                    Decimal(str(self._ctx.model_temperature))
-                    if self._ctx.model_temperature is not None
-                    else None
-                ),
-                model_max_tokens=self._ctx.model_max_tokens,
-                input_tokens=self._input_tokens,
-                output_tokens=self._output_tokens,
-                duration_ms=elapsed,
-                success=self._success,
-                error_type=self._error_type,
-                error_message=self._error_message,
-                fallback_used=self._fallback_used,
-                actor_user_id=self._ctx.actor_user_id,
-                request_id=self._ctx.request_id,
-                created_at=datetime.now(UTC),
-            )
-            self._session.add(row)
-            await self._session.flush()
+            async with self._session.begin_nested():
+                row = LlmCallAudit(
+                    tenant_id=self._ctx.tenant_id,
+                    call_type=self._ctx.call_type,
+                    related_entity_type=self._ctx.related_entity_type,
+                    related_entity_id=self._ctx.related_entity_id,
+                    prompt_template_key=self._ctx.prompt_template_key,
+                    prompt_template_version=self._ctx.prompt_template_version,
+                    prompt_hash=self._prompt_hash,
+                    model_name=self._ctx.model_name,
+                    model_provider=self._ctx.model_provider,
+                    model_temperature=(
+                        Decimal(str(self._ctx.model_temperature))
+                        if self._ctx.model_temperature is not None
+                        else None
+                    ),
+                    model_max_tokens=self._ctx.model_max_tokens,
+                    input_tokens=self._input_tokens,
+                    output_tokens=self._output_tokens,
+                    duration_ms=elapsed,
+                    success=self._success,
+                    error_type=self._error_type,
+                    error_message=self._error_message,
+                    fallback_used=self._fallback_used,
+                    actor_user_id=self._ctx.actor_user_id,
+                    request_id=self._ctx.request_id,
+                    created_at=datetime.now(UTC),
+                )
+                self._session.add(row)
+                await self._session.flush()
         except Exception:
-            _logger.exception(
-                "llm audit insert failed (non-fatal)",
+            _logger.warning(
+                "llm audit insert failed (non-fatal — savepoint rolled back)",
+                exc_info=True,
                 extra={
                     "tenant_id": str(self._ctx.tenant_id),
                     "call_type": self._ctx.call_type,
+                    "request_id": self._ctx.request_id,
                 },
             )
 
