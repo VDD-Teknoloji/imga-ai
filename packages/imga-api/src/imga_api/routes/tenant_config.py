@@ -14,7 +14,7 @@ from __future__ import annotations
 from typing import Annotated, Any
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from imga_db.models import AutomationMode, UserTenantRole
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -23,8 +23,10 @@ from imga_api.auth_deps import CurrentUser, bind_tenant, require_role
 from imga_api.db_deps import get_app_session
 from imga_api.dependencies import get_tenant_config_service
 from imga_api.services import (
+    DECISION_TENANT_SETTING_CHANGED,
     CategoryCodeConflictError,
     CategoryNotFoundError,
+    DecisionAuditService,
     TenantConfigError,
     TenantConfigService,
 )
@@ -187,6 +189,7 @@ async def list_categories(
 )
 async def update_automation_mode(
     body: AutomationModeUpdate,
+    request: Request,
     current: Annotated[CurrentUser, _TenantAdmin],
     app_session: Annotated[AsyncSession, Depends(get_app_session)],
     config: Annotated[TenantConfigService, Depends(get_tenant_config_service)],
@@ -202,6 +205,22 @@ async def update_automation_mode(
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)
             ) from exc
+        # Sprint 9.3 C — operator decision audit. Automation mode
+        # gates whether complaint reviews auto-spawn tickets, so the
+        # toggle is a load-bearing tenant policy decision; record it
+        # on the timeline alongside SLA + dispatch-mode flips.
+        await DecisionAuditService(app_session).record_decision(
+            tenant_id=tenant_id,
+            decision_type=DECISION_TENANT_SETTING_CHANGED,
+            related_entity_type="tenant",
+            related_entity_id=tenant_id,
+            actor_user_id=current.user_id,
+            payload={
+                "setting": "automation_mode",
+                "next": str(body.automation_mode),
+            },
+            request_id=getattr(request.state, "request_id", None),
+        )
 
 
 @router.patch(

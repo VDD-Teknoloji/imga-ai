@@ -23,13 +23,17 @@ from __future__ import annotations
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from imga_db.models import Tenant, UserTenantRole
 from pydantic import BaseModel, Field, field_validator, model_validator
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from imga_api.auth_deps import CurrentUser, bind_tenant, require_role
 from imga_api.db_deps import get_app_session
+from imga_api.services import (
+    DECISION_TENANT_SETTING_CHANGED,
+    DecisionAuditService,
+)
 from imga_api.services.strategic_constants import (
     COMPANY_SIZE_LABELS,
     INDUSTRY_LABELS,
@@ -149,6 +153,7 @@ async def get_tenant_profile(
 )
 async def update_tenant_profile(
     body: TenantProfileUpdateRequest,
+    request: Request,
     current: Annotated[CurrentUser, _WriteMember],
     app_session: Annotated[AsyncSession, Depends(get_app_session)],
 ) -> TenantProfileResponse:
@@ -180,6 +185,21 @@ async def update_tenant_profile(
                     "tenant row; provide it in the same PATCH"
                 ),
             )
+        # Sprint 9.3 C — operator decision audit. Profile fields feed
+        # SWOT/OKR prompts, so a profile edit changes downstream LLM
+        # output; surface the changed-field set on the timeline.
+        await DecisionAuditService(app_session).record_decision(
+            tenant_id=tenant_id,
+            decision_type=DECISION_TENANT_SETTING_CHANGED,
+            related_entity_type="tenant",
+            related_entity_id=tenant_id,
+            actor_user_id=current.user_id,
+            payload={
+                "setting": "profile",
+                "changed_fields": sorted(payload.keys()),
+            },
+            request_id=getattr(request.state, "request_id", None),
+        )
         return TenantProfileResponse(
             industry=tenant.industry,
             industry_other_text=tenant.industry_other_text,

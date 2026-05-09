@@ -28,7 +28,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from imga_api.auth_deps import CurrentUser, bind_tenant, require_role
 from imga_api.db_deps import get_app_session
-from imga_api.services import AuditService
+from imga_api.services import (
+    DECISION_TENANT_SETTING_CHANGED,
+    DECISION_WEBHOOK_DISPATCHED_MANUALLY,
+    AuditService,
+    DecisionAuditService,
+)
 from imga_api.services.pending_webhook_service import (
     PendingWebhookNotActionableError,
     PendingWebhookNotFoundError,
@@ -191,6 +196,23 @@ async def update_dispatch_mode(
                 "next": str(body.sla_webhook_dispatch_mode),
             },
         )
+        # Sprint 9.3 C — operator-decision audit. Toggling between
+        # automatic and manual dispatch is a tenant-wide policy
+        # change; tenant_setting_changed groups it with other
+        # operator-touched configuration on /admin/decision-audit.
+        await DecisionAuditService(app_session).record_decision(
+            tenant_id=tenant_id,
+            decision_type=DECISION_TENANT_SETTING_CHANGED,
+            related_entity_type="tenant",
+            related_entity_id=tenant_id,
+            actor_user_id=current.user_id,
+            payload={
+                "setting": "sla_webhook_dispatch_mode",
+                "previous": str(prev),
+                "next": str(body.sla_webhook_dispatch_mode),
+            },
+            request_id=getattr(request.state, "request_id", None),
+        )
     return DispatchModeResponse(
         sla_webhook_dispatch_mode=str(body.sla_webhook_dispatch_mode),
     )
@@ -275,7 +297,7 @@ async def approve_pending_webhook(
     current: Annotated[CurrentUser, _WriteMember],
     app_session: Annotated[AsyncSession, Depends(get_app_session)],
 ) -> PendingWebhookView:
-    _require_active_tenant(current)
+    tenant_id = _require_active_tenant(current)
     async with app_session.begin():
         await bind_tenant(app_session, current)
         audit = AuditService(app_session)
@@ -302,6 +324,25 @@ async def approve_pending_webhook(
             raise HTTPException(
                 status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)
             ) from exc
+        # Sprint 9.3 C — operator decision audit. The dispatcher
+        # commits its own state on the event row; the audit row
+        # captures who clicked the button + which channel/target.
+        # Recorded post-dispatch so a 502 from the destination still
+        # rolls the audit back with the rest of the transaction.
+        await DecisionAuditService(app_session).record_decision(
+            tenant_id=tenant_id,
+            decision_type=DECISION_WEBHOOK_DISPATCHED_MANUALLY,
+            related_entity_type="pending_webhook_event",
+            related_entity_id=event.id,
+            actor_user_id=current.user_id,
+            payload={
+                "webhook_target": str(event.webhook_target),
+                "channel": event.channel,
+                "review_id": str(event.review_id) if event.review_id else None,
+                "sla_rule_id": str(event.sla_rule_id) if event.sla_rule_id else None,
+            },
+            request_id=getattr(request.state, "request_id", None),
+        )
         return _to_view(event)
 
 

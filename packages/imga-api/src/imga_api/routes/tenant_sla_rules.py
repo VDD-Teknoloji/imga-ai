@@ -26,7 +26,7 @@ from datetime import datetime
 from typing import Annotated, Any
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from imga_db.models import SlaRule, UserTenantRole
 from pydantic import BaseModel, Field, field_validator, model_validator
 from sqlalchemy import select
@@ -34,6 +34,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from imga_api.auth_deps import CurrentUser, bind_tenant, require_role
 from imga_api.db_deps import get_app_session
+from imga_api.services import (
+    DECISION_SLA_RULE_CHANGED,
+    DecisionAuditService,
+)
 
 _logger = logging.getLogger(__name__)
 
@@ -305,6 +309,7 @@ async def list_sla_rules(
 )
 async def create_sla_rule(
     body: SlaRuleCreateRequest,
+    request: Request,
     current: Annotated[CurrentUser, _AdminOnly],
     app_session: Annotated[AsyncSession, Depends(get_app_session)],
 ) -> SlaRuleResponse:
@@ -332,6 +337,21 @@ async def create_sla_rule(
             # trigger a lazy reload via SQLAlchemy's sync path
             # (MissingGreenlet).
             await app_session.refresh(row, ["updated_at"])
+            await DecisionAuditService(app_session).record_decision(
+                tenant_id=tenant_id,
+                decision_type=DECISION_SLA_RULE_CHANGED,
+                related_entity_type="sla_rule",
+                related_entity_id=row.id,
+                actor_user_id=current.user_id,
+                payload={
+                    "action": "created",
+                    "name": body.name,
+                    "match_priority": body.match_priority,
+                    "action_type": body.action_type,
+                    "is_active": body.is_active,
+                },
+                request_id=getattr(request.state, "request_id", None),
+            )
             response = _row_to_response(row)
         return response
     except HTTPException:
@@ -352,6 +372,7 @@ async def create_sla_rule(
 async def update_sla_rule(
     rule_id: UUID,
     body: SlaRuleUpdateRequest,
+    request: Request,
     current: Annotated[CurrentUser, _AdminOnly],
     app_session: Annotated[AsyncSession, Depends(get_app_session)],
 ) -> SlaRuleResponse:
@@ -387,6 +408,18 @@ async def update_sla_rule(
             # trigger a lazy reload via SQLAlchemy's sync path
             # (MissingGreenlet).
             await app_session.refresh(row, ["updated_at"])
+            await DecisionAuditService(app_session).record_decision(
+                tenant_id=tenant_id,
+                decision_type=DECISION_SLA_RULE_CHANGED,
+                related_entity_type="sla_rule",
+                related_entity_id=row.id,
+                actor_user_id=current.user_id,
+                payload={
+                    "action": "updated",
+                    "changed_fields": sorted(data.keys()),
+                },
+                request_id=getattr(request.state, "request_id", None),
+            )
             response = _row_to_response(row)
         return response
     except HTTPException:
@@ -406,6 +439,7 @@ async def update_sla_rule(
 )
 async def delete_sla_rule(
     rule_id: UUID,
+    request: Request,
     current: Annotated[CurrentUser, _AdminOnly],
     app_session: Annotated[AsyncSession, Depends(get_app_session)],
 ) -> SlaRuleResponse:
@@ -421,6 +455,15 @@ async def delete_sla_rule(
             # trigger a lazy reload via SQLAlchemy's sync path
             # (MissingGreenlet).
             await app_session.refresh(row, ["updated_at"])
+            await DecisionAuditService(app_session).record_decision(
+                tenant_id=tenant_id,
+                decision_type=DECISION_SLA_RULE_CHANGED,
+                related_entity_type="sla_rule",
+                related_entity_id=row.id,
+                actor_user_id=current.user_id,
+                payload={"action": "deactivated"},
+                request_id=getattr(request.state, "request_id", None),
+            )
             response = _row_to_response(row)
         return response
     except HTTPException:
