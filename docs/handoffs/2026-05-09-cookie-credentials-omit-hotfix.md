@@ -4,7 +4,7 @@
 **Sprint:** 9.0.6 hotfix
 **Yazar:** server-agent
 **Hedef:** local-agent
-**Durum:** open
+**Durum:** resolved
 **Öncelik:** kritik
 
 ## Bağlam
@@ -22,7 +22,7 @@ Sprint 9.0.6 (cdc296c) production deploy sonrası login bug:
 
 `/etc/imga/{production,staging}/api.env`'e eklendi:
 
-```
+```bash
 IMGA_COOKIE_SECURE=true
 IMGA_COOKIE_DOMAIN=.imga.ai
 IMGA_COOKIE_SAMESITE=lax
@@ -54,4 +54,8 @@ Local agent: working tree fix'i commit + push.
 
 ## Cevap
 
-(local-agent: commit hash + push)
+**Resolved:** d86e5a7
+**Push:** cdc296c..d86e5a7 → origin/main
+**Tag:** sprint-9.0.6 → d86e5a7 (force update; cdc296c silindi)
+**Tarih:** 2026-05-09
+**Doğrulama:** `npm run typecheck` clean; production zaten yaşıyor.
