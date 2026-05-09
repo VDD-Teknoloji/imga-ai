@@ -1,6 +1,15 @@
 "use client";
 
-import { ArrowRight, Building2, KeyRound, ShieldAlert, Tags } from "lucide-react";
+import {
+  ArrowRight,
+  Building2,
+  CalendarClock,
+  KeyRound,
+  Layers,
+  ShieldAlert,
+  Tags,
+  Target,
+} from "lucide-react";
 import Link from "next/link";
 import { useMemo } from "react";
 
@@ -100,6 +109,50 @@ export default function SettingsPage() {
             <p className="text-sm font-medium">SLA Kuralları</p>
             <p className="text-muted-foreground text-xs">
               Yanıt/çözüm sürelerini koşullara göre yönet (uyarı şu an aktif).
+            </p>
+          </div>
+          <ArrowRight className="text-muted-foreground size-4" aria-hidden />
+        </Link>
+        {/* Sprint 9.4 I — three Sprint 9.2/9.3 surfaces that were
+            URL-only secrets before now show up in the index. */}
+        <Link
+          href="/settings/kpi-goals"
+          className="bg-card hover:bg-accent flex items-start gap-3 rounded-lg border p-4 transition-colors"
+        >
+          <Target className="text-primary mt-0.5 size-5" aria-hidden />
+          <div className="flex-1">
+            <p className="text-sm font-medium">KPI Hedefleri</p>
+            <p className="text-muted-foreground text-xs">
+              NPS / hacim / manuel inceleme oranı için dönemsel hedef
+              koy; dashboard kartları başarımı bu sayıyla ölçer.
+            </p>
+          </div>
+          <ArrowRight className="text-muted-foreground size-4" aria-hidden />
+        </Link>
+        <Link
+          href="/settings/business-dimensions"
+          className="bg-card hover:bg-accent flex items-start gap-3 rounded-lg border p-4 transition-colors"
+        >
+          <Layers className="text-primary mt-0.5 size-5" aria-hidden />
+          <div className="flex-1">
+            <p className="text-sm font-medium">İş Boyutları</p>
+            <p className="text-muted-foreground text-xs">
+              Segment / ürün hattı / kanal / müşteri tier'ı — CSV
+              upload eşleştirmesi + dashboard kırılımı.
+            </p>
+          </div>
+          <ArrowRight className="text-muted-foreground size-4" aria-hidden />
+        </Link>
+        <Link
+          href="/settings/scheduled-briefings"
+          className="bg-card hover:bg-accent flex items-start gap-3 rounded-lg border p-4 transition-colors"
+        >
+          <CalendarClock className="text-primary mt-0.5 size-5" aria-hidden />
+          <div className="flex-1">
+            <p className="text-sm font-medium">Zamanlanmış Brifingler</p>
+            <p className="text-muted-foreground text-xs">
+              Haftalık / aylık otomatik yönetici brifingi; alıcı listesi
+              + manuel "Şimdi gönder" testi.
             </p>
           </div>
           <ArrowRight className="text-muted-foreground size-4" aria-hidden />

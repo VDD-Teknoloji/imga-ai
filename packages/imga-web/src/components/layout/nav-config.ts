@@ -2,9 +2,12 @@ import {
   Bell,
   Building2,
   ClipboardList,
+  Code2,
   Compass,
+  Cpu,
   FileBarChart,
   FileSearch,
+  History,
   LayoutDashboard,
   ListChecks,
   Send,
@@ -51,7 +54,21 @@ export const NAV_ITEMS: ReadonlyArray<NavItem> = [
  * section under the main NAV_ITEMS, gated entirely behind
  * `user.is_super_admin === true` so non-admins never see the
  * heading at all.
+ *
+ * Sprint 9.4 I — three Sprint 9.3 governance pages added so they
+ * stop being URL-only secrets. Order: tenant management first
+ * (the established admin entry-point), then the three observability
+ * surfaces (LLM audit, decision audit, prompt templates) in the
+ * order an admin typically walks them — what the LLM did, what the
+ * humans decided, what prompts shaped both.
  */
 export const ADMIN_NAV_ITEMS: ReadonlyArray<NavItem> = [
   { label: "Tenant'lar", href: "/admin/tenants", icon: Building2 },
+  { label: "LLM Denetimi", href: "/admin/llm-audit", icon: Cpu },
+  { label: "Karar Geçmişi", href: "/admin/decision-audit", icon: History },
+  {
+    label: "Prompt Şablonları",
+    href: "/admin/prompt-templates",
+    icon: Code2,
+  },
 ];
