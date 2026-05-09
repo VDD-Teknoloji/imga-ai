@@ -30,6 +30,7 @@ from imga_api.dependencies import (
 from imga_api.middleware import RequestIDMiddleware, register_error_handlers
 from imga_api.routes import auth as auth_routes
 from imga_api.routes import invitations as public_invitation_routes
+from imga_api.routes import metric_definitions as metric_definitions_routes
 from imga_api.routes import tenant_action_items as tenant_action_items_routes
 from imga_api.routes import tenant_analytics as tenant_analytics_routes
 from imga_api.routes import tenant_analyze as tenant_analyze_routes
@@ -37,12 +38,16 @@ from imga_api.routes import tenant_batch as tenant_batch_routes
 from imga_api.routes import (
     tenant_batch_progress as tenant_batch_progress_routes,
 )
+from imga_api.routes import (
+    tenant_briefing_schedules as tenant_briefing_schedules_routes,
+)
 from imga_api.routes import tenant_config as tenant_config_routes
 from imga_api.routes import tenant_directory as tenant_directory_routes
 from imga_api.routes import (
     tenant_executive_briefings as tenant_executive_briefings_routes,
 )
 from imga_api.routes import tenant_insights as tenant_insights_routes
+from imga_api.routes import tenant_kpi_goals as tenant_kpi_goals_routes
 from imga_api.routes import tenant_llm_credentials as tenant_llm_credentials_routes
 from imga_api.routes import (
     tenant_pending_webhooks as tenant_pending_webhooks_routes,
@@ -329,7 +334,9 @@ app.include_router(tenant_taxonomies_routes.router)
 app.include_router(tenant_sla_rules_routes.router)
 app.include_router(tenant_insights_routes.router)
 app.include_router(tenant_executive_briefings_routes.router)
+app.include_router(tenant_briefing_schedules_routes.router)
 app.include_router(tenant_action_items_routes.router)
+app.include_router(tenant_kpi_goals_routes.router)
 app.include_router(tenant_trend_alerts_routes.router)
 app.include_router(tickets_routes.router)
 # Sprint 8.3.6.5 — strategic reports + LLM credentials + tenant profile.
@@ -341,6 +348,8 @@ app.include_router(admin_tenant_routes.router)
 app.include_router(admin_invitation_routes.router)
 app.include_router(admin_prompt_templates_routes.router)
 app.include_router(public_invitation_routes.router)
+# Sprint 9.2 A — public KPI metric registry.
+app.include_router(metric_definitions_routes.router)
 
 
 @app.get(

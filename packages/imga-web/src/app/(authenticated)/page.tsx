@@ -3,6 +3,7 @@
 import { CategoryChart } from "@/components/dashboard/category-chart";
 import { CategorySentimentMiniHeatmap } from "@/components/dashboard/category-sentiment-mini-heatmap";
 import { HeadlineMetricsCards } from "@/components/dashboard/headline-metrics-cards";
+import { KpiGoalCards } from "@/components/dashboard/KpiGoalCards";
 import { NpsMonthlyTrend } from "@/components/dashboard/nps-monthly-trend";
 import { RecentTicketsTable } from "@/components/dashboard/recent-tickets";
 import { SentimentDonut } from "@/components/dashboard/sentiment-donut";
@@ -37,6 +38,8 @@ export default function DashboardPage() {
       </header>
 
       <HeadlineMetricsCards />
+
+      <KpiGoalCards />
 
       <NpsMonthlyTrend />
 

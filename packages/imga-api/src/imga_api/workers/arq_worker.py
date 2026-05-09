@@ -33,6 +33,7 @@ import os
 from typing import Any
 from uuid import UUID
 
+from arq import cron
 from arq.connections import RedisSettings
 from cachetools import TTLCache
 
@@ -44,6 +45,7 @@ from imga_api.workers.batch_analyzer import (
     process_batch_job,
     recover_orphans,
 )
+from imga_api.workers.scheduled_briefings import scheduled_briefing_tick
 
 _logger = logging.getLogger("imga-api.workers.arq")
 
@@ -208,6 +210,17 @@ class WorkerSettings:
     job_timeout = 7200  # 2h
     keep_result = 86400  # 24h
     queue_name = "imga-batch"
+    # Sprint 9.2 D — every-5-min cron tick for scheduled briefings.
+    # The tick scans ``briefing_schedules`` for due rows; per-tenant
+    # generation work happens inside the tick so the arq queue
+    # itself isn't loaded with N enqueues per cycle.
+    cron_jobs = [
+        cron(
+            scheduled_briefing_tick,
+            minute={0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55},
+            run_at_startup=False,
+        ),
+    ]
 
 
 __all__ = [

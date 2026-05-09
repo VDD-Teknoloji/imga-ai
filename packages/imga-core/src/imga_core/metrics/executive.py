@@ -1,4 +1,13 @@
-"""Aggregate executive metrics over a list of AnalysisResults.
+"""Executive-summary metrics: aggregate functions over
+``AnalysisResult`` lists.
+
+Sprint 9.2 A — relocated from ``imga_core/metrics.py`` (a flat
+module) to ``imga_core/metrics/executive.py`` so the new
+``metrics`` package can house both these AnalysisResult-driven
+aggregates AND the pure-formula registry (``nps``, ``csat``, etc.).
+The import surface stays identical: ``from imga_core.metrics
+import ExecutiveMetrics, calculate_executive_metrics, ...`` works
+because the package's ``__init__.py`` re-exports.
 
 Pure functions, deterministic. No DataFrame coupling — accept
 list[AnalysisResult] and return primitive values or dicts.
@@ -97,3 +106,14 @@ def calculate_executive_metrics(results: list[AnalysisResult]) -> ExecutiveMetri
 def is_alert_state(results: list[AnalysisResult]) -> bool:
     """True when negative rate exceeds the alert threshold."""
     return negative_rate(results) > HIGH_NEGATIVE_RATE
+
+
+__all__ = [
+    "ExecutiveMetrics",
+    "calculate_executive_metrics",
+    "calculate_shi",
+    "count_crises",
+    "is_alert_state",
+    "negative_rate",
+    "top_bottlenecks",
+]

@@ -146,6 +146,25 @@ class ExecutiveBriefingService:
         industry_other = tenant.industry_other_text if tenant else None
         company_size = tenant.company_size if tenant else None
 
+        # Sprint 9.2 B — pull active KPI goals into the prompt context
+        # so the LLM can frame the headline as "NPS 65 (aylık hedef
+        # 70, %92.8 achievement)" instead of just "NPS 65". Best-
+        # effort: the executive briefing path is the goal data's
+        # *consumer*, not its source — if the goal table query fails
+        # or the tenant has no goals, the briefing still ships, just
+        # without the comparison framing.
+        kpi_goal_context = await self._collect_kpi_goal_context(
+            current_nps=current.nps_score,
+            current_total=current.total_reviews,
+        )
+
+        # Sprint 9.2 C — pull (or compute) today's executive snapshot
+        # so the prompt can reference it ("Aylık snapshot 2026-05-14:
+        # NPS 65, ..."). The snapshot service handles the cache hit
+        # vs cold-compute; we fall through silently if it errors so a
+        # cache infra hiccup doesn't block the briefing.
+        snapshot_payload = await self._collect_snapshot_context(period)
+
         prompt_ctx: dict[str, Any] = {
             "industry_label": industry_label(industry, industry_other),
             "company_size_label": company_size_label(company_size),
@@ -166,6 +185,8 @@ class ExecutiveBriefingService:
                 "avg_sentiment": previous.avg_sentiment,
                 "negative_share": previous.negative_share,
             },
+            "kpi_goals": kpi_goal_context,
+            "executive_snapshot": snapshot_payload,
         }
 
         # Credentials → rotator.
@@ -324,6 +345,87 @@ class ExecutiveBriefingService:
             raise BriefingResponseInvalidError(
                 f"executive briefing response missing required fields: {missing}"
             )
+
+    async def _collect_snapshot_context(
+        self, period: str,
+    ) -> dict[str, Any] | None:
+        """Sprint 9.2 C — read today's snapshot or compute it cold.
+
+        ``period`` maps directly to the snapshot table's period
+        column. Daily / weekly / monthly all share the same row shape;
+        the caller picks based on briefing cadence.
+        """
+        try:
+            from imga_api.services.snapshot_service import SnapshotService
+
+            service = SnapshotService(self._session)
+            payload = await service.get_or_compute(
+                tenant_id=self._tenant_id,
+                period=period if period in ("daily", "weekly", "monthly") else "monthly",
+            )
+            return {
+                "snapshot_date": payload.snapshot_date.isoformat(),
+                "period": payload.period,
+                "metrics": payload.metrics,
+                "review_count": payload.review_count,
+                "computed_at": payload.computed_at.isoformat(),
+                "computation_duration_ms": payload.computation_duration_ms,
+            }
+        except Exception:
+            _logger.exception(
+                "executive briefing: snapshot collection failed (non-fatal)",
+                extra={"tenant_id": str(self._tenant_id)},
+            )
+            return None
+
+    async def _collect_kpi_goal_context(
+        self,
+        *,
+        current_nps: float | None,
+        current_total: int,
+    ) -> list[dict[str, Any]]:
+        """Sprint 9.2 B — fold every active KPI goal into the prompt
+        context. Returns a list of ``{metric_key, target, current,
+        achievement_pct, on_track}`` dicts the LLM can quote in the
+        headline; an empty list is fine (the prompt template only
+        renders the section when the array is non-empty).
+
+        Best-effort: any failure (RLS hiccup, missing tenant) logs +
+        falls through to ``[]`` so the briefing still ships."""
+        try:
+            from imga_api.services.kpi_goal_service import KpiGoalService
+
+            service = KpiGoalService(self._session)
+            goals = await service.list_active(tenant_id=self._tenant_id)
+            if not goals:
+                return []
+            current_by_key: dict[str, float] = {}
+            if current_nps is not None:
+                current_by_key["nps"] = float(current_nps)
+            current_by_key["review_volume"] = float(current_total)
+            payload: list[dict[str, Any]] = []
+            for goal in goals:
+                progress = KpiGoalService.compute_progress(
+                    goal, current_by_key.get(goal.metric_key)
+                )
+                payload.append(
+                    {
+                        "metric_key": progress.metric_key,
+                        "target": progress.target_value,
+                        "current": progress.current_value,
+                        "achievement_pct": progress.achievement_pct,
+                        "on_track": progress.on_track,
+                        "period": progress.target_period,
+                        "higher_is_better": progress.higher_is_better,
+                    }
+                )
+            return payload
+        except Exception:
+            _logger.exception(
+                "executive briefing: KPI goal context collection failed",
+                extra={"tenant_id": str(self._tenant_id)},
+            )
+            return []
 
     async def _persist(
         self,

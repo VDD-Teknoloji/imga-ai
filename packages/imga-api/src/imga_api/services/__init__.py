@@ -48,6 +48,25 @@ from imga_api.services.invitation_service import (
     InvitationReauthFailedError,
     InvitationService,
 )
+from imga_api.services.briefing_schedule_service import (
+    BriefingScheduleError,
+    BriefingScheduleService,
+    ScheduleNotFound,
+    ScheduleSpec,
+    compute_next_run_at,
+)
+from imga_api.services.kpi_goal_service import (
+    GoalAlreadyExists,
+    GoalProgress,
+    KpiGoalError,
+    KpiGoalNotFound,
+    KpiGoalService,
+    UnknownMetricKey,
+)
+from imga_api.services.snapshot_service import (
+    SnapshotPayload,
+    SnapshotService,
+)
 from imga_api.services.report_service import (
     ReportEstimate,
     ReportExpiredError,
@@ -141,12 +160,25 @@ __all__ = [
     "ForbiddenTransitionError",
     "GroupBy",
     "InvalidTransitionError",
+    "BriefingScheduleError",
+    "BriefingScheduleService",
+    "GoalAlreadyExists",
+    "GoalProgress",
     "InvitationAcceptanceError",
     "InvitationEmailExistsError",
     "InvitationEmailMismatchError",
     "InvitationPreview",
     "InvitationReauthFailedError",
     "InvitationService",
+    "KpiGoalError",
+    "KpiGoalNotFound",
+    "KpiGoalService",
+    "ScheduleNotFound",
+    "ScheduleSpec",
+    "SnapshotPayload",
+    "SnapshotService",
+    "UnknownMetricKey",
+    "compute_next_run_at",
     "OrderBy",
     "OrderDirection",
     "ReportEstimate",

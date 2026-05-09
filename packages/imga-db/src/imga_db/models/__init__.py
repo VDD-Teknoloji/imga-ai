@@ -5,11 +5,14 @@ from imga_db.models.action_item import ActionItem, ActionItemEvent
 from imga_db.models.assignment_history import TicketAssignmentEvent
 from imga_db.models.audit import AuditLog
 from imga_db.models.batch_job import AnalyzeBatchJob, BatchJobStatus
+from imga_db.models.briefing_schedule import BriefingSchedule
 from imga_db.models.category import Category, TenantCategory
 from imga_db.models.category_taxonomy import CategoryTaxonomy
 from imga_db.models.comment import TicketComment, TicketCommentKind
 from imga_db.models.executive_briefing import ExecutiveBriefing
+from imga_db.models.executive_snapshot import ExecutiveSnapshot
 from imga_db.models.invitation import Invitation
+from imga_db.models.metric_definition import MetricDefinition
 from imga_db.models.mixins import SoftDeleteMixin, TenantOwnedMixin, TimestampMixin
 from imga_db.models.pending_webhook import (
     PendingWebhookEvent,
@@ -34,6 +37,7 @@ from imga_db.models.tenant import (
     Tenant,
     TenantPlanTier,
 )
+from imga_db.models.tenant_kpi_goal import TenantKpiGoal
 from imga_db.models.tenant_llm_credential import TenantLlmCredential
 from imga_db.models.trend_alert import TrendAlert
 from imga_db.models.ticket import (
@@ -53,11 +57,14 @@ __all__ = [
     "AuditLog",
     "AutomationMode",
     "BatchJobStatus",
+    "BriefingSchedule",
     "CancellationReason",
     "Category",
     "CategoryTaxonomy",
     "ExecutiveBriefing",
+    "ExecutiveSnapshot",
     "Invitation",
+    "MetricDefinition",
     "PendingWebhookEvent",
     "PendingWebhookStatus",
     "PendingWebhookTarget",
@@ -76,6 +83,7 @@ __all__ = [
     "TaxonomyEditAudit",
     "Tenant",
     "TenantCategory",
+    "TenantKpiGoal",
     "TenantLlmCredential",
     "TenantOwnedMixin",
     "TenantPlanTier",

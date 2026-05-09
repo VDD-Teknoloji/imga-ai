@@ -456,6 +456,20 @@ async def _run_job(
         batch_service = BatchAnalyzeService(admin_session, audit)
         await batch_service.mark_completed(job_id)
         completed_job = await admin_session.get(AnalyzeBatchJob, job_id)
+        # Sprint 9.2 C — invalidate today's executive snapshot for
+        # this tenant. Best-effort: a failed invalidate just means
+        # the next snapshot read sees the cursor advance and
+        # recomputes anyway. Inline import keeps the worker free of
+        # the snapshot dep at module load.
+        from imga_api.services.snapshot_service import SnapshotService
+
+        try:
+            await SnapshotService(admin_session).invalidate(tenant_id=tenant_id)
+        except Exception:
+            log.exception(
+                "batch worker: snapshot invalidation failed (non-fatal)",
+                extra={"job_id": str(job_id), "tenant_id": str(tenant_id)},
+            )
     await _publish_terminal(job_id, tenant_id, context)
     # Sprint 9.1 E — per-batch structured summary. Lands once at
     # successful completion (the cancellation + catastrophic-failure
