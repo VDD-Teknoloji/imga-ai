@@ -187,10 +187,26 @@ class Settings:
         cookie_samesite_raw = os.environ.get("IMGA_COOKIE_SAMESITE", "lax").lower()
         if cookie_samesite_raw not in ("lax", "strict", "none"):
             cookie_samesite_raw = "lax"
+        # Sprint 9.1 I — production-aware default for cookie.secure.
+        # 9.0.6 shipped with secure=False as the default which meant a
+        # misconfigured production server would silently accept plain
+        # HTTP and skip the Secure flag. We now flip the default based
+        # on IMGA_ENV: ``production`` / ``staging`` defaults to True
+        # (HTTPS-only), other values keep the dev-friendly False so
+        # localhost still works without a TLS cert. Explicit
+        # IMGA_COOKIE_SECURE always wins.
+        env_name = os.environ.get("IMGA_ENV", "development").lower()
+        cookie_secure_default = env_name in ("production", "staging")
+        cookie_secure_raw = os.environ.get("IMGA_COOKIE_SECURE")
+        cookie_secure = (
+            cookie_secure_raw.lower() == "true"
+            if cookie_secure_raw is not None
+            else cookie_secure_default
+        )
         cookies = CookieSettings(
             access_name=os.environ.get("IMGA_COOKIE_ACCESS_NAME", "imga_access"),
             refresh_name=os.environ.get("IMGA_COOKIE_REFRESH_NAME", "imga_refresh"),
-            secure=os.environ.get("IMGA_COOKIE_SECURE", "false").lower() == "true",
+            secure=cookie_secure,
             samesite=cookie_samesite_raw,
             domain=os.environ.get("IMGA_COOKIE_DOMAIN") or None,
             path=os.environ.get("IMGA_COOKIE_PATH", "/"),

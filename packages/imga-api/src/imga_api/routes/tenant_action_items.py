@@ -1,17 +1,24 @@
 """``/tenants/me/action-items`` — task tracking surface.
 
-Sprint 8.3.10. Five endpoints:
+Sprint 8.3.10. Endpoints:
 
-  * GET    /                        — list with filters
+  * GET    /                        — list with filters; defaults to
+                                      active rows only,
+                                      ``?include_archived=true`` widens
+                                      the scope (Sprint 9.1 A).
   * POST   /                        — manual create
   * PATCH  /{id}                    — edit (status/priority/assignee/due)
-  * DELETE /{id}                    — hard delete (no soft-delete this
-                                      sprint; the kanban hides
-                                      "cancelled" vs "deleted" from the
-                                      user)
+  * DELETE /{id}                    — Sprint 9.1 A: soft delete via
+                                      ``ActionItemService.archive`` —
+                                      the row stays for the audit trail
+                                      and can be restored.
+  * POST   /{id}/restore            — un-archive (Sprint 9.1 A).
+  * GET    /{id}/events             — audit timeline (Sprint 9.1 A).
   * POST   /extract-from-report/{report_id}
                                     — pull strategic_recommendations
-                                      from a SWOT row into action_items
+                                      from a SWOT row into action_items;
+                                      emits ``created`` events with
+                                      ``actor_type=llm_extraction``.
 
 logger.exception() on every catch path — Sprint 8.3.6.6 round-3
 baseline note.
@@ -25,13 +32,25 @@ from typing import Annotated, Any
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from imga_db.models import ActionItem, StrategicReport, UserTenantRole
+from imga_db.models import (
+    ActionItem,
+    ActionItemEvent,
+    StrategicReport,
+    UserTenantRole,
+)
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from imga_api.auth_deps import CurrentUser, bind_tenant, require_role
 from imga_api.db_deps import get_app_session
+from imga_api.services import (
+    ACTOR_LLM_EXTRACTION,
+    ActionItemAlreadyArchived,
+    ActionItemNotArchived,
+    ActionItemNotFound,
+    ActionItemService,
+)
 
 _logger = logging.getLogger(__name__)
 
@@ -66,6 +85,23 @@ class ActionItemResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
     completed_at: datetime | None
+    # Sprint 9.1 A — soft-delete state. ``is_archived`` is the
+    # derived bool the UI binds to; the timestamp lets the user see
+    # *when* the archive happened on the timeline view.
+    is_archived: bool
+    archived_at: datetime | None
+    archived_by: UUID | None
+
+
+class ActionItemEventResponse(BaseModel):
+    """Sprint 9.1 A — single audit-trail row, newest-first ordering."""
+
+    id: UUID
+    event_type: str
+    actor_user_id: UUID | None
+    actor_type: str
+    payload: dict[str, Any]
+    created_at: datetime
 
 
 class ActionItemCreateRequest(BaseModel):
@@ -172,6 +208,20 @@ def _row_to_response(row: ActionItem) -> ActionItemResponse:
         created_at=row.created_at,
         updated_at=row.updated_at,
         completed_at=row.completed_at,
+        is_archived=row.archived_at is not None,
+        archived_at=row.archived_at,
+        archived_by=row.archived_by,
+    )
+
+
+def _event_to_response(row: ActionItemEvent) -> ActionItemEventResponse:
+    return ActionItemEventResponse(
+        id=row.id,
+        event_type=row.event_type,
+        actor_user_id=row.actor_user_id,
+        actor_type=row.actor_type,
+        payload=dict(row.payload or {}),
+        created_at=row.created_at,
     )
 
 
@@ -186,6 +236,7 @@ async def list_action_items(
     status_filter: str | None = None,
     priority: str | None = None,
     assignee_user_id: UUID | None = None,
+    include_archived: bool = False,
 ) -> list[ActionItemResponse]:
     if status_filter is not None and status_filter not in ALLOWED_STATUSES:
         raise HTTPException(
@@ -201,6 +252,8 @@ async def list_action_items(
     async with app_session.begin():
         await bind_tenant(app_session, current)
         stmt = select(ActionItem).where(ActionItem.tenant_id == tenant_id)
+        if not include_archived:
+            stmt = stmt.where(ActionItem.archived_at.is_(None))
         if status_filter is not None:
             stmt = stmt.where(ActionItem.status == status_filter)
         if priority is not None:
@@ -240,6 +293,14 @@ async def create_action_item(
             )
             app_session.add(row)
             await app_session.flush()
+            # Sprint 9.1 A — journal the creation. ActionItemService
+            # writes the event row inside the same transaction.
+            service = ActionItemService(app_session)
+            await service.emit_created(
+                row=row,
+                actor_user_id=current.user_id,
+                payload={"source": "manual"},
+            )
             response = _row_to_response(row)
         return response
     except HTTPException:
@@ -267,24 +328,22 @@ async def update_action_item(
     try:
         async with app_session.begin():
             await bind_tenant(app_session, current)
-            row = await app_session.get(ActionItem, item_id)
-            if row is None or row.tenant_id != tenant_id:
-                raise HTTPException(
-                    status_code=status.HTTP_404_NOT_FOUND,
-                    detail="action item bulunamadı",
-                )
-            data = body.model_dump(exclude_unset=True)
-            for key, value in data.items():
-                setattr(row, key, value)
-            # Auto-stamp completed_at when transitioning to ``done``.
-            if "status" in data and data["status"] == "done" and row.completed_at is None:
-                row.completed_at = datetime.utcnow()
-            elif "status" in data and data["status"] != "done":
-                row.completed_at = None
-            await app_session.flush()
+            service = ActionItemService(app_session)
+            updates = body.model_dump(exclude_unset=True)
+            row = await service.update(
+                item_id=item_id,
+                tenant_id=tenant_id,
+                updates=updates,
+                actor_user_id=current.user_id,
+            )
             await app_session.refresh(row, ["updated_at"])
             response = _row_to_response(row)
         return response
+    except ActionItemNotFound as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="action item bulunamadı",
+        ) from exc
     except HTTPException:
         raise
     except Exception:
@@ -298,9 +357,13 @@ async def update_action_item(
 @router.delete(
     "/{item_id}",
     status_code=status.HTTP_204_NO_CONTENT,
-    summary="Hard-delete an action item.",
+    summary=(
+        "Archive an action item. Sprint 9.1 A — soft delete; the row "
+        "stays for the audit trail and can be restored via "
+        "POST /{id}/restore."
+    ),
 )
-async def delete_action_item(
+async def archive_action_item(
     item_id: UUID,
     current: Annotated[CurrentUser, _WriteMember],
     app_session: Annotated[AsyncSession, Depends(get_app_session)],
@@ -309,21 +372,103 @@ async def delete_action_item(
     try:
         async with app_session.begin():
             await bind_tenant(app_session, current)
-            row = await app_session.get(ActionItem, item_id)
-            if row is None or row.tenant_id != tenant_id:
-                raise HTTPException(
-                    status_code=status.HTTP_404_NOT_FOUND,
-                    detail="action item bulunamadı",
-                )
-            await app_session.delete(row)
+            service = ActionItemService(app_session)
+            await service.archive(
+                item_id=item_id,
+                tenant_id=tenant_id,
+                actor_user_id=current.user_id,
+            )
+    except ActionItemNotFound as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="action item bulunamadı",
+        ) from exc
+    except ActionItemAlreadyArchived as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="action item zaten arşivde",
+        ) from exc
     except HTTPException:
         raise
     except Exception:
         _logger.exception(
-            "delete_action_item failed",
+            "archive_action_item failed",
             extra={"tenant_id": str(tenant_id), "item_id": str(item_id)},
         )
         raise
+
+
+@router.post(
+    "/{item_id}/restore",
+    response_model=ActionItemResponse,
+    summary="Un-archive a previously soft-deleted action item.",
+)
+async def restore_action_item(
+    item_id: UUID,
+    current: Annotated[CurrentUser, _WriteMember],
+    app_session: Annotated[AsyncSession, Depends(get_app_session)],
+) -> ActionItemResponse:
+    tenant_id = _require_active_tenant(current)
+    try:
+        async with app_session.begin():
+            await bind_tenant(app_session, current)
+            service = ActionItemService(app_session)
+            row = await service.restore(
+                item_id=item_id,
+                tenant_id=tenant_id,
+                actor_user_id=current.user_id,
+            )
+            response = _row_to_response(row)
+        return response
+    except ActionItemNotFound as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="action item bulunamadı",
+        ) from exc
+    except ActionItemNotArchived as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="action item arşivde değil",
+        ) from exc
+    except HTTPException:
+        raise
+    except Exception:
+        _logger.exception(
+            "restore_action_item failed",
+            extra={"tenant_id": str(tenant_id), "item_id": str(item_id)},
+        )
+        raise
+
+
+@router.get(
+    "/{item_id}/events",
+    response_model=list[ActionItemEventResponse],
+    summary="Audit timeline (newest first).",
+)
+async def list_action_item_events(
+    item_id: UUID,
+    current: Annotated[CurrentUser, _AnyMember],
+    app_session: Annotated[AsyncSession, Depends(get_app_session)],
+) -> list[ActionItemEventResponse]:
+    tenant_id = _require_active_tenant(current)
+    async with app_session.begin():
+        await bind_tenant(app_session, current)
+        # 404 if the item itself isn't visible — the events table
+        # cascades on item delete so an empty list could mean either
+        # "never seen" or "purged"; an explicit 404 disambiguates.
+        item = await app_session.get(ActionItem, item_id)
+        if item is None or item.tenant_id != tenant_id:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="action item bulunamadı",
+            )
+        stmt = (
+            select(ActionItemEvent)
+            .where(ActionItemEvent.action_item_id == item_id)
+            .order_by(ActionItemEvent.created_at.desc())
+        )
+        rows = (await app_session.execute(stmt)).scalars().all()
+    return [_event_to_response(r) for r in rows]
 
 
 @router.post(
@@ -344,7 +489,9 @@ async def extract_from_report(
     insert one action_item per entry. Each new row carries
     ``source_report_id`` so the UI can link back. Existing items
     from the same report are NOT deduplicated — calling extract
-    twice doubles the rows; the user can delete duplicates manually.
+    twice doubles the rows; the user can archive duplicates manually.
+    Sprint 9.1 A: each row also gets a ``created`` event with
+    ``actor_type=llm_extraction``.
     """
     tenant_id = _require_active_tenant(current)
     try:
@@ -386,6 +533,17 @@ async def extract_from_report(
                 app_session.add(row)
                 created.append(row)
             await app_session.flush()
+            service = ActionItemService(app_session)
+            for row in created:
+                await service.emit_created(
+                    row=row,
+                    actor_user_id=current.user_id,
+                    actor_type=ACTOR_LLM_EXTRACTION,
+                    payload={
+                        "source_report_id": str(report.id),
+                        "report_type": "swot",
+                    },
+                )
             response = [_row_to_response(r) for r in created]
         return response
     except HTTPException:

@@ -1,7 +1,7 @@
 """SQLAlchemy 2.0 models for the imga platform."""
 
 from imga_db.models.action_extraction_log import ActionItemExtractionLog
-from imga_db.models.action_item import ActionItem
+from imga_db.models.action_item import ActionItem, ActionItemEvent
 from imga_db.models.assignment_history import TicketAssignmentEvent
 from imga_db.models.audit import AuditLog
 from imga_db.models.batch_job import AnalyzeBatchJob, BatchJobStatus
@@ -47,6 +47,7 @@ from imga_db.models.user import User, UserTenantLink, UserTenantRole
 
 __all__ = [
     "ActionItem",
+    "ActionItemEvent",
     "ActionItemExtractionLog",
     "AnalyzeBatchJob",
     "AuditLog",

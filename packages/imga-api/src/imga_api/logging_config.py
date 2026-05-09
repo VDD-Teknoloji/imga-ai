@@ -27,7 +27,11 @@ from __future__ import annotations
 import logging
 import sys
 
-_FORMAT = "%(asctime)s %(levelname)s %(name)s: %(message)s"
+# Sprint 9.1 C — ``request_id`` is injected onto every record by
+# RequestIDLogFilter; format string surfaces it so support tickets
+# can grep the journal by id. Empty string for records emitted
+# outside any HTTP request (worker chunk logs, lifespan startup).
+_FORMAT = "%(asctime)s %(levelname)s %(name)s [req=%(request_id)s]: %(message)s"
 _PROJECT_NAMESPACES = ("imga_api", "imga_core", "imga-api")
 _CONFIGURED_FLAG = "_imga_logging_configured"
 
@@ -48,10 +52,16 @@ def configure_logging(level: int = logging.INFO) -> None:
     if getattr(root, _CONFIGURED_FLAG, False):
         return
 
+    # Local import — avoids a circular import at module load (the
+    # middleware module pulls FastAPI/starlette which the worker
+    # process doesn't need until configure_logging is called).
+    from imga_api.middleware.request_id import RequestIDLogFilter
+
     formatter = logging.Formatter(_FORMAT)
     handler = logging.StreamHandler(sys.stderr)
     handler.setFormatter(formatter)
     handler.setLevel(level)
+    handler.addFilter(RequestIDLogFilter())
 
     # Don't double-attach if some other framework (uvicorn, arq)
     # already wired its own handler to root — its handler stays,

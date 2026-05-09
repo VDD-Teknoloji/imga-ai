@@ -34,6 +34,7 @@ import asyncio
 import contextlib
 import json
 import logging
+import time
 from collections.abc import Iterable, Iterator
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -307,6 +308,11 @@ async def _run_job(
     tenant_id: UUID,
     context: WorkerContext,
 ) -> None:
+    # Sprint 9.1 E — wall-clock timer for the per-batch summary log
+    # emitted alongside the terminal transition. Same monotonic-clock
+    # rationale as the per-chunk timer.
+    job_started_at = time.monotonic()
+
     # Initial transition: queued → processing.
     # mark_processing is idempotent: it returns the row untouched if the
     # status is no longer QUEUED. The cancel endpoint runs in a separate
@@ -449,7 +455,34 @@ async def _run_job(
         audit = AuditService(admin_session)
         batch_service = BatchAnalyzeService(admin_session, audit)
         await batch_service.mark_completed(job_id)
+        completed_job = await admin_session.get(AnalyzeBatchJob, job_id)
     await _publish_terminal(job_id, tenant_id, context)
+    # Sprint 9.1 E — per-batch structured summary. Lands once at
+    # successful completion (the cancellation + catastrophic-failure
+    # paths return early above so they don't emit this line — those
+    # have their own log entries on the way out).
+    if completed_job is not None:
+        duration = time.monotonic() - job_started_at
+        processed = completed_job.processed_rows or 0
+        log.info(
+            "batch completed",
+            extra={
+                "batch_job_id": str(job_id),
+                "tenant_id": str(tenant_id),
+                "total_rows": completed_job.total_rows or 0,
+                "rows_processed": processed,
+                "rows_succeeded": completed_job.succeeded_rows or 0,
+                "rows_failed": completed_job.failed_rows or 0,
+                "tickets_created": completed_job.tickets_created or 0,
+                "duplicates_skipped": completed_job.duplicates_skipped or 0,
+                "duration_sec": round(duration, 2),
+                "throughput_rows_per_sec": (
+                    round(processed / duration, 2) if duration > 0 else 0.0
+                ),
+                "chunk_size": context.settings.chunk_size,
+                "chunk_concurrency": context.chunk_concurrency,
+            },
+        )
 
 
 async def _run_chunks_parallel(
@@ -615,6 +648,14 @@ async def _process_chunk(
     tickets = 0
     duplicates = 0
     rows_with_nps_in_chunk = 0
+    # Sprint 9.1 E — chunk-level timing for the structured log emitted
+    # at the bottom of this function. ``time.monotonic()`` is the
+    # right tool for elapsed measurement; wall-clock would be tripped
+    # by NTP slews mid-run.
+    chunk_started_at = time.monotonic()
+    bert_seconds = 0.0
+    db_seconds = 0.0
+    llm_fallback_count = 0
 
     # Pre-filter empty rows (don't burn BERT inference on whitespace).
     valid_rows: list[Any] = []
@@ -660,6 +701,7 @@ async def _process_chunk(
     # loop until BERT finished (~1.4s × 2852 = ~67 min projected).
     texts = [r.text for r in valid_rows]
     pipeline = _select_pipeline(context, chunk_index=chunk_index)
+    bert_started_at = time.monotonic()
     try:
         # Sprint 9.0.5-A B2 + B6 — analyze_batch_async runs BERT and
         # the category classifier on parallel threads via to_thread,
@@ -672,6 +714,7 @@ async def _process_chunk(
         analyses: list[AnalysisResult] = await pipeline.analyze_batch_async(
             texts, classifier=classifier_override,
         )
+        bert_seconds = time.monotonic() - bert_started_at
     except Exception as exc:
         log.exception("batch chunk inference failed: %s", exc)
         for parsed in valid_rows:
@@ -692,8 +735,17 @@ async def _process_chunk(
         )
         return
 
+    # Count rows that triggered an LLM fallback (HybridClassifier
+    # exposes ``llm_fallback`` on each AnalysisResult.categorization
+    # when present). Best-effort: stays 0 for keyword-only pipelines.
+    for analysis in analyses:
+        cat = analysis.categorization
+        if cat is not None and getattr(cat, "llm_fallback", False):
+            llm_fallback_count += 1
+
     # Persist — RLS-bound app session so reviews + tickets land
     # tenant-scoped via the same path as /tenants/me/analyze.
+    db_started_at = time.monotonic()
     async with context.app_session_factory() as app_session, app_session.begin():
         await set_current_tenant(app_session, tenant_id)
         audit = AuditService(app_session)
@@ -857,6 +909,8 @@ async def _process_chunk(
                 if parsed.nps_score is not None:
                     rows_with_nps_in_chunk += 1
 
+    db_seconds = time.monotonic() - db_started_at
+
     # Single progress write per chunk on the admin session (RLS still
     # applied via FORCE; we set tenant context).
     await _commit_progress(
@@ -873,6 +927,30 @@ async def _process_chunk(
             error_entries=error_entries or None,
             checkpoint_row=chunk_checkpoint,
         ),
+    )
+
+    # Sprint 9.1 E — chunk-level structured log. The per-chunk write
+    # makes a 10K-row run produce ~50 traceable lines (chunk_size 200,
+    # one per chunk) instead of one batch-summary line and a wall of
+    # opaque progress writes. Fields are picked to answer "where did
+    # the time go?" — bert vs db vs llm fallback overhead.
+    log.info(
+        "batch chunk processed",
+        extra={
+            "batch_job_id": str(job_id),
+            "tenant_id": str(tenant_id),
+            "chunk_index": chunk_index,
+            "chunk_size": len(chunk),
+            "rows_processed": len(chunk),
+            "rows_succeeded": succeeded,
+            "rows_failed": failed,
+            "rows_with_llm_fallback": llm_fallback_count,
+            "tickets_created": tickets,
+            "duplicates_skipped": duplicates,
+            "bert_ms": round(bert_seconds * 1000, 2),
+            "db_ms": round(db_seconds * 1000, 2),
+            "total_ms": round((time.monotonic() - chunk_started_at) * 1000, 2),
+        },
     )
 
 

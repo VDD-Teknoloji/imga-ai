@@ -152,9 +152,15 @@ class HybridClassifier(CategoryClassifier):
 
         try:
             llm_result = self.llm.classify(text, self._available_categories)
-        except LLMProviderError as exc:
+        except LLMProviderError:
+            # Sprint 9.1 D — exc_info preserves the chained traceback
+            # so we can see whether the failure was a 504, an invalid
+            # API key, malformed JSON, or a SDK plumbing surprise.
+            # ``warning`` (not ``error``) because the keyword fallback
+            # is a valid degraded path, not a hard failure.
             _logger.warning(
-                "LLM classification failed (%s); falling back to keyword result", exc
+                "LLM classification failed; falling back to keyword result",
+                exc_info=True,
             )
             return keyword_result.model_copy(update={"requires_manual_review": True})
 
@@ -281,13 +287,17 @@ class HybridClassifier(CategoryClassifier):
                     llm_result = await self.llm.classify_async(  # type: ignore[union-attr]
                         texts[idx], self._available_categories,
                     )
-                except LLMProviderError as exc:
+                except LLMProviderError:
                     self._record_llm_failure()
+                    # Sprint 9.1 D — exc_info preserves the chained
+                    # traceback so we can see *which* layer of the
+                    # SDK / rotator / circuit broke, not just the
+                    # outer message.
                     _logger.warning(
-                        "LLM classification failed for row %d (%s); "
+                        "LLM classification failed for row %d; "
                         "falling back to keyword result",
                         idx,
-                        exc,
+                        exc_info=True,
                     )
                     return idx, None
                 except Exception:

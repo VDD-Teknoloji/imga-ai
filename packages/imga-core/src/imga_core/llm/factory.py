@@ -56,8 +56,9 @@ def _build_gemini() -> LLMProvider | None:
 
     model_name = os.environ.get("IMGA_GEMINI_MODEL", "gemini-2.5-flash")
 
-    # Imported here so the package works when google-generativeai isn't
-    # installed and LLM fallback is disabled.
+    # Imported here so the package works when google-genai isn't
+    # installed and LLM fallback is disabled (Sprint 9.1 H — migrated
+    # from google-generativeai).
     from imga_core.llm.gemini import GeminiProvider
 
     return GeminiProvider(api_key=api_key, model_name=model_name)

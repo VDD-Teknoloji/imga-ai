@@ -1,4 +1,5 @@
 // Sprint 8.3.10 — action items CRUD + extract-from-report hook.
+// Sprint 9.1 A — archive (soft delete), restore, audit-timeline.
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
@@ -6,6 +7,7 @@ import { apiRequest } from "@/lib/api-client";
 import type {
   ActionItem,
   ActionItemCreateRequest,
+  ActionItemEvent,
   ActionItemPriority,
   ActionItemStatus,
   ActionItemUpdateRequest,
@@ -17,6 +19,9 @@ interface ListFilters {
   status?: ActionItemStatus;
   priority?: ActionItemPriority;
   assignee_user_id?: string;
+  // Sprint 9.1 A — flip true to widen the list to archived rows.
+  // Default false matches the route layer.
+  include_archived?: boolean;
 }
 
 function listKey(filters: ListFilters): readonly unknown[] {
@@ -26,6 +31,7 @@ function listKey(filters: ListFilters): readonly unknown[] {
       status: filters.status ?? null,
       priority: filters.priority ?? null,
       assignee: filters.assignee_user_id ?? null,
+      includeArchived: filters.include_archived ?? false,
     },
   ];
 }
@@ -37,6 +43,7 @@ function listQs(filters: ListFilters): string {
   if (filters.assignee_user_id) {
     params.set("assignee_user_id", filters.assignee_user_id);
   }
+  if (filters.include_archived) params.set("include_archived", "true");
   return params.toString();
 }
 
@@ -79,6 +86,13 @@ export function useUpdateActionItem() {
   });
 }
 
+/**
+ * Sprint 9.1 A — DELETE is now a soft-delete (archive) on the
+ * backend; the hook keeps its old name + signature so existing
+ * call-sites don't move, but the semantic shifts: the row stays
+ * for the audit trail and reappears when ``include_archived=true``.
+ * The ``useRestoreActionItem`` hook below brings it back.
+ */
 export function useDeleteActionItem() {
   const qc = useQueryClient();
   return useMutation<void, Error, string>({
@@ -87,6 +101,30 @@ export function useDeleteActionItem() {
         method: "DELETE",
       }),
     onSuccess: () => qc.invalidateQueries({ queryKey: QUERY_KEY }),
+  });
+}
+
+/** Sprint 9.1 A — un-archive. */
+export function useRestoreActionItem() {
+  const qc = useQueryClient();
+  return useMutation<ActionItem, Error, string>({
+    mutationFn: (id) =>
+      apiRequest<ActionItem>(`/tenants/me/action-items/${id}/restore`, {
+        method: "POST",
+      }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: QUERY_KEY }),
+  });
+}
+
+/** Sprint 9.1 A — audit timeline for one item, newest first. */
+export function useActionItemEvents(itemId: string | undefined) {
+  return useQuery<ActionItemEvent[]>({
+    queryKey: [...QUERY_KEY, "events", itemId],
+    enabled: typeof itemId === "string" && itemId.length > 0,
+    queryFn: () =>
+      apiRequest<ActionItemEvent[]>(
+        `/tenants/me/action-items/${itemId}/events`,
+      ),
   });
 }
 

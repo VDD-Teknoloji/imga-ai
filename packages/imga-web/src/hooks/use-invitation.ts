@@ -8,9 +8,10 @@ import type { InvitationPreview } from "@/lib/types";
 /**
  * Reads invitation metadata without consuming the token. Backend
  * is rate-limited (token + IP); we cap retries at 0 so a 404
- * doesn't bombard the endpoint, and we always send `skipAuth` so
- * a logged-out invitee on /invite/[token] still hits the route
- * cleanly.
+ * doesn't bombard the endpoint. The api-client wrapper recognises
+ * /invitations/* paths as auth-bootstrap and skips the 401-retry
+ * loop for them, so a logged-out invitee on /invite/[token] hits
+ * the route cleanly.
  *
  * Sprint 7.5.5 amendment: response carries `email_exists`, which
  * the consumer uses to pick between the new-account form and the
@@ -22,7 +23,7 @@ export function useInvitationPreview(token: string | undefined) {
     queryFn: async () => {
       return apiRequest<InvitationPreview>(
         `/invitations/${encodeURIComponent(token ?? "")}/preview`,
-        { method: "POST", skipAuth: true },
+        { method: "POST" },
       );
     },
     enabled: typeof token === "string" && token.length > 0,

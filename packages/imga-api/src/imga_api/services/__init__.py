@@ -1,5 +1,16 @@
 """Service layer: domain logic between FastAPI handlers and SQLAlchemy models."""
 
+from imga_api.services.action_item_service import (
+    ACTOR_BRIEFING_PIPELINE,
+    ACTOR_LLM_EXTRACTION,
+    ACTOR_SYSTEM,
+    ACTOR_USER,
+    ActionItemAlreadyArchived,
+    ActionItemError,
+    ActionItemNotArchived,
+    ActionItemNotFound,
+    ActionItemService,
+)
 from imga_api.services.analytics_service import (
     AnalyticsFilters,
     AnalyticsService,
@@ -95,9 +106,18 @@ from imga_api.services.ticket_state_machine import (
 from imga_api.services.user_service import TenantMember, UserService
 
 __all__ = [
+    "ACTOR_BRIEFING_PIPELINE",
+    "ACTOR_LLM_EXTRACTION",
+    "ACTOR_SYSTEM",
+    "ACTOR_USER",
     "COMMENT_MAX_BODY_LENGTH",
     "DEDUP_WINDOW",
     "INVITATION_TTL",
+    "ActionItemAlreadyArchived",
+    "ActionItemError",
+    "ActionItemNotArchived",
+    "ActionItemNotFound",
+    "ActionItemService",
     "AnalyticsFilters",
     "AnalyticsService",
     "AuditService",

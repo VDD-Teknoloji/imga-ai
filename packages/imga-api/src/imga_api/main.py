@@ -27,6 +27,7 @@ from imga_api.dependencies import (
     get_pipeline,
     get_settings,
 )
+from imga_api.middleware import RequestIDMiddleware, register_error_handlers
 from imga_api.routes import auth as auth_routes
 from imga_api.routes import invitations as public_invitation_routes
 from imga_api.routes import tenant_action_items as tenant_action_items_routes
@@ -301,8 +302,19 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["GET", "POST", "PATCH", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["*"],
-    expose_headers=["*"],
+    # Sprint 9.1 C — expose X-Request-ID so the browser can read the
+    # response header on cross-origin XHR (api-client surfaces it as
+    # ApiError.requestId for support tickets).
+    expose_headers=["*", "X-Request-ID"],
 )
+
+# Sprint 9.1 C — request_id middleware MUST be added after CORS so it
+# wraps every request including the OPTIONS preflight (Starlette
+# evaluates middlewares last-added-first; outermost wraps innermost).
+# The 5xx handler is registered as an exception_handler (not a
+# middleware) so its order relative to others doesn't matter.
+app.add_middleware(RequestIDMiddleware)
+register_error_handlers(app)
 
 app.include_router(auth_routes.router)
 app.include_router(tenant_config_routes.router)

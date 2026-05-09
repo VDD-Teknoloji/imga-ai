@@ -10,7 +10,7 @@
 // Three jobs:
 //   1. Prefix paths with NEXT_PUBLIC_API_URL.
 //   2. Send credentials so the cookie rides along.
-//   3. On 401 from a non-/auth/refresh request, try one rotation
+//   3. On 401 from a non-auth-bootstrap request, try one rotation
 //      (the new pair lands as cookies on the response) and replay.
 //      If refresh also 401s, propagate — caller decides whether to
 //      redirect.
@@ -25,6 +25,7 @@ export class ApiError extends Error {
     public readonly status: number,
     public readonly detail: string,
     public readonly body?: unknown,
+    public readonly requestId?: string,
   ) {
     super(detail);
     this.name = "ApiError";
@@ -35,7 +36,24 @@ interface RequestOptions {
   method?: "GET" | "POST" | "PATCH" | "PUT" | "DELETE";
   body?: unknown;
   signal?: AbortSignal;
-  skipAuth?: boolean;
+}
+
+// Sprint 9.1 I — auth-bootstrap paths must NOT trigger the 401-retry
+// loop, otherwise a wrong-password /auth/login or an invalid
+// invitation accept would round-trip through /auth/refresh and replay
+// itself. The replay is harmless when there's no session cookie (the
+// refresh fails with 401 and we propagate) but it doubles the network
+// and makes the failure UX feel sluggish.
+const AUTH_BOOTSTRAP_PATHS: ReadonlySet<string> = new Set([
+  "/auth/login",
+  "/auth/refresh",
+]);
+
+function isAuthBootstrap(path: string): boolean {
+  if (AUTH_BOOTSTRAP_PATHS.has(path)) return true;
+  // /invitations/{token}/accept and /accept-existing are unauthenticated
+  // bootstrap paths. The exact-token segment varies, so prefix-match.
+  return path.startsWith("/invitations/");
 }
 
 export async function apiRequest<T>(path: string, options: RequestOptions = {}): Promise<T> {
@@ -51,16 +69,11 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
   const response = await fetch(`${API_BASE}${path}`, {
     method: options.method ?? "GET",
     headers,
-    // Always ``include``. Sprint 9.0.6 cookie hotfix — the original
-    // ``options.skipAuth ? "omit" : "include"`` form bit us in
-    // production: ``credentials: "omit"`` not only skips outbound
-    // cookies but also makes the browser disregard ``Set-Cookie`` on
-    // the response. /auth/login + invitation accept (the three
-    // skipAuth callers) were exactly the responses that needed to
-    // *land* the cookies, so login looked like it succeeded but no
-    // session was stored. The skipAuth flag stays for type
-    // compatibility with existing callers; its effect is now no-op
-    // since Sprint 9.0.6 B removed the Bearer header path it gated.
+    // Always ``include``. Sprint 9.0.6 cookie hotfix — the earlier
+    // ``options.skipAuth ? "omit" : "include"`` form silently
+    // disregarded Set-Cookie on /auth/login responses. The skipAuth
+    // flag was removed in 9.1 I; auth-bootstrap paths are now
+    // identified by URL (see isAuthBootstrap above).
     credentials: "include",
     body:
       options.body === undefined
@@ -79,7 +92,7 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
   }
 
   // 401 → try one refresh, replay original request once.
-  if (response.status === 401 && !options.skipAuth && path !== "/auth/refresh") {
+  if (response.status === 401 && !isAuthBootstrap(path)) {
     const refreshed = await tryRefresh();
     if (refreshed) {
       return apiRequest<T>(path, options);
@@ -98,7 +111,20 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
     // non-JSON error body; keep the default detail string.
   }
 
-  throw new ApiError(response.status, detail, body);
+  // Sprint 9.1 C — surface the server's request_id so support tickets
+  // can pinpoint the exact log entry. Header is canonical (set by
+  // request-id middleware); body field is a back-up for clients that
+  // can't read response headers.
+  const headerRequestId = response.headers.get("X-Request-ID") ?? undefined;
+  const bodyRequestId =
+    typeof body === "object" && body !== null && "request_id" in body
+      ? (body as { request_id: unknown }).request_id
+      : undefined;
+  const requestId =
+    headerRequestId ??
+    (typeof bodyRequestId === "string" ? bodyRequestId : undefined);
+
+  throw new ApiError(response.status, detail, body, requestId);
 }
 
 // Sprint 9.0.6 A — module-level singleton so concurrent 401s coalesce
@@ -148,4 +174,27 @@ async function tryRefresh(): Promise<boolean> {
 /** Test-only — clears the in-flight refresh slot between cases. */
 export function _resetRefreshMutexForTests(): void {
   inFlightRefresh = null;
+}
+
+/**
+ * Sprint 9.1 C — turn an unknown thrown value into a user-facing
+ * string. For ApiError we surface the server's detail; if a 5xx
+ * carried a request_id we append a "(destek kodu: …)" suffix so the
+ * user can quote it on a support ticket and the log line can be
+ * found by `grep req=<id>`.
+ */
+export function formatApiErrorMessage(
+  err: unknown,
+  fallback = "Bir hata oluştu, lütfen tekrar deneyin.",
+): string {
+  if (err instanceof ApiError) {
+    if (err.status >= 500 && err.requestId) {
+      return `${err.detail} (destek kodu: ${err.requestId})`;
+    }
+    return err.detail || fallback;
+  }
+  if (err instanceof Error) {
+    return err.message || fallback;
+  }
+  return fallback;
 }

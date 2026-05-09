@@ -15,7 +15,8 @@ Public surface:
     consumer), routing through the same rotator the SWOT/OKR
     services use.
 
-GeminiProvider is exported but importing it requires google-generativeai
+GeminiProvider is exported but importing it requires google-genai
+(Sprint 9.1 H — migrated from the deprecated google-generativeai)
 to be installed (it imports the SDK at construction time).
 """
 

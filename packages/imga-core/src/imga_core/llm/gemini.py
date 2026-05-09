@@ -1,9 +1,27 @@
 """Google Gemini provider for category classification.
 
-Uses ``google-generativeai`` SDK with structured output (response_schema)
-so the JSON parsing path is reliable. Default model: gemini-2.5-flash.
-Free tier is sufficient for MVP volumes; rate / cost limits handled at
-the call site (HybridClassifier).
+Sprint 9.1 H — migrated from ``google-generativeai`` (deprecated) to
+the unified ``google-genai`` SDK. The new SDK uses an explicit
+``Client`` instance instead of a process-wide ``configure(api_key=...)``
+singleton, which lets the multi-key rotator hold one client per key
+without the configure-race the old SDK forced us to lock around.
+
+The Sprint 9.0.5-A R7 hardening (retry disable + 10s timeout +
+mid-batch cancel) is preserved on the new surface:
+
+  * ``http_options=HttpOptions(timeout=...)`` caps the per-call
+    wall-clock at the value the constructor takes (default 10s).
+  * The new SDK does not auto-retry on 5xx by default — the
+    ``retry_options`` field on HttpOptions is opt-in. We don't set
+    it, so each call is a single attempt, matching R7's intent.
+  * ``classify_async`` still routes through ``client.aio.models``
+    so the HybridClassifier's mid-batch cancel keeps working.
+
+Errors map onto the existing Sprint 8.3.6 hierarchy
+(``RateLimitError`` / ``InvalidKeyError`` / ``LLMProviderError``)
+through ``_raise_mapped_sdk_error`` — message-sniffing is replaced
+by ``isinstance(exc, errors.ClientError) + exc.code`` checks where
+the SDK exposes the HTTP status as a real attribute.
 """
 
 from __future__ import annotations
@@ -12,22 +30,21 @@ import asyncio
 import json
 import logging
 import re
-import threading
 from typing import Any, cast
 
-# Sprint 9.0.5-A R2 — eager module-level import to mirror the
-# bert.py fix. Same lazy-module race could fire when a future
-# code path constructs multiple GeminiProvider instances in
-# parallel (today's worker startup is sequential, but the lock +
-# eager import means we don't owe future code a follow-up R3).
-# ImportError at module load surfaces immediately during install
+# Sprint 9.1 H — eager module-level import to mirror the bert.py
+# fix. ImportError at module load surfaces immediately during install
 # checks instead of mid-request.
 try:
-    import google.generativeai as _genai_module  # noqa: N813 — vendor name
+    from google import genai as _genai_module
+    from google.genai import errors as _genai_errors
+    from google.genai import types as _genai_types
 except ImportError:  # pragma: no cover — exercised only when the
     # optional [gemini] extra isn't installed; the per-instance
     # constructor below re-raises with the install hint.
     _genai_module = None  # type: ignore[assignment]
+    _genai_errors = None  # type: ignore[assignment]
+    _genai_types = None  # type: ignore[assignment]
 
 from imga_core.llm.base import LLMProvider, LLMProviderError
 from imga_core.llm.errors import (
@@ -37,6 +54,11 @@ from imga_core.llm.errors import (
     MalformedResponseError,
     RateLimitError,
 )
+from imga_core.llm.prompts import (
+    CLASSIFICATION_RESPONSE_SCHEMA,
+    build_classification_prompt,
+)
+from imga_core.models import LLMClassificationResult
 
 # Sprint 9.0 — soft retry policy for transient Gemini errors. Only
 # LLMProviderError (network blip, 5xx) is retried; InvalidKeyError /
@@ -45,67 +67,44 @@ from imga_core.llm.errors import (
 _TRANSIENT_RETRY_ATTEMPTS = 3
 _TRANSIENT_RETRY_BASE_SECONDS = 1.0
 
-# Sprint 9.0.5-A R2 — serialise the global `genai.configure(api_key=...)`
-# call. The SDK keeps a process-wide singleton; concurrent
-# reconfigure from parallel worker threads (Sprint 9.0.5-A B3
-# chunk pool) could swap keys mid-flight on a peer thread. The
-# rotator only walks one key at a time per logical call so this
-# lock is uncontended in practice; it just removes a sharp edge.
-_GENAI_CONFIGURE_LOCK = threading.Lock()
-
-
-def _build_no_retry_request_options(timeout_seconds: float) -> dict[str, Any]:
-    """Sprint 9.0.5-A R7 — build a ``request_options`` dict that
-    disables the SDK's default retry policy and caps the wall-clock
-    per call.
-
-    The R7 incident: a 98-row LLM-bound batch went 252 MiB -> 3.03 GiB
-    of resident memory while ``processed_rows`` stayed at 0. Root
-    cause: ``google-generativeai`` defaults to retrying on 5xx with
-    exponential backoff inside its gRPC layer; on a Gemini 504
-    storm each call ate ~90s (3-5 retries × 30s timeout) before
-    surfacing an error. Our outer ``asyncio.to_thread`` couldn't
-    cancel the in-flight thread, so future chains plus the SDK's
-    retry state piled up while the worker waited.
-
-    With ``Retry(predicate=if_exception_type())`` (empty tuple), the
-    predicate evaluates False for every exception and the SDK's
-    retry loop short-circuits to a single attempt. Combined with
-    the explicit ``timeout`` field, the worst case per call is
-    bounded at ~``timeout_seconds``.
-    """
-    try:
-        from google.api_core import retry as google_retry  # type: ignore[import-untyped]
-    except ImportError:
-        # google-generativeai always pulls google-api-core in as a
-        # dep; if it's missing we still want the timeout field so
-        # the SDK at least caps its single attempt.
-        return {"timeout": timeout_seconds}
-
-    no_retry = google_retry.Retry(
-        predicate=google_retry.if_exception_type(),
-        initial=0.0,
-        maximum=0.0,
-        multiplier=1.0,
-        deadline=timeout_seconds,
-    )
-    return {
-        "timeout": timeout_seconds,
-        "retry": no_retry,
-    }
-from imga_core.llm.prompts import (
-    CLASSIFICATION_RESPONSE_SCHEMA,
-    build_classification_prompt,
-)
-from imga_core.models import LLMClassificationResult
 
 _logger = logging.getLogger(__name__)
+
+
+def _build_http_options(timeout_seconds: float) -> Any:
+    """Sprint 9.1 H — ``http_options`` carries the per-call timeout
+    through the new SDK's transport layer. Sprint 9.0.5-A R7 disabled
+    the old SDK's retry loop via ``retry=Retry(predicate=...)``; the
+    new SDK doesn't auto-retry on 5xx unless ``retry_options`` is set,
+    so retry-disable is the default — we just need the timeout."""
+    if _genai_types is None:
+        return None
+    # The SDK's HttpOptions takes ``timeout`` in milliseconds (the
+    # field name is unsuffixed; the unit is documented). Floor to int
+    # so we don't pass a sub-millisecond float.
+    return _genai_types.HttpOptions(timeout=int(timeout_seconds * 1000))
+
+
+def _build_client(api_key: str, timeout_seconds: float) -> Any:
+    """Construct a fresh Client. Cheap (~µs) — no network on init.
+    The rotator path constructs one per logical call; the constructor-
+    bound path keeps a single instance for the life of the provider.
+    """
+    if _genai_module is None:
+        raise ImportError(
+            "google-genai is not installed. "
+            "Install with: pip install 'imga-core[gemini]'"
+        )
+    return _genai_module.Client(
+        api_key=api_key,
+        http_options=_build_http_options(timeout_seconds),
+    )
 
 
 class GeminiProvider(LLMProvider):
     """Gemini-backed classifier.
 
-    Lazy-imports ``google.generativeai`` at construction so the package
+    Lazy-imports ``google.genai`` at construction so the package
     works without the optional dependency installed when LLM fallback is
     disabled.
     """
@@ -116,33 +115,25 @@ class GeminiProvider(LLMProvider):
         self,
         api_key: str,
         model_name: str = "gemini-2.5-flash",
-        # Sprint 9.0.5-A R7 — bumped 5s -> 10s. The SDK's retry path
-        # was previously turning a single 30s timeout into a 90+s
+        # Sprint 9.0.5-A R7 — bumped 5s -> 10s. The old SDK's retry
+        # path was previously turning a single 30s timeout into a 90+s
         # wall-clock through its default exponential backoff (3-5x).
-        # With retry now disabled (see request_options), the SDK is
-        # capped at a single attempt at this wall-clock.
+        # The new SDK doesn't auto-retry on 5xx so the wall-clock per
+        # call is bounded at this timeout outright.
         timeout_seconds: float = 10.0,
     ) -> None:
         if not api_key:
             raise ValueError("Gemini API key is required")
-
-        # Sprint 9.0.5-A R2 — module-level eager import resolved at
-        # module load time (single-threaded). If the optional extra
-        # wasn't installed we still raise here with the same hint
-        # the legacy method-level import did, so install-time
-        # observability is unchanged.
         if _genai_module is None:
             raise ImportError(
-                "google-generativeai is not installed. "
+                "google-genai is not installed. "
                 "Install with: pip install 'imga-core[gemini]'"
             )
 
-        with _GENAI_CONFIGURE_LOCK:
-            _genai_module.configure(api_key=api_key)
-        self._genai = _genai_module
+        self._api_key = api_key
         self._model_name = model_name
-        self._model = _genai_module.GenerativeModel(model_name)
         self._timeout = timeout_seconds
+        self._client = _build_client(api_key, timeout_seconds)
 
     @property
     def model_name(self) -> str:
@@ -160,29 +151,33 @@ class GeminiProvider(LLMProvider):
 
         prompt = build_classification_prompt(text, available_categories)
         try:
-            response = self._model.generate_content(
-                prompt,
-                generation_config={
-                    "response_mime_type": "application/json",
-                    "response_schema": CLASSIFICATION_RESPONSE_SCHEMA,
-                    "temperature": 0.1,
-                },
-                # Sprint 9.0.5-A R7 — disable SDK's default retry on
-                # 5xx + cap per-call wall-clock. See
-                # _build_no_retry_request_options for rationale (504
-                # storm OOM incident).
-                request_options=_build_no_retry_request_options(self._timeout),
+            response = self._client.models.generate_content(
+                model=self._model_name,
+                contents=prompt,
+                config=_genai_types.GenerateContentConfig(
+                    response_mime_type="application/json",
+                    response_schema=CLASSIFICATION_RESPONSE_SCHEMA,
+                    temperature=0.1,
+                ),
             )
         except Exception as exc:
+            # Map first so the rotator-relevant types reach callers
+            # unchanged; non-rotator errors collapse to LLMProviderError.
+            try:
+                self._raise_mapped_sdk_error(exc)
+            except (RateLimitError, InvalidKeyError):
+                raise
+            except LLMProviderError:
+                raise
             raise LLMProviderError(f"Gemini API call failed: {exc}") from exc
 
         return self._parse_response(response, available_categories)
 
     def health_check(self) -> bool:
         try:
-            response = self._model.generate_content(
-                "ping",
-                request_options={"timeout": 2.0},
+            response = self._client.models.generate_content(
+                model=self._model_name,
+                contents="ping",
             )
             return getattr(response, "text", None) is not None
         except Exception:
@@ -214,10 +209,8 @@ class GeminiProvider(LLMProvider):
         if not isinstance(confidence, int | float):
             raise LLMProviderError(f"Invalid 'confidence' in response: {data!r}")
 
-        # Clamp confidence into [0, 1] — providers occasionally return out-of-range.
         clamped_confidence = max(0.0, min(1.0, float(confidence)))
 
-        # Fallback when the LLM picks a code outside the allowed set.
         if primary not in available_categories:
             _logger.warning(
                 "Gemini returned unknown category %r; coercing to 'belirsiz'",
@@ -242,14 +235,11 @@ class GeminiProvider(LLMProvider):
     #   1. ``api_key`` is a per-call argument. The multi-key rotator
     #      (imga_core.llm.key_rotation) walks priorities and falls
     #      through on RateLimit/InvalidKey, so the provider must
-    #      reconfigure the SDK at each attempt. ``classify`` keeps the
-    #      constructor-bound key because the HybridClassifier path has
-    #      a single configured tenant key.
-    #   2. They're async. Service-layer callers (Sprint 8.3.6.3,
-    #      8.3.6.4) live inside FastAPI request handlers; awaiting
-    #      ``generate_content_async`` is straightforward there, while
-    #      classify still runs sync inside the analyze pipeline's
-    #      thread-bound BERT path.
+    #      build a fresh client at each attempt. Sprint 9.1 H makes
+    #      this cleaner: in the old SDK we had to lock around a global
+    #      ``configure(api_key=...)`` call; the new SDK's per-Client
+    #      isolation removes that race entirely.
+    #   2. They're async via ``client.aio.models.generate_content``.
     #   3. They map SDK errors to the Sprint 8.3.6 ``LLMError``
     #      hierarchy (RateLimitError / InvalidKeyError /
     #      MalformedResponseError) instead of the legacy
@@ -262,42 +252,11 @@ class GeminiProvider(LLMProvider):
         system_prompt: str,
         user_prompt: str,
         response_schema: dict[str, Any],
-        # Sprint 8.3.6.6 round-4 — flash is the free-tier default;
-        # gemini-2.5-pro requires a paid Google AI Studio billing setup
-        # (the consumer "Google AI Pro" subscription does NOT carry an
-        # API quota). Flash is fast enough for SWOT/OKR with the
-        # current prompt length and gives free-tier tenants a working
-        # path. Tenant-level model_name override lands in Sprint 9.x.
         model_name: str = "gemini-2.5-flash",
         temperature: float = 0.2,
         top_p: float = 0.9,
         max_output_tokens: int = 8192,
     ) -> tuple[dict[str, Any], dict[str, int] | None]:
-        """Generate a SWOT analysis with structured JSON output.
-
-        ``response_schema`` is the JSON-schema dict the prompt template
-        ships (Sprint 8.3.6.3 finalises it). The Gemini SDK's
-        ``response_mime_type=application/json`` + ``response_schema``
-        combination guarantees the model returns syntactically valid
-        JSON — this method's job is to map provider-side errors to the
-        rotator's hierarchy and surface the parsed dict.
-
-        Returns:
-            ``(parsed_payload, token_usage)``. ``token_usage`` is a
-            ``{"input": int, "output": int, "total": int}`` dict when
-            the SDK surfaced ``response.usage_metadata`` (Sprint
-            8.3.6.5 lift), otherwise ``None``. The service layer
-            persists it on ``strategic_reports.token_usage``.
-
-        Raises:
-            RateLimitError: HTTP 429.
-            InvalidKeyError: HTTP 401 / 403.
-            MalformedResponseError: 200 response that didn't parse to a
-                dict, or empty ``response.text``.
-            LLMProviderError: any other provider failure (network,
-                timeout, 5xx). The rotator does not handle these —
-                they propagate so the service layer can decide.
-        """
         return await self._generate_structured(
             api_key=api_key,
             system_prompt=system_prompt,
@@ -316,25 +275,11 @@ class GeminiProvider(LLMProvider):
         system_prompt: str,
         user_prompt: str,
         response_schema: dict[str, Any],
-        # Same free-tier flash default as ``generate_swot`` (Sprint
-        # 8.3.6.6 round-4). See that method's docstring for context.
         model_name: str = "gemini-2.5-flash",
         temperature: float = 0.3,
         top_p: float = 0.9,
         max_output_tokens: int = 4096,
     ) -> tuple[dict[str, Any], dict[str, int] | None]:
-        """Generate OKR proposals with structured JSON output.
-
-        Default temperature is 0.3 (vs SWOT's 0.2) because OKRs benefit
-        from a touch more variation in framing — strict deterministic
-        output produces stilted "Increase X by Y" templates.
-        ``max_output_tokens`` is half of SWOT's because OKR responses
-        are tighter (2-4 objectives × 2-4 key results, no narrative
-        recommendations).
-
-        Same return + error contract as ``generate_swot`` — including
-        the ``(payload, token_usage)`` tuple.
-        """
         return await self._generate_structured(
             api_key=api_key,
             system_prompt=system_prompt,
@@ -353,24 +298,11 @@ class GeminiProvider(LLMProvider):
         system_prompt: str,
         user_prompt: str,
         response_schema: dict[str, Any],
-        # Sprint 8.3.10 — same flash default as SWOT/OKR.
-        # Sprint 8.3.11 R1 — bumped 2048 → 4096; R2 — 4096 → 8192.
-        # Real Türkçe briefings emit ~30-40% more tokens than English
-        # for the same content (UTF-8 byte-pair count + agglutinative
-        # morphology). 4096 still truncated on production-sized
-        # payloads (browser smoke fail #2). 8192 matches SWOT's cap;
-        # finish_reason check in _generate_structured catches any
-        # further truncation before the parser sees a partial body.
         model_name: str = "gemini-2.5-flash",
         temperature: float = 0.25,
         top_p: float = 0.9,
         max_output_tokens: int = 8192,
     ) -> tuple[dict[str, Any], dict[str, int] | None]:
-        """Sprint 8.3.10 — generate a 1-page executive briefing JSON.
-        Same return + error contract as ``generate_swot`` /
-        ``generate_okr``. Lower temperature to keep the headline
-        deterministic-ish; briefings benefit from concrete framing
-        more than from variation."""
         return await self._generate_structured(
             api_key=api_key,
             system_prompt=system_prompt,
@@ -394,49 +326,37 @@ class GeminiProvider(LLMProvider):
         top_p: float,
         max_output_tokens: int,
     ) -> tuple[dict[str, Any], dict[str, int] | None]:
-        """Shared structured-output call path. SWOT/OKR diverge only in
-        defaults; the actual SDK plumbing is identical."""
         if not api_key:
             raise InvalidKeyError("Empty api_key passed to generate_structured")
         if not user_prompt or not user_prompt.strip():
             raise MalformedResponseError("user_prompt must be non-empty")
 
-        # Reconfigure the SDK with this attempt's key. The rotator
-        # walks one key at a time per logical call, so this is
-        # uncontended in normal flow; the lock just removes a
-        # window where a peer worker thread (Sprint 9.0.5-A B3
-        # parallel chunks) could race a configure() call mid-flight
-        # and swap api_key under another thread's pending request.
-        # Construction of GenerativeModel reads no module-level
-        # state so it stays outside the critical section.
-        with _GENAI_CONFIGURE_LOCK:
-            self._genai.configure(api_key=api_key)
-        model = self._genai.GenerativeModel(
-            model_name,
-            system_instruction=system_prompt,
-        )
+        # Sprint 9.1 H — fresh client per call so the rotator can swap
+        # keys without touching shared state. The old SDK forced us to
+        # serialise around a global ``configure(api_key=...)``; the new
+        # SDK's Client encapsulates auth so this is naturally
+        # thread-safe.
+        client = _build_client(api_key, self._timeout)
 
-        # Sprint 9.0 — soft retry on transient errors. We try up to
-        # _TRANSIENT_RETRY_ATTEMPTS times with exponential backoff.
-        # Rotator-relevant errors (RateLimit / InvalidKey) and
-        # deterministic errors (Malformed / TokenLimit / Blocked) skip
-        # the retry path so the rotator decides + the user sees the
-        # actionable surface immediately.
-        response = await self._call_with_soft_retry(
-            model=model,
-            user_prompt=user_prompt,
+        config = _genai_types.GenerateContentConfig(
+            response_mime_type="application/json",
             response_schema=response_schema,
+            system_instruction=system_prompt,
             temperature=temperature,
             top_p=top_p,
             max_output_tokens=max_output_tokens,
         )
 
+        response = await self._call_with_soft_retry(
+            client=client,
+            model_name=model_name,
+            user_prompt=user_prompt,
+            config=config,
+        )
+
         # Sprint 8.3.11 R2 — surface MAX_TOKENS / SAFETY / RECITATION
         # finish reasons as distinct, actionable errors BEFORE the
-        # parser tries to read a truncated body. Without this guard
-        # the parse path saw a half-JSON string and reported it as
-        # generic non-JSON text, which obscured the real fix
-        # (operational: bump max_output_tokens or shorten the prompt).
+        # parser tries to read a truncated body.
         self._check_finish_reason(response)
 
         return (
@@ -447,44 +367,22 @@ class GeminiProvider(LLMProvider):
     async def _call_with_soft_retry(
         self,
         *,
-        model: Any,
+        client: Any,
+        model_name: str,
         user_prompt: str,
-        response_schema: dict[str, Any],
-        temperature: float,
-        top_p: float,
-        max_output_tokens: int,
+        config: Any,
     ) -> Any:
-        """Call ``generate_content_async`` with a soft-retry on transient
-        failures. Sprint 9.0 — investor-demo runs hit Google's edge
-        intermittently; a single retry cycle masks blips without
-        disturbing the rotator's logic.
-
-        Mapping rules:
-            * RateLimitError / InvalidKeyError → re-raise immediately
-              (the rotator must walk to the next priority key).
-            * MalformedResponseError / LLMTokenLimitError /
-              LLMResponseBlockedError → raised by other code paths;
-              not relevant here.
-            * LLMProviderError (network / 5xx) → retry with backoff.
-        """
         last_error: LLMProviderError | None = None
         for attempt in range(_TRANSIENT_RETRY_ATTEMPTS):
             try:
-                return await model.generate_content_async(
-                    user_prompt,
-                    generation_config={
-                        "response_mime_type": "application/json",
-                        "response_schema": response_schema,
-                        "temperature": temperature,
-                        "top_p": top_p,
-                        "max_output_tokens": max_output_tokens,
-                    },
+                return await client.aio.models.generate_content(
+                    model=model_name,
+                    contents=user_prompt,
+                    config=config,
                 )
             except (RateLimitError, InvalidKeyError):
-                # Rotator concerns — propagate unchanged.
                 raise
             except Exception as exc:
-                # Map first; rotator-relevant leaves go straight up.
                 try:
                     self._raise_mapped_sdk_error(exc)
                 except (RateLimitError, InvalidKeyError):
@@ -495,15 +393,14 @@ class GeminiProvider(LLMProvider):
                         raise
                     delay = _TRANSIENT_RETRY_BASE_SECONDS * (2 ** attempt)
                     _logger.warning(
-                        "Gemini transient error (attempt %d/%d): %s; "
+                        "Gemini transient error (attempt %d/%d); "
                         "retrying in %.1fs",
                         attempt + 1,
                         _TRANSIENT_RETRY_ATTEMPTS,
-                        mapped,
                         delay,
+                        exc_info=True,
                     )
                     await asyncio.sleep(delay)
-        # Loop only exits via return / raise — this line is defensive.
         if last_error is not None:
             raise last_error
         raise LLMProviderError("Gemini retry loop exited unexpectedly")
@@ -512,17 +409,30 @@ class GeminiProvider(LLMProvider):
     def _raise_mapped_sdk_error(exc: Exception) -> None:
         """Map a raw SDK exception to the Sprint 8.3.6 hierarchy.
 
-        ``google.generativeai`` raises a small zoo of types and the
-        public ones don't expose stable HTTP status access; we sniff
-        the exception message + chained context for the codes that
-        matter to the rotator. Anything we can't classify falls
-        through as ``LLMProviderError`` so the service layer sees
-        it without the rotator swallowing it.
+        Sprint 9.1 H — the new ``google-genai`` SDK exposes structured
+        error types under ``google.genai.errors``. ClientError / ServerError
+        carry a ``.code`` attribute with the HTTP status, so we can
+        check it directly instead of message-sniffing. We still fall
+        back to message inspection for chained / wrapped exceptions
+        because some SDK paths wrap the underlying error before it
+        reaches us.
         """
+        # Native SDK error type with HTTP code attribute.
+        if _genai_errors is not None and isinstance(exc, _genai_errors.APIError):
+            code = getattr(exc, "code", None) or getattr(exc, "status_code", None)
+            if code == 429:
+                raise RateLimitError() from exc
+            if code in (401, 403):
+                raise InvalidKeyError(f"API key rejected: {exc}") from exc
+            # Server-side 5xx surfaces as ServerError; treat as a
+            # transient LLMProviderError so the soft-retry loop above
+            # can attempt one more pass before the rotator decides.
+            raise LLMProviderError(f"Gemini API call failed: {exc}") from exc
+
+        # Wrapped / chained exception — fall back to message sniff
+        # (preserves behaviour with TaskGroup / generic transport
+        # errors that don't carry .code).
         text = str(exc).lower()
-        # 429 / quota — rate limit. The SDK sometimes surfaces a
-        # ``retry_after`` header; not stable enough to parse, so we
-        # leave it None.
         if (
             "429" in text
             or "rate limit" in text
@@ -530,7 +440,6 @@ class GeminiProvider(LLMProvider):
             or "quota" in text
         ):
             raise RateLimitError() from exc
-        # 401 / 403 — invalid or revoked key.
         if (
             "401" in text
             or "403" in text
@@ -540,22 +449,14 @@ class GeminiProvider(LLMProvider):
             or "unauthenticated" in text
         ):
             raise InvalidKeyError(f"API key rejected: {exc}") from exc
-        # Everything else propagates to the legacy provider error so
-        # the service layer's catch-all logging handles it.
         raise LLMProviderError(f"Gemini SWOT/OKR call failed: {exc}") from exc
 
     @staticmethod
     def _check_finish_reason(response: Any) -> None:
         """Sprint 8.3.11 R2 — raise distinct errors for the two
         non-STOP finish reasons that produce truncated / blocked
-        bodies. The Gemini SDK exposes ``finish_reason`` as an enum
-        with a ``.name`` attribute (``STOP`` / ``MAX_TOKENS`` /
-        ``SAFETY`` / ``RECITATION`` / ``OTHER``).
-
-        ``STOP`` is the happy path. Everything else surfaces as a
-        provider-level error so the service layer can decide what to
-        show the user without the parser turning a partial body into
-        a generic "non-JSON text" 502.
+        bodies. The new SDK exposes ``finish_reason`` as the same
+        FinishReason enum with a ``.name`` attribute.
         """
         candidates = getattr(response, "candidates", None)
         if not candidates:
@@ -564,7 +465,6 @@ class GeminiProvider(LLMProvider):
         finish = getattr(first, "finish_reason", None)
         if finish is None:
             return
-        # ``finish.name`` for proto-enum, str(finish) for plain str.
         name = getattr(finish, "name", str(finish)).upper()
         if name in {"STOP", "FINISH_REASON_UNSPECIFIED", ""}:
             return
@@ -587,9 +487,6 @@ class GeminiProvider(LLMProvider):
             raise LLMResponseBlockedError(
                 f"Gemini yanıtı engellendi ({name})."
             )
-        # Other finish reasons (OTHER, anything new) — log + let the
-        # parser try; if it produces malformed text we'll surface
-        # MalformedResponseError downstream.
         _logger.warning(
             "Gemini finish_reason=%s (unhandled); falling through to parse",
             name,
@@ -597,22 +494,6 @@ class GeminiProvider(LLMProvider):
 
     @staticmethod
     def _parse_structured_response(response: Any) -> dict[str, Any]:
-        """Parse the Gemini response as a JSON object.
-
-        Sprint 8.3.11 — defensive about two known SDK quirks:
-
-          1. ``response_mime_type=application/json`` is supposed to
-             prevent it, but Gemini Flash occasionally still wraps the
-             payload in a markdown ``​```json ... ​``` `` fence
-             (production saw this on the executive briefing path on
-             8.3.10 deploy). Strip the fence before attempting
-             json.loads so a perfectly-valid JSON body doesn't turn
-             into a 502.
-          2. Some responses arrive with leading / trailing whitespace
-             or stray prose (e.g. ``"Sure, here is the JSON: { ... }"``).
-             We isolate the outermost ``{`` … ``}`` slice as a final
-             fallback before raising.
-        """
         raw = getattr(response, "text", None)
         if not raw:
             raise MalformedResponseError("Empty response text from Gemini")
@@ -620,7 +501,6 @@ class GeminiProvider(LLMProvider):
         try:
             data = json.loads(cleaned)
         except json.JSONDecodeError:
-            # Fallback: extract the outermost JSON object substring.
             start = cleaned.find("{")
             end = cleaned.rfind("}")
             if start != -1 and end > start:
@@ -642,29 +522,12 @@ class GeminiProvider(LLMProvider):
 
     @staticmethod
     def _extract_usage_metadata(response: Any) -> dict[str, int] | None:
-        """Pull token usage off ``response.usage_metadata`` when the
-        SDK surfaced it.
-
-        Sprint 8.3.6.5 lift — Sprint 8.3.6.3 deferred this with a
-        TODO. The SDK populates ``prompt_token_count`` /
-        ``candidates_token_count`` / ``total_token_count`` for every
-        successful call; some pre-2024 SDKs don't, so ``None`` is the
-        correct fall-back instead of a fake-zero dict that downstream
-        cost dashboards would treat as a free request.
-
-        Returned ``{"input": int, "output": int, "total": int}`` matches
-        the ``strategic_reports.token_usage`` JSONB shape the service
-        layer persists.
-        """
         usage = getattr(response, "usage_metadata", None)
         if usage is None:
             return None
         prompt = getattr(usage, "prompt_token_count", None)
         candidates = getattr(usage, "candidates_token_count", None)
         total = getattr(usage, "total_token_count", None)
-        # If the SDK returned a usage_metadata object but with all
-        # fields missing, treat as no usage rather than a {None, None,
-        # None} dict the JSONB column would happily accept.
         if prompt is None and candidates is None and total is None:
             return None
         return {
@@ -675,19 +538,14 @@ class GeminiProvider(LLMProvider):
 
 
 # Sprint 8.3.11 — Markdown fence stripper for the executive briefing
-# 502 root cause. ``response_mime_type=application/json`` is supposed
-# to suppress this on the Gemini side, but Flash occasionally still
-# wraps the payload in ``​```json ... ​``` `` (or just ``​``` ... ​``` ``)
-# fences. The regex is permissive: optional ``json`` language tag,
-# optional CR/LF on either side, both opening and closing required.
+# 502 root cause. Same regex carried over from the old SDK; Gemini
+# Flash's quirk of occasionally wrapping JSON in ```json ... ``` is
+# orthogonal to which SDK we use.
 _MARKDOWN_FENCE_OPEN = re.compile(r"^```(?:json)?\s*\r?\n?", re.IGNORECASE)
 _MARKDOWN_FENCE_CLOSE = re.compile(r"\r?\n?\s*```\s*$")
 
 
 def _strip_markdown_fences(text: str) -> str:
-    """Strip a leading ``​```json`` / ``​```​`` and a trailing ``​```​``
-    if both are present. No-op when the input is already clean JSON.
-    """
     stripped = text.strip()
     has_open = bool(_MARKDOWN_FENCE_OPEN.match(stripped))
     has_close = bool(_MARKDOWN_FENCE_CLOSE.search(stripped))

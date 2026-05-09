@@ -5,7 +5,14 @@
 // Tracks tasks extracted from SWOT recommendations / executive
 // briefings or added manually. URL state Path B (?status, ?priority).
 
-import { ListChecks, Loader2, Plus, Trash2 } from "lucide-react";
+import {
+  ArchiveRestore,
+  History,
+  ListChecks,
+  Loader2,
+  Plus,
+  Trash2,
+} from "lucide-react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useState } from "react";
 import { toast } from "sonner";
@@ -17,16 +24,20 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import {
+  useActionItemEvents,
   useActionItems,
   useCreateActionItem,
   useDeleteActionItem,
+  useRestoreActionItem,
   useUpdateActionItem,
 } from "@/hooks/use-action-items";
-import { ApiError } from "@/lib/api-client";
+import { ApiError, formatApiErrorMessage } from "@/lib/api-client";
 import {
   ACTION_ITEM_PRIORITY_LABELS,
   ACTION_ITEM_STATUS_LABELS,
   type ActionItem,
+  type ActionItemEvent,
+  type ActionItemEventType,
   type ActionItemPriority,
   type ActionItemStatus,
 } from "@/lib/types";
@@ -77,6 +88,11 @@ function Content() {
   const [priorityFilter, setPriorityFilterState] = useState<
     ActionItemPriority | ""
   >(() => (searchParams.get("priority") as ActionItemPriority) || "");
+  // Sprint 9.1 A — archived toggle state lives in URL params (Path B)
+  // so F5 / back / share-link round-trips preserve the choice.
+  const [includeArchived, setIncludeArchivedState] = useState<boolean>(
+    () => searchParams.get("archived") === "true",
+  );
   const [showCreate, setShowCreate] = useState(false);
 
   /* eslint-disable react-hooks/set-state-in-effect */
@@ -88,6 +104,10 @@ function Content() {
       (searchParams.get("priority") as ActionItemPriority | null) ?? "";
     setPriorityFilterState((prev) =>
       prev === urlPriority ? prev : urlPriority,
+    );
+    const urlArchived = searchParams.get("archived") === "true";
+    setIncludeArchivedState((prev) =>
+      prev === urlArchived ? prev : urlArchived,
     );
   }, [searchParams]);
   /* eslint-enable react-hooks/set-state-in-effect */
@@ -103,6 +123,7 @@ function Content() {
   const list = useActionItems({
     status: statusFilter || undefined,
     priority: priorityFilter || undefined,
+    include_archived: includeArchived,
   });
 
   return (
@@ -168,7 +189,20 @@ function Content() {
             ))}
           </select>
         </div>
-        <span className="text-muted-foreground ml-auto text-xs">
+        <label className="ml-auto inline-flex cursor-pointer items-center gap-1.5 text-xs">
+          <input
+            type="checkbox"
+            checked={includeArchived}
+            onChange={(e) => {
+              const next = e.target.checked;
+              setIncludeArchivedState(next);
+              pushParam("archived", next ? "true" : null);
+            }}
+            className="size-3.5"
+          />
+          Arşivi göster
+        </label>
+        <span className="text-muted-foreground text-xs">
           {list.data?.length ?? 0} kayıt
         </span>
       </div>
@@ -196,9 +230,20 @@ function Content() {
 
 function ActionItemRow({ item }: { item: ActionItem }) {
   const update = useUpdateActionItem();
-  const del = useDeleteActionItem();
+  const archive = useDeleteActionItem();
+  const restore = useRestoreActionItem();
+  // Sprint 9.1 A — audit timeline pulls per item-id only when the
+  // user expands the row; the route is RLS-bound and cheap enough to
+  // not need prefetch.
+  const [showHistory, setShowHistory] = useState(false);
   return (
-    <li className="bg-card rounded-lg border p-3">
+    <li
+      className={`rounded-lg border p-3 ${
+        item.is_archived
+          ? "bg-muted/40 border-dashed opacity-80"
+          : "bg-card"
+      }`}
+    >
       <div className="flex flex-wrap items-center gap-2">
         <p className="text-sm font-medium">{item.title}</p>
         <Badge
@@ -213,6 +258,14 @@ function ActionItemRow({ item }: { item: ActionItem }) {
         >
           {ACTION_ITEM_STATUS_LABELS[item.status]}
         </Badge>
+        {item.is_archived && (
+          <Badge
+            variant="outline"
+            className="border-zinc-400 bg-zinc-100 text-xs text-zinc-700"
+          >
+            Arşivde
+          </Badge>
+        )}
         {item.source_report_id && (
           <span className="text-muted-foreground text-xs">
             kaynak: SWOT
@@ -226,42 +279,151 @@ function ActionItemRow({ item }: { item: ActionItem }) {
       </div>
       <p className="text-muted-foreground mt-1 text-sm">{item.description}</p>
       <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
-        <select
-          value={item.status}
-          onChange={(e) =>
-            update.mutate({
-              id: item.id,
-              body: { status: e.target.value as ActionItemStatus },
-            })
-          }
-          className="border-input bg-background rounded-md border px-2 py-1"
-        >
-          {(Object.keys(ACTION_ITEM_STATUS_LABELS) as ActionItemStatus[]).map(
-            (s) => (
+        {!item.is_archived && (
+          <select
+            value={item.status}
+            onChange={(e) =>
+              update.mutate({
+                id: item.id,
+                body: { status: e.target.value as ActionItemStatus },
+              })
+            }
+            className="border-input bg-background rounded-md border px-2 py-1"
+          >
+            {(
+              Object.keys(ACTION_ITEM_STATUS_LABELS) as ActionItemStatus[]
+            ).map((s) => (
               <option key={s} value={s}>
                 {ACTION_ITEM_STATUS_LABELS[s]}
               </option>
-            ),
-          )}
-        </select>
+            ))}
+          </select>
+        )}
         <Button
           variant="ghost"
           size="sm"
-          disabled={del.isPending}
-          onClick={() => {
-            if (confirm("Aksiyon silinsin mi?")) {
-              del.mutate(item.id, {
-                onSuccess: () => toast.success("Silindi."),
-              });
-            }
-          }}
-          className="gap-1 text-red-700 hover:text-red-900"
+          onClick={() => setShowHistory((v) => !v)}
+          className="gap-1"
         >
-          <Trash2 className="size-3.5" aria-hidden /> Sil
+          <History className="size-3.5" aria-hidden />
+          {showHistory ? "Geçmişi gizle" : "Geçmiş"}
         </Button>
+        {item.is_archived ? (
+          <Button
+            variant="ghost"
+            size="sm"
+            disabled={restore.isPending}
+            onClick={() =>
+              restore.mutate(item.id, {
+                onSuccess: () => toast.success("Geri alındı."),
+                onError: (err) => toast.error(formatApiErrorMessage(err)),
+              })
+            }
+            className="gap-1 text-emerald-700 hover:text-emerald-900"
+          >
+            <ArchiveRestore className="size-3.5" aria-hidden /> Geri al
+          </Button>
+        ) : (
+          <Button
+            variant="ghost"
+            size="sm"
+            disabled={archive.isPending}
+            onClick={() => {
+              if (confirm("Aksiyon arşivlensin mi? (Geri alınabilir)")) {
+                archive.mutate(item.id, {
+                  onSuccess: () => toast.success("Arşivlendi."),
+                  onError: (err) => toast.error(formatApiErrorMessage(err)),
+                });
+              }
+            }}
+            className="gap-1 text-red-700 hover:text-red-900"
+          >
+            <Trash2 className="size-3.5" aria-hidden /> Arşivle
+          </Button>
+        )}
       </div>
+      {showHistory && <AuditTimeline itemId={item.id} />}
     </li>
   );
+}
+
+const EVENT_LABELS: Record<ActionItemEventType, string> = {
+  created: "Oluşturuldu",
+  updated: "Güncellendi",
+  archived: "Arşivlendi",
+  unarchived: "Geri alındı",
+  status_changed: "Durum değişti",
+  priority_changed: "Öncelik değişti",
+  assigned: "Atandı",
+  unassigned: "Atama kaldırıldı",
+  commented: "Yorum eklendi",
+};
+
+function AuditTimeline({ itemId }: { itemId: string }) {
+  const events = useActionItemEvents(itemId);
+  if (events.isLoading) {
+    return (
+      <div className="text-muted-foreground mt-3 flex items-center gap-2 border-t pt-3 text-xs">
+        <Loader2 className="size-3 animate-spin" /> Geçmiş yükleniyor…
+      </div>
+    );
+  }
+  if (events.isError) {
+    return (
+      <p className="text-destructive mt-3 border-t pt-3 text-xs">
+        Geçmiş yüklenemedi.
+      </p>
+    );
+  }
+  const list = events.data ?? [];
+  if (list.length === 0) {
+    return (
+      <p className="text-muted-foreground mt-3 border-t pt-3 text-xs">
+        Olay yok.
+      </p>
+    );
+  }
+  return (
+    <ol className="mt-3 space-y-1.5 border-t pt-3 text-xs">
+      {list.map((evt) => (
+        <li key={evt.id} className="flex items-baseline gap-2">
+          <span className="text-muted-foreground tabular-nums">
+            {new Date(evt.created_at).toLocaleString("tr-TR")}
+          </span>
+          <span className="font-medium">{EVENT_LABELS[evt.event_type]}</span>
+          <AuditPayloadSummary event={evt} />
+        </li>
+      ))}
+    </ol>
+  );
+}
+
+function AuditPayloadSummary({ event }: { event: ActionItemEvent }) {
+  const p = event.payload ?? {};
+  const summary = formatPayloadSummary(event.event_type, p);
+  return (
+    <span className="text-muted-foreground">
+      {summary && <span>{summary} · </span>}
+      <span className="text-[10px] uppercase">{event.actor_type}</span>
+    </span>
+  );
+}
+
+function formatPayloadSummary(
+  type: ActionItemEventType,
+  payload: Record<string, unknown>,
+): string | null {
+  if (type === "status_changed" || type === "priority_changed") {
+    const from = payload.from;
+    const to = payload.to;
+    if (from !== undefined && to !== undefined) {
+      return `${String(from ?? "—")} → ${String(to ?? "—")}`;
+    }
+  }
+  if (type === "assigned" && typeof payload.to === "string") {
+    return `→ ${payload.to.slice(0, 8)}`;
+  }
+  return null;
 }
 
 function CreateForm({ onClose }: { onClose: () => void }) {

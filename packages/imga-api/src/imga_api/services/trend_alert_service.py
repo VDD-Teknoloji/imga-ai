@@ -37,7 +37,7 @@ from __future__ import annotations
 import hashlib
 import logging
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID
 
@@ -83,7 +83,7 @@ class TrendAlertService:
             windows
         """
         try:
-            now = datetime.utcnow()
+            now = datetime.now(UTC)
             current = await self._stats(
                 tenant_id, now - timedelta(days=7), now
             )

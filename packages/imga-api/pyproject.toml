@@ -28,12 +28,13 @@ dependencies = [
     # Sprint 8.3.6 — SWOT/OKR generator stack:
     # - redis: SWOT cache (24h) + multi-key rotation state
     # - jinja2: prompt template rendering with conditionals/loops
-    # - google-generativeai: structured-output SWOT/OKR calls. imga-core
-    #   exposes it as the [gemini] extra; the api package depends
-    #   directly so the runtime image always installs it.
+    # - google-genai (Sprint 9.1 H): structured-output SWOT/OKR calls.
+    #   Migrated from google-generativeai (deprecated end-of-life).
+    #   imga-core exposes it as the [gemini] extra; the api package
+    #   depends directly so the runtime image always installs it.
     "redis>=5.0,<6.0",
     "jinja2>=3.1,<4.0",
-    "google-generativeai>=0.8.0,<1.0",
+    "google-genai>=1.0,<2.0",
     # Sprint 8.3.6.5 — WeasyPrint for SWOT/OKR PDF render. The runtime
     # image's Dockerfile installs the matching system libs (Pango,
     # Cairo, GdkPixbuf) + Türkçe-capable fonts; weasyprint itself
@@ -145,5 +146,9 @@ target-version = "py311"
 src = ["src", "tests"]
 
 [tool.ruff.lint]
-select = ["E", "W", "F", "I", "B", "C4", "UP", "N", "SIM", "RUF"]
+# Sprint 9.1 B — DTZ catches naive datetime usage; the codebase uses
+# timezone-aware (TIMESTAMPTZ) columns, naive ``datetime.utcnow()``
+# silently mismatches when compared against them. DTZ003 covers
+# ``utcnow()``, DTZ005 catches ``datetime.now()`` without a tz arg.
+select = ["E", "W", "F", "I", "B", "C4", "UP", "N", "SIM", "RUF", "DTZ"]
 ignore = ["E501", "RUF001", "RUF002", "RUF003"]

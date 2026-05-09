@@ -22,20 +22,21 @@ classification:
   4. Other errors (Malformed, network 5xx, etc.) propagate unchanged.
 
 The wrapped GeminiProvider is reused for the lifetime of one
-classify_async call; we don't cache across calls because Gemini's
-``genai.configure(api_key=...)`` is process-global and the rotator
-swaps keys frequently. Cost: one configure() + one model
-construction per call, ~ms — negligible against the network round-
-trip.
+classify_async call; we don't cache across calls because the
+rotator swaps keys frequently. Sprint 9.1 H — under the new
+``google-genai`` SDK each provider holds its own ``Client(api_key=...)``,
+so per-call construction is just a Python object allocation
+(no global state to lock around like the old SDK's
+``genai.configure(api_key=...)`` singleton). Cost: ~ms, negligible
+against the network round-trip.
 
-Sprint 9.0.5-A R6 — the operation closure now wraps the sync
+Sprint 9.0.5-A R6 — the operation closure wraps the sync
 ``provider.classify(...)`` in ``asyncio.to_thread``. R5 shipped
 the closure as ``async def`` but the body never awaited anything,
-so the GIL-holding sync SDK call (``genai.generate_content``)
-blocked the event loop for the duration. Result: peer LLM calls
-in HybridClassifier's batch path serialised behind each other and
-the demo measured 165s on a 98-row LLM-bound batch (vs. R4's
-expected 25s with 8-way parallelism).
+so the GIL-holding sync SDK call blocked the event loop for the
+duration. Result: peer LLM calls in HybridClassifier's batch path
+serialised behind each other and the demo measured 165s on a
+98-row LLM-bound batch (vs. R4's expected 25s with 8-way parallelism).
 
 logger.exception() in every catch path — Sprint 8.3.6.6 round-3
 baseline note.

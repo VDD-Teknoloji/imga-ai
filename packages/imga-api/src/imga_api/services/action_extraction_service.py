@@ -254,6 +254,24 @@ class ActionExtractionService:
             self._session.add(item)
             await self._session.flush()
             new_ids.append(item.id)
+            # Sprint 9.1 A — journal the extraction-driven creation so
+            # the timeline UI can distinguish LLM-extracted items from
+            # manual ones (different icon / colour). Inline import to
+            # avoid a circular at module load (action_item_service is
+            # also a /tenants/me/action-items dep).
+            from imga_api.services.action_item_service import (
+                ACTOR_LLM_EXTRACTION,
+                ActionItemService,
+            )
+            await ActionItemService(self._session).emit_created(
+                row=item,
+                actor_user_id=None,
+                actor_type=ACTOR_LLM_EXTRACTION,
+                payload={
+                    "source_type": source_type,
+                    "source_id": str(source_id),
+                },
+            )
         return new_ids
 
 

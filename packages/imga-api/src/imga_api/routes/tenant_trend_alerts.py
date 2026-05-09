@@ -15,7 +15,7 @@ logger.exception() on every catch path.
 from __future__ import annotations
 
 import logging
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Annotated, Any
 from uuid import UUID
 
@@ -145,7 +145,7 @@ async def update_trend_alert(
             row.status = body.status
             if body.status in {"acknowledged", "dismissed"}:
                 row.acknowledged_by_user_id = current.user_id
-                row.acknowledged_at = datetime.utcnow()
+                row.acknowledged_at = datetime.now(UTC)
             await app_session.flush()
             response = _row_to_response(row)
         return response

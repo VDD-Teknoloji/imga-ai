@@ -1197,6 +1197,36 @@ export interface ActionItem {
   created_at: string;
   updated_at: string;
   completed_at: string | null;
+  // Sprint 9.1 A — soft-delete state.
+  is_archived: boolean;
+  archived_at: string | null;
+  archived_by: string | null;
+}
+
+export type ActionItemActorType =
+  | "user"
+  | "system"
+  | "llm_extraction"
+  | "briefing_pipeline";
+
+export type ActionItemEventType =
+  | "created"
+  | "updated"
+  | "archived"
+  | "unarchived"
+  | "status_changed"
+  | "priority_changed"
+  | "assigned"
+  | "unassigned"
+  | "commented";
+
+export interface ActionItemEvent {
+  id: string;
+  event_type: ActionItemEventType;
+  actor_user_id: string | null;
+  actor_type: ActionItemActorType;
+  payload: Record<string, unknown>;
+  created_at: string;
 }
 
 export interface ActionItemCreateRequest {

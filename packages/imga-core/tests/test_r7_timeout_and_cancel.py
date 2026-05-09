@@ -9,11 +9,19 @@ single 504 into 90+ sec wall-clock per call; combined with the
 8-way HybridClassifier semaphore, the in-flight chain dwarfed
 incoming batches.
 
-These tests pin the four R7 fixes:
+Sprint 9.1 H — migrated from ``google-generativeai`` to
+``google-genai``. The single-attempt contract that R7 depended on
+is now the SDK's *default* (the new SDK doesn't auto-retry on 5xx),
+so the explicit ``Retry(predicate=...)`` plumbing is gone. We pin
+the timeout-on-Client wiring instead, plus the asyncio safety net
+and mid-batch cancel — those properties survive the SDK swap
+unchanged.
 
-  1. ``GeminiProvider`` builds a ``request_options`` dict whose
-     ``retry`` predicate matches no exception types — the SDK's
-     internal retry loop short-circuits to a single attempt.
+These tests pin the four R7 fixes (post-9.1 H):
+
+  1. ``GeminiProvider`` constructs the new SDK's Client with
+     ``http_options=HttpOptions(timeout=...)`` so the per-call
+     wall-clock is bounded at the transport layer.
   2. ``RotatingGeminiProvider.classify_async`` wraps the SDK call in
      ``asyncio.wait_for`` so a leaked SDK timeout still surfaces
      within ~15s; the timeout maps to ``LLMProviderError`` (not
@@ -64,25 +72,25 @@ def _make_keys(*aliases: str) -> list[GeminiKey]:
 # --- 1. SDK retry disable -------------------------------------------
 
 
-def test_request_options_disable_sdk_retry() -> None:
-    """``_build_no_retry_request_options`` produces a Retry whose
-    predicate matches NO exception types. The SDK's internal retry
-    loop runs predicate() on every error; when it returns False
-    once, the loop exits after a single attempt."""
-    from imga_core.llm.gemini import _build_no_retry_request_options
+def test_provider_wires_timeout_through_http_options() -> None:
+    """Sprint 9.1 H — the new SDK takes the per-call timeout via
+    ``http_options=HttpOptions(timeout=ms)`` on the Client. The R7
+    bound is 10s; the wiring is what we actually pin (the SDK's
+    no-retry default is not a knob we control on this side)."""
+    from unittest.mock import MagicMock, patch
 
-    opts = _build_no_retry_request_options(timeout_seconds=10.0)
-    assert opts["timeout"] == 10.0
-    retry = opts.get("retry")
-    if retry is None:  # google-api-core not installed (defensive path)
-        return
-    # The predicate is the documented hook the SDK calls. With
-    # if_exception_type() (empty tuple), every exception is treated
-    # as non-retryable.
-    predicate = retry._predicate
-    assert predicate(Exception("anything")) is False
-    assert predicate(TimeoutError()) is False
-    assert predicate(ConnectionError()) is False
+    from imga_core.llm.gemini import GeminiProvider
+
+    with patch("imga_core.llm.gemini._genai_module") as fake_module:
+        fake_module.Client.return_value = MagicMock()
+        with patch("imga_core.llm.gemini._genai_types") as fake_types:
+            fake_types.HttpOptions = MagicMock()
+            GeminiProvider(api_key="k", timeout_seconds=10.0)
+            assert fake_types.HttpOptions.called
+            kwargs = fake_types.HttpOptions.call_args.kwargs
+            assert kwargs.get("timeout") == 10_000  # ms
+            ctor_kwargs = fake_module.Client.call_args.kwargs
+            assert "http_options" in ctor_kwargs
 
 
 # --- 2. asyncio safety net ------------------------------------------

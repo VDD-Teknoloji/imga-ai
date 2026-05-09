@@ -31,14 +31,16 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-gemini = ["google-generativeai>=0.8.0,<1.0"]
+# Sprint 9.1 H — migrated from deprecated google-generativeai to the
+# unified google-genai SDK (Vertex AI + Gemini API surface).
+gemini = ["google-genai>=1.0,<2.0"]
 dev = [
     "pytest>=8.0",
     "pytest-cov>=5.0",
     "pytest-mock>=3.10",
     "mypy>=1.10",
     "ruff>=0.5",
-    "google-generativeai>=0.8.0,<1.0",
+    "google-genai>=1.0,<2.0",
 ]
 
 [project.urls]
@@ -113,6 +115,10 @@ select = [
     "N",   # pep8-naming
     "SIM", # flake8-simplify
     "RUF", # ruff-specific
+    # Sprint 9.1 B — block naive datetime usage. The codebase uses
+    # TIMESTAMPTZ throughout and naive ``datetime.utcnow()`` silently
+    # mismatches when compared against tz-aware columns.
+    "DTZ", # flake8-datetimez
 ]
 ignore = [
     "E501",   # line length (handled by formatter)

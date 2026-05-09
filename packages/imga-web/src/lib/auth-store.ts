@@ -69,7 +69,6 @@ export const useAuthStore = create<AuthState>((set) => ({
       await apiRequest<unknown>("/auth/login", {
         method: "POST",
         body: { email, password },
-        skipAuth: true,
       });
       const me = await apiRequest<MeResponse>("/auth/me");
       set({
@@ -121,7 +120,6 @@ export const useAuthStore = create<AuthState>((set) => ({
         {
           method: "POST",
           body: { full_name: fullName, password },
-          skipAuth: true,
         },
       );
       const me = await apiRequest<MeResponse>("/auth/me");
