@@ -56,7 +56,17 @@ function isAuthBootstrap(path: string): boolean {
   return path.startsWith("/invitations/");
 }
 
-export async function apiRequest<T>(path: string, options: RequestOptions = {}): Promise<T> {
+export async function apiRequest<T>(
+  path: string,
+  options: RequestOptions = {},
+  // Sprint 9.4 G — single-replay guard. The recursive retry on 401
+  // used to call apiRequest(path, options) without flagging the
+  // attempt; if the backend kept returning 401 even after a fresh
+  // access cookie (e.g. tenant_id / role mismatch landed in the
+  // claims, server-side rule rejection), the recursion would refresh
+  // again, retry again, ad infinitum. The flag caps it at one replay.
+  isRetry: boolean = false,
+): Promise<T> {
   const isFormData =
     typeof FormData !== "undefined" && options.body instanceof FormData;
   const headers: Record<string, string> = {};
@@ -92,10 +102,25 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
   }
 
   // 401 → try one refresh, replay original request once.
-  if (response.status === 401 && !isAuthBootstrap(path)) {
+  // Sprint 9.4 G — only on the first attempt. If the second response
+  // is also 401, the auth-store + onSessionExpired callback handle
+  // the dead session; we propagate the error rather than recursing.
+  if (response.status === 401 && !isAuthBootstrap(path) && !isRetry) {
     const refreshed = await tryRefresh();
     if (refreshed) {
-      return apiRequest<T>(path, options);
+      return apiRequest<T>(path, options, true);
+    }
+  }
+  // Post-9.4 — a 401 on the retry path means the new access cookie
+  // also got rejected (claims mismatch, role guard, etc.). Surface
+  // the dead session through the same handler that fires on a
+  // refresh failure so the caller redirects to /login instead of
+  // the user staring at a stuck "yükleniyor…" forever.
+  if (response.status === 401 && isRetry && onSessionExpired) {
+    try {
+      onSessionExpired();
+    } catch {
+      // swallow — the ApiError below is what the caller chains on
     }
   }
 
