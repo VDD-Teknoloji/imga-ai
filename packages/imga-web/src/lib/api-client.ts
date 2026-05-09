@@ -138,6 +138,24 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
 // fresh access token expires) starts its own rotation.
 let inFlightRefresh: Promise<boolean> | null = null;
 
+// Sprint 9.1 hotfix — when /auth/refresh fails the user is fully
+// signed out (refresh cookie missing / expired / chain-reuse-revoked
+// by the backend). The api-client can't import the auth-store +
+// next/navigation (those would pull React/router into a leaf
+// utility), so we expose a setter for the AuthProvider to register a
+// callback. The callback gets fired exactly once per "stuck" refresh,
+// debounced via ``inFlightRefresh`` so a burst of 401s from the same
+// expired session triggers a single redirect (not N).
+type SessionExpiredHandler = () => void;
+let onSessionExpired: SessionExpiredHandler | null = null;
+
+/** Register a callback fired when /auth/refresh fails irrecoverably.
+ *  Called by AuthProvider once at mount; the callback should clear
+ *  in-memory auth state AND navigate to /login. */
+export function setOnSessionExpired(handler: SessionExpiredHandler): void {
+  onSessionExpired = handler;
+}
+
 async function tryRefresh(): Promise<boolean> {
   if (inFlightRefresh) {
     return inFlightRefresh;
@@ -165,7 +183,19 @@ async function tryRefresh(): Promise<boolean> {
     }
   })();
   try {
-    return await inFlightRefresh;
+    const ok = await inFlightRefresh;
+    if (!ok && onSessionExpired) {
+      // Sprint 9.1 hotfix — refresh failed; the session is dead.
+      // Notify the AuthProvider so it can clear state + redirect.
+      // Wrapped in try/catch so a buggy handler doesn't smother the
+      // ``return false`` the caller expects.
+      try {
+        onSessionExpired();
+      } catch {
+        // swallow — the original 401 propagation is what matters
+      }
+    }
+    return ok;
   } finally {
     inFlightRefresh = null;
   }
@@ -174,6 +204,7 @@ async function tryRefresh(): Promise<boolean> {
 /** Test-only — clears the in-flight refresh slot between cases. */
 export function _resetRefreshMutexForTests(): void {
   inFlightRefresh = null;
+  onSessionExpired = null;
 }
 
 /**
