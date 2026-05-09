@@ -1,0 +1,275 @@
+"""Sprint 9.3 A — LLM call governance audit.
+
+Every LLM call that goes through the platform writes one
+``llm_call_audit`` row capturing the prompt template + version,
+model meta, token usage, duration, success / error metadata, and
+the request_id from Sprint 9.1 C so an operator can correlate a UI
+failure to the underlying provider call.
+
+``LLMCallAuditor`` is an async context manager — wrap the call
+site, ``record_success(...)`` after the call returns, or
+``record_failure(...)`` in the except branch. The context manager
+auto-records on exit if neither was called explicitly.
+
+Wire-shape for the audit row:
+  * call_type — 'classification' | 'briefing' |
+    'strategic_report' | 'action_extraction' | 'okr'
+  * related_entity_type / related_entity_id — points at the
+    review / briefing / report row this call produced.
+  * prompt_template_key / version — None when the call uses the
+    hard-coded fallback (e.g. classifier with no DB row yet).
+  * prompt_hash — sha256(rendered_user_prompt). Same prompt twice
+    yields the same hash; dedup analytics can use this to find
+    redundant work.
+  * model_provider — 'gemini' today; future providers fill in.
+  * fallback_used — true when the keyword classifier ran instead
+    of the LLM (HybridClassifier circuit-open path).
+
+The auditor does NOT manage transactions: callers wrap each call
+in their own ``async with session.begin():`` so the audit row
+commits with the rest of the request's work. If the caller's
+transaction rolls back, the audit row goes with it — that's
+intentional, an audit row for a transaction that was discarded is
+worse than no row.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import logging
+import time
+from dataclasses import dataclass
+from datetime import UTC, datetime
+from decimal import Decimal
+from typing import Any
+from uuid import UUID
+
+from imga_db.models import LlmCallAudit
+from sqlalchemy.ext.asyncio import AsyncSession
+
+_logger = logging.getLogger(__name__)
+
+
+CALL_TYPE_CLASSIFICATION = "classification"
+CALL_TYPE_BRIEFING = "briefing"
+CALL_TYPE_STRATEGIC_REPORT = "strategic_report"
+CALL_TYPE_ACTION_EXTRACTION = "action_extraction"
+CALL_TYPE_OKR = "okr"
+
+ERROR_TIMEOUT = "timeout"
+ERROR_RATE_LIMIT = "rate_limit"
+ERROR_API = "api_error"
+ERROR_PARSE = "parse_error"
+ERROR_INVALID_KEY = "invalid_key"
+ERROR_ALL_KEYS_EXHAUSTED = "all_keys_exhausted"
+ERROR_BLOCKED = "blocked"
+ERROR_TOKEN_LIMIT = "token_limit"
+ERROR_OTHER = "other"
+
+
+@dataclass(frozen=True, slots=True)
+class LLMCallContext:
+    """All-in-one input bag for the auditor. Built once per call
+    and immutable so a peer task can't mutate it mid-flight."""
+
+    tenant_id: UUID
+    call_type: str
+    model_name: str
+    model_provider: str = "gemini"
+    related_entity_type: str | None = None
+    related_entity_id: UUID | None = None
+    prompt_template_key: str | None = None
+    prompt_template_version: str | None = None
+    actor_user_id: UUID | None = None
+    request_id: str | None = None
+    model_temperature: float | None = None
+    model_max_tokens: int | None = None
+
+
+class LLMCallAuditor:
+    """Async context manager around a single LLM call. Usage::
+
+        ctx = LLMCallContext(tenant_id=..., call_type='briefing', ...)
+        auditor = LLMCallAuditor(session, ctx, prompt=rendered_prompt)
+        async with auditor:
+            response = await provider.generate_executive_briefing(...)
+            auditor.record_success(
+                input_tokens=response.usage_metadata.prompt_token_count,
+                output_tokens=response.usage_metadata.candidates_token_count,
+            )
+
+    The ``__aexit__`` path records a failure with whatever exception
+    raised inside the ``with`` body; an explicit ``record_success``
+    short-circuits that. Bare ``__aexit__`` without either call
+    is treated as a no-op success (the body returned but the caller
+    didn't bother to report token usage)."""
+
+    def __init__(
+        self,
+        session: AsyncSession,
+        ctx: LLMCallContext,
+        *,
+        prompt: str,
+        fallback_used: bool = False,
+    ) -> None:
+        self._session = session
+        self._ctx = ctx
+        self._prompt_hash = hashlib.sha256(prompt.encode("utf-8")).hexdigest()
+        self._fallback_used = fallback_used
+        self._started_at: float | None = None
+        self._recorded = False
+        self._success = True
+        self._error_type: str | None = None
+        self._error_message: str | None = None
+        self._input_tokens: int | None = None
+        self._output_tokens: int | None = None
+
+    async def __aenter__(self) -> LLMCallAuditor:
+        self._started_at = time.monotonic()
+        return self
+
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: Any,
+    ) -> None:
+        if self._recorded:
+            return
+        if exc_val is not None:
+            self._success = False
+            self._error_type = self._error_type or _classify_exception(exc_val)
+            self._error_message = self._error_message or str(exc_val)[:1024]
+        await self._insert_row()
+        # Don't swallow the exception — the caller still sees it.
+
+    def record_success(
+        self,
+        *,
+        input_tokens: int | None = None,
+        output_tokens: int | None = None,
+    ) -> None:
+        """Caller's chance to report token usage when the SDK
+        surfaces it. ``input_tokens`` / ``output_tokens`` are
+        ``None`` when the response didn't carry usage_metadata
+        (rare, but the row stays consistent with the provider's
+        actual response shape)."""
+        self._success = True
+        self._input_tokens = input_tokens
+        self._output_tokens = output_tokens
+
+    def record_failure(
+        self,
+        *,
+        error_type: str,
+        error_message: str,
+    ) -> None:
+        """Pre-empt the __aexit__ classifier when the caller has a
+        better signal (e.g. a ``RateLimitError`` exception that
+        the rotator caught + handled before we'd see it)."""
+        self._success = False
+        self._error_type = error_type
+        self._error_message = error_message[:1024]
+
+    async def _insert_row(self) -> None:
+        """Write the audit row. Best-effort: a failed insert logs
+        but doesn't propagate (auditing is observability, not the
+        request's primary contract)."""
+        if self._recorded:
+            return
+        self._recorded = True
+        elapsed = (
+            int((time.monotonic() - self._started_at) * 1000)
+            if self._started_at is not None
+            else None
+        )
+        try:
+            row = LlmCallAudit(
+                tenant_id=self._ctx.tenant_id,
+                call_type=self._ctx.call_type,
+                related_entity_type=self._ctx.related_entity_type,
+                related_entity_id=self._ctx.related_entity_id,
+                prompt_template_key=self._ctx.prompt_template_key,
+                prompt_template_version=self._ctx.prompt_template_version,
+                prompt_hash=self._prompt_hash,
+                model_name=self._ctx.model_name,
+                model_provider=self._ctx.model_provider,
+                model_temperature=(
+                    Decimal(str(self._ctx.model_temperature))
+                    if self._ctx.model_temperature is not None
+                    else None
+                ),
+                model_max_tokens=self._ctx.model_max_tokens,
+                input_tokens=self._input_tokens,
+                output_tokens=self._output_tokens,
+                duration_ms=elapsed,
+                success=self._success,
+                error_type=self._error_type,
+                error_message=self._error_message,
+                fallback_used=self._fallback_used,
+                actor_user_id=self._ctx.actor_user_id,
+                request_id=self._ctx.request_id,
+                created_at=datetime.now(UTC),
+            )
+            self._session.add(row)
+            await self._session.flush()
+        except Exception:
+            _logger.exception(
+                "llm audit insert failed (non-fatal)",
+                extra={
+                    "tenant_id": str(self._ctx.tenant_id),
+                    "call_type": self._ctx.call_type,
+                },
+            )
+
+
+def _classify_exception(exc: BaseException) -> str:
+    """Map a raw exception to one of the registry's error_type
+    values. Best-effort — unknown exceptions fall through to
+    ``other``."""
+    name = type(exc).__name__
+    msg = str(exc).lower()
+    if (
+        "rate" in name.lower()
+        or "rate_limit" in msg
+        or "ratelimit" in msg
+        or "429" in msg
+        or "quota" in msg
+        or "resource_exhausted" in msg
+    ):
+        return ERROR_RATE_LIMIT
+    if "invalidkey" in name.lower() or "invalid api key" in msg or "api key not valid" in msg:
+        return ERROR_INVALID_KEY
+    if "allkeysexhausted" in name.lower():
+        return ERROR_ALL_KEYS_EXHAUSTED
+    if "timeout" in name.lower() or "timed out" in msg or "deadline" in msg:
+        return ERROR_TIMEOUT
+    if "blocked" in name.lower() or "safety" in msg or "recitation" in msg:
+        return ERROR_BLOCKED
+    if "tokenlimit" in name.lower() or "max_tokens" in msg:
+        return ERROR_TOKEN_LIMIT
+    if "malformed" in name.lower() or "json" in msg or "parse" in msg:
+        return ERROR_PARSE
+    if "504" in msg or "503" in msg or "500" in msg:
+        return ERROR_API
+    return ERROR_OTHER
+
+
+__all__ = [
+    "CALL_TYPE_ACTION_EXTRACTION",
+    "CALL_TYPE_BRIEFING",
+    "CALL_TYPE_CLASSIFICATION",
+    "CALL_TYPE_OKR",
+    "CALL_TYPE_STRATEGIC_REPORT",
+    "ERROR_ALL_KEYS_EXHAUSTED",
+    "ERROR_API",
+    "ERROR_BLOCKED",
+    "ERROR_INVALID_KEY",
+    "ERROR_OTHER",
+    "ERROR_PARSE",
+    "ERROR_RATE_LIMIT",
+    "ERROR_TIMEOUT",
+    "ERROR_TOKEN_LIMIT",
+    "LLMCallAuditor",
+    "LLMCallContext",
+]

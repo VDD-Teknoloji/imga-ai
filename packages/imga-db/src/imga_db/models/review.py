@@ -154,3 +154,14 @@ class Review(Base, TimestampMixin, SoftDeleteMixin):
     company_perspective_code: Mapped[str | None] = mapped_column(
         String(64), nullable=True
     )
+
+    # Sprint 9.3 B — business impact dimensions. All four nullable
+    # so existing reviews stay valid; populated at upload time via
+    # the tenant's ``tenant_business_dimensions.csv_column_mapping``
+    # if configured. Free-text by default; the dimension config row's
+    # ``allowed_values`` lets a tenant lock a dimension to an enum
+    # for UI cleanliness without a schema migration.
+    business_segment: Mapped[str | None] = mapped_column(Text(), nullable=True)
+    product_line: Mapped[str | None] = mapped_column(Text(), nullable=True)
+    channel: Mapped[str | None] = mapped_column(Text(), nullable=True)
+    customer_tier: Mapped[str | None] = mapped_column(Text(), nullable=True)

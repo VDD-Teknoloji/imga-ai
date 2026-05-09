@@ -41,18 +41,28 @@ from imga_api.routes import (
 from imga_api.routes import (
     tenant_briefing_schedules as tenant_briefing_schedules_routes,
 )
+from imga_api.routes import (
+    tenant_business_dimensions as tenant_business_dimensions_routes,
+)
 from imga_api.routes import tenant_config as tenant_config_routes
+from imga_api.routes import (
+    tenant_decision_audit as tenant_decision_audit_routes,
+)
 from imga_api.routes import tenant_directory as tenant_directory_routes
 from imga_api.routes import (
     tenant_executive_briefings as tenant_executive_briefings_routes,
 )
 from imga_api.routes import tenant_insights as tenant_insights_routes
 from imga_api.routes import tenant_kpi_goals as tenant_kpi_goals_routes
+from imga_api.routes import tenant_llm_audit as tenant_llm_audit_routes
 from imga_api.routes import tenant_llm_credentials as tenant_llm_credentials_routes
 from imga_api.routes import (
     tenant_pending_webhooks as tenant_pending_webhooks_routes,
 )
 from imga_api.routes import tenant_profile as tenant_profile_routes
+from imga_api.routes import (
+    tenant_prompt_templates as tenant_prompt_templates_routes,
+)
 from imga_api.routes import tenant_reports as tenant_reports_routes
 from imga_api.routes import tenant_reviews as tenant_reviews_routes
 from imga_api.routes import tenant_sla_rules as tenant_sla_rules_routes
@@ -350,6 +360,11 @@ app.include_router(admin_prompt_templates_routes.router)
 app.include_router(public_invitation_routes.router)
 # Sprint 9.2 A — public KPI metric registry.
 app.include_router(metric_definitions_routes.router)
+# Sprint 9.3 — governance + dimensions + decisions + prompt templates.
+app.include_router(tenant_llm_audit_routes.router)
+app.include_router(tenant_decision_audit_routes.router)
+app.include_router(tenant_business_dimensions_routes.router)
+app.include_router(tenant_prompt_templates_routes.router)
 
 
 @app.get(

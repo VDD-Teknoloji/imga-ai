@@ -9,9 +9,11 @@ from imga_db.models.briefing_schedule import BriefingSchedule
 from imga_db.models.category import Category, TenantCategory
 from imga_db.models.category_taxonomy import CategoryTaxonomy
 from imga_db.models.comment import TicketComment, TicketCommentKind
+from imga_db.models.decision_audit_log import DecisionAuditLog
 from imga_db.models.executive_briefing import ExecutiveBriefing
 from imga_db.models.executive_snapshot import ExecutiveSnapshot
 from imga_db.models.invitation import Invitation
+from imga_db.models.llm_call_audit import LlmCallAudit
 from imga_db.models.metric_definition import MetricDefinition
 from imga_db.models.mixins import SoftDeleteMixin, TenantOwnedMixin, TimestampMixin
 from imga_db.models.pending_webhook import (
@@ -37,6 +39,7 @@ from imga_db.models.tenant import (
     Tenant,
     TenantPlanTier,
 )
+from imga_db.models.tenant_business_dimension import TenantBusinessDimension
 from imga_db.models.tenant_kpi_goal import TenantKpiGoal
 from imga_db.models.tenant_llm_credential import TenantLlmCredential
 from imga_db.models.trend_alert import TrendAlert
@@ -61,9 +64,11 @@ __all__ = [
     "CancellationReason",
     "Category",
     "CategoryTaxonomy",
+    "DecisionAuditLog",
     "ExecutiveBriefing",
     "ExecutiveSnapshot",
     "Invitation",
+    "LlmCallAudit",
     "MetricDefinition",
     "PendingWebhookEvent",
     "PendingWebhookStatus",
@@ -82,6 +87,7 @@ __all__ = [
     "StrategicReport",
     "TaxonomyEditAudit",
     "Tenant",
+    "TenantBusinessDimension",
     "TenantCategory",
     "TenantKpiGoal",
     "TenantLlmCredential",

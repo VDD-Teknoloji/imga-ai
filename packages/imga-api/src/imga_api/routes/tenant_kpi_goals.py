@@ -20,7 +20,7 @@ from datetime import date, datetime
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from imga_db.models import Review, TenantKpiGoal, UserTenantRole
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import func, select
@@ -166,6 +166,7 @@ async def list_goals(
 )
 async def set_goal(
     body: KpiGoalCreateRequest,
+    request: Request,
     current: Annotated[CurrentUser, _WriteMember],
     app_session: Annotated[AsyncSession, Depends(get_app_session)],
 ) -> KpiGoalResponse:
@@ -183,6 +184,30 @@ async def set_goal(
                 period_end=body.period_end,
                 set_by_user_id=current.user_id,
                 notes=body.notes,
+            )
+            # Sprint 9.3 C — operator decision audit. Goal-setting is
+            # the canonical "human committed to a number" action;
+            # surfaces on /admin/decision-audit timeline.
+            from imga_api.services import (
+                DECISION_KPI_GOAL_SET,
+                DecisionAuditService,
+            )
+
+            await DecisionAuditService(app_session).record_decision(
+                tenant_id=tenant_id,
+                decision_type=DECISION_KPI_GOAL_SET,
+                related_entity_type="tenant_kpi_goal",
+                related_entity_id=row.id,
+                actor_user_id=current.user_id,
+                payload={
+                    "metric_key": body.metric_key,
+                    "target_value": body.target_value,
+                    "target_period": body.target_period,
+                    "period_start": body.period_start.isoformat(),
+                    "period_end": body.period_end.isoformat(),
+                },
+                rationale=body.notes,
+                request_id=getattr(request.state, "request_id", None),
             )
             response = _row_to_response(row)
         return response

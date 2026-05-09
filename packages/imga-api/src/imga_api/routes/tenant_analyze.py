@@ -51,6 +51,8 @@ class TenantAnalyzeRequest(BaseModel):
             "example": {
                 "text": "Kargom 5 gündür gelmedi, takip numarası da çalışmıyor.",
                 "nps_score": 3,
+                "business_segment": "premium",
+                "channel": "mobile",
             }
         },
     )
@@ -60,6 +62,15 @@ class TenantAnalyzeRequest(BaseModel):
     # so the review row carries it into analytics. Skipping is fine —
     # the pipeline ignores the value, only persistence reads it.
     nps_score: int | None = Field(default=None, ge=0, le=10)
+    # Sprint 9.3 B — business impact dimensions. All four optional;
+    # the analyze endpoint passes them straight onto the Review row
+    # for downstream analytics breakdown. No validation against the
+    # tenant's ``allowed_values`` here — that's a route-layer policy
+    # the next sprint can layer on top.
+    business_segment: str | None = Field(default=None, max_length=128)
+    product_line: str | None = Field(default=None, max_length=128)
+    channel: str | None = Field(default=None, max_length=64)
+    customer_tier: str | None = Field(default=None, max_length=64)
 
 
 class TenantAnalyzeResponse(BaseModel):
@@ -144,6 +155,34 @@ async def tenant_analyze(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=str(exc),
             ) from exc
+
+        # Sprint 9.3 B — back-fill business impact dimensions on the
+        # row record_and_decide just minted. The bridge service is
+        # dimension-agnostic; doing the patch here keeps the bridge
+        # path narrow + lets every dimension stay nullable. UPDATE
+        # only when at least one is set.
+        if any(
+            v is not None
+            for v in (
+                body.business_segment,
+                body.product_line,
+                body.channel,
+                body.customer_tier,
+            )
+        ):
+            from imga_db.models import Review
+            from sqlalchemy import update as _update
+
+            await app_session.execute(
+                _update(Review)
+                .where(Review.id == result.review_id)
+                .values(
+                    business_segment=body.business_segment,
+                    product_line=body.product_line,
+                    channel=body.channel,
+                    customer_tier=body.customer_tier,
+                )
+            )
 
     return TenantAnalyzeResponse(
         review_id=result.review_id,

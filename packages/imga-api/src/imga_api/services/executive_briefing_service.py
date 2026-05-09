@@ -215,9 +215,47 @@ class ExecutiveBriefingService:
                         break
                 raise
 
+        # Sprint 9.3 A — wrap the rotator call in the LLM call
+        # auditor so every executive briefing generation lands one
+        # ``llm_call_audit`` row with prompt hash, model meta, token
+        # usage, success / error metadata. Best-effort: a failed
+        # audit insert logs but doesn't propagate (governance is
+        # observability, not the request's primary contract).
+        from imga_api.services.llm_audit_service import (
+            CALL_TYPE_BRIEFING,
+            LLMCallAuditor,
+            LLMCallContext,
+        )
+
+        audit_ctx = LLMCallContext(
+            tenant_id=self._tenant_id,
+            call_type=CALL_TYPE_BRIEFING,
+            model_name=DEFAULT_MODEL_NAME,
+            model_provider="gemini",
+            prompt_template_key="executive_briefing",
+            prompt_template_version="v1",
+            actor_user_id=self._user_id,
+            related_entity_type="executive_briefing",
+        )
+        auditor = LLMCallAuditor(
+            self._session, audit_ctx, prompt=user_prompt
+        )
         start = time.monotonic()
         try:
-            (response, token_usage), key_used = await rotator.call_with_rotation(_call)
+            async with auditor:
+                (response, token_usage), key_used = (
+                    await rotator.call_with_rotation(_call)
+                )
+                input_tokens = (
+                    token_usage.get("input") if token_usage else None
+                )
+                output_tokens = (
+                    token_usage.get("output") if token_usage else None
+                )
+                auditor.record_success(
+                    input_tokens=input_tokens,
+                    output_tokens=output_tokens,
+                )
         except AllKeysExhaustedError:
             await mark_keys_failed(self._session, failed_invalid_key_ids)
             raise
