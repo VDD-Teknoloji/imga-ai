@@ -51,10 +51,17 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
   const response = await fetch(`${API_BASE}${path}`, {
     method: options.method ?? "GET",
     headers,
-    // ``include`` is required for cross-origin auth cookies. ``omit``
-    // when the caller has explicitly opted out (e.g. /auth/login
-    // before there's a session, public health checks).
-    credentials: options.skipAuth ? "omit" : "include",
+    // Always ``include``. Sprint 9.0.6 cookie hotfix — the original
+    // ``options.skipAuth ? "omit" : "include"`` form bit us in
+    // production: ``credentials: "omit"`` not only skips outbound
+    // cookies but also makes the browser disregard ``Set-Cookie`` on
+    // the response. /auth/login + invitation accept (the three
+    // skipAuth callers) were exactly the responses that needed to
+    // *land* the cookies, so login looked like it succeeded but no
+    // session was stored. The skipAuth flag stays for type
+    // compatibility with existing callers; its effect is now no-op
+    // since Sprint 9.0.6 B removed the Bearer header path it gated.
+    credentials: "include",
     body:
       options.body === undefined
         ? undefined
