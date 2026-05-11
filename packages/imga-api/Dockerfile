@@ -100,3 +100,64 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=120s --retries=3 \
     CMD curl --fail http://localhost:8000/health || exit 1
 
 CMD ["python", "-m", "uvicorn", "imga_api.main:app", "--host", "0.0.0.0", "--port", "8000"]
+
+# ---------------------------------------------------------------------------
+# Sprint 9.4 J — smoke-runtime stage.
+#
+# Derives from the production ``runtime`` stage and layers in pytest +
+# the tests/ tree so the post-deploy smoke suite (``tests/smoke/``) can
+# run against a deployed environment without a separate pip install
+# dance on the host. The base ``runtime`` image stays minimal — pytest
+# isn't shipped to prod, only to the smoke profile.
+#
+# Build only when needed:
+#   docker compose --profile smoke build api-smoke
+#
+# Run once and exit:
+#   sudo docker compose --profile smoke run --rm api-smoke
+#
+# The smoke tests write to the database (seeded fixtures, then cleaned
+# up via ``semi_auto_tenant``'s teardown). Run against staging by
+# default; run against production only with a healthy backup and the
+# expectation that the test tenant is created and removed within the
+# suite.
+FROM runtime AS smoke-runtime
+
+# pytest needs root to write its cache to the imga-owned /app; switch
+# back to root for the install + test copy, then leave the image
+# running as root (smoke containers are short-lived, no exposure).
+USER root
+
+# Sprint 9.4 J — keep the dep list in sync with the test compose's
+# inline install (infra/imga/test/docker-compose.yml). pytest-asyncio
+# is the only must-have beyond pytest itself for the smoke tests;
+# pytest-timeout + factory-boy + httpx + fakeredis are inherited from
+# the dev environment but the smoke suite doesn't need them.
+RUN pip install --no-cache-dir pytest pytest-asyncio
+
+# tests/ + conftest.py — conftest is at the same level as tests/
+# (packages/imga-api/tests/conftest.py) so pytest discovers it
+# automatically. /app/tests mirrors the working directory layout
+# pytest discovery expects.
+COPY packages/imga-api/tests /app/tests
+# pyproject.toml carries the pytest config block (asyncio_mode, etc.)
+# the suite expects; copying it keeps the smoke run aligned with the
+# in-repo pytest config without a stand-alone pytest.ini.
+COPY packages/imga-api/pyproject.toml /app/pyproject.toml
+
+# Gate the suite — pytest.mark.skipif on every smoke test consults
+# this env var so a forgotten override doesn't fire the suite from
+# an interactive session.
+ENV RUN_SMOKE=1
+
+# Smoke runs need to talk to the DB; the test fixtures rely on the
+# same env vars the api service consumes (DATABASE_URL_OWNER + co.).
+# Override the inherited uvicorn CMD with the smoke pytest invocation.
+# --tb=short keeps the failure output legible across compose's line-
+# buffered logs.
+CMD ["python", "-m", "pytest", "/app/tests/smoke/", "-v", "--tb=short"]
+
+# The healthcheck inherited from the runtime stage probes /health on
+# port 8000 — smoke containers don't serve HTTP, so disable it to
+# avoid the cosmetic "unhealthy" flag on a short-lived run.
+HEALTHCHECK NONE

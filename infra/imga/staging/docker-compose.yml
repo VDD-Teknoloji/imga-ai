@@ -196,6 +196,41 @@ services:
           memory: 512M
           cpus: '1'
 
+  # Sprint 9.4 J — post-deploy smoke runner.
+  #
+  # Same pattern as the production compose's ``api-smoke`` service —
+  # see the comment block there for the full rationale. Staging is
+  # the canonical place to exercise this suite: it shares the
+  # production Dockerfile + migration set, but the data here is
+  # operator-seeded so the per-tenant teardown can run without
+  # disturbing real customers.
+  #
+  # Invocation:
+  #   sudo docker compose --profile smoke run --rm api-smoke
+  api-smoke:
+    image: imga-api:staging-smoke
+    build:
+      context: ../../..
+      dockerfile: packages/imga-api/Dockerfile
+      target: smoke-runtime
+    container_name: imga-staging-api-smoke
+    profiles: ["smoke"]
+    env_file: /etc/imga/staging/api.env
+    environment:
+      IMGA_MASTER_KEY_PATH: /run/secrets/imga/master.key
+      REDIS_URL: redis://redis:6379/0
+    secrets:
+      - source: imga_master_key
+        target: imga/master.key
+        mode: 0400
+    networks:
+      - imga-staging-internal
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
   # Sprint 8.3.6 — staging Redis. Smaller maxmemory than production
   # since SWOT load is lower; same eviction policy.
   redis:

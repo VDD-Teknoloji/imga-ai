@@ -232,6 +232,50 @@ services:
           memory: 512M
           cpus: '1'
 
+  # Sprint 9.4 J — post-deploy smoke runner.
+  #
+  # Same Dockerfile as ``api``, different target stage (``smoke-runtime``
+  # layers pytest + tests/ on top of the production runtime). Default
+  # ``compose up -d`` does NOT start this service — it sits in the
+  # ``smoke`` profile so it only runs when explicitly invoked:
+  #
+  #   sudo docker compose --profile smoke run --rm api-smoke
+  #
+  # The service joins ``imga-prod-internal`` so it can reach postgres +
+  # redis with the same DSNs the api service uses. env_file gives it
+  # DATABASE_URL_OWNER + co. without duplicating credentials in the
+  # compose file. Master key + master.key secret follow the api wiring;
+  # the encryption helper test exercises the round-trip.
+  #
+  # Container exits with pytest's exit code → operator's wrapper script
+  # can branch on success / failure.
+  api-smoke:
+    image: imga-api:production-smoke
+    build:
+      context: ../../..
+      dockerfile: packages/imga-api/Dockerfile
+      target: smoke-runtime
+    container_name: imga-prod-api-smoke
+    profiles: ["smoke"]
+    env_file: /etc/imga/production/api.env
+    environment:
+      IMGA_MASTER_KEY_PATH: /run/secrets/imga/master.key
+      REDIS_URL: redis://redis:6379/0
+    secrets:
+      - source: imga_master_key
+        target: imga/master.key
+        mode: 0400
+    networks:
+      - imga-prod-internal
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    # No restart policy — smoke is a one-shot. The default
+    # ``--rm`` flag on ``compose run`` cleans the container up on exit
+    # so a failed run doesn't leave a stopped row in ``docker ps -a``.
+
   # Sprint 8.3.6 — SWOT generation cache (24h TTL per tenant + date range)
   # plus rate-limit / multi-key rotation state. allkeys-lru eviction so
   # an unbounded tenant set can't OOM the container.
