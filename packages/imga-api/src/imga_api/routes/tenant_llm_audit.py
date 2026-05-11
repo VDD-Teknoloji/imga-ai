@@ -21,7 +21,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, status
 from imga_db.models import LlmCallAudit, UserTenantRole
 from pydantic import BaseModel
-from sqlalchemy import desc, func, select
+from sqlalchemy import Integer, case, desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from imga_api.auth_deps import CurrentUser, bind_tenant, require_role
@@ -174,47 +174,47 @@ async def audit_summary(
     tenant_id = _require_active_tenant(current)
     async with app_session.begin():
         await bind_tenant(app_session, current)
-        # Per-day call count + token sum + per-day failure count.
-        # Two queries (totals + fails-only) joined in Python because
-        # the boolean-to-int sum is dialect-specific; the two-pass
-        # pattern stays portable.
-        day_expr = func.date_trunc("day", LlmCallAudit.created_at)
+        # Sprint 9.4.2 hotfix — collapse the per-day rollup into a
+        # single query with a CASE-driven failure counter. The pre-
+        # 9.4.2 version ran two GROUP-BY queries and joined them in
+        # Python; PostgreSQL rejected one of them on populated data
+        # ("column created_at must appear in the GROUP BY clause")
+        # the moment the Sprint 9.4.2 A fix let real rows land in
+        # the table. A single query side-steps any dual-statement
+        # consistency / aliasing subtlety and lets the dashboard's
+        # chart render against the real audit data.
+        day_col = func.date_trunc("day", LlmCallAudit.created_at)
+        failure_marker = case(
+            (LlmCallAudit.success.is_(False), 1),
+            else_=0,
+        )
         stmt = (
             select(
-                day_expr.label("day"),
+                day_col.label("day"),
                 func.count().label("calls"),
+                func.coalesce(
+                    func.sum(func.cast(failure_marker, Integer)),
+                    0,
+                ).label("failures"),
                 func.coalesce(
                     func.sum(LlmCallAudit.total_tokens), 0
                 ).label("tokens"),
             )
             .where(LlmCallAudit.tenant_id == tenant_id)
-            .group_by(day_expr)
-            .order_by(day_expr)
+            .group_by(day_col)
+            .order_by(day_col)
         )
-        all_rows = (await app_session.execute(stmt)).all()
-
-        fail_stmt = (
-            select(
-                func.date_trunc("day", LlmCallAudit.created_at).label("day"),
-                func.count().label("fails"),
-            )
-            .where(LlmCallAudit.tenant_id == tenant_id)
-            .where(LlmCallAudit.success.is_(False))
-            .group_by(func.date_trunc("day", LlmCallAudit.created_at))
-        )
-        fail_rows = (await app_session.execute(fail_stmt)).all()
-
-        fail_by_day = {r.day: int(r.fails or 0) for r in fail_rows}
+        rows = (await app_session.execute(stmt)).all()
 
         days: list[DailyUsagePoint] = []
         total_calls = 0
         total_failures = 0
         total_tokens = 0
-        for r in all_rows:
+        for r in rows:
             day_str = r.day.date().isoformat() if r.day is not None else ""
             calls = int(r.calls or 0)
+            fails = int(r.failures or 0)
             tokens = int(r.tokens or 0)
-            fails = int(fail_by_day.get(r.day, 0))
             days.append(
                 DailyUsagePoint(
                     day=day_str,
