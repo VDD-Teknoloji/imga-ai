@@ -22,6 +22,7 @@ from uuid import UUID, uuid4
 from sqlalchemy import (
     Boolean,
     CheckConstraint,
+    Computed,
     DateTime,
     ForeignKey,
     Integer,
@@ -73,10 +74,20 @@ class LlmCallAudit(Base):
     )
     input_tokens: Mapped[int | None] = mapped_column(Integer(), nullable=True)
     output_tokens: Mapped[int | None] = mapped_column(Integer(), nullable=True)
+    # Sprint 9.4.2 hotfix — Migration 0027 ships ``total_tokens`` as a
+    # PostgreSQL ``GENERATED ALWAYS AS ... STORED`` column. The ORM
+    # has to mirror that with ``Computed(..., persisted=True)`` so
+    # SQLAlchemy's INSERT path excludes the column instead of sending
+    # ``total_tokens=NULL`` (which Postgres rejects with
+    # ``GeneratedAlwaysError`` against a generated-always column).
+    # Pre-fix every audit insert hit the savepoint rollback path
+    # from Sprint 9.4 F and the audit table stayed empty in prod.
     total_tokens: Mapped[int | None] = mapped_column(
         Integer(),
-        # Computed column from the migration; SQLAlchemy needs the
-        # Mapped annotation but we never write to it.
+        Computed(
+            "COALESCE(input_tokens, 0) + COALESCE(output_tokens, 0)",
+            persisted=True,
+        ),
         nullable=True,
     )
     duration_ms: Mapped[int | None] = mapped_column(Integer(), nullable=True)
