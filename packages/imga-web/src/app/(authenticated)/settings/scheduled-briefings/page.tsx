@@ -158,8 +158,25 @@ function ScheduleRow({ schedule }: { schedule: BriefingSchedule }) {
       <Button
         size="sm"
         onClick={() =>
+          // Sprint 9.4.2 hotfix — run-now's route handler catches a
+          // failed briefing generation, records ``last_run_status =
+          // 'failed'`` on the schedule, and returns 200 with the
+          // updated schedule in the body. HTTP 200 alone is therefore
+          // not a success signal; the actual outcome lives on the
+          // response's ``last_run_status``. Pre-fix every run popped a
+          // green "Brifing üretildi" toast even when the LLM had 504'd.
           runNow.mutate(schedule.id, {
-            onSuccess: () => toast.success("Brifing üretildi."),
+            onSuccess: (updated) => {
+              if (updated.last_run_status === "success") {
+                toast.success("Brifing üretildi.");
+              } else {
+                toast.error(
+                  `Brifing üretilemedi: ${
+                    updated.last_run_error || "bilinmeyen hata"
+                  }`,
+                );
+              }
+            },
             onError: (err) => toast.error(formatApiErrorMessage(err)),
           })
         }
