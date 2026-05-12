@@ -68,6 +68,10 @@ services:
     build:
       context: ../../..
       dockerfile: packages/imga-api/Dockerfile
+      # Sprint 9.4.3 — pin the runtime stage so default builds don't
+      # land on the Sprint 9.4 J smoke-runtime (pytest CMD that exits
+      # on startup). See production compose for the full rationale.
+      target: runtime
     container_name: imga-staging-api
     restart: unless-stopped
     env_file: /etc/imga/staging/api.env
@@ -123,6 +127,8 @@ services:
     build:
       context: ../../..
       dockerfile: packages/imga-api/Dockerfile
+      # Same target-pinning rationale as the ``api`` service.
+      target: runtime
     container_name: imga-staging-api-worker
     restart: unless-stopped
     env_file: /etc/imga/staging/api.env

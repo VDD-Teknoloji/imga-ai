@@ -74,6 +74,14 @@ services:
     build:
       context: ../../..
       dockerfile: packages/imga-api/Dockerfile
+      # Sprint 9.4 J added a ``smoke-runtime`` stage AFTER ``runtime`` in
+      # the Dockerfile; without an explicit target, ``compose build`` now
+      # builds the LAST stage (pytest CMD that exits immediately on
+      # startup → 502 storm). Pin ``runtime`` so production builds stay
+      # the uvicorn server they always were. ``api-smoke`` (profile:
+      # smoke) is the only service that intentionally builds the smoke
+      # stage.
+      target: runtime
     container_name: imga-prod-api
     restart: unless-stopped
     env_file: /etc/imga/production/api.env
@@ -138,6 +146,10 @@ services:
     build:
       context: ../../..
       dockerfile: packages/imga-api/Dockerfile
+      # Same target-pinning rationale as the ``api`` service above —
+      # without this the worker would build the smoke stage and exit on
+      # startup, taking the batch path down.
+      target: runtime
     container_name: imga-prod-api-worker
     restart: unless-stopped
     env_file: /etc/imga/production/api.env
