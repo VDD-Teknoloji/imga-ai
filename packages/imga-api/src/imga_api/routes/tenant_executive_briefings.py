@@ -140,12 +140,30 @@ async def generate_briefing(
     app_session: Annotated[AsyncSession, Depends(get_app_session)],
 ) -> BriefingResponse:
     tenant_id = _require_active_tenant(current)
-    try:
-        async with app_session.begin():
-            await bind_tenant(app_session, current)
-            service = ExecutiveBriefingService(
-                app_session, tenant_id, user_id=current.user_id,
-            )
+    # Sprint 9.4.5 — deferred-raise pattern. The pre-9.4.5 shape
+    # wrapped the LLM call in a try/except OUTSIDE the parent
+    # ``async with app_session.begin():`` block; when the service
+    # raised AllKeysExhaustedError (or any sibling), the exception
+    # propagated out of the ``with``, the parent transaction rolled
+    # back, and the SAVEPOINT audit row inserted by the auditor's
+    # ``__aexit__`` went down with it. /admin/llm-audit then had no
+    # row for the most operationally interesting failure path.
+    #
+    # The fix: catch the LLM-class exceptions INSIDE the ``async
+    # with`` block, stash a deferred HTTPException, let the
+    # ``async with`` exit cleanly so the parent transaction commits
+    # (taking the audit row with it), then re-raise the HTTPException
+    # afterward. /run-now already follows this shape — its try/except
+    # is inside the begin() block, which is why /run-now never lost
+    # an audit row on failure.
+    deferred_exc: HTTPException | None = None
+    data: dict[str, object] | None = None
+    async with app_session.begin():
+        await bind_tenant(app_session, current)
+        service = ExecutiveBriefingService(
+            app_session, tenant_id, user_id=current.user_id,
+        )
+        try:
             data = await service.generate(
                 period=body.period,
                 date_from=body.date_from,
@@ -153,58 +171,65 @@ async def generate_briefing(
                 batch_id=body.batch_id,
                 force_refresh=body.force_refresh,
             )
-        # Fetch the freshly persisted row so response_model lines up.
-        async with app_session.begin():
-            await bind_tenant(app_session, current)
-            row = await app_session.get(ExecutiveBriefing, UUID(data["id"]))
-            if row is None:
-                raise HTTPException(
-                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                    detail="briefing kaydı bulunamadı",
-                )
-            response = _row_to_response(row)
-        return response
-    except NoCredentialsError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="no_llm_credentials",
-        ) from exc
-    except AllKeysExhaustedError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="all_keys_exhausted",
-        ) from exc
-    except LLMTokenLimitError as exc:
-        # Sprint 8.3.11 R2 — distinct surface for the truncation case
-        # so the frontend can show a "tekrar deneyin / dönemi daraltın"
-        # toast rather than a generic 502.
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=str(exc),
-        ) from exc
-    except LLMResponseBlockedError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=str(exc),
-        ) from exc
-    except BriefingResponseInvalidError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=f"LLM yanıtı geçersiz: {exc}",
-        ) from exc
-    except LLMError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=f"LLM hatası: {exc}",
-        ) from exc
-    except HTTPException:
-        raise
-    except Exception:
-        _logger.exception(
-            "generate_briefing failed",
-            extra={"tenant_id": str(tenant_id)},
-        )
-        raise
+        except NoCredentialsError as exc:
+            deferred_exc = HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="no_llm_credentials",
+            )
+            deferred_exc.__cause__ = exc
+        except AllKeysExhaustedError as exc:
+            deferred_exc = HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="all_keys_exhausted",
+            )
+            deferred_exc.__cause__ = exc
+        except LLMTokenLimitError as exc:
+            # Sprint 8.3.11 R2 — distinct surface for the truncation
+            # case so the frontend can show a "tekrar deneyin /
+            # dönemi daraltın" toast rather than a generic 502.
+            deferred_exc = HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail=str(exc),
+            )
+            deferred_exc.__cause__ = exc
+        except LLMResponseBlockedError as exc:
+            deferred_exc = HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail=str(exc),
+            )
+            deferred_exc.__cause__ = exc
+        except BriefingResponseInvalidError as exc:
+            deferred_exc = HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail=f"LLM yanıtı geçersiz: {exc}",
+            )
+            deferred_exc.__cause__ = exc
+        except LLMError as exc:
+            deferred_exc = HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail=f"LLM hatası: {exc}",
+            )
+            deferred_exc.__cause__ = exc
+    # ``async with app_session.begin()`` exited cleanly above — the
+    # auditor's SAVEPOINT row is now part of the committed parent
+    # transaction. Now we can safely raise the deferred HTTPException
+    # for the operator-facing response.
+    if deferred_exc is not None:
+        raise deferred_exc
+
+    # Success path — fetch the persisted briefing row so the response
+    # model lines up.
+    assert data is not None  # narrows the type after the deferred guard
+    async with app_session.begin():
+        await bind_tenant(app_session, current)
+        row = await app_session.get(ExecutiveBriefing, UUID(data["id"]))
+        if row is None:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="briefing kaydı bulunamadı",
+            )
+        response = _row_to_response(row)
+    return response
 
 
 @router.get(
