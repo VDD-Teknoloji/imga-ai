@@ -14,6 +14,7 @@ Alt-Faz 3 design notes.
 
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime
 from typing import Annotated
 from uuid import UUID
@@ -30,6 +31,12 @@ from imga_api.dependencies import get_pipeline, get_review_service
 from imga_api.services import (
     CategoryNotConfiguredError,
     ReviewService,
+)
+from imga_api.services.executive_briefing_service import DEFAULT_MODEL_NAME
+from imga_api.services.llm_audit_service import (
+    CALL_TYPE_CLASSIFICATION,
+    LLMCallAuditor,
+    LLMCallContext,
 )
 
 router = APIRouter(prefix="/tenants/me", tags=["Analyze"])
@@ -138,10 +145,39 @@ async def tenant_analyze(
     fixed order and persists exactly one review row.
     """
     tenant_id = _require_active_tenant(current)
-    analysis = pipeline.analyze(body.text)
 
     async with app_session.begin():
         await bind_tenant(app_session, current)
+        # Sprint 9.4.3 A — wrap the classification call so each
+        # /tenants/me/analyze request lands one row in
+        # ``llm_call_audit``. Pipeline.analyze is sync (HF BERT) and
+        # may consult the LLM internally via HybridClassifier; the
+        # auditor stays at the route boundary so we get one audit
+        # row per request without coupling the pipeline to the
+        # audit service. ``fallback_used`` is set after analysis
+        # by inspecting ``categorization.llm_result`` — None means
+        # the keyword classifier owned the decision (circuit-open or
+        # rotator-exhausted).
+        audit_ctx = LLMCallContext(
+            tenant_id=tenant_id,
+            call_type=CALL_TYPE_CLASSIFICATION,
+            model_name=DEFAULT_MODEL_NAME,
+            model_provider="gemini",
+            actor_user_id=current.user_id,
+        )
+        auditor = LLMCallAuditor(app_session, audit_ctx, prompt=body.text)
+        async with auditor:
+            # ``asyncio.to_thread`` keeps the event loop responsive
+            # while BERT runs; the pipeline path itself is
+            # synchronous because HF transformers isn't async.
+            analysis = await asyncio.to_thread(pipeline.analyze, body.text)
+            llm_used = (
+                analysis.categorization is not None
+                and analysis.categorization.llm_result is not None
+            )
+            auditor.mark_fallback_used(not llm_used)
+            auditor.record_success()
+
         try:
             result = await reviews.record_and_decide(
                 tenant_id=tenant_id,

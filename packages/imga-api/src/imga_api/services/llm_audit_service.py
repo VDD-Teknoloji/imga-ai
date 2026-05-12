@@ -171,6 +171,14 @@ class LLMCallAuditor:
         self._error_type = error_type
         self._error_message = error_message[:1024]
 
+    def mark_fallback_used(self, used: bool) -> None:
+        """Sprint 9.4.3 A — callers that can only learn whether the
+        LLM was actually invoked AFTER the call returns (HybridClassifier
+        is the canonical case: it falls back to the keyword classifier
+        on rotator exhaustion or breaker-open without raising) flip
+        the flag here. The auditor reads it on __aexit__."""
+        self._fallback_used = used
+
     async def _insert_row(self) -> None:
         """Write the audit row. Best-effort: a failed insert logs
         but doesn't propagate.
