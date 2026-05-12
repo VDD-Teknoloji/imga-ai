@@ -246,9 +246,42 @@ class InvitationService:
 
     # --- accept (atomic claim shared by both new + existing paths) ----
 
-    async def _claim(self, plaintext_token: str, now: datetime) -> _ClaimedInvitation:
+    async def _peek_invited_email(
+        self, plaintext_token: str, now: datetime
+    ) -> str | None:
+        """Sprint 9.5 A2 — non-consuming lookup of the email an
+        invitation was issued to. Returns ``None`` if the token is
+        invalid / expired / already accepted.
+
+        Used by the existing-user accept path to validate that the
+        authenticated caller's email matches the invited email BEFORE
+        the atomic claim. Pre-9.5 the order was reversed (claim
+        first, mismatch raise after) which let a wrong-email caller —
+        anyone who happened to know their own password — burn an
+        invitation that wasn't issued to them.
+        """
+        token_hash = hash_token(plaintext_token)
+        row = await self._session.execute(
+            select(Invitation.email)
+            .where(Invitation.token_hash == token_hash)
+            .where(Invitation.accepted_at.is_(None))
+            .where(Invitation.expires_at > now)
+        )
+        return row.scalar_one_or_none()
+
+    async def _claim(
+        self,
+        plaintext_token: str,
+        now: datetime,
+        *,
+        accepted_by_user_id: UUID | None = None,
+    ) -> _ClaimedInvitation:
         """Single-use atomic claim. Sets accepted_at=now exactly once;
-        concurrent claimers see no row and raise."""
+        concurrent claimers see no row and raise.
+
+        Sprint 9.5 A2 — accepts ``accepted_by_user_id`` so the audit
+        column records who actually claimed (distinct from invited_by
+        which is the inviter)."""
         token_hash = hash_token(plaintext_token)
         stmt = (
             update(Invitation)
@@ -257,7 +290,7 @@ class InvitationService:
                 Invitation.accepted_at.is_(None),
                 Invitation.expires_at > now,
             )
-            .values(accepted_at=now)
+            .values(accepted_at=now, accepted_by_user_id=accepted_by_user_id)
             .returning(
                 Invitation.id,
                 Invitation.tenant_id,
@@ -291,7 +324,14 @@ class InvitationService:
         """Legacy auto-pick accept. Kept for the existing test suite +
         the original Sprint 7.3 flow. New code should prefer
         ``accept_invitation_for_new_user`` (raises on existing email)
-        or ``accept_invitation_for_existing_user`` (re-auths)."""
+        or ``accept_invitation_for_existing_user`` (re-auths).
+
+        Sprint 9.5 A2 — populates ``accepted_by_user_id`` after the
+        user row is materialised. New-account path doesn't know the
+        user_id until after _claim (the create happens post-claim),
+        so we issue a follow-up UPDATE instead of passing it through
+        the claim's RETURNING.
+        """
         now = datetime.now(UTC)
         claimed = await self._claim(plaintext_token, now)
 
@@ -312,6 +352,15 @@ class InvitationService:
             role=claimed.role,
             invited_by_user_id=claimed.invited_by,
             invitation_accepted_at=now,
+        )
+
+        # Sprint 9.5 A2 — backfill accepted_by_user_id on the
+        # just-claimed row. _claim couldn't carry it because the user
+        # row didn't exist yet on the new-account path.
+        await self._session.execute(
+            update(Invitation)
+            .where(Invitation.id == claimed.invitation_id)
+            .values(accepted_by_user_id=user.id)
         )
 
         invitation = await self._session.get(Invitation, claimed.invitation_id)
@@ -371,7 +420,21 @@ class InvitationService:
         """Sprint 7.5.5 existing-user path. Re-verifies the user's
         current password before claiming the token, so a stolen
         invitation link cannot silently bind itself to an authenticated
-        session."""
+        session.
+
+        Sprint 9.5 A2 hardening — the email-match check is performed
+        BEFORE the atomic claim, not after. Pre-9.5 a wrong-email
+        caller who happened to know their own password could burn
+        the token (UPDATE consumed the row, mismatch raised after,
+        and depending on the transaction boundary the accepted_at
+        write could still leak through to the DB). The new order:
+
+          1. Verify the authenticated user + password.
+          2. Peek the invited email without consuming.
+          3. Reject if mismatch — token remains claimable by the
+             real invitee.
+          4. Atomic claim, attributed to the accepting user.
+        """
         current_user = await self._users.get(current_user_id)
         if current_user is None:
             raise InvitationAcceptanceError("invitation invalid, expired, or already accepted")
@@ -379,14 +442,31 @@ class InvitationService:
             raise InvitationReauthFailedError("password does not match")
 
         now = datetime.now(UTC)
-        claimed = await self._claim(plaintext_token, now)
 
-        # Email on the invitation must match the authenticated user's
-        # email, otherwise an Acme admin could phish a Beta member into
-        # joining the wrong tenant by sharing a token URL.
-        if claimed.email != current_user.email:
+        # Sprint 9.5 A2 — peek the invited email BEFORE _claim.
+        invited_email = await self._peek_invited_email(plaintext_token, now)
+        if invited_email is None:
+            raise InvitationAcceptanceError(
+                "invitation invalid, expired, or already accepted"
+            )
+        if invited_email.lower() != current_user.email.lower():
+            # Token NOT consumed — the real invitee can still accept.
             raise InvitationEmailMismatchError(
                 "invitation was issued to a different email"
+            )
+
+        claimed = await self._claim(
+            plaintext_token, now, accepted_by_user_id=current_user.id
+        )
+
+        # Defence-in-depth: if a race between peek and claim somehow
+        # swapped the row out from under us, the email-match would no
+        # longer hold. Cheap to re-check; the UPDATE already burned
+        # the token so we surface a generic error rather than the
+        # specific mismatch (don't leak the attempted swap).
+        if claimed.email != current_user.email:
+            raise InvitationAcceptanceError(
+                "invitation invalid, expired, or already accepted"
             )
 
         await self._users.attach_to_tenant(

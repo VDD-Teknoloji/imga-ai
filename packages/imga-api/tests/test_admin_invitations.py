@@ -623,3 +623,140 @@ def test_rate_limit_kicks_in_after_repeated_invalid_previews(client: TestClient)
     assert last_status == 429, (
         f"expected 429 after 11+ requests, last was {last_status}"
     )
+
+
+# --- Sprint 9.5 A2 — invitation hijack regression --------------------
+
+
+@pytest.mark.asyncio
+async def test_accept_existing_wrong_email_does_not_burn_token(
+    client: TestClient,
+    acme_tenant: tuple[UUID, User, str],
+    admin_session: AsyncSession,
+    super_admin: User,
+) -> None:
+    """Sprint 9.5 A2 — the hijack scenario.
+
+    Pre-fix: Bob (a registered user whose email != the invited
+    email) hits /accept-existing with HIS OWN valid password. The
+    service _claim()'d the token first, then raised
+    InvitationEmailMismatchError after — but the UPDATE consumed
+    accepted_at, so the real invitee could no longer accept. Net:
+    Bob trivially DoS'd any invitation by clicking the link.
+
+    Post-fix: email check runs BEFORE _claim. Bob's call returns
+    403; the token stays valid; the real invitee (Carol) accepts
+    successfully.
+
+    The test seeds invited=Carol, attacker=Bob; asserts Bob's call
+    returns 403, then Carol's call succeeds (proving the token
+    wasn't burned by Bob's attempt).
+    """
+    _tid, _alice, _alice_pw = acme_tenant
+    audit = AuditService(admin_session)
+    tsvc = TenantService(admin_session, audit)
+    usvc = UserService(admin_session, audit)
+
+    bob_pw = "Bob-Pwd-123-Strong"
+    bob_email = f"bob-{uuid4().hex[:8]}@example.com"
+    carol_pw = "Carol-Pwd-987-Strong"
+    carol_email = f"carol-{uuid4().hex[:8]}@example.com"
+
+    async with admin_session.begin():
+        gamma = await tsvc.create(
+            name="Gamma", slug=f"gamma-{uuid4().hex[:6]}",
+        )
+        bob = await usvc.create(
+            email=bob_email, password=bob_pw, full_name="Bob",
+        )
+        # Bob is a member of an unrelated tenant so he can log in;
+        # otherwise /login with no available tenant 403s before he
+        # ever sees the invitation flow. We use Gamma as Bob's home
+        # tenant and invite Carol into it separately.
+        delta = await tsvc.create(
+            name="Delta", slug=f"delta-{uuid4().hex[:6]}",
+        )
+        await usvc.attach_to_tenant(
+            user_id=bob.id, tenant_id=delta.id,
+            role=UserTenantRole.ANALYST,
+        )
+        carol = await usvc.create(
+            email=carol_email, password=carol_pw, full_name="Carol",
+        )
+    gamma_id = gamma.id
+    delta_id = delta.id
+
+    super_token = _login(client, "admin@imga.ai", SUPER_ADMIN_PASSWORD)
+    try:
+        # Super-admin issues an invitation TO Carol, for tenant Gamma.
+        create = client.post(
+            f"/admin/tenants/{gamma_id}/invitations",
+            headers={"Authorization": f"Bearer {super_token}"},
+            json={"email": carol_email, "role": "viewer"},
+        )
+        assert create.status_code == 201, create.text
+        plaintext_token = create.json()["token"]
+
+        # Step 1: Bob (wrong email!) hits accept-existing with HIS
+        # password. Pre-fix this 403'd but burned the token. Post-fix
+        # this 403s and leaves the token claimable.
+        bob_login = client.post(
+            "/auth/login",
+            json={
+                "email": bob_email,
+                "password": bob_pw,
+                "active_tenant_id": str(delta_id),
+            },
+        ).json()
+        r_attack = client.post(
+            f"/invitations/{plaintext_token}/accept-existing",
+            headers={"Authorization": f"Bearer {bob_login['access_token']}"},
+            json={"password": bob_pw},
+        )
+        assert r_attack.status_code == 403, r_attack.text
+
+        # Step 2: Carol (the real invitee) accepts. If the pre-9.5
+        # bug were still live this would 404 (token consumed by
+        # Bob's attempt).
+        carol_login = client.post(
+            "/auth/login",
+            json={"email": carol_email, "password": carol_pw},
+        ).json()
+        r_real = client.post(
+            f"/invitations/{plaintext_token}/accept-existing",
+            headers={
+                "Authorization": f"Bearer {carol_login['access_token']}"
+            },
+            json={"password": carol_pw},
+        )
+        assert r_real.status_code == 200, (
+            "real invitee must still be able to accept — if this is "
+            "404 the token was consumed by the wrong-email attempt "
+            "and the hijack regression has come back"
+        )
+
+        # DB sanity — accepted_by_user_id must point at Carol, not
+        # Bob, and not NULL.
+        async with admin_session.begin():
+            inv_row = (
+                await admin_session.execute(
+                    select(Invitation.accepted_by_user_id).where(
+                        Invitation.email == carol_email
+                    )
+                )
+            ).scalar_one()
+        assert inv_row == carol.id, (
+            f"accepted_by_user_id should be Carol ({carol.id}); got "
+            f"{inv_row}. If NULL, the _claim path forgot to pass the "
+            "accepting user's id through."
+        )
+    finally:
+        async with admin_session.begin():
+            await admin_session.execute(
+                text("DELETE FROM users WHERE id = ANY(:ids)"),
+                {"ids": [str(bob.id), str(carol.id)]},
+            )
+            await admin_session.execute(
+                text("DELETE FROM tenants WHERE id = ANY(:ids)"),
+                {"ids": [str(gamma_id), str(delta_id)]},
+            )

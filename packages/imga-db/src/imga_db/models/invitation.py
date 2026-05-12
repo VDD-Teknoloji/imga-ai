@@ -47,3 +47,15 @@ class Invitation(Base, TimestampMixin):
     accepted_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+
+    # Sprint 9.5 A2 — id of the user who actually claimed the
+    # invitation. Distinct from invited_by (the inviter) and email
+    # (the address the invite was issued to). NULL until accepted;
+    # historical rows backfilled by migration 0029 best-effort via
+    # email match (NULL when the user was hard-deleted or the legacy
+    # auto-pick flow minted a new account).
+    accepted_by_user_id: Mapped[UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+    )
