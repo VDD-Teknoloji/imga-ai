@@ -51,7 +51,14 @@ from imga_api.services.strategic_constants import (
 _logger = logging.getLogger(__name__)
 
 CACHE_TTL_SECONDS = 12 * 3600
-DEFAULT_MODEL_NAME = "gemini-2.5-flash"
+# Sprint 9.5.1 A3.1 — flush the service-level constant to match the
+# wire-level cutover that 9.5 A3 (commit 26658c2) made in
+# imga-core/llm/gemini.py. The actual SDK call has been hitting
+# gemini-2.5-pro since the 9.5 deploy, but llm_call_audit.model_name
+# and executive_briefings.model_name were both fed off this literal
+# and kept reporting "flash". Production smoke caught the divergence
+# on 2026-05-12.
+DEFAULT_MODEL_NAME = "gemini-2.5-pro"
 
 
 class BriefingServiceError(Exception):

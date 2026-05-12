@@ -84,11 +84,14 @@ _logger = logging.getLogger(__name__)
 
 CACHE_TTL_SECONDS = 86400
 CACHE_KEY_PREFIX = "swot"
-# Sprint 8.3.6.6 round-4 — flash is the free-tier default. The
-# Google AI Pro consumer subscription does NOT include API quota, so
-# gemini-2.5-pro returns 429 on every free-tier tenant. Tenant-level
-# model_name override lands in Sprint 9.x.
-DEFAULT_MODEL_NAME = "gemini-2.5-flash"
+# Sprint 9.5.1 A3.1 — pro cutover sync. The wire-level default in
+# imga_core.llm.gemini.GeminiProvider.generate_swot() was flipped to
+# gemini-2.5-pro in 9.5 A3 (commit 26658c2); leaving this constant
+# at "flash" was making strategic_reports.model_name + llm_call_audit
+# report the wrong model. The old Sprint 8.3.6.6 round-4 note about
+# free-tier 429s is no longer load-bearing: production tenants are
+# on paid Tier 1 quota where gemini-2.5-pro is allowed.
+DEFAULT_MODEL_NAME = "gemini-2.5-pro"
 
 
 class SwotServiceError(Exception):

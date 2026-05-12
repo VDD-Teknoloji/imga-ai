@@ -68,9 +68,14 @@ from imga_api.services.strategic_constants import (
 
 _logger = logging.getLogger(__name__)
 
-# Sprint 8.3.6.6 round-4 — same flash default as SwotService. See
-# that module's note for the free-tier rationale.
-DEFAULT_MODEL_NAME = "gemini-2.5-flash"
+# Sprint 9.5.1 A3.1 — pro cutover sync. The wire-level default in
+# imga_core.llm.gemini.GeminiProvider.generate_okr() was flipped to
+# gemini-2.5-pro in 9.5 A3 (commit 26658c2); this constant feeds the
+# audit log + strategic_reports.model_name persistence and was left
+# at "flash" creating an observability lie. Free-tier 429 concern
+# (old Sprint 8.3.6.6 round-4 note) no longer applies — tenants are
+# on paid Tier 1 quota.
+DEFAULT_MODEL_NAME = "gemini-2.5-pro"
 
 
 class OkrServiceError(Exception):
