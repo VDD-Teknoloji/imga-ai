@@ -186,16 +186,19 @@ services:
       - -m
       - arq
       - imga_api.workers.arq_worker.WorkerSettings
-    # Sprint 9.0.5-B J — disable the inherited image healthcheck.
-    # The shared imga-api image bakes ``HEALTHCHECK CMD curl
-    # http://localhost:8000/health`` for the api uvicorn container;
-    # this worker doesn't run uvicorn, so the inherited probe
-    # always fails and Docker flips the container to unhealthy
-    # (cosmetic but noisy in deploy/monitoring tooling). arq's own
-    # crash-on-error + restart: unless-stopped is the actual
-    # liveness signal here.
+    # Sprint 9.5 D1 — replace the Sprint 9.0.5-B J ``test: NONE``
+    # with a Python-based Redis ping. The worker's load-bearing
+    # external dep is Redis (arq's queue + the SSE publisher live
+    # there); if Redis is unreachable, every in-flight task will
+    # fail and no new ones will be picked up. The script lives at
+    # imga_api/workers/healthcheck.py and uses stdlib socket (no
+    # extra container deps; redis-cli isn't in python:slim).
     healthcheck:
-      test: ["NONE"]
+      test: ["CMD", "python", "-m", "imga_api.workers.healthcheck"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
     deploy:
       resources:
         limits:

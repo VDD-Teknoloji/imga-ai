@@ -159,10 +159,15 @@ services:
       - -m
       - arq
       - imga_api.workers.arq_worker.WorkerSettings
-    # Sprint 9.0.5-B J — disable inherited image healthcheck (see
-    # production compose for rationale).
+    # Sprint 9.5 D1 — Redis-ping healthcheck replacing the Sprint
+    # 9.0.5-B J ``test: NONE`` no-op. See production compose for
+    # the full rationale (Redis is the worker's load-bearing dep).
     healthcheck:
-      test: ["NONE"]
+      test: ["CMD", "python", "-m", "imga_api.workers.healthcheck"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
     deploy:
       resources:
         limits:
