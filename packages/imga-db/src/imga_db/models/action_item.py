@@ -93,6 +93,19 @@ class ActionItem(Base):
         nullable=True,
     )
 
+    # Sprint 9.5 B2 — HTTP Idempotency-Key support. When the
+    # ``POST /tenants/me/action-items`` request carries an
+    # ``Idempotency-Key`` header, the route stores it here; retries
+    # with the same key + tenant short-circuit to the existing row
+    # via the partial UNIQUE index ``uq_action_items_tenant_
+    # idempotency_key`` (migration 0028, partial on
+    # ``WHERE idempotency_key IS NOT NULL``). Legacy / non-
+    # idempotent clients leave this NULL — the partial index
+    # excludes NULLs so they don't compete.
+    idempotency_key: Mapped[str | None] = mapped_column(
+        String(128), nullable=True
+    )
+
 
 class ActionItemEvent(Base):
     """Audit-trail row written by ActionItemService for every state-

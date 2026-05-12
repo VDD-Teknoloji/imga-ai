@@ -31,7 +31,9 @@ from datetime import date, datetime
 from typing import Annotated, Any
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
+import json
+
+from fastapi import APIRouter, Depends, Header, HTTPException, status
 from imga_db.models import (
     ActionItem,
     ActionItemEvent,
@@ -275,11 +277,56 @@ async def create_action_item(
     body: ActionItemCreateRequest,
     current: Annotated[CurrentUser, _WriteMember],
     app_session: Annotated[AsyncSession, Depends(get_app_session)],
+    idempotency_key: Annotated[
+        str | None,
+        Header(
+            alias="Idempotency-Key",
+            description=(
+                "Sprint 9.5 B2 — HTTP idempotency. When set, a retry "
+                "with the same key + tenant returns the existing row "
+                "instead of inserting a duplicate. Bounded to 128 "
+                "chars; longer values are silently truncated by the "
+                "DB constraint."
+            ),
+            max_length=128,
+        ),
+    ] = None,
 ) -> ActionItemResponse:
+    """Create a manual action item.
+
+    Sprint 9.5 B2 — supports an ``Idempotency-Key`` request header.
+    When the header is set:
+      * First call inserts the row + persists the key.
+      * Retries with the SAME key + tenant short-circuit to the
+        existing row (idempotent reply, 201 each time).
+      * Different bodies under the same key DON'T diverge — the
+        first body wins; the partial UNIQUE index on
+        ``(tenant_id, idempotency_key) WHERE idempotency_key IS
+        NOT NULL`` enforces this.
+
+    Without the header (legacy / non-idempotent clients), behaviour
+    is unchanged from Sprint 9.1 A: each call mints a fresh row.
+    """
     tenant_id = _require_active_tenant(current)
     try:
         async with app_session.begin():
             await bind_tenant(app_session, current)
+            # Idempotency check — only when key supplied. The cheap
+            # SELECT is keyed on the partial UNIQUE index so a
+            # hit is sub-millisecond.
+            if idempotency_key is not None:
+                existing = (
+                    await app_session.execute(
+                        select(ActionItem)
+                        .where(ActionItem.tenant_id == tenant_id)
+                        .where(
+                            ActionItem.idempotency_key == idempotency_key
+                        )
+                    )
+                ).scalar_one_or_none()
+                if existing is not None:
+                    return _row_to_response(existing)
+
             row = ActionItem(
                 tenant_id=tenant_id,
                 title=body.title,
@@ -290,6 +337,7 @@ async def create_action_item(
                 status="open",
                 assignee_user_id=body.assignee_user_id,
                 due_date=body.due_date,
+                idempotency_key=idempotency_key,
             )
             app_session.add(row)
             await app_session.flush()
@@ -486,13 +534,23 @@ async def extract_from_report(
     app_session: Annotated[AsyncSession, Depends(get_app_session)],
 ) -> list[ActionItemResponse]:
     """Read the SWOT row's ``strategic_recommendations`` array and
-    insert one action_item per entry. Each new row carries
-    ``source_report_id`` so the UI can link back. Existing items
-    from the same report are NOT deduplicated — calling extract
-    twice doubles the rows; the user can archive duplicates manually.
-    Sprint 9.1 A: each row also gets a ``created`` event with
-    ``actor_type=llm_extraction``.
+    return the action items extracted from it.
+
+    Sprint 9.5 B2 — re-extracting the same SWOT used to mint
+    duplicate ActionItem rows on every call. The route now routes
+    through ``ActionExtractionService``, which fingerprint-dedups
+    on ``(tenant_id, source_type, source_id, content_hash)``: the
+    first call mints + persists, every subsequent call with the
+    same SWOT content returns the same action_item_ids. A re-
+    generated SWOT with edited recommendations gets a fresh
+    fingerprint and a new extraction. Sprint 9.1 A's per-row
+    ``created`` event with ``actor_type=llm_extraction`` is still
+    emitted from inside the service.
     """
+    from imga_api.services.action_extraction_service import (
+        ActionExtractionService,
+    )
+
     tenant_id = _require_active_tenant(current)
     try:
         async with app_session.begin():
@@ -513,38 +571,65 @@ async def extract_from_report(
             recs = (report.output_payload or {}).get(
                 "strategic_recommendations", []
             )
-            created: list[ActionItem] = []
+            # Build the payload list ActionExtractionService expects.
+            # Normalisation mirrors the pre-9.5 inline logic so the
+            # resulting rows look identical to a caller who didn't
+            # know about the refactor.
+            payloads: list[dict[str, Any]] = []
             for rec in recs:
                 if not isinstance(rec, dict):
                     continue
-                priority = _normalise_priority(rec.get("priority"))
-                impact = _normalise_priority(rec.get("estimated_impact"))
-                row = ActionItem(
-                    tenant_id=tenant_id,
-                    source_report_id=report.id,
-                    title=str(rec.get("title", "")).strip()[:256] or "Öneri",
-                    description=str(rec.get("description", "")).strip()
-                    or "Açıklama yok.",
-                    rationale=None,
-                    priority=priority,
-                    estimated_impact=impact,
-                    status="open",
+                payloads.append(
+                    {
+                        "title": (
+                            str(rec.get("title", "")).strip()[:256]
+                            or "Öneri"
+                        ),
+                        "description": (
+                            str(rec.get("description", "")).strip()
+                            or "Açıklama yok."
+                        ),
+                        "rationale": None,
+                        "priority": _normalise_priority(rec.get("priority")),
+                        "estimated_impact": _normalise_priority(
+                            rec.get("estimated_impact")
+                        ),
+                    }
                 )
-                app_session.add(row)
-                created.append(row)
-            await app_session.flush()
-            service = ActionItemService(app_session)
-            for row in created:
-                await service.emit_created(
-                    row=row,
-                    actor_user_id=current.user_id,
-                    actor_type=ACTOR_LLM_EXTRACTION,
-                    payload={
-                        "source_report_id": str(report.id),
-                        "report_type": "swot",
-                    },
-                )
-            response = [_row_to_response(r) for r in created]
+            if not payloads:
+                return []
+
+            # ``content_text`` is the dedup fingerprint anchor —
+            # service hashes it with the extraction_version. Use the
+            # canonical JSON of the normalised payloads so a SWOT
+            # regenerated with the same recommendations produces the
+            # same fingerprint regardless of cosmetic key ordering.
+            content_text = _json_canonical(payloads)
+            extractor = ActionExtractionService(app_session)
+            item_ids = await extractor.extract(
+                tenant_id=tenant_id,
+                source_type="strategic_report",
+                source_id=report.id,
+                content_text=content_text,
+                action_payloads=payloads,
+            )
+
+            # Re-fetch the rows to build the response. The service
+            # returns ids only; we need ActionItem rows for
+            # ``_row_to_response``.
+            rows_stmt = (
+                select(ActionItem)
+                .where(ActionItem.tenant_id == tenant_id)
+                .where(ActionItem.id.in_(item_ids))
+            )
+            rows = list(
+                (await app_session.execute(rows_stmt)).scalars().all()
+            )
+            # Preserve service-returned order so the UI sees the
+            # same priority sequence on every re-call.
+            row_by_id = {r.id: r for r in rows}
+            ordered = [row_by_id[i] for i in item_ids if i in row_by_id]
+            response = [_row_to_response(r) for r in ordered]
         return response
     except HTTPException:
         raise
@@ -557,6 +642,16 @@ async def extract_from_report(
             },
         )
         raise
+
+
+def _json_canonical(payloads: list[dict[str, Any]]) -> str:
+    """Stable JSON serialisation for the action_extraction
+    fingerprint. ``sort_keys=True`` so a SWOT regenerated with the
+    same recommendations produces the same fingerprint regardless
+    of LLM-side key-ordering jitter."""
+    return json.dumps(
+        payloads, sort_keys=True, ensure_ascii=False, separators=(",", ":")
+    )
 
 
 def _normalise_priority(raw: Any) -> str:
