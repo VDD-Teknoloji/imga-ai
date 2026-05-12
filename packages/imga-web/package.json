@@ -11,7 +11,9 @@
     "format:check": "prettier --check \"src/**/*.{ts,tsx,css}\"",
     "typecheck": "tsc --noEmit",
     "test:e2e": "playwright test",
-    "test:e2e:ui": "playwright test --ui"
+    "test:e2e:ui": "playwright test --ui",
+    "check:bundle": "node scripts/check-bundle-size.mjs",
+    "check:bundle:report": "node scripts/check-bundle-size.mjs --report"
   },
   "dependencies": {
     "@base-ui/react": "^1.4.1",

@@ -8,6 +8,7 @@
 // Refresh-stable; cell-click navigation /reviews'a query params ile.
 
 import { TrendingUp } from "lucide-react";
+import dynamic from "next/dynamic";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useMemo, useState } from "react";
 import {
@@ -51,9 +52,26 @@ import type {
   WordCloudSentiment,
 } from "@/lib/types";
 
-import { CohortTab } from "./_components/cohort-tab";
-import { HeatmapTab } from "./_components/heatmap-tab";
-import { WordCloudTab } from "./_components/word-cloud-tab";
+// Sprint 9.5 B3 — three "advanced" tabs are heavy: cohort pulls a 30-row
+// pivot grid, heatmap renders an N×M cell SVG with hover handlers, and the
+// word cloud bundles d3-cloud's layout solver. Eagerly importing them all
+// adds ~120 KB to the initial /insights JS payload, and most visits only
+// touch the default Sentiment tab. dynamic() defers the import until the
+// tab is selected; ssr: false skips the server render (these are
+// interactive-only — no SEO value) and the loading fallback keeps the
+// Tabs container from collapsing during fetch.
+const CohortTab = dynamic(
+  () => import("./_components/cohort-tab").then((m) => ({ default: m.CohortTab })),
+  { loading: () => <p className="text-muted-foreground text-sm">Yükleniyor…</p>, ssr: false },
+);
+const HeatmapTab = dynamic(
+  () => import("./_components/heatmap-tab").then((m) => ({ default: m.HeatmapTab })),
+  { loading: () => <p className="text-muted-foreground text-sm">Yükleniyor…</p>, ssr: false },
+);
+const WordCloudTab = dynamic(
+  () => import("./_components/word-cloud-tab").then((m) => ({ default: m.WordCloudTab })),
+  { loading: () => <p className="text-muted-foreground text-sm">Yükleniyor…</p>, ssr: false },
+);
 
 const SENTIMENT_COLOURS: Record<string, string> = {
   NEGATIF: "#dc2626",
