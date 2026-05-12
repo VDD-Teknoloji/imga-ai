@@ -182,6 +182,8 @@ services:
           tests/test_briefing_audit_failure_path.py \
           tests/test_auth_user_cache.py \
           tests/test_worker_healthcheck.py \
+          tests/test_action_items_idempotency.py \
+          tests/test_reviews_list_heatmap_drilldown.py \
           tests-core/test_key_rotation.py \
           tests-core/test_metrics_pure_formulas.py \
           tests-core/test_gemini_swot_okr.py \

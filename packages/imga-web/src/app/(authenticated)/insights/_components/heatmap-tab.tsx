@@ -10,7 +10,8 @@
 // X / Y / metric selectors live in their own card so the URL state
 // pattern (parent-controlled) stays consistent with the other tabs.
 
-import { useMemo } from "react";
+import { useMemo, useCallback } from "react";
+import { useRouter } from "next/navigation";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
@@ -21,6 +22,35 @@ import type {
   HeatmapXAxis,
   HeatmapYAxis,
 } from "@/lib/types";
+
+
+/**
+ * Sprint 9.5 B1 — map an axis type + its raw cell value to the
+ * matching /tenants/me/reviews query param. The backend exposes
+ * 4 EXTRACT-based filters (hour_of_day, day_of_week, week_of_year,
+ * month) plus primary_categories. Returns null when the axis type
+ * has no drilldown wired (no current case, but kept for the
+ * type-narrowing future).
+ */
+function _drilldownParam(
+  axis: HeatmapXAxis | HeatmapYAxis,
+  key: number | string,
+): { name: string; value: string } | null {
+  switch (axis) {
+    case "hour_of_day":
+    case "day_of_week":
+    case "week_of_year":
+    case "month":
+      return { name: axis, value: String(key) };
+    case "taxonomy_code":
+      // /reviews uses the CSV ``primary_categories`` filter for the
+      // taxonomy axis (Sprint 8.3.10 wired). We pass a single code
+      // here; the user can broaden afterward on the reviews page.
+      return { name: "primary_categories", value: String(key) };
+    default:
+      return null;
+  }
+}
 
 const X_AXIS_LABELS: Record<HeatmapXAxis, string> = {
   hour_of_day: "Günün Saati",
@@ -61,6 +91,7 @@ export function HeatmapTab({
   onYAxisChange,
   onMetricChange,
 }: Props) {
+  const router = useRouter();
   const sameAxisError =
     (xAxis as string) === (yAxis as string);
 
@@ -75,6 +106,30 @@ export function HeatmapTab({
   const { colorFor, maxCell } = useMemo(
     () => buildScale(query.data ?? null),
     [query.data],
+  );
+
+  // Sprint 9.5 B1 — heatmap drilldown. Clicking a cell builds the
+  // /reviews URL with the cell's axis values + the current heatmap's
+  // date range, then navigates. The (xAxis, yAxis) pair selects
+  // which backend filters get populated via _drilldownParam.
+  const handleCellClick = useCallback(
+    (rowIdx: number, colIdx: number) => {
+      const data = query.data;
+      if (!data) return;
+      const xKey = data.x_keys[colIdx];
+      const yKey = data.y_keys[rowIdx];
+      if (xKey === undefined || yKey === undefined) return;
+
+      const params = new URLSearchParams();
+      const xParam = _drilldownParam(xAxis, xKey);
+      const yParam = _drilldownParam(yAxis, yKey);
+      if (xParam) params.set(xParam.name, xParam.value);
+      if (yParam) params.set(yParam.name, yParam.value);
+      if (dateFrom) params.set("date_from", dateFrom);
+      if (dateTo) params.set("date_to", dateTo);
+      router.push(`/reviews?${params.toString()}`);
+    },
+    [query.data, xAxis, yAxis, dateFrom, dateTo, router],
   );
 
   return (
@@ -152,7 +207,12 @@ export function HeatmapTab({
               Bu filtrelerle veri bulunamadı.
             </p>
           ) : (
-            <HeatmapGrid data={query.data} colorFor={colorFor} maxCell={maxCell} />
+            <HeatmapGrid
+              data={query.data}
+              colorFor={colorFor}
+              maxCell={maxCell}
+              onCellClick={handleCellClick}
+            />
           )}
         </CardContent>
       </Card>
@@ -164,9 +224,13 @@ interface GridProps {
   data: HeatmapResponse;
   colorFor: (v: number | null) => string;
   maxCell: { row: number; col: number; value: number } | null;
+  /** Sprint 9.5 B1 — invoked when the operator clicks a cell.
+   *  Parent (HeatmapTab) builds the /reviews drilldown URL from
+   *  the cell coords + the heatmap's date range and navigates. */
+  onCellClick: (rowIdx: number, colIdx: number) => void;
 }
 
-function HeatmapGrid({ data, colorFor, maxCell }: GridProps) {
+function HeatmapGrid({ data, colorFor, maxCell, onCellClick }: GridProps) {
   const cellSize = 36;
   return (
     <div className="overflow-x-auto">
@@ -202,6 +266,7 @@ function HeatmapGrid({ data, colorFor, maxCell }: GridProps) {
               maxCell?.row === rowIdx ? maxCell.col : undefined
             }
             cellSize={cellSize}
+            onCellClick={(colIdx) => onCellClick(rowIdx, colIdx)}
           />
         ))}
       </div>
@@ -235,6 +300,7 @@ function Row({
   isMaxRow,
   maxCol,
   cellSize,
+  onCellClick,
 }: {
   yLabel: string;
   row: Array<number | null>;
@@ -244,6 +310,7 @@ function Row({
   isMaxRow: boolean;
   maxCol: number | undefined;
   cellSize: number;
+  onCellClick: (colIdx: number) => void;
 }) {
   return (
     <>
@@ -256,19 +323,39 @@ function Row({
       {xLabels.map((_, colIdx) => {
         const value = row[colIdx] ?? null;
         const isMax = isMaxRow && colIdx === maxCol;
+        const isEmpty = value === null;
         return (
-          <div
+          <button
             key={`cell-${colIdx}`}
-            className="relative"
+            type="button"
+            // Sprint 9.5 B1 — cell is now a clickable button. Empty
+            // cells (value === null) stay disabled because the
+            // backend would return zero rows for that drilldown
+            // window anyway; clicking would just confuse.
+            disabled={isEmpty}
+            onClick={isEmpty ? undefined : () => onCellClick(colIdx)}
+            className={
+              "relative " +
+              (isEmpty
+                ? "cursor-default"
+                : "cursor-pointer hover:ring-2 hover:ring-primary/40")
+            }
             style={{
               width: cellSize,
               height: cellSize,
-              background: value === null ? "#f5f5f5" : colorFor(value),
+              background: isEmpty ? "#f5f5f5" : colorFor(value),
+              padding: 0,
+              border: "none",
             }}
             title={
-              value === null
+              isEmpty
                 ? `${yLabel} × ${xLabels[colIdx]} — veri yok`
-                : `${yLabel} × ${xLabels[colIdx]}: ${value} (${metricLabel})`
+                : `${yLabel} × ${xLabels[colIdx]}: ${value} (${metricLabel}) — yorumları gör`
+            }
+            aria-label={
+              isEmpty
+                ? `${yLabel} × ${xLabels[colIdx]} boş hücre`
+                : `${yLabel} × ${xLabels[colIdx]} hücresinin yorumlarını aç`
             }
           >
             {isMax && (
@@ -279,7 +366,7 @@ function Row({
                 ★
               </span>
             )}
-          </div>
+          </button>
         );
       })}
     </>

@@ -43,6 +43,16 @@ class ReviewListFilters:
     # (Review.primary_category values). Empty tuple disables the
     # filter; one or more entries OR-match.
     primary_categories: tuple[str, ...] = ()
+    # Sprint 9.5 B1 — time-extract filters for the /insights heatmap
+    # cell-click drilldown. Each is an integer or None; non-None
+    # values are compared against ``EXTRACT(<part> FROM created_at)``.
+    # The heatmap_generator emits matching x_keys / y_keys on the
+    # response so the frontend can wire the click without
+    # re-deriving the axis numerics.
+    hour_of_day: int | None = None  # 0..23
+    day_of_week: int | None = None  # 0..6 (postgres DOW: 0=Sun..6=Sat)
+    week_of_year: int | None = None  # 1..53
+    month: int | None = None  # 1..12
     search: str | None = None  # ILIKE %term% over text
     order_by: OrderField = "created_at"
     order: OrderDir = "desc"
@@ -140,6 +150,31 @@ class ReviewListService:
         if filters.primary_categories:
             conditions.append(
                 Review.primary_category.in_(filters.primary_categories)
+            )
+        # Sprint 9.5 B1 — heatmap cell-click drilldown. The four
+        # extract conditions mirror the heatmap_generator's axis
+        # expressions (``_axis_expr``) so the cell's "rows in this
+        # bucket" equation matches exactly. Created_at (not
+        # analyzed_at) is the heatmap's source column.
+        if filters.hour_of_day is not None:
+            conditions.append(
+                func.extract("hour", Review.created_at)
+                == filters.hour_of_day
+            )
+        if filters.day_of_week is not None:
+            conditions.append(
+                func.extract("dow", Review.created_at)
+                == filters.day_of_week
+            )
+        if filters.week_of_year is not None:
+            conditions.append(
+                func.extract("week", Review.created_at)
+                == filters.week_of_year
+            )
+        if filters.month is not None:
+            conditions.append(
+                func.extract("month", Review.created_at)
+                == filters.month
             )
 
         where_clause = and_(*conditions)

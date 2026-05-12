@@ -1098,6 +1098,13 @@ export interface HeatmapResponse {
   metric_label: string;
   x_labels: string[];
   y_labels: string[];
+  /** Sprint 9.5 B1 — raw axis values aligned 1:1 with x_labels /
+   *  y_labels. Time-based axes are integers (0-23 hours, 0-6 dow,
+   *  1-12 month, 1-53 week); taxonomy_code carries the string code.
+   *  Frontend uses these for drilldown filter wiring without
+   *  reverse-parsing the display label. */
+  x_keys: Array<number | string>;
+  y_keys: Array<number | string>;
   values: Array<Array<number | null>>;
   metric_min: number;
   metric_max: number;

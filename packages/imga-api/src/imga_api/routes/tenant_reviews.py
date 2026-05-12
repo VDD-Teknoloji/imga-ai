@@ -173,6 +173,37 @@ async def list_reviews(
             "to scope the listing to the clicked cell's category."
         ),
     ),
+    hour_of_day: int | None = Query(
+        default=None,
+        ge=0,
+        le=23,
+        description=(
+            "Sprint 9.5 B1 — heatmap drilldown filter. EXTRACT(HOUR "
+            "FROM created_at) match. Frontend passes the cell's "
+            "x_keys/y_keys value when xAxis or yAxis = hour_of_day."
+        ),
+    ),
+    day_of_week: int | None = Query(
+        default=None,
+        ge=0,
+        le=6,
+        description=(
+            "Sprint 9.5 B1 — EXTRACT(DOW FROM created_at) match. "
+            "Postgres DOW: 0=Sunday..6=Saturday."
+        ),
+    ),
+    week_of_year: int | None = Query(
+        default=None,
+        ge=1,
+        le=53,
+        description="Sprint 9.5 B1 — EXTRACT(WEEK FROM created_at) match.",
+    ),
+    month: int | None = Query(
+        default=None,
+        ge=1,
+        le=12,
+        description="Sprint 9.5 B1 — EXTRACT(MONTH FROM created_at) match.",
+    ),
     search: str | None = Query(default=None, max_length=200),
     limit: int = Query(default=100, ge=1, le=500),
     offset: int = Query(default=0, ge=0),
@@ -190,6 +221,10 @@ async def list_reviews(
         decisions=_split_csv(decisions),
         perspective_codes=_split_csv(perspective_codes),
         primary_categories=_split_csv(primary_categories),
+        hour_of_day=hour_of_day,
+        day_of_week=day_of_week,
+        week_of_year=week_of_year,
+        month=month,
         search=search,
         order_by=order_by,
         order=order,

@@ -233,6 +233,12 @@ class HeatmapGenerator:
         metric_min = min(flat) if flat else 0
         metric_max = max(flat) if flat else 0
 
+        # Sprint 9.5 B1 — expose the raw axis values alongside the
+        # display labels so the frontend can build a drilldown URL
+        # without having to reverse-engineer the label format. Time-
+        # based axes (hour/dow/month/week) coerce float → int so the
+        # query string stays clean (``hour_of_day=14`` not ``14.0``).
+        # taxonomy_code keeps the raw string code.
         return {
             "x_axis": x_axis,
             "y_axis": y_axis,
@@ -240,6 +246,8 @@ class HeatmapGenerator:
             "metric_label": _METRIC_LABELS_TR[metric],
             "x_labels": x_resolved.labels,
             "y_labels": y_resolved.labels,
+            "x_keys": [_coerce_axis_key(v) for v in x_resolved.raw_values],
+            "y_keys": [_coerce_axis_key(v) for v in y_resolved.raw_values],
             "values": values,
             "metric_min": (
                 round(float(metric_min), 3)
@@ -355,6 +363,14 @@ class HeatmapGenerator:
             f"heatmap:{tenant_id}:{x_axis}:{y_axis}:{metric}:"
             f"{df}:{dt}:{taxonomy_top_n}:{bid}"
         )
+
+
+def _coerce_axis_key(raw: Any) -> Any:
+    """Cast float axis values to int for clean query-string output.
+    Strings (taxonomy_code) pass through unchanged."""
+    if isinstance(raw, float):
+        return int(raw)
+    return raw
 
 
 __all__ = [
