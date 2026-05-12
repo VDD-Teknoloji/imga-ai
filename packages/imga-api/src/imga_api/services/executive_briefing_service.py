@@ -243,9 +243,50 @@ class ExecutiveBriefingService:
         start = time.monotonic()
         try:
             async with auditor:
-                (response, token_usage), key_used = (
-                    await rotator.call_with_rotation(_call)
-                )
+                # Sprint 9.4.4 — explicit record_failure on the rotator
+                # raise path. The auditor's __aexit__ does auto-record
+                # on exception, but Sprint 9.4.3 B's empirical
+                # all-keys-exhausted run (12.05.2026 12:07:13) didn't
+                # land an audit row even with that auto-path in place.
+                # The most defensible interpretation: classify the
+                # error at the call site where we know it's a rotator
+                # exhaustion, not let the generic _classify_exception
+                # have to infer it from a wrapped LLMProviderError
+                # message. record_failure populates the error fields
+                # ahead of __aexit__, which then reads ``_error_type
+                # or _classify_exception(exc_val)`` and keeps our
+                # explicit value.
+                try:
+                    (response, token_usage), key_used = (
+                        await rotator.call_with_rotation(_call)
+                    )
+                except AllKeysExhaustedError as exc:
+                    auditor.record_failure(
+                        error_type="all_keys_exhausted",
+                        error_message=str(exc.__cause__ or exc)[:1024],
+                    )
+                    raise
+                except LLMError as exc:
+                    auditor.record_failure(
+                        error_type="api_error",
+                        error_message=str(exc)[:1024],
+                    )
+                    raise
+                except Exception as exc:
+                    # LLMProviderError lives in imga_core.llm.base, not
+                    # in the LLMError hierarchy, so the typed handlers
+                    # above don't catch it. Sprint 9.4.3 B's rotator
+                    # broadened to catch LLMProviderError + rotate,
+                    # which means an all-504 storm now ends with
+                    # AllKeysExhaustedError (handled above) — but we
+                    # still record a generic failure for any other
+                    # unexpected raise so the audit table doesn't
+                    # quietly drop rows.
+                    auditor.record_failure(
+                        error_type="other",
+                        error_message=f"{type(exc).__name__}: {exc}"[:1024],
+                    )
+                    raise
                 input_tokens = (
                     token_usage.get("input") if token_usage else None
                 )

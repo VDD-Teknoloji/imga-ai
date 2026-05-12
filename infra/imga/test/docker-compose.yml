@@ -179,6 +179,7 @@ services:
           tests/test_llm_audit_summary_endpoint.py \
           tests/test_run_schedule_now_failure_path.py \
           tests/test_analyze_audit_integration.py \
+          tests/test_briefing_audit_failure_path.py \
           tests-core/test_key_rotation.py \
           tests-core/test_metrics_pure_formulas.py \
           tests-core/test_gemini_swot_okr.py \
