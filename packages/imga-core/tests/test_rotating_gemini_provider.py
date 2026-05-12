@@ -174,22 +174,28 @@ async def test_all_keys_exhausted_raises_llm_provider_error(
 
 
 @pytest.mark.asyncio
-async def test_non_rotator_error_propagates_without_fallthrough(
+async def test_provider_error_falls_through_to_fallback_key(
     stub_provider: type[_StubProvider],
 ) -> None:
-    """A 500-class server error doesn't look like rate-limit or
-    invalid-key, so the rotator passes it through unchanged on the
-    first key — another key wouldn't help."""
+    """Sprint 9.4.3 B — LLMProviderError (504 / 500 / network) used
+    to propagate without rotation on the R7 rationale that a
+    server-side outage is independent of the key. The 9.4.3 demo
+    observation flipped this: with a primary that 504s and a
+    fallback key that holds, the operator's "second key never gets
+    tried" complaint is real. LLMProviderError now triggers
+    rotation; the previous-behaviour assertion (only-primary-tried)
+    is replaced with the new contract (fallback succeeds when
+    primary errors)."""
     keys = _make_keys("k1", "k2")
     stub_provider.behaviours = {
         "key-k1": LLMProviderError("Gemini API call failed: 500 internal"),
-        "key-k2": _result("never-reached"),
+        "key-k2": _result("served-by-fallback"),
     }
     rp = RotatingGeminiProvider(keys=keys)
-    with pytest.raises(LLMProviderError, match="500 internal"):
-        await rp.classify_async("text", ["a"])
-    # Only the primary was tried.
-    assert stub_provider.constructions == ["key-k1"]
+    result = await rp.classify_async("text", ["a"])
+    assert result.primary == "served-by-fallback"
+    # Both keys attempted — primary errored, fallback succeeded.
+    assert stub_provider.constructions == ["key-k1", "key-k2"]
 
 
 # --- empty key list rejected -----------------------------------------

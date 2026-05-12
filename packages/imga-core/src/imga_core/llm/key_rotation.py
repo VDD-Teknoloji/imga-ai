@@ -7,12 +7,17 @@ Sprint 8.3.6 / Alt-Faz 8.3.6.2.D. Per-tenant keys live encrypted in
   * Walks the keys in ascending priority order (0 = primary).
   * Calls the caller-supplied async ``operation(api_key)`` with each
     key in turn.
-  * Falls through on ``RateLimitError`` (transient) and
-    ``InvalidKeyError`` (permanent for that key).
-  * Lets every other ``LLMError`` propagate unchanged — the rotator
-    has no opinion on ``MalformedResponseError`` (a different key
-    won't fix bad output) or ``LLMProviderError`` (network / 5xx —
-    service layer decides whether to retry).
+  * Falls through on ``RateLimitError`` (transient quota / 429),
+    ``InvalidKeyError`` (key dead), AND — since Sprint 9.4.3 B —
+    ``LLMProviderError`` (network / 5xx / SDK timeout). The
+    LLMProviderError catch is broader than the Sprint 8.3.6 design
+    intended; we picked Seçenek 1 from the master prompt because the
+    demo's "primary 504s but fallback succeeds" path is more
+    important than the rare parser-via-LLMProviderError edge that
+    now wastes one extra key attempt before AllKeysExhaustedError.
+    ``MalformedResponseError`` / ``LLMTokenLimitError`` /
+    ``LLMResponseBlockedError`` still propagate — they aren't
+    LLMProviderError subclasses and a different key wouldn't help.
   * Raises ``AllKeysExhaustedError`` when every key in the list has
     failed with a rotation-relevant error.
 
@@ -29,6 +34,7 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import TypeVar
 
+from imga_core.llm.base import LLMProviderError
 from imga_core.llm.errors import (
     AllKeysExhaustedError,
     InvalidKeyError,
@@ -103,13 +109,15 @@ class GeminiKeyRotator:
             fallback_2" + (eventually) telemetry.
 
         Raises:
-            AllKeysExhaustedError: every key raised RateLimit or
-                InvalidKey. The last underlying error is chained as
-                ``__cause__``.
+            AllKeysExhaustedError: every key raised a rotation-relevant
+                error (RateLimit, InvalidKey, or LLMProviderError —
+                see Sprint 9.4.3 B). The last underlying error is
+                chained as ``__cause__``.
             Other ``LLMError`` subclasses (MalformedResponseError,
-                LLMProviderError): propagate unchanged from the first
-                key that hits them. Rotation does not continue —
-                another key won't produce different output.
+                LLMTokenLimitError, LLMResponseBlockedError):
+                propagate unchanged from the first key that hits
+                them. Rotation does not continue — another key won't
+                produce different output.
         """
         last_error: Exception | None = None
         for key in self._keys:
@@ -135,11 +143,29 @@ class GeminiKeyRotator:
                 )
                 last_error = exc
                 continue
+            except LLMProviderError as exc:
+                # Sprint 9.4.3 B — server-side failure (504, network
+                # blip, SDK timeout). Per the R7 reasoning, this is
+                # usually NOT a per-key problem, but the demo
+                # observation contradicts that: Gemini's edge nodes
+                # serving different project IDs do fail
+                # independently, and the operator's "I added a
+                # second key but it never gets tried" complaint is
+                # real. We rotate so the second key gets a shot
+                # before we surface AllKeysExhaustedError.
+                _logger.warning(
+                    "rotator: provider error on key id=%s label=%s "
+                    "(%s) — falling through to next priority",
+                    key.id, key.label, exc,
+                )
+                last_error = exc
+                continue
             else:
                 return result, key
 
         # Loop exited without a return — every key failed with a
         # rotation-relevant error.
         raise AllKeysExhaustedError(
-            "All LLM keys in rotation failed (RateLimit or InvalidKey)"
+            "All LLM keys in rotation failed "
+            "(RateLimit / InvalidKey / LLMProviderError)"
         ) from last_error

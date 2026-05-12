@@ -25,6 +25,7 @@ from imga_core.llm import (
     MalformedResponseError,
     RateLimitError,
 )
+from imga_core.llm.base import LLMProviderError
 
 
 def _key(*, value: str, priority: int, label: str | None = None) -> GeminiKey:
@@ -193,6 +194,82 @@ async def test_mixed_rate_limit_then_invalid_then_success() -> None:
     assert result == "third-time"
     assert key.value == "f2"
     assert key.priority == 2
+
+
+# ---------------------------------------------------------------------------
+# Sprint 9.4.3 B — LLMProviderError rotation
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_provider_error_falls_through_to_next_key() -> None:
+    """Sprint 9.4.3 B — primary returns 504 (LLMProviderError), the
+    fallback succeeds. Pre-9.4.3 the rotator only rotated on
+    RateLimit/InvalidKey, so a primary 504 bubbled out without
+    trying the fallback — the demo's "I added a backup key but it
+    never gets exercised" complaint."""
+    rotator = GeminiKeyRotator([
+        _key(value="primary", priority=0),
+        _key(value="fallback", priority=1),
+    ])
+    seen: list[str] = []
+
+    async def op(api_key: str) -> str:
+        seen.append(api_key)
+        if api_key == "primary":
+            raise LLMProviderError("Gemini API call failed: 504 Deadline Exceeded")
+        return "served-by-fallback"
+
+    result, key = await rotator.call_with_rotation(op)
+    assert result == "served-by-fallback"
+    assert key.value == "fallback"
+    assert key.priority == 1
+    assert seen == ["primary", "fallback"], (
+        "rotator must walk both keys when primary hits a provider error"
+    )
+
+
+@pytest.mark.asyncio
+async def test_all_keys_provider_error_exhausts_with_chain() -> None:
+    """Both keys 504 → AllKeysExhaustedError with the last
+    LLMProviderError chained as ``__cause__``. The service layer
+    re-raises this as an LLMProviderError so the HybridClassifier
+    circuit breaker counts the storm and stops issuing new calls."""
+    rotator = GeminiKeyRotator([
+        _key(value="k1", priority=0),
+        _key(value="k2", priority=1),
+    ])
+
+    async def op(api_key: str) -> str:
+        raise LLMProviderError(f"504 Deadline Exceeded ({api_key})")
+
+    with pytest.raises(AllKeysExhaustedError) as excinfo:
+        await rotator.call_with_rotation(op)
+    assert isinstance(excinfo.value.__cause__, LLMProviderError)
+    assert "k2" in str(excinfo.value.__cause__)
+
+
+@pytest.mark.asyncio
+async def test_mixed_provider_error_then_rate_limit_then_success() -> None:
+    """Three-key stress: primary 504, secondary rate-limit, tertiary
+    succeeds. Verifies the LLMProviderError catch coexists with the
+    pre-9.4.3 RateLimit / InvalidKey paths."""
+    rotator = GeminiKeyRotator([
+        _key(value="p", priority=0),
+        _key(value="s", priority=1),
+        _key(value="t", priority=2),
+    ])
+
+    async def op(api_key: str) -> str:
+        if api_key == "p":
+            raise LLMProviderError("503 Service Unavailable")
+        if api_key == "s":
+            raise RateLimitError(retry_after=5)
+        return "tertiary-wins"
+
+    result, key = await rotator.call_with_rotation(op)
+    assert result == "tertiary-wins"
+    assert key.value == "t"
 
 
 # Silence unused-import warning if a refactor drops one of the helpers.

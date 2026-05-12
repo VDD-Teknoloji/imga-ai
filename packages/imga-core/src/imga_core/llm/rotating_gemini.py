@@ -263,19 +263,31 @@ class RotatingGeminiProvider(LLMProvider):
             result, winning_key = await self._rotator.call_with_rotation(
                 _operation
             )
-        except AllKeysExhaustedError:
+        except AllKeysExhaustedError as exc:
             # The rotator chains the last underlying error as
             # __cause__; we re-raise as LLMProviderError so the
             # HybridClassifier batch path treats it as a
             # provider-level failure (counts toward circuit breaker)
             # rather than an unknown exception.
+            #
+            # Sprint 9.4.3 B — preserve the cause chain AND surface the
+            # underlying error's message on the outer LLMProviderError.
+            # The asyncio-safety-net test asserts ``"timed out" in
+            # str(exc)`` to verify the wall-clock cap fired; flattening
+            # the message kept the test green pre-9.4.3 but only
+            # because the rotator never reached the AllKeysExhausted
+            # path for a single-key 504. Now that LLMProviderError
+            # rotates, the single-key flow hits this branch and the
+            # underlying signal would be lost without the join.
             _logger.exception(
                 "RotatingGeminiProvider: all %d keys exhausted",
                 len(self._rotator.keys),
             )
+            underlying = exc.__cause__
+            detail = f": {underlying}" if underlying is not None else ""
             raise LLMProviderError(
-                "All Gemini keys exhausted (rate-limited or invalid)"
-            ) from None
+                f"All Gemini keys exhausted{detail}"
+            ) from exc
 
         # Sprint 9.0.5-A R6 follow-up — telemetry. Recorded after
         # call_with_rotation returns success so transient
