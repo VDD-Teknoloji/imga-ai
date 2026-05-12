@@ -248,6 +248,16 @@ class AuthService:
             actor_user_id=user_id,
         )
 
+        # Sprint 9.5 C2 — drop the in-memory User row so the next
+        # request hits the DB and sees the new password_hash +
+        # password_changed_at. Without this, a request that races
+        # change_password could be served a stale cached User and
+        # the iat-vs-password_changed_at check in get_current_user
+        # would compare against the OLD timestamp, accepting a
+        # token that should already be invalid.
+        from imga_api.auth_deps import invalidate_user_cache
+        invalidate_user_cache(user_id)
+
     # --- internals ------------------------------------------------------
 
     async def _issue_token_pair(

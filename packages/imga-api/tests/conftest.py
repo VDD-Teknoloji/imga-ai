@@ -72,6 +72,18 @@ def _reset_rate_limit_buckets() -> None:
     reset_for_tests()
 
 
+@pytest.fixture(autouse=True)
+def _reset_user_cache() -> None:
+    """Sprint 9.5 C2 — clear the auth-path User TTL cache so a stale
+    row from test A doesn't bleed into test B. Critical for tests
+    that mutate user state (password change, deactivate, role
+    change) and then make a follow-up request that should see the
+    new state immediately."""
+    from imga_api.auth_deps import _reset_user_cache_for_tests
+
+    _reset_user_cache_for_tests()
+
+
 @pytest.fixture
 def stub_classifier() -> KeywordCategoryClassifier:
     """Real keyword classifier — no LLM, fully deterministic for tests."""

@@ -19,9 +19,11 @@ from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from typing import Annotated
+from datetime import datetime
+from typing import Annotated, NamedTuple
 from uuid import UUID
 
+from cachetools import TTLCache
 from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from imga_db import set_current_tenant
@@ -34,6 +36,61 @@ from imga_api.services import AuditService, AuthService, UserService
 from imga_api.settings import JWTSettings, Settings
 
 _bearer_scheme = HTTPBearer(auto_error=False)
+
+
+# Sprint 9.5 C2 — per-process TTL cache for the auth-path User lookup.
+# Production pg_stat_statements (12.05.2026) showed ~3000 SELECT FROM
+# users WHERE id=? calls per snapshot window — each ~0.06-0.23ms, so
+# the latency tax per request is sub-millisecond but the volume adds
+# up. The cache absorbs the repeats; ``invalidate_user_cache`` is
+# called by AuthService.change_password (and future role / deactivate
+# endpoints) to bound staleness. TTL is 60s — short enough that an
+# operator's password change is felt within a minute even on workers
+# that didn't service the change_password call themselves.
+#
+# IMPORTANT: cache a plain NamedTuple, NOT the ORM ``User`` instance.
+# SQLAlchemy ORM rows are bound to the session they were loaded
+# from; once the session closes, attribute access on the cached
+# instance is undefined (lazy-load triggers on a closed session,
+# expire-on-commit semantics, etc.). The auth path only reads two
+# fields — ``is_active`` and ``password_changed_at`` — so we cache
+# those primitives directly. The first iteration of this cache
+# stored the ORM row and cross-tenant tests broke when the cached
+# row's session went away.
+#
+# Caveat: per-process. With N uvicorn workers, the cache lives N
+# times; an invalidation on worker A doesn't reach worker B. The TTL
+# is the safety net for that.
+_USER_CACHE_TTL_SECONDS = 60
+_USER_CACHE_MAXSIZE = 10_000
+
+
+class _UserCacheEntry(NamedTuple):
+    """Tiny snapshot of the auth-path-relevant User columns. Stored
+    as plain primitives so the cache entry survives across session
+    boundaries (the ORM ``User`` doesn't)."""
+
+    is_active: bool
+    password_changed_at: datetime | None
+
+
+_user_cache: TTLCache[UUID, _UserCacheEntry] = TTLCache(
+    maxsize=_USER_CACHE_MAXSIZE, ttl=_USER_CACHE_TTL_SECONDS
+)
+
+
+def invalidate_user_cache(user_id: UUID) -> None:
+    """Drop the cached User row for the given id. Safe to call when
+    the id isn't in the cache (no-op). Auth-state mutations (password
+    change, role change, deactivate) should call this so the next
+    request hits the DB and sees the new state."""
+    _user_cache.pop(user_id, None)
+
+
+def _reset_user_cache_for_tests() -> None:
+    """Test-only helper — fixtures clear the cache between cases so a
+    stale User row from test A doesn't bleed into test B."""
+    _user_cache.clear()
 
 
 @dataclass(frozen=True, slots=True)
@@ -103,8 +160,30 @@ async def get_current_user(
             headers={"WWW-Authenticate": "Bearer"},
         ) from exc
 
-    user = await admin_session.get(User, payload.sub)
-    if user is None or not user.is_active:
+    # Sprint 9.5 C2 — cache only the auth-path fields (is_active +
+    # password_changed_at) for 60s so the hot path doesn't re-issue
+    # ``SELECT FROM users WHERE id=?`` on every request. Cache miss
+    # falls through to the admin session; cache hit serves a stale-
+    # bounded snapshot. ``invalidate_user_cache`` is called by
+    # password change / future role change endpoints.
+    cached = _user_cache.get(payload.sub)
+    if cached is None:
+        user_row = await admin_session.get(User, payload.sub)
+        if user_row is None or not user_row.is_active:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="user inactive",
+            )
+        cached = _UserCacheEntry(
+            is_active=user_row.is_active,
+            password_changed_at=user_row.password_changed_at,
+        )
+        _user_cache[payload.sub] = cached
+    elif not cached.is_active:
+        # Cached deactivation — still bounce. The deactivate endpoint
+        # SHOULD also invalidate the cache (so the next request hits
+        # the DB and re-confirms), but we belt-and-suspenders the
+        # check here for defense in depth.
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="user inactive",
@@ -113,8 +192,8 @@ async def get_current_user(
     # same wall-clock second as a password change must also be rejected;
     # otherwise an attacker who races change_password keeps the old
     # access token alive until exp.
-    if user.password_changed_at is not None and payload.iat <= int(
-        user.password_changed_at.timestamp()
+    if cached.password_changed_at is not None and payload.iat <= int(
+        cached.password_changed_at.timestamp()
     ):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
