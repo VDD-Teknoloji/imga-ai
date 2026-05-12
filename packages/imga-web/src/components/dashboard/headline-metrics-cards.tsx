@@ -86,11 +86,20 @@ function formatAvgSentiment(value: number | null): string {
   return value.toFixed(2);
 }
 
-export function HeadlineMetricsCards() {
+interface HeadlineMetricsCardsProps {
+  /** Sprint 9.5 B4 — when present, scopes review-side metrics + NPS
+   * to a single batch job. Tickets-side counts stay tenant-wide (the
+   * service contract). The dashboard leaves this unset; the strategy
+   * page can pass a batch_job_id when rendering a batch-scoped SWOT
+   * so the headline numbers match the report's input universe. */
+  batchJobId?: string;
+}
+
+export function HeadlineMetricsCards({ batchJobId }: HeadlineMetricsCardsProps = {}) {
   // No date filter at the dashboard level — last-30-days style
   // narrowing happens on the /insights page. The dashboard reflects
   // tenant-wide state.
-  const { data, isLoading, isError } = useHeadlineMetrics({});
+  const { data, isLoading, isError } = useHeadlineMetrics({ batch_job_id: batchJobId });
   const npsScore = data?.nps_score ?? null;
   const band = npsBandClasses(npsScore);
 

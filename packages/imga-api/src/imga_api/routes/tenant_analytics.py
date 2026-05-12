@@ -482,15 +482,27 @@ async def headline_metrics(
     app_session: Annotated[AsyncSession, Depends(get_app_session)],
     date_from: date | None = None,
     date_to: date | None = None,
+    batch_id: UUID | None = None,
 ) -> HeadlineMetricsResponse:
     """Eight values for the dashboard top row, served from a single
     round-trip. Date filter applies to the review-side metrics only;
-    open_tickets + today_new_tickets always reflect live state."""
+    open_tickets + today_new_tickets always reflect live state.
+
+    Sprint 9.5 B4 — ``batch_id`` was already plumbed through
+    ``AnalyticsService.compute_headline_metrics`` (added Sprint
+    9.0.5-B H) but the route signature dropped it, so the strategy
+    page couldn't ask for batch-scoped headline numbers even though
+    the service supported it. The query param now flows end-to-end;
+    the dashboard stays tenant-wide because it doesn't pass the key.
+    """
     tenant_id = _require_active_tenant(current)
     async with app_session.begin():
         await bind_tenant(app_session, current)
         result = await AnalyticsService(app_session).compute_headline_metrics(
-            tenant_id=tenant_id, date_from=date_from, date_to=date_to,
+            tenant_id=tenant_id,
+            date_from=date_from,
+            date_to=date_to,
+            batch_id=batch_id,
         )
     return HeadlineMetricsResponse(**asdict(result))
 

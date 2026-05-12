@@ -56,6 +56,7 @@ async def _seed_review(
     nps_score: int | None = None,
     created_at: datetime | None = None,
     overrides_applied: list[dict[str, object]] | None = None,
+    batch_job_id: UUID | None = None,
 ) -> Review:
     async with admin_session.begin():
         await admin_session.execute(
@@ -75,7 +76,7 @@ async def _seed_review(
             "decision_reason": None,
             "ticket_id": None,
             "submitted_by_user_id": None,
-            "batch_job_id": None,
+            "batch_job_id": batch_job_id,
             "analyzed_at": datetime.now(UTC),
             "nps_score": nps_score,
             "overrides_applied": overrides_applied,
@@ -357,6 +358,103 @@ async def test_headline_metrics_rls_isolates_tenants(
         assert body["nps_score"] is None
     finally:
         await cleanup_tenant(admin_session, user_b.id, tid_b)
+
+
+@pytest.mark.asyncio
+async def test_headline_metrics_batch_id_scopes_review_side_only(
+    batch_client: TestClient,
+    semi_auto_tenant: tuple[User, UUID, str],
+    admin_session: AsyncSession,
+) -> None:
+    """Sprint 9.5 B4 — ``batch_id`` was already supported by the
+    service but the route dropped it. With the param wired through,
+    a batch-scoped call must:
+
+      * count only the reviews tied to that batch (not tenant-wide);
+      * still report live open_tickets (ticket counts are NEVER
+        batch-scoped — the service contract);
+      * leave the unscoped call untouched (both reviews counted).
+
+    Regression guard: if the route signature ever loses ``batch_id``
+    again, both halves of the assertion flip and this test fails
+    loudly."""
+    from datetime import timedelta
+
+    from imga_db.models import AnalyzeBatchJob, BatchJobStatus
+
+    user, tid, pw = semi_auto_tenant
+    cat = await _pick_kargo_id(admin_session)
+
+    async with admin_session.begin():
+        await admin_session.execute(
+            text("SELECT set_config('app.current_tenant_id', :t, true)"),
+            {"t": str(tid)},
+        )
+        job = AnalyzeBatchJob(
+            tenant_id=tid,
+            triggered_by_user_id=user.id,
+            status=BatchJobStatus.COMPLETED,
+            file_name="b4.csv",
+            file_size_bytes=42,
+            file_path="/tmp/b4.csv",
+            text_column="yorum",
+            source_column=None,
+            auto_create_tickets=False,
+            total_rows=1,
+            processed_rows=1,
+            succeeded_rows=1,
+            failed_rows=0,
+            tickets_created=0,
+            duplicates_skipped=0,
+            error_summary=[],
+            created_at=datetime.now(UTC),
+            started_at=datetime.now(UTC) - timedelta(seconds=5),
+            completed_at=datetime.now(UTC),
+        )
+        admin_session.add(job)
+        await admin_session.flush()
+        batch_id = job.id
+
+    # One review in the batch, one tenant-wide outside it.
+    await _seed_review(
+        admin_session, tenant_id=tid, text_value="in-batch",
+        sentiment_score=-0.9, batch_job_id=batch_id,
+    )
+    await _seed_review(
+        admin_session, tenant_id=tid, text_value="not-in-batch",
+        sentiment_score=0.5,
+    )
+    # Open ticket — proves it stays in the count regardless of scope.
+    await _seed_ticket(admin_session, tenant_id=tid, category_id=cat)
+
+    token = login_token(batch_client, user.email, pw, tid)
+
+    # 1. Unscoped — both reviews counted.
+    r_all = batch_client.get(
+        "/tenants/me/analytics/headline-metrics",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert r_all.status_code == 200, r_all.text
+    assert r_all.json()["total_reviews"] == 2
+    assert r_all.json()["open_tickets"] == 1
+
+    # 2. Batch-scoped — only the batched review counted; ticket count
+    # stays live.
+    r_batch = batch_client.get(
+        f"/tenants/me/analytics/headline-metrics?batch_id={batch_id}",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert r_batch.status_code == 200, r_batch.text
+    body = r_batch.json()
+    assert body["total_reviews"] == 1, (
+        "batch_id must scope review-side metrics; if total_reviews is 2 "
+        "here the route dropped the query param before reaching the "
+        "service."
+    )
+    assert body["crisis_count"] == 1  # the in-batch review is crisis
+    assert body["open_tickets"] == 1, (
+        "open_tickets must stay live — tickets are never batch-scoped"
+    )
 
 
 def test_istanbul_today_start_returns_utc_midnight_at_local_day_boundary() -> None:

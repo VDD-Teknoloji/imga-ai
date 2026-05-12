@@ -186,9 +186,14 @@ export function useNpsMonthlyTrend(monthsBack: number = 12) {
 }
 
 export function useHeadlineMetrics(filters: NpsDateFilters) {
+  // Sprint 9.5 B4 — forward batch_job_id. NpsDateFilters already
+  // declared the field but the hook silently dropped it; the
+  // strategy page passes it to scope NPS + the headline counts to a
+  // single batch's review set.
   const query = qs({
     date_from: filters.date_from,
     date_to: filters.date_to,
+    batch_id: filters.batch_job_id,
   });
   return useQuery<HeadlineMetrics>({
     queryKey: ["analytics-headline-metrics", query],
