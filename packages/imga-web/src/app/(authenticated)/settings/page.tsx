@@ -9,6 +9,7 @@ import {
   ShieldAlert,
   Tags,
   Target,
+  Users,
 } from "lucide-react";
 import Link from "next/link";
 import { useMemo } from "react";
@@ -139,6 +140,19 @@ export default function SettingsPage() {
             <p className="text-muted-foreground text-xs">
               Segment / ürün hattı / kanal / müşteri tier'ı — CSV
               upload eşleştirmesi + dashboard kırılımı.
+            </p>
+          </div>
+          <ArrowRight className="text-muted-foreground size-4" aria-hidden />
+        </Link>
+        <Link
+          href="/settings/users"
+          className="bg-card hover:bg-accent flex items-start gap-3 rounded-lg border p-4 transition-colors"
+        >
+          <Users className="text-primary mt-0.5 size-5" aria-hidden />
+          <div className="flex-1">
+            <p className="text-sm font-medium">Kullanıcılar</p>
+            <p className="text-muted-foreground text-xs">
+              Tenant üyeleri + davet gönderme / iptal etme.
             </p>
           </div>
           <ArrowRight className="text-muted-foreground size-4" aria-hidden />
