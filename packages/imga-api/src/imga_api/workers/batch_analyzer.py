@@ -782,6 +782,55 @@ async def _process_chunk(
             app_session, audit, ticket_service, config_service
         )
 
+        # Sprint 9.4.3 A — chunk-level LLM audit. One row per chunk
+        # (not per review) keeps the audit table manageable on a 10K
+        # upload while still giving the operator a "this batch hit
+        # the LLM at HH:MM" trace on /admin/llm-audit. The chunk's
+        # actual BERT/LLM duration is recorded in the structured
+        # log line at the bottom of this function; the auditor's
+        # duration here covers the audit insert only (it runs
+        # post-analyze) — that's a known trade-off documented in
+        # the Sprint 9.4.3 commit.
+        from imga_api.services.executive_briefing_service import (
+            DEFAULT_MODEL_NAME,
+        )
+        from imga_api.services.llm_audit_service import (
+            CALL_TYPE_CLASSIFICATION,
+            LLMCallAuditor,
+            LLMCallContext,
+        )
+
+        # Anchor the audit row to the chunk via a stable digest of the
+        # first few rows' content. Operators can correlate "this audit
+        # row" → "this chunk" by row_number range from the structured
+        # log; the prompt_hash field provides the secondary join key.
+        chunk_anchor = "\n".join(
+            f"{p.row_number}:{p.text[:200]}"
+            for p in valid_rows[: min(20, len(valid_rows))]
+        )
+        audit_ctx = LLMCallContext(
+            tenant_id=tenant_id,
+            call_type=CALL_TYPE_CLASSIFICATION,
+            model_name=DEFAULT_MODEL_NAME,
+            model_provider="gemini",
+            actor_user_id=triggered_by_user_id,
+            related_entity_type="analyze_batch_job",
+            related_entity_id=job_id,
+        )
+        chunk_auditor = LLMCallAuditor(
+            app_session, audit_ctx, prompt=chunk_anchor,
+        )
+        async with chunk_auditor:
+            # The BERT/LLM call already ran outside the transaction
+            # (line ~739); this block is a no-op body whose only job
+            # is to flip the auditor flags and let __aexit__ flush
+            # the row inside the savepoint. The fallback flag
+            # reflects "any row in the chunk hit the keyword
+            # fallback" — a coarser signal than per-row but matches
+            # the chunk-level granularity we ship.
+            chunk_auditor.mark_fallback_used(llm_fallback_count > 0)
+            chunk_auditor.record_success()
+
         # Snapshot the tenant's real automation_mode once per chunk.
         # The reviews CHECK constraint allows ONLY 'manual' / 'semi_auto' /
         # 'full_auto'; batch-specific intent (intra-batch dedup, opt-out)
