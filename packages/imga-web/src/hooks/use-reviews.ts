@@ -53,6 +53,23 @@ function buildQueryString(filters: ReviewListFilters, offset: number, limit: num
   if (filters.primary_categories?.length) {
     params.set("primary_categories", filters.primary_categories.join(","));
   }
+  // Sprint 9.5.1 B1.1 — heatmap drilldown time-bucket filters. Each
+  // is a single integer; the backend route applies the matching
+  // EXTRACT predicate. Skipping them when undefined keeps the URL
+  // short on the default case (parent reviews page state-mirror
+  // pattern relies on "missing param == default").
+  if (filters.hour_of_day !== undefined) {
+    params.set("hour_of_day", String(filters.hour_of_day));
+  }
+  if (filters.day_of_week !== undefined) {
+    params.set("day_of_week", String(filters.day_of_week));
+  }
+  if (filters.week_of_year !== undefined) {
+    params.set("week_of_year", String(filters.week_of_year));
+  }
+  if (filters.month !== undefined) {
+    params.set("month", String(filters.month));
+  }
   if (filters.search) params.set("search", filters.search);
   if (filters.order_by) params.set("order_by", filters.order_by);
   if (filters.order) params.set("order", filters.order);

@@ -165,6 +165,48 @@ async def test_heatmap_returns_full_calendar_axes_on_empty_tenant(
 
 
 @pytest.mark.asyncio
+async def test_heatmap_response_exposes_x_keys_and_y_keys_for_drilldown(
+    batch_client: TestClient,
+    semi_auto_tenant: tuple[User, UUID, str],
+) -> None:
+    """Sprint 9.5.1 B1.1 — the response payload must include raw
+    ``x_keys`` + ``y_keys`` arrays aligned 1:1 with x_labels / y_labels.
+
+    Without them the frontend HeatmapTab's onCellClick handler reads
+    ``data.x_keys[colIdx]`` as undefined and silently early-returns,
+    breaking drilldown navigation (production smoke 2026-05-12). The
+    HeatmapGenerator has been producing these since 9.5 B1 — this
+    test exists because the Pydantic response model dropped them on
+    serialisation in B1.
+
+    For ``hour_of_day × day_of_week × count``:
+      * x_keys = [0, 1, ..., 23]    (24 integer hour buckets)
+      * y_keys = [0, 1, ..., 6]     (Postgres DOW: Sun=0 ... Sat=6)
+    """
+    user, tid, pw = semi_auto_tenant
+    token = login_token(batch_client, user.email, pw, tid)
+    r = batch_client.get(
+        "/tenants/me/insights/heatmap"
+        "?x_axis=hour_of_day&y_axis=day_of_week&metric=count",
+        headers=_auth(token),
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert "x_keys" in body, (
+        "Pydantic HeatmapResponse stripped x_keys — the response model "
+        "needs the field declared (Sprint 9.5.1 B1.1 regression guard)"
+    )
+    assert "y_keys" in body, "same — y_keys missing from response model"
+    assert len(body["x_keys"]) == len(body["x_labels"]), (
+        "x_keys and x_labels must be aligned 1:1 — the frontend "
+        "indexes both by the same colIdx"
+    )
+    assert len(body["y_keys"]) == len(body["y_labels"])
+    # Hour axis is the canonical pin: 24 buckets, integers 0..23.
+    assert body["x_keys"] == list(range(24))
+
+
+@pytest.mark.asyncio
 async def test_heatmap_rejects_same_axes(
     batch_client: TestClient,
     semi_auto_tenant: tuple[User, UUID, str],

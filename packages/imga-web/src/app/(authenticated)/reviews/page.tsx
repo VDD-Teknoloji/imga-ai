@@ -70,9 +70,15 @@ function ReviewsPageSkeleton() {
   );
 }
 
-/** Read the seven URL params into one filter snapshot. Pure function
- *  off URLSearchParams so the lazy-init + the useEffect mirror share
- *  the parsing logic. */
+/** Read the URL params into one filter snapshot. Pure function off
+ *  URLSearchParams so the lazy-init + the useEffect mirror share the
+ *  parsing logic.
+ *
+ *  Sprint 9.5.1 B1.1 — added 4 time-bucket params (hour_of_day,
+ *  day_of_week, week_of_year, month). The /insights heatmap
+ *  drilldown writes one or two of these on a cell click; if this
+ *  parser drops them, the URL changes but the API call still goes
+ *  out unfiltered — symptom seen in production smoke 2026-05-12. */
 function readFiltersFromParams(params: URLSearchParams): ReviewListFilters {
   const sentimentRaw = params.get("sentiment_labels");
   const sourceRaw = params.get("source_types");
@@ -81,6 +87,15 @@ function readFiltersFromParams(params: URLSearchParams): ReviewListFilters {
   const sourceTypes = sourceRaw
     ? (sourceRaw.split(",").filter(Boolean) as ReviewSourceType[])
     : undefined;
+  // Parse a bounded integer URL param or return undefined. Returning
+  // undefined for NaN keeps the filter object stable so filtersEq
+  // doesn't churn on garbage URLs.
+  const _int = (key: string): number | undefined => {
+    const raw = params.get(key);
+    if (raw === null || raw === "") return undefined;
+    const n = Number(raw);
+    return Number.isFinite(n) && Number.isInteger(n) ? n : undefined;
+  };
   return {
     sentiment_labels: sentimentRaw?.split(",").filter(Boolean),
     source_types: sourceTypes,
@@ -88,6 +103,10 @@ function readFiltersFromParams(params: URLSearchParams): ReviewListFilters {
     primary_categories: primaryCatsRaw?.split(",").filter(Boolean),
     has_ticket: params.has("has_ticket") ? params.get("has_ticket") === "true" : undefined,
     batch_job_id: params.get("batch_job_id") ?? undefined,
+    hour_of_day: _int("hour_of_day"),
+    day_of_week: _int("day_of_week"),
+    week_of_year: _int("week_of_year"),
+    month: _int("month"),
     search: params.get("search") ?? undefined,
   };
 }
@@ -109,6 +128,10 @@ function filtersEq(a: ReviewListFilters, b: ReviewListFilters): boolean {
     arrEq(a.primary_categories, b.primary_categories) &&
     a.has_ticket === b.has_ticket &&
     a.batch_job_id === b.batch_job_id &&
+    a.hour_of_day === b.hour_of_day &&
+    a.day_of_week === b.day_of_week &&
+    a.week_of_year === b.week_of_year &&
+    a.month === b.month &&
     a.search === b.search
   );
 }
@@ -158,6 +181,22 @@ function ReviewsPageInner() {
         params.set("has_ticket", String(next.has_ticket));
       }
       if (next.batch_job_id) params.set("batch_job_id", next.batch_job_id);
+      // Sprint 9.5.1 B1.1 — heatmap drilldown time-bucket filters.
+      // Round-trip the URL so back/forward + share-link stay coherent
+      // (parent-controlled URL state pattern, see
+      // docs/agent-rules/url-state-patterns.md).
+      if (next.hour_of_day !== undefined) {
+        params.set("hour_of_day", String(next.hour_of_day));
+      }
+      if (next.day_of_week !== undefined) {
+        params.set("day_of_week", String(next.day_of_week));
+      }
+      if (next.week_of_year !== undefined) {
+        params.set("week_of_year", String(next.week_of_year));
+      }
+      if (next.month !== undefined) {
+        params.set("month", String(next.month));
+      }
       if (next.search) params.set("search", next.search);
       const qs = params.toString();
       router.push(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
@@ -287,6 +326,23 @@ function ReviewsPageInner() {
   );
 }
 
+// Sprint 9.5.1 B1.1 — labels for heatmap drilldown time-bucket pills.
+// Postgres DOW convention: 0=Sunday ... 6=Saturday (matches the
+// heatmap_generator's y_keys for the day_of_week axis).
+const DOW_LABELS_TR: Record<number, string> = {
+  0: "Pazar",
+  1: "Pazartesi",
+  2: "Salı",
+  3: "Çarşamba",
+  4: "Perşembe",
+  5: "Cuma",
+  6: "Cumartesi",
+};
+const MONTH_LABELS_TR: Record<number, string> = {
+  1: "Ocak", 2: "Şubat", 3: "Mart", 4: "Nisan", 5: "Mayıs", 6: "Haziran",
+  7: "Temmuz", 8: "Ağustos", 9: "Eylül", 10: "Ekim", 11: "Kasım", 12: "Aralık",
+};
+
 function FilterPills({ filters }: { filters: ReviewListFilters }) {
   const pills: { label: string; href: string }[] = [];
   if (filters.batch_job_id) {
@@ -304,6 +360,30 @@ function FilterPills({ filters }: { filters: ReviewListFilters }) {
   if (filters.source_types?.length) {
     pills.push({
       label: `Kaynak: ${filters.source_types.map((t) => SOURCE_LABELS[t]).join(", ")}`,
+      href: "/reviews",
+    });
+  }
+  // Sprint 9.5.1 B1.1 — heatmap drilldown pills so the operator can
+  // see what's active (otherwise the filtered listing looks like a
+  // mysterious empty result with no UI affordance to clear).
+  if (filters.hour_of_day !== undefined) {
+    pills.push({
+      label: `Saat: ${String(filters.hour_of_day).padStart(2, "0")}:00`,
+      href: "/reviews",
+    });
+  }
+  if (filters.day_of_week !== undefined) {
+    pills.push({
+      label: `Gün: ${DOW_LABELS_TR[filters.day_of_week] ?? filters.day_of_week}`,
+      href: "/reviews",
+    });
+  }
+  if (filters.week_of_year !== undefined) {
+    pills.push({ label: `Hafta: ${filters.week_of_year}`, href: "/reviews" });
+  }
+  if (filters.month !== undefined) {
+    pills.push({
+      label: `Ay: ${MONTH_LABELS_TR[filters.month] ?? filters.month}`,
       href: "/reviews",
     });
   }

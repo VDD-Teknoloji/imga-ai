@@ -106,6 +106,17 @@ class HeatmapResponse(BaseModel):
     metric_label: str
     x_labels: list[str]
     y_labels: list[str]
+    # Sprint 9.5.1 B1.1 — raw axis values aligned 1:1 with x_labels /
+    # y_labels. HeatmapGenerator has been building these since the
+    # 9.5 B1 commit but the Pydantic response model dropped them on
+    # serialisation (extra=ignore by default), so the frontend's
+    # drilldown handler always saw ``undefined`` and silently early-
+    # returned. Production smoke (2026-05-12) found the symptom:
+    # cells visually highlighted on hover but click never navigated
+    # to /reviews. Time-based axes are integers (0-23, 0-6, 1-12,
+    # 1-53); taxonomy_code carries the string code.
+    x_keys: list[int | str]
+    y_keys: list[int | str]
     values: list[list[float | int | None]]
     metric_min: float | int
     metric_max: float | int

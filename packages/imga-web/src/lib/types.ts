@@ -469,6 +469,15 @@ export interface ReviewListFilters {
    * heatmap drill-down on /insights passes this to scope the listing
    * to the clicked cell's category. */
   primary_categories?: string[];
+  /** Sprint 9.5.1 B1.1 — time-bucket filters, forwarded to /reviews
+   * via PostgreSQL EXTRACT predicates. /insights heatmap drilldown
+   * builds these when the operator clicks a cell on a calendar axis
+   * (hour, dow, week, month). Backend bounds: hour 0-23, dow 0-6
+   * (Postgres convention, Sun=0), week 1-53, month 1-12. */
+  hour_of_day?: number;
+  day_of_week?: number;
+  week_of_year?: number;
+  month?: number;
   search?: string;
   limit?: number;
   offset?: number;
