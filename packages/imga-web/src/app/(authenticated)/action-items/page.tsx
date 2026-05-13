@@ -126,6 +126,13 @@ function Content() {
     include_archived: includeArchived,
   });
 
+  // Sprint 9.6 redesign — focus block: high-priority open items
+  // surfaced regardless of what filter the user has set. C-level
+  // operator's "what needs attention right now" answered in 3 rows
+  // at the top of the page, separate from the main filtered list.
+  const focus = useActionItems({ status: "open", priority: "high" });
+  const focusItems = (focus.data ?? []).slice(0, 3);
+
   return (
     <main className="mx-auto w-full max-w-5xl space-y-6 px-4 py-6 md:p-8">
       <header className="flex flex-wrap items-start justify-between gap-3">
@@ -145,6 +152,63 @@ function Content() {
           <Plus className="size-4" aria-hidden /> Yeni aksiyon
         </Button>
       </header>
+
+      {/* Sprint 9.6 redesign — focus callout. Top-3 high-priority
+          open items pinned at the top so the C-level user lands on
+          "what needs my attention right now" without scrolling or
+          filtering. Independent from the user's current filter
+          choice so it stays useful when they're browsing a
+          specific status / priority. */}
+      {focusItems.length > 0 && (
+        <section
+          className="border-red-300/60 bg-gradient-to-br from-red-50/70 to-white dark:from-red-950/20 dark:to-zinc-900 rounded-xl border p-4"
+          aria-label="Yüksek öncelikli açık aksiyonlar"
+        >
+          <header className="flex items-center justify-between gap-3">
+            <div>
+              <p className="text-red-800 dark:text-red-300 text-xs font-semibold uppercase tracking-wider">
+                Bugün dikkat
+              </p>
+              <p className="text-sm font-medium">
+                {focus.data!.length} yüksek öncelikli açık aksiyon
+              </p>
+            </div>
+            {focus.data!.length > 3 && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setStatusFilterState("open");
+                  setPriorityFilterState("high");
+                  pushParam("status", "open");
+                  pushParam("priority", "high");
+                }}
+                className="gap-1"
+              >
+                Tümünü gör
+              </Button>
+            )}
+          </header>
+          <ul className="mt-3 space-y-2">
+            {focusItems.map((item) => (
+              <li
+                key={item.id}
+                className="bg-card flex items-start gap-3 rounded-lg border p-3"
+              >
+                <span className="bg-red-100 text-red-700 dark:bg-red-950/40 dark:text-red-300 mt-0.5 inline-flex size-6 shrink-0 items-center justify-center rounded-full text-[10px] font-bold">
+                  !
+                </span>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium truncate">{item.title}</p>
+                  <p className="text-muted-foreground text-xs truncate">
+                    {item.description}
+                  </p>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
 
       <div className="bg-card flex flex-wrap items-center gap-3 rounded-lg border p-3">
         <div>

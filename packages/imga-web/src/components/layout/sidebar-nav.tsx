@@ -6,7 +6,11 @@ import { usePathname } from "next/navigation";
 import { useAuthStore } from "@/lib/auth-store";
 import { cn } from "@/lib/utils";
 
-import { ADMIN_NAV_ITEMS, NAV_ITEMS, type NavItem } from "./nav-config";
+import {
+  ADMIN_NAV_ITEMS,
+  NAV_SECTIONS,
+  type NavItem,
+} from "./nav-config";
 
 interface SidebarNavProps {
   /** When true, only the icon is shown; label appears as a tooltip. */
@@ -16,13 +20,91 @@ interface SidebarNavProps {
   onNavigate?: () => void;
 }
 
+/**
+ * Sprint 9.6 redesign — renders NAV_SECTIONS as grouped blocks
+ * with optional headings. Sections without a heading still render
+ * their items but skip the section title; a thin divider sits
+ * between consecutive groups so the eye can chunk them.
+ */
 export function SidebarNav({ collapsed, onNavigate }: SidebarNavProps) {
   const pathname = usePathname();
   const isSuperAdmin = useAuthStore((s) => s.user?.is_super_admin ?? false);
 
   return (
     <nav aria-label="Ana menü" className="flex flex-col gap-1 px-2">
-      {NAV_ITEMS.map((item) => (
+      {NAV_SECTIONS.map((section, sectionIdx) => (
+        <SidebarSection
+          key={`section-${sectionIdx}`}
+          heading={section.heading}
+          items={section.items}
+          showDivider={sectionIdx > 0}
+          collapsed={collapsed}
+          pathname={pathname}
+          onNavigate={onNavigate}
+        />
+      ))}
+
+      {/* Sprint 7.7.4: admin section is fully hidden for non-admins
+          — no heading, no separator, no DOM at all. */}
+      {isSuperAdmin ? (
+        <SidebarSection
+          heading="Yönetim"
+          items={ADMIN_NAV_ITEMS}
+          showDivider
+          collapsed={collapsed}
+          pathname={pathname}
+          onNavigate={onNavigate}
+        />
+      ) : null}
+    </nav>
+  );
+}
+
+interface SidebarSectionProps {
+  heading: string;
+  items: ReadonlyArray<NavItem>;
+  showDivider: boolean;
+  collapsed: boolean;
+  pathname: string;
+  onNavigate?: () => void;
+}
+
+function SidebarSection({
+  heading,
+  items,
+  showDivider,
+  collapsed,
+  pathname,
+  onNavigate,
+}: SidebarSectionProps) {
+  return (
+    <>
+      {showDivider ? (
+        collapsed ? (
+          <div
+            role="separator"
+            aria-orientation="horizontal"
+            className="bg-sidebar-border mx-3 my-2 h-px"
+          />
+        ) : heading ? (
+          <p
+            className="text-muted-foreground mt-4 mb-1 px-3 text-[10px] font-semibold tracking-wider uppercase"
+            aria-label={`${heading} bölümü`}
+          >
+            {heading}
+          </p>
+        ) : (
+          // Headingless follow-up section gets a divider but no
+          // heading — keeps Ayarlar visually separated from
+          // Operasyon without a 1-item label.
+          <div
+            role="separator"
+            aria-orientation="horizontal"
+            className="bg-sidebar-border mx-3 my-2 h-px"
+          />
+        )
+      ) : null}
+      {items.map((item) => (
         <SidebarNavLink
           key={item.href}
           item={item}
@@ -31,38 +113,7 @@ export function SidebarNav({ collapsed, onNavigate }: SidebarNavProps) {
           onNavigate={onNavigate}
         />
       ))}
-
-      {/* Sprint 7.7.4: admin section is fully hidden for non-admins
-          — no heading, no separator, no DOM at all. Keeps regular
-          users from seeing routes they couldn't load anyway. */}
-      {isSuperAdmin ? (
-        <>
-          {collapsed ? (
-            <div
-              role="separator"
-              aria-orientation="horizontal"
-              className="bg-sidebar-border mx-3 my-2 h-px"
-            />
-          ) : (
-            <p
-              className="text-muted-foreground mt-4 mb-1 px-3 text-[10px] font-semibold tracking-wider uppercase"
-              aria-label="Yönetim bölümü"
-            >
-              Yönetim
-            </p>
-          )}
-          {ADMIN_NAV_ITEMS.map((item) => (
-            <SidebarNavLink
-              key={item.href}
-              item={item}
-              isActive={isActiveLink(pathname, item.href)}
-              collapsed={collapsed}
-              onNavigate={onNavigate}
-            />
-          ))}
-        </>
-      ) : null}
-    </nav>
+    </>
   );
 }
 

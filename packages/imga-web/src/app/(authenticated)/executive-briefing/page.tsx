@@ -98,6 +98,17 @@ function Content() {
   const generate = useGenerateBriefing();
   const detail = useExecutiveBriefing(briefingId || null);
 
+  // Sprint 9.6 redesign — auto-select the latest briefing on first
+  // paint when the URL doesn't already pin one. C-level operator's
+  // first question is "what's the latest brief say?" — not "let me
+  // generate a new one". Generation moves below the viewer.
+  useEffect(() => {
+    if (briefingId) return;
+    const latest = list.data?.[0];
+    if (!latest) return;
+    setBriefingIdState(latest.id);
+  }, [briefingId, list.data]);
+
   function onGenerate() {
     generate.mutate(
       { period },
@@ -154,47 +165,70 @@ function Content() {
         </div>
       )}
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Yeni brifing oluştur</CardTitle>
-        </CardHeader>
-        <CardContent className="flex flex-wrap items-end gap-3">
-          <div>
-            <Label className="text-xs">Dönem</Label>
-            <select
-              value={period}
-              onChange={(e) => {
-                const next = e.target.value as BriefingPeriod;
-                setPeriodState(next);
-                pushParam({ period: next === "month" ? null : next });
-              }}
-              className="border-input bg-background mt-1 w-full rounded-md border px-3 py-2 text-sm"
-            >
-              {(Object.keys(BRIEFING_PERIOD_LABELS) as BriefingPeriod[]).map(
-                (p) => (
-                  <option key={p} value={p}>
-                    {BRIEFING_PERIOD_LABELS[p]}
-                  </option>
-                ),
-              )}
-            </select>
-          </div>
-          <Button
-            onClick={onGenerate}
-            disabled={generate.isPending || !hasActiveKey}
-            className="gap-2"
-          >
-            {generate.isPending ? (
-              <Loader2 className="size-4 animate-spin" aria-hidden />
-            ) : (
-              <Wand2 className="size-4" aria-hidden />
-            )}
-            Brifing üret
-          </Button>
-        </CardContent>
-      </Card>
-
+      {/* Sprint 9.6 redesign — viewer first. When the URL doesn't
+          pin a specific briefing, the auto-select effect above puts
+          the most recent one here so the C-level user lands on
+          "what's the latest decision document say?" instead of an
+          empty form. */}
       {briefingId && detail.data && <BriefingViewer briefing={detail.data} />}
+      {briefingId && detail.isLoading && (
+        <Card>
+          <CardContent className="text-muted-foreground p-6 text-sm">
+            Brifing yükleniyor…
+          </CardContent>
+        </Card>
+      )}
+      {!briefingId && !list.isLoading && (list.data?.length ?? 0) === 0 && (
+        <Card>
+          <CardContent className="space-y-2 p-6 text-sm">
+            <p className="font-medium">Henüz brifing yok.</p>
+            <p className="text-muted-foreground">
+              Aşağıdaki form ile ilk dönemsel brifingi üretin —
+              KPI değişimleri, kritik içgörüler ve öncelikli aksiyonlar
+              hazırlanır.
+            </p>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Sprint 9.6 redesign — generation is a single compact row, not
+          its own card with a title. C-level operator looks at this
+          weekly; weekly-habit affordances don't need a "Yeni brifing
+          oluştur" preamble. */}
+      <div className="bg-card flex flex-wrap items-end gap-3 rounded-lg border p-3">
+        <div>
+          <Label className="text-xs">Dönem</Label>
+          <select
+            value={period}
+            onChange={(e) => {
+              const next = e.target.value as BriefingPeriod;
+              setPeriodState(next);
+              pushParam({ period: next === "month" ? null : next });
+            }}
+            className="border-input bg-background mt-1 w-full rounded-md border px-3 py-2 text-sm"
+          >
+            {(Object.keys(BRIEFING_PERIOD_LABELS) as BriefingPeriod[]).map(
+              (p) => (
+                <option key={p} value={p}>
+                  {BRIEFING_PERIOD_LABELS[p]}
+                </option>
+              ),
+            )}
+          </select>
+        </div>
+        <Button
+          onClick={onGenerate}
+          disabled={generate.isPending || !hasActiveKey}
+          className="gap-2"
+        >
+          {generate.isPending ? (
+            <Loader2 className="size-4 animate-spin" aria-hidden />
+          ) : (
+            <Wand2 className="size-4" aria-hidden />
+          )}
+          Yeni brifing üret
+        </Button>
+      </div>
 
       <Card>
         <CardHeader>

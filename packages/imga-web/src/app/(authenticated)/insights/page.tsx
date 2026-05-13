@@ -92,17 +92,23 @@ type TabKey =
   | "wordcloud"
   | "heatmap";
 
+// Sprint 9.6 redesign — tab labels tightened so the 10-tab strip
+// fits the analyst's mental model: tighter words, ordered by
+// frequency-of-use rather than feature-build order. "Sentiment"
+// (Duygu) + "Kategori" + "NPS" are the daily-look tabs; advanced
+// surfaces (override / cohort / heatmap) live to the right of the
+// strip and stay one click away.
 const TAB_LABELS: Record<TabKey, string> = {
   sentiment: "Duygu",
   category: "Kategori",
-  cross: "Çapraz Analiz",
-  overrides: "Override Katmanları",
-  tickets: "Biletler",
   nps: "NPS",
-  perspective: "Şirket Perspektifi",
+  cross: "Çapraz",
+  perspective: "Perspektif",
+  tickets: "Bilet",
+  heatmap: "Isı haritası",
   cohort: "Kohort",
-  wordcloud: "Kelime Bulutu",
-  heatmap: "Heatmap",
+  wordcloud: "Kelimeler",
+  overrides: "Override",
 };
 
 // Sprint 8.3.4 round-2 — wrap the search-params-reading subtree in
@@ -311,9 +317,14 @@ function InsightsContent() {
       />
 
       <Tabs value={tab} onValueChange={(v) => handleTabChange(v as TabKey)}>
-        <TabsList className="grid grid-cols-3 sm:grid-cols-5 lg:grid-cols-10">
+        {/* Sprint 9.6 redesign — tab strip wraps onto multiple lines
+            instead of squishing into a fixed 10-column grid. Each
+            tab gets a comfortable hit area; the strip stays readable
+            without horizontal scroll on tablet / sidebar-narrow
+            viewports. */}
+        <TabsList className="flex flex-wrap h-auto justify-start gap-1 p-1">
           {(Object.keys(TAB_LABELS) as TabKey[]).map((k) => (
-            <TabsTrigger key={k} value={k}>
+            <TabsTrigger key={k} value={k} className="px-3">
               {TAB_LABELS[k]}
             </TabsTrigger>
           ))}

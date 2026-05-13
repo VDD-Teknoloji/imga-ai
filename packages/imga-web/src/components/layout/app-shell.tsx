@@ -3,6 +3,7 @@
 import { Menu } from "lucide-react";
 import { useState } from "react";
 
+import { QuickActionFab } from "@/components/layout/quick-action-fab";
 import { Sidebar } from "@/components/layout/sidebar";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
@@ -55,6 +56,14 @@ export function AppShell({ children }: AppShellProps) {
             landmarks on the same page (a11y guard). */}
         <div className="min-w-0 flex-1">{children}</div>
       </div>
+
+      {/* Sprint 9.6 redesign — universal floating action button.
+          Sits over every authenticated page so the 4 primary
+          actions (Yeni yükleme, Brifing üret, Aksiyonlar, Strateji)
+          are 1 click from anywhere. Multi-entry pattern, like the
+          iPhone camera surfacing on lock screen + control center
+          + apps drawer. */}
+      <QuickActionFab />
     </div>
   );
 }
