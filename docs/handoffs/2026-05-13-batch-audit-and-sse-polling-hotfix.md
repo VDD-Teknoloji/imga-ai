@@ -204,4 +204,53 @@ fix(web): BatchProgressStream falls back to DB poll when SSE goes quiet (Sprint 
 
 ## Cevap
 
-(local-agent: commit hash + push doğrulamasını buraya yaz)
+**Local-agent — 2026-05-13, resolved.**
+
+Commit zinciri main'e push edildi (`89148bf..d066cfd`):
+
+| Hash | Konu |
+|---|---|
+| `e924b94` | docs(handoff): bu doc + INDEX güncelleme |
+| `4d257a2` | fix(api,core): Bug A — batch chunk audit captures real token usage + LLM duration |
+| `d066cfd` | fix(web): Bug B — BatchProgressStream falls back to DB poll when SSE goes quiet |
+
+`sprint-9.5` tag korundu (a2e8563'te).
+
+### Bug A — implementation notları
+
+Plumbing chain handoff'taki Adım 1-5 sırasıyla:
+
+1. **`LLMClassificationResult.token_usage`** — dict[str, int] | None alanı eklendi (Pydantic frozen model). Metadata dict yerine first-class field tercih edildi (type-narrow + frozen-uyumlu).
+2. **`GeminiProvider.classify`** — `_extract_usage_metadata` (zaten SWOT/OKR'de kullanılıyordu) yeniden kullanıldı, `_parse_response`'a token_usage parametresi olarak geçti.
+3. **`HybridClassifier.classify_batch_async`** — return type `BatchClassificationResult` dataclass'a değişti. Dataclass list-like (`__len__`/`__iter__`/`__getitem__` proxy) ki mevcut 8 test callsite (`len(result)`, `for r in result`, `result[i]`) churn olmadan geçti.
+4. **`pipeline.analyze_batch_async`** — tuple return yerine optional `classifier_stats_sink: dict | None` out-param eklendi. 5 mevcut test callsite (test_batch_freeze_regression, test_hybrid_parallel_batch, test_rotating_gemini_provider) bozulmadı, return contract `list[AnalysisResult]` aynı kaldı.
+5. **`LLMCallAuditor.record_success(duration_ms=...)`** — opsiyonel duration override. `_insert_row`'da override önceliği. Briefing/OKR/SWOT path'leri (in-window timer) etkilenmedi.
+
+**Test compose:** 569 passed, 2 skipped (+5 vs 9.5.4 baseline 564). Yeni test dosyası `tests/test_batch_audit_token_capture.py` — 5 test:
+- `classify_batch_async_aggregates_token_usage`
+- `classify_batch_async_keyword_only_yields_zero_aggregates`
+- `classify_batch_async_clocks_real_llm_wallclock`
+- `record_success_duration_ms_override_persists` (DB INSERT'le doğrudan doğrulama)
+- `record_success_without_override_keeps_in_window_timer` (briefing path regression guard)
+
+### Bug B — implementation notları
+
+`BatchProgressStream.tsx`'e üç signal kanalı eklendi:
+
+1. **Watchdog** — `setInterval(5s)` `lastEventAtRef` kontrolü. 30s SSE sessizliğinde polling devreye girer. SSE ping keepalive (~10s aralık) de timer'ı reset ediyor; quiet window normal jitter dışında.
+2. **onError → immediate polling** — beklemeden polling başlat; SSE reconnect kendi yolunda devam, recover ederse poll otomatik kapanır.
+3. **Polling timer** — `setInterval(5s)` `GET /tenants/me/analyze/batch/{jobId}` → `batchJobToSnapshot(BatchJob)` → setSnapshot. Terminal status'ta `completedRef` debounce ile onComplete tek sefer, SSE + polling kapatma.
+
+**`completedRef` debounce:** SSE recover edip terminal frame ikinci kez emit ederse onComplete duplicate çağrılmıyor.
+
+**Eta_seconds null on poll path** — DB row carry etmiyor; live stream wall-clock hesaplıyor. Bar yine ilerliyor, ETA görünmüyor sadece. Kabul edilebilir degradation.
+
+**Frontend test gap:** Web paketinde unit test framework yok (sadece Playwright e2e — bu case için real-batch + real-Gemini gerektirir, hotfix scope dışı). TS typecheck geçti, polling mantığı kısa + auditable + her karar noktasında comment var. Vitest bootstrap'i ayrı sprint'e bırakıldı.
+
+### Deploy notları
+
+- Migration YOK
+- api + web rebuild (api-worker dokunulmuyor — `record_success` signature backward-compat, mevcut callerlar default değerleriyle çalışır)
+- Production smoke kabul kriterleri handoff bölümünde — sunucu ajan rebuild + smoke için pull edebilir.
+
+**Durum: resolved.**
