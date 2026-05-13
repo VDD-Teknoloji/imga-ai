@@ -252,15 +252,17 @@ class GeminiProvider(LLMProvider):
         system_prompt: str,
         user_prompt: str,
         response_schema: dict[str, Any],
-        # Sprint 9.5 A3 — strategy paths cut over to gemini-2.5-pro.
-        # Pro produces materially better SWOT/OKR/briefing output for
-        # long-form structured tasks, and the once-per-tenant-per-day
-        # cadence keeps the cost delta inside the budget. Hot-path
-        # classification (per-review category labeling, GeminiProvider
-        # __init__ + RotatingGeminiProvider __init__) stays on flash —
-        # pro is 5-10x more expensive and the quality lift on a 50-word
-        # review isn't worth the per-row spend.
-        model_name: str = "gemini-2.5-pro",
+        # Sprint 9.5.2 — emergency fallback to gemini-2.0-flash. The
+        # 9.5 A3 pro cutover hit 6/6 504 DEADLINE_EXCEEDED in prod for
+        # briefing payloads; 2.5-flash also showed ~22% 504s on the
+        # same payload (server-agent log analysis 2026-05-12). The 2.5
+        # family doesn't fit briefing's payload inside its 30s infra
+        # SLA. 2.0-flash has materially more generous limits on Tier
+        # 1 paid (2K RPM / 4M TPM / unlimited RPD vs Pro's 150 / 2M /
+        # 1K) and isn't showing the same 504 pattern. Experimental —
+        # if 2.0-flash also degrades, Sprint 9.6 lands a payload-
+        # shape refactor (sample-then-summarise or map/reduce).
+        model_name: str = "gemini-2.0-flash",
         temperature: float = 0.2,
         top_p: float = 0.9,
         max_output_tokens: int = 8192,
@@ -283,7 +285,7 @@ class GeminiProvider(LLMProvider):
         system_prompt: str,
         user_prompt: str,
         response_schema: dict[str, Any],
-        model_name: str = "gemini-2.5-pro",  # Sprint 9.5 A3
+        model_name: str = "gemini-2.0-flash",  # Sprint 9.5.2 fallback
         temperature: float = 0.3,
         top_p: float = 0.9,
         max_output_tokens: int = 4096,
@@ -306,7 +308,7 @@ class GeminiProvider(LLMProvider):
         system_prompt: str,
         user_prompt: str,
         response_schema: dict[str, Any],
-        model_name: str = "gemini-2.5-pro",  # Sprint 9.5 A3
+        model_name: str = "gemini-2.0-flash",  # Sprint 9.5.2 fallback
         temperature: float = 0.25,
         top_p: float = 0.9,
         max_output_tokens: int = 8192,

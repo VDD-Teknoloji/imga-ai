@@ -123,11 +123,13 @@ async def test_generate_swot_returns_parsed_dict(provider: Any) -> None:
     ctor_kwargs = fake_module.Client.call_args.kwargs
     assert ctor_kwargs["api_key"] == "test-key"
     # generate_content called with the system instruction + structured
-    # output config. Sprint 9.5 A3 — strategy paths default to
-    # gemini-2.5-pro (long-form structured output is worth the cost
-    # delta vs flash at this cadence).
+    # output config. Sprint 9.5.2 — strategy paths fall back to
+    # gemini-2.0-flash after the 2.5 family hit 504 DEADLINE_EXCEEDED
+    # on briefing payloads in production (12.05.2026). The default
+    # tracks the actual wire-level model so a misconfigured override
+    # surfaces here, not at runtime.
     call_kwargs = client.aio.models.generate_content.call_args.kwargs
-    assert call_kwargs["model"] == "gemini-2.5-pro"
+    assert call_kwargs["model"] == "gemini-2.0-flash"
     cfg = call_kwargs["config"]
     assert cfg.system_instruction == "You are a SWOT analyst."
     assert cfg.response_mime_type == "application/json"
