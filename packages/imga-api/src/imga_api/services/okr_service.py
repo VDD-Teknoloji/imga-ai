@@ -68,11 +68,11 @@ from imga_api.services.strategic_constants import (
 
 _logger = logging.getLogger(__name__)
 
-# Sprint 9.5.2 — fallback to gemini-2.0-flash alongside briefing /
-# swot. See executive_briefing_service.py for the 504-storm context;
-# OKR generation tracks the same model choice for cost + behavior
-# parity across strategy surfaces.
-DEFAULT_MODEL_NAME = "gemini-2.0-flash"
+# Sprint 9.5.4 — Gemini 3 cutover alongside briefing / swot. See
+# executive_briefing_service.py for the full 2.5 504 → 2.0 404 →
+# 3-flash-preview history; OKR generation tracks the same model
+# choice for cost + behavior parity across strategy surfaces.
+DEFAULT_MODEL_NAME = "gemini-3-flash-preview"
 
 
 class OkrServiceError(Exception):

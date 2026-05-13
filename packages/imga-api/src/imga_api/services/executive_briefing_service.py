@@ -51,20 +51,28 @@ from imga_api.services.strategic_constants import (
 _logger = logging.getLogger(__name__)
 
 CACHE_TTL_SECONDS = 12 * 3600
-# Sprint 9.5.2 — emergency fallback to gemini-2.0-flash. The 9.5.1
-# A3.1 cutover to gemini-2.5-pro hit infra 504 DEADLINE_EXCEEDED on
-# every briefing attempt in production (6/6 attempts, 2026-05-12);
-# keys + auth + quota all clean. Server-agent log analysis showed
-# gemini-2.5-flash also returning ~22% 504s on the same payload —
-# the 2.5 family doesn't fit briefing's payload size inside its 30s
-# infra SLA.
+# Sprint 9.5.4 — Gemini 3 ailesine cutover. Recent history:
 #
-# 2.0-flash has materially more generous limits on Tier 1 paid
-# (2K RPM, 4M TPM, unlimited RPD vs Pro's 150 / 2M / 1K) and isn't
-# showing the same 504 pattern. This is experimental — if 2.0-flash
-# also degrades we need a payload-shape refactor (Sprint 9.6 Yol A
-# sample-then-summarise OR Yol D map/reduce).
-DEFAULT_MODEL_NAME = "gemini-2.0-flash"
+#   * 9.5 A3 + 9.5.1 A3.1: tried gemini-2.5-pro end-to-end. Hit 6/6
+#     504 DEADLINE_EXCEEDED on briefing payloads in prod (2026-05-12).
+#     Server-agent logs showed gemini-2.5-flash also ~22% 504 on
+#     the same payload — the 2.5 family doesn't fit briefing's
+#     payload size inside Google's 30s infra SLA. Tier 2 wouldn't
+#     help; this is a compute-pool latency issue, not a quota issue.
+#
+#   * 9.5.2: fell back to gemini-2.0-flash. Failed differently —
+#     404 NOT_FOUND with the message "no longer available to new
+#     users". Google docs confirm 2.0-flash is closed to new
+#     accounts and sunsets entirely 2026-06-01. We're a new-tier
+#     account so the rollout doesn't apply to us yet but the API
+#     surface already blocks us.
+#
+# 9.5.4 hypothesis: gemini-3-flash-preview lives on a different
+# compute pool with a different SLA pattern. Experimental. If it
+# also 504s, Sprint 9.5.5 swaps to gemini-3.1-flash-lite. If it
+# 404s, the model-name string needs verification against current
+# Google docs (the "-preview" suffix is moving target territory).
+DEFAULT_MODEL_NAME = "gemini-3-flash-preview"
 
 
 class BriefingServiceError(Exception):
