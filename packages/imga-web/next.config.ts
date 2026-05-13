@@ -7,25 +7,26 @@ const nextConfig: NextConfig = {
   output: "standalone",
   reactStrictMode: true,
 
-  // Sprint 9.5 B3 — bundle slimming. Discovery report flagged
-  // first-load JS at ~1.31 MB uncompressed across 30 vendor
-  // chunks (lucide-react ~200 KB by itself, recharts loaded
-  // eagerly on routes that don't actually chart). The fixes:
+  // Sprint 9.5 B3 — bundle slimming. ``optimizePackageImports`` tells
+  // Next 16 to barrel-strip the listed packages so only the named
+  // imports actually used survive into the bundle. Big win for
+  // lucide-react (~200 KB → ~20 KB on a typical page); recharts /
+  // base-ui / dnd-kit are smaller but still worth shaking.
   //
-  //   1. ``optimizePackageImports`` tells Next to barrel-strip the
-  //      listed packages — only the specific named imports you
-  //      use survive into the bundle. Massive win for
-  //      lucide-react (~200 KB → ~20 KB on a typical page) and
-  //      lower wins for the rest.
+  // Sprint 9.5.3 — the original B3 also wired ``modularizeImports``
+  // for lucide-react as a "belt-and-suspenders" compile-time
+  // transform. That broke the build. lucide-react's exports are
+  // named ``CheckIcon`` / ``WandIcon`` / etc. but the underlying
+  // file is ``check.mjs`` / ``wand.mjs`` — no ``-icon`` suffix. The
+  // naive ``{{kebabCase member}}`` transform produced ``check-icon``
+  // → 14 "Module not found" errors on a clean ``next build``. The
+  // server-agent's uncommitted next.config.ts patch had been
+  // masking this in production by removing the block before each
+  // rebuild. Dropped here permanently; optimizePackageImports does
+  // the tree-shake without needing the transform.
   //
-  //   2. ``modularizeImports`` for lucide-react is the belt-and-
-  //      suspenders compile-time transform: even on legacy Next
-  //      versions or edge runtimes where optimizePackageImports
-  //      hasn't fully kicked in, the per-icon path keeps tree-
-  //      shaking honest.
-  //
-  // Route-level dynamic() splits land in code (insights tabs,
-  // strategy PDF flow) — see the relevant page.tsx files.
+  // Route-level dynamic() splits land in code (insights tabs) — see
+  // the relevant page.tsx files.
   experimental: {
     optimizePackageImports: [
       "lucide-react",
@@ -35,12 +36,6 @@ const nextConfig: NextConfig = {
       "@dnd-kit/sortable",
       "@dnd-kit/utilities",
     ],
-  },
-  modularizeImports: {
-    "lucide-react": {
-      transform: "lucide-react/dist/esm/icons/{{kebabCase member}}",
-      preventFullImport: true,
-    },
   },
 };
 
