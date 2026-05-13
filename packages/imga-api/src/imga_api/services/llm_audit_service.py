@@ -123,6 +123,16 @@ class LLMCallAuditor:
         self._error_message: str | None = None
         self._input_tokens: int | None = None
         self._output_tokens: int | None = None
+        # Sprint 9.5.5 A — optional duration override. The batch path
+        # wraps a window AFTER the real LLM call has already returned
+        # (the chunk_auditor's async-with body just flips flags), so
+        # ``_started_at -> now`` measures ~1ms instead of the actual
+        # Gemini latency. Callers that know the real duration (e.g.
+        # batch_analyzer.py reading HybridClassifier's
+        # BatchClassificationResult.llm_duration_ms) can ship it
+        # through ``record_success(duration_ms=...)`` and the audit
+        # row uses that instead of the in-window elapsed.
+        self._duration_ms_override: int | None = None
 
     async def __aenter__(self) -> LLMCallAuditor:
         self._started_at = time.monotonic()
@@ -148,15 +158,28 @@ class LLMCallAuditor:
         *,
         input_tokens: int | None = None,
         output_tokens: int | None = None,
+        duration_ms: int | None = None,
     ) -> None:
         """Caller's chance to report token usage when the SDK
         surfaces it. ``input_tokens`` / ``output_tokens`` are
         ``None`` when the response didn't carry usage_metadata
         (rare, but the row stays consistent with the provider's
-        actual response shape)."""
+        actual response shape).
+
+        Sprint 9.5.5 A — ``duration_ms`` overrides the auditor's
+        in-window elapsed measurement. Required by the batch chunk
+        path where the ``async with`` body runs AFTER the LLM call
+        has already returned (the auditor would otherwise log ~1ms,
+        not the real ~80s Gemini latency). The override is None when
+        the caller wraps the actual call inside the ``async with``
+        block (briefing / OKR / SWOT paths), in which case the
+        auditor's own timer is the right source.
+        """
         self._success = True
         self._input_tokens = input_tokens
         self._output_tokens = output_tokens
+        if duration_ms is not None:
+            self._duration_ms_override = duration_ms
 
     def record_failure(
         self,
@@ -193,11 +216,14 @@ class LLMCallAuditor:
         if self._recorded:
             return
         self._recorded = True
-        elapsed = (
-            int((time.monotonic() - self._started_at) * 1000)
-            if self._started_at is not None
-            else None
-        )
+        # Sprint 9.5.5 A — duration override beats the in-window
+        # timer. See record_success for the batch-path rationale.
+        if self._duration_ms_override is not None:
+            elapsed: int | None = self._duration_ms_override
+        elif self._started_at is not None:
+            elapsed = int((time.monotonic() - self._started_at) * 1000)
+        else:
+            elapsed = None
         try:
             async with self._session.begin_nested():
                 row = LlmCallAudit(

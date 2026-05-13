@@ -61,6 +61,13 @@ class LLMClassificationResult(BaseModel):
     reasoning: str = Field(..., description="One- or two-sentence justification")
     provider: str = Field(..., description="'gemini', 'claude', etc.")
     model: str = Field(..., description="Specific model name, e.g. 'gemini-2.5-flash'")
+    # Sprint 9.5.5 A — captured from the SDK's usage_metadata so the
+    # downstream auditor row (``llm_call_audit.input_tokens`` etc.)
+    # reflects the actual call cost instead of NULL. None when the
+    # provider didn't return usage info (older SDK paths, mocks).
+    # Shape mirrors the SWOT/OKR token_usage dict already used in
+    # GeminiProvider: {"input": int, "output": int, "total": int}.
+    token_usage: dict[str, int] | None = Field(default=None)
 
 
 class CategoryClassification(BaseModel):

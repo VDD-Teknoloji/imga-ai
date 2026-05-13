@@ -69,6 +69,7 @@ class AnalysisPipeline:
         texts: list[str],
         *,
         classifier: CategoryClassifier | None = None,
+        classifier_stats_sink: dict[str, int] | None = None,
     ) -> list[AnalysisResult]:
         """Sprint 9.0.5-A B2 — async variant that runs BERT inference
         and category classification in parallel.
@@ -133,12 +134,34 @@ class AnalysisPipeline:
                 active_classifier, "classify_batch_async", None
             )
             if async_batch is not None and asyncio.iscoroutinefunction(async_batch):
+                # Sprint 9.5.5 A — classify_batch_async now returns
+                # BatchClassificationResult (a dataclass envelope
+                # around the classifications list + LLM token/duration
+                # aggregates). Other classifiers' classify_batch + the
+                # sync fallback still return a bare list. The pipeline
+                # keeps its own return contract (``list[AnalysisResult]``)
+                # backward-compat, but forwards the LLM aggregates via
+                # the optional ``classifier_stats_sink`` out-param so
+                # the batch worker's audit row can record real token
+                # usage + duration instead of 0/NULL. None on the sink
+                # means the caller didn't ask for the stats (e.g. the
+                # /analyze single-review route).
                 result = await async_batch(normalized)
-                return list(result)
-            result = await asyncio.to_thread(
+                if classifier_stats_sink is not None:
+                    classifier_stats_sink["llm_total_input_tokens"] = (
+                        result.llm_total_input_tokens
+                    )
+                    classifier_stats_sink["llm_total_output_tokens"] = (
+                        result.llm_total_output_tokens
+                    )
+                    classifier_stats_sink["llm_duration_ms"] = (
+                        result.llm_duration_ms
+                    )
+                return list(result.classifications)
+            sync_result = await asyncio.to_thread(
                 active_classifier.classify_batch, normalized
             )
-            return list(result)
+            return list(sync_result)
 
         bert_predictions, categorizations = await asyncio.gather(
             _run_bert(), _run_classifier()

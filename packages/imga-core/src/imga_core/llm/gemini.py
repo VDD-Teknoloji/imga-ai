@@ -171,7 +171,14 @@ class GeminiProvider(LLMProvider):
                 raise
             raise LLMProviderError(f"Gemini API call failed: {exc}") from exc
 
-        return self._parse_response(response, available_categories)
+        # Sprint 9.5.5 A — extract usage_metadata alongside the parse so
+        # the audit row downstream knows the real token cost of each
+        # per-review classify call. Pre-9.5.5 batch rows landed with
+        # NULL tokens because nothing ever pulled this off the SDK
+        # response on the classify path (SWOT/OKR did, but classify
+        # didn't).
+        token_usage = self._extract_usage_metadata(response)
+        return self._parse_response(response, available_categories, token_usage)
 
     def health_check(self) -> bool:
         try:
@@ -187,6 +194,7 @@ class GeminiProvider(LLMProvider):
         self,
         response: Any,
         available_categories: list[str],
+        token_usage: dict[str, int] | None = None,
     ) -> LLMClassificationResult:
         raw = getattr(response, "text", None)
         if not raw:
@@ -224,6 +232,7 @@ class GeminiProvider(LLMProvider):
             reasoning=cast(str, reasoning),
             provider=self.PROVIDER_NAME,
             model=self._model_name,
+            token_usage=token_usage,
         )
 
     # ------------------------------------------------------------------

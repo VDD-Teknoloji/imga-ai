@@ -22,6 +22,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from imga_core.categories.taxonomy import GLOBAL_CATEGORY_CODES
@@ -33,6 +34,51 @@ from imga_core.models import CategoryClassification
 
 if TYPE_CHECKING:
     pass
+
+
+@dataclass(frozen=True, slots=True)
+class BatchClassificationResult:
+    """Sprint 9.5.5 A — aggregate envelope around ``classify_batch_async``.
+
+    Pre-9.5.5 the method returned a bare ``list[CategoryClassification]``
+    and batch_analyzer.py had no way to know what the LLM portion
+    really cost. Audit rows landed with input_tokens=NULL +
+    duration_ms=0 because the auditor wrapped only the ~1ms flag-setting
+    region after the call had already returned (the LLM work happens
+    OUTSIDE the auditor's ``async with`` window for the batch path).
+
+    The new envelope carries the per-batch LLM aggregates so the
+    auditor can record_success() with real values:
+
+      * ``classifications`` — same list the caller used to get back.
+      * ``llm_total_input_tokens`` / ``llm_total_output_tokens`` —
+        summed across every successful LLM call in this batch. Zero
+        when no LLM was consulted (all rows above the confidence
+        threshold, LLM disabled, circuit open).
+      * ``llm_duration_ms`` — wall-clock spent on the LLM fan-out
+        portion only (NOT the keyword pass; that's microseconds).
+        Zero on early-exit branches where no LLM dispatch happened.
+
+    The envelope is list-like via ``__len__``/``__iter__``/
+    ``__getitem__`` proxies — existing callers that treat the return
+    value as a list (``len(result)``, ``result[i]``, ``for r in
+    result``) keep working without per-callsite rewrites. New
+    callers that need the aggregates reach for the named fields.
+    """
+
+    classifications: list[CategoryClassification]
+    llm_total_input_tokens: int = 0
+    llm_total_output_tokens: int = 0
+    llm_duration_ms: int = 0
+
+    def __len__(self) -> int:
+        return len(self.classifications)
+
+    def __iter__(self):  # type: ignore[no-untyped-def]
+        return iter(self.classifications)
+
+    def __getitem__(self, index):  # type: ignore[no-untyped-def]
+        return self.classifications[index]
 
 _logger = logging.getLogger(__name__)
 
@@ -173,7 +219,7 @@ class HybridClassifier(CategoryClassifier):
 
     async def classify_batch_async(
         self, texts: list[str]
-    ) -> list[CategoryClassification]:
+    ) -> BatchClassificationResult:
         """Async batch classification with bounded parallel LLM dispatch.
 
         Steps:
@@ -215,7 +261,10 @@ class HybridClassifier(CategoryClassifier):
             and texts[i].strip()
         ]
 
-        # Early-exit branches — no LLM work to dispatch.
+        # Early-exit branches — no LLM work to dispatch. Each returns
+        # an empty-aggregate BatchClassificationResult so the caller
+        # (batch_analyzer.py auditor) writes 0 tokens / 0 ms duration
+        # honestly instead of NULL.
         if not llm_candidates:
             self._log_batch_summary(
                 total=total,
@@ -225,8 +274,10 @@ class HybridClassifier(CategoryClassifier):
                 mode="keyword-only",
                 keys_stats=self._read_provider_stats(),
             )
-            return _mark_review_for_low_confidence(
-                keyword_results, self.threshold,
+            return BatchClassificationResult(
+                classifications=_mark_review_for_low_confidence(
+                    keyword_results, self.threshold,
+                ),
             )
 
         if self.llm is None:
@@ -238,8 +289,10 @@ class HybridClassifier(CategoryClassifier):
                 mode="llm-disabled",
                 keys_stats=None,
             )
-            return _mark_review_for_low_confidence(
-                keyword_results, self.threshold,
+            return BatchClassificationResult(
+                classifications=_mark_review_for_low_confidence(
+                    keyword_results, self.threshold,
+                ),
             )
 
         if self._is_circuit_open():
@@ -257,8 +310,10 @@ class HybridClassifier(CategoryClassifier):
                 mode="circuit-open",
                 keys_stats=self._read_provider_stats(),
             )
-            return _mark_review_for_low_confidence(
-                keyword_results, self.threshold,
+            return BatchClassificationResult(
+                classifications=_mark_review_for_low_confidence(
+                    keyword_results, self.threshold,
+                ),
             )
 
         # Step 3: fan out LLM calls bounded by concurrency.
@@ -268,6 +323,13 @@ class HybridClassifier(CategoryClassifier):
         # gave each chunk its own 8-cap which compounded to 32 in
         # flight under 4-way chunk parallelism.
         semaphore = self._get_llm_semaphore()
+
+        # Sprint 9.5.5 A — clock the LLM-fan-out region. The Auditor in
+        # batch_analyzer.py wraps a different (~1ms) window and was
+        # writing duration_ms=0 to llm_call_audit. We capture the real
+        # wall-clock spent waiting on Gemini here and ship it back
+        # alongside the classifications.
+        llm_started_at = time.monotonic()
 
         async def _llm_one(idx: int) -> tuple[int, CategoryClassification | None]:
             async with semaphore:
@@ -378,13 +440,36 @@ class HybridClassifier(CategoryClassifier):
                     cancelled_indices.add(cand_idx)
                 pending.clear()
 
-        # Step 4: assemble final list.
+        # Sprint 9.5.5 A — close the LLM-fan-out clock. Done before
+        # the final-list assembly because that's all sync work; the
+        # auditor wants the network-bound duration only.
+        llm_duration_ms = int((time.monotonic() - llm_started_at) * 1000)
+
+        # Step 4: assemble final list + aggregate per-call token usage.
         final = list(keyword_results)
         llm_success = 0
+        llm_total_input_tokens = 0
+        llm_total_output_tokens = 0
         for idx, merged in llm_outcomes:
             if merged is not None:
                 final[idx] = merged
                 llm_success += 1
+                # Sprint 9.5.5 A — pull the provider's usage_metadata
+                # off the LLMClassificationResult and aggregate.
+                # ``token_usage`` is None when the provider didn't
+                # report it (older SDK paths, test mocks) — sum
+                # treats absence as zero so partial reporting still
+                # yields a useful (if low-bound) total.
+                usage = (
+                    merged.llm_result.token_usage
+                    if merged.llm_result is not None
+                    else None
+                )
+                if usage is not None:
+                    llm_total_input_tokens += int(usage.get("input", 0) or 0)
+                    llm_total_output_tokens += int(
+                        usage.get("output", 0) or 0
+                    )
             else:
                 # LLM failed — surface for manual review.
                 final[idx] = keyword_results[idx].model_copy(
@@ -405,7 +490,12 @@ class HybridClassifier(CategoryClassifier):
             mode="hybrid-parallel",
             keys_stats=self._read_provider_stats(),
         )
-        return final
+        return BatchClassificationResult(
+            classifications=final,
+            llm_total_input_tokens=llm_total_input_tokens,
+            llm_total_output_tokens=llm_total_output_tokens,
+            llm_duration_ms=llm_duration_ms,
+        )
 
     def _read_provider_stats(self) -> dict[str, int] | None:
         """Sprint 9.0.5-A R6 follow-up — pull cumulative key-usage

@@ -736,8 +736,19 @@ async def _process_chunk(
         # that held the loop for the entire BERT inference and was
         # the proximate cause of today's 21-min freeze on a 2852-row
         # CSV.
+        # Sprint 9.5.5 A — pass a stats sink the pipeline forwards
+        # to HybridClassifier.classify_batch_async. Pre-9.5.5 the
+        # chunk audit row landed with input_tokens=NULL and
+        # duration_ms=0 because the auditor wrapped only the
+        # ~1ms flag-setting region below; the real LLM duration
+        # + per-call token usage went uncaptured. The sink picks up
+        # llm_total_input_tokens / llm_total_output_tokens /
+        # llm_duration_ms from the BatchClassificationResult.
+        classifier_stats: dict[str, int] = {}
         analyses: list[AnalysisResult] = await pipeline.analyze_batch_async(
-            texts, classifier=classifier_override,
+            texts,
+            classifier=classifier_override,
+            classifier_stats_sink=classifier_stats,
         )
         bert_seconds = time.monotonic() - bert_started_at
     except Exception as exc:
@@ -829,7 +840,20 @@ async def _process_chunk(
             # fallback" — a coarser signal than per-row but matches
             # the chunk-level granularity we ship.
             chunk_auditor.mark_fallback_used(llm_fallback_count > 0)
-            chunk_auditor.record_success()
+            # Sprint 9.5.5 A — forward the LLM aggregates from the
+            # classifier stats sink. Missing keys mean no LLM was
+            # consulted (keyword-only chunk, LLM disabled, or the
+            # circuit was open) — ``None`` keeps the audit row
+            # honest: total_tokens == 0 + duration_ms == NULL is
+            # different from "ran for 80s and forgot to log it".
+            chunk_in = classifier_stats.get("llm_total_input_tokens")
+            chunk_out = classifier_stats.get("llm_total_output_tokens")
+            chunk_duration = classifier_stats.get("llm_duration_ms")
+            chunk_auditor.record_success(
+                input_tokens=chunk_in if chunk_in else None,
+                output_tokens=chunk_out if chunk_out else None,
+                duration_ms=chunk_duration if chunk_duration else None,
+            )
 
         # Snapshot the tenant's real automation_mode once per chunk.
         # The reviews CHECK constraint allows ONLY 'manual' / 'semi_auto' /
