@@ -61,9 +61,9 @@ export function AttentionList() {
 
   if (query.isLoading) {
     return (
-      <section className="bg-card rounded-xl border p-4">
+      <section className="bg-card shadow-soft ring-foreground/5 rise-in rounded-2xl p-5 ring-1">
         <SectionHeader />
-        <div className="mt-3 space-y-2">
+        <div className="mt-4 space-y-2">
           {[0, 1, 2].map((i) => (
             <Skeleton key={i} className="h-12 w-full" />
           ))}
@@ -81,37 +81,37 @@ export function AttentionList() {
   );
 
   return (
-    <section className="bg-card rounded-xl border p-4">
+    <section className="bg-card shadow-soft ring-foreground/5 rise-in rounded-2xl p-5 ring-1">
       <SectionHeader />
       {rows.length === 0 ? (
-        <p className="text-muted-foreground mt-3 text-sm">
+        <p className="text-muted-foreground mt-4 text-sm leading-relaxed">
           Negatif sinyal yok — son dönemde dikkat çeken bir kategori
           bulunmadı.
         </p>
       ) : (
-        <ul className="mt-3 space-y-1.5">
+        <ul className="mt-4 space-y-1">
           {rows.map((r) => (
             <li key={r.code}>
               <Link
                 href={`/reviews?primary_categories=${encodeURIComponent(r.code)}&sentiment_labels=NEGATİF`}
-                className="hover:bg-accent group flex items-center gap-3 rounded-lg px-2 py-2 transition-colors"
+                className="hover:bg-accent/60 group flex items-center gap-3 rounded-xl px-2 py-2.5 transition-colors duration-[var(--motion-duration)]"
               >
                 <span
-                  className="bg-red-100 text-red-700 dark:bg-red-950/40 dark:text-red-300 inline-flex size-8 shrink-0 items-center justify-center rounded-full text-xs font-semibold tabular-nums"
+                  className="bg-gradient-to-br from-red-500/20 to-red-500/5 text-red-700 dark:text-red-300 ring-red-500/20 inline-flex size-9 shrink-0 items-center justify-center rounded-xl text-xs font-bold tabular-nums ring-1"
                   aria-hidden
                 >
                   {r.negativeCount}
                 </span>
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium truncate">{r.label}</p>
-                  <p className="text-muted-foreground text-xs">
+                  <p className="text-sm font-semibold truncate">{r.label}</p>
+                  <p className="text-muted-foreground text-xs truncate">
                     {r.totalCount > 0
                       ? `toplam ${r.totalCount} yorum içinde`
                       : `${r.negativeCount} negatif yorum`}
                   </p>
                 </div>
                 <ArrowRight
-                  className="text-muted-foreground group-hover:text-foreground size-4 shrink-0 transition-colors"
+                  className="text-muted-foreground/50 group-hover:text-primary group-hover:translate-x-0.5 size-4 shrink-0 transition-[color,transform] duration-[var(--motion-duration)]"
                   aria-hidden
                 />
               </Link>
@@ -125,12 +125,16 @@ export function AttentionList() {
 
 function SectionHeader() {
   return (
-    <header className="flex items-center gap-2">
-      <Flame className="text-primary size-4" aria-hidden />
-      <h2 className="text-sm font-semibold">Bugün dikkat</h2>
-      <span className="text-muted-foreground text-xs">
-        en çok negatif yorum alan kategoriler
+    <header className="flex items-start gap-2.5">
+      <span className="from-primary/20 to-primary/5 text-primary ring-primary/15 inline-flex size-7 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br ring-1">
+        <Flame className="size-3.5" aria-hidden />
       </span>
+      <div className="flex-1 min-w-0">
+        <h2 className="text-sm font-semibold">Bugün dikkat</h2>
+        <p className="text-muted-foreground text-xs">
+          en çok negatif yorum alan kategoriler
+        </p>
+      </div>
     </header>
   );
 }

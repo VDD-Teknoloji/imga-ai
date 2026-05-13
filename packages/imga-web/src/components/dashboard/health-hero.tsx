@@ -35,11 +35,18 @@ interface HealthVisual {
 }
 
 function healthFromNps(score: number | null): HealthVisual {
+  // Sprint 9.6.1 — band visuals refined for the new design system.
+  // The container layers a tinted band wash (very subtle) over the
+  // card surface so the hero reads as ONE surface with a colour
+  // accent, not a coloured rectangle. The score itself uses the
+  // brand gradient (gradient-text utility) on the positive bands;
+  // negative bands keep a saturated tone so the colour signal
+  // matches the meaning.
   if (score === null) {
     return {
       band: "no-data",
       badge: "Yeterli veri yok",
-      container: "border-border bg-card",
+      container: "border-border/60 bg-card shadow-soft",
       scoreColor: "text-muted-foreground",
     };
   }
@@ -47,23 +54,26 @@ function healthFromNps(score: number | null): HealthVisual {
     return {
       band: "excellent",
       badge: "Mükemmel",
-      container: "border-emerald-500/40 bg-gradient-to-br from-emerald-50 to-white dark:from-emerald-950/30 dark:to-zinc-900",
-      scoreColor: "text-emerald-700 dark:text-emerald-300",
+      container:
+        "border-emerald-200/60 bg-gradient-to-br from-emerald-50/80 via-card to-card dark:border-emerald-900/50 dark:from-emerald-950/30 dark:via-card dark:to-card shadow-elevated",
+      scoreColor: "gradient-text",
     };
   }
   if (score >= 30) {
     return {
       band: "good",
       badge: "İyi",
-      container: "border-emerald-400/40 bg-gradient-to-br from-emerald-50/60 to-white dark:from-emerald-950/20 dark:to-zinc-900",
-      scoreColor: "text-emerald-600 dark:text-emerald-300",
+      container:
+        "border-emerald-200/40 bg-gradient-to-br from-emerald-50/40 via-card to-card dark:border-emerald-900/30 dark:from-emerald-950/20 dark:via-card dark:to-card shadow-elevated",
+      scoreColor: "gradient-text",
     };
   }
   if (score >= 0) {
     return {
       band: "watch",
       badge: "Dikkat",
-      container: "border-amber-400/50 bg-gradient-to-br from-amber-50 to-white dark:from-amber-950/30 dark:to-zinc-900",
+      container:
+        "border-amber-200/60 bg-gradient-to-br from-amber-50/80 via-card to-card dark:border-amber-900/40 dark:from-amber-950/25 dark:via-card dark:to-card shadow-elevated",
       scoreColor: "text-amber-700 dark:text-amber-300",
     };
   }
@@ -71,14 +81,16 @@ function healthFromNps(score: number | null): HealthVisual {
     return {
       band: "risk",
       badge: "Riskli",
-      container: "border-orange-400/50 bg-gradient-to-br from-orange-50 to-white dark:from-orange-950/30 dark:to-zinc-900",
+      container:
+        "border-orange-200/70 bg-gradient-to-br from-orange-50/80 via-card to-card dark:border-orange-900/40 dark:from-orange-950/25 dark:via-card dark:to-card shadow-elevated",
       scoreColor: "text-orange-700 dark:text-orange-300",
     };
   }
   return {
     band: "critical",
     badge: "Kritik",
-    container: "border-red-500/60 bg-gradient-to-br from-red-50 to-white dark:from-red-950/30 dark:to-zinc-900",
+    container:
+      "border-red-300/70 bg-gradient-to-br from-red-50/90 via-card to-card dark:border-red-900/50 dark:from-red-950/30 dark:via-card dark:to-card shadow-elevated",
     scoreColor: "text-red-700 dark:text-red-300",
   };
 }
@@ -185,31 +197,38 @@ export function HealthHero() {
 
   return (
     <section
-      className={`rounded-xl border p-6 md:p-8 transition-colors ${visual.container}`}
+      className={`rise-in rounded-2xl border p-6 md:p-10 transition-shadow ${visual.container}`}
       aria-label="CX Sağlık"
     >
-      <div className="flex flex-wrap items-start gap-x-8 gap-y-4">
-        <div className="flex-1 min-w-[12rem]">
-          <p className="text-muted-foreground text-xs font-medium uppercase tracking-wider">
+      <div className="flex flex-wrap items-start gap-x-10 gap-y-6">
+        <div className="flex-1 min-w-[14rem]">
+          <p className="text-muted-foreground text-[11px] font-semibold uppercase tracking-[0.14em]">
             CX Sağlık · Son 30 gün
           </p>
-          <div className="mt-2 flex items-baseline gap-3">
-            <span className={`text-5xl md:text-6xl font-semibold tabular-nums ${visual.scoreColor}`}>
+          <div className="mt-3 flex items-baseline gap-4 flex-wrap">
+            <span
+              className={`text-6xl md:text-7xl font-semibold tabular-nums tracking-tight ${visual.scoreColor}`}
+              style={{ letterSpacing: "-0.03em" }}
+            >
               {formatScore(score)}
             </span>
-            <span className={`text-sm font-medium ${visual.scoreColor}`}>
+            <span
+              className={`text-sm font-semibold uppercase tracking-wider ${
+                visual.band === "no-data" ? "text-muted-foreground" : "text-foreground/70"
+              }`}
+            >
               {visual.badge}
             </span>
             {delta.delta !== null && (
               <DeltaPill delta={delta.delta} label={delta.label} />
             )}
           </div>
-          <p className="text-foreground/80 mt-3 text-sm md:text-base max-w-2xl">
+          <p className="text-foreground/80 mt-4 text-sm md:text-base max-w-2xl leading-relaxed">
             {text}
           </p>
         </div>
 
-        <div className="flex flex-col gap-2 text-xs text-muted-foreground min-w-[10rem]">
+        <div className="bg-card/60 ring-foreground/5 flex flex-col gap-2.5 rounded-xl px-4 py-3 text-xs ring-1 min-w-[11rem] backdrop-blur-sm">
           <CoverageRow
             label="Toplam yorum"
             value={(data?.total_reviews ?? 0).toLocaleString("tr-TR")}
@@ -255,9 +274,9 @@ function DeltaPill({ delta, label }: { delta: number; label: string }) {
 
 function CoverageRow({ label, value }: { label: string; value: string }) {
   return (
-    <div className="flex items-center justify-between gap-3">
-      <span>{label}</span>
-      <span className="text-foreground font-medium tabular-nums">{value}</span>
+    <div className="flex items-center justify-between gap-6">
+      <span className="text-muted-foreground">{label}</span>
+      <span className="text-foreground font-semibold tabular-nums">{value}</span>
     </div>
   );
 }

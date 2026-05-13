@@ -161,17 +161,22 @@ function Content() {
           specific status / priority. */}
       {focusItems.length > 0 && (
         <section
-          className="border-red-300/60 bg-gradient-to-br from-red-50/70 to-white dark:from-red-950/20 dark:to-zinc-900 rounded-xl border p-4"
+          className="rise-in shadow-elevated rounded-2xl border border-red-200/60 bg-gradient-to-br from-red-50/80 via-card to-card p-5 dark:border-red-900/50 dark:from-red-950/30 dark:via-card dark:to-card"
           aria-label="Yüksek öncelikli açık aksiyonlar"
         >
           <header className="flex items-center justify-between gap-3">
-            <div>
-              <p className="text-red-800 dark:text-red-300 text-xs font-semibold uppercase tracking-wider">
-                Bugün dikkat
-              </p>
-              <p className="text-sm font-medium">
-                {focus.data!.length} yüksek öncelikli açık aksiyon
-              </p>
+            <div className="flex items-start gap-2.5">
+              <span className="inline-flex size-7 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-red-500/20 to-red-500/5 ring-1 ring-red-500/25 text-red-700 dark:text-red-300">
+                <span className="text-[11px] font-bold" aria-hidden>!</span>
+              </span>
+              <div>
+                <p className="text-red-800 dark:text-red-300 text-[11px] font-semibold uppercase tracking-[0.14em]">
+                  Bugün dikkat
+                </p>
+                <p className="text-sm font-semibold">
+                  {focus.data!.length} yüksek öncelikli açık aksiyon
+                </p>
+              </div>
             </div>
             {focus.data!.length > 3 && (
               <Button
@@ -189,17 +194,17 @@ function Content() {
               </Button>
             )}
           </header>
-          <ul className="mt-3 space-y-2">
+          <ul className="mt-4 space-y-2">
             {focusItems.map((item) => (
               <li
                 key={item.id}
-                className="bg-card flex items-start gap-3 rounded-lg border p-3"
+                className="bg-card shadow-soft ring-foreground/5 flex items-start gap-3 rounded-xl p-3 ring-1"
               >
-                <span className="bg-red-100 text-red-700 dark:bg-red-950/40 dark:text-red-300 mt-0.5 inline-flex size-6 shrink-0 items-center justify-center rounded-full text-[10px] font-bold">
+                <span className="mt-0.5 inline-flex size-7 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-red-500/20 to-red-500/5 text-[11px] font-bold text-red-700 dark:text-red-300 ring-1 ring-red-500/20">
                   !
                 </span>
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium truncate">{item.title}</p>
+                  <p className="text-sm font-semibold truncate">{item.title}</p>
                   <p className="text-muted-foreground text-xs truncate">
                     {item.description}
                   </p>

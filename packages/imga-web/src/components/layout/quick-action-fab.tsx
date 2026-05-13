@@ -92,15 +92,15 @@ export function QuickActionFab() {
   return (
     <div
       ref={panelRef}
-      className="fixed bottom-4 right-4 z-40 flex flex-col items-end gap-2 md:bottom-6 md:right-6"
+      className="fixed bottom-5 right-5 z-40 flex flex-col items-end gap-3 md:bottom-7 md:right-7"
     >
       {open ? (
         <div
-          className="bg-card border-border w-72 origin-bottom-right rounded-xl border p-2 shadow-lg"
+          className="glass ring-foreground/10 shadow-pop rise-in w-80 origin-bottom-right rounded-2xl p-2 ring-1"
           role="menu"
           aria-label="Hızlı işlemler"
         >
-          <p className="text-muted-foreground px-3 pb-2 pt-1 text-[10px] font-semibold uppercase tracking-wider">
+          <p className="text-muted-foreground px-3 pb-2 pt-2 text-[10px] font-semibold uppercase tracking-[0.14em]">
             Hızlı işlemler
           </p>
           {ROWS.map((row) => (
@@ -108,9 +108,9 @@ export function QuickActionFab() {
               key={row.href}
               href={row.href}
               role="menuitem"
-              className="hover:bg-accent flex items-center gap-3 rounded-lg px-2 py-2 transition-colors"
+              className="hover:bg-accent/80 group flex items-center gap-3 rounded-xl px-2 py-2.5 transition-colors duration-[var(--motion-duration)]"
             >
-              <div className="bg-primary/10 text-primary flex size-9 shrink-0 items-center justify-center rounded-lg">
+              <div className="from-primary/15 to-primary/5 text-primary ring-primary/15 flex size-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br ring-1">
                 <row.Icon className="size-4" aria-hidden />
               </div>
               <div className="flex-1 min-w-0">
@@ -129,14 +129,17 @@ export function QuickActionFab() {
         aria-expanded={open}
         aria-label={open ? "Hızlı işlemleri kapat" : "Hızlı işlemleri aç"}
         className={cn(
-          "bg-primary text-primary-foreground hover:bg-primary/90 focus-visible:ring-ring inline-flex size-12 items-center justify-center rounded-full shadow-lg transition-transform focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2",
-          open && "rotate-45",
+          "text-primary-foreground focus-visible:ring-ring inline-flex size-14 items-center justify-center rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2",
+          "shadow-pop hover:shadow-glow transition-[transform,box-shadow] duration-[var(--motion-duration)] [transition-timing-function:var(--motion-ease)]",
+          "bg-gradient-to-br from-primary to-[oklch(0.55_0.22_290)] dark:to-[oklch(0.78_0.18_290)]",
+          open && "rotate-45 scale-95",
+          !open && "hover:scale-[1.04]",
         )}
       >
         {open ? (
           <X className="size-5" aria-hidden />
         ) : (
-          <Plus className="size-5" aria-hidden />
+          <Plus className="size-6" aria-hidden strokeWidth={2.4} />
         )}
       </button>
     </div>

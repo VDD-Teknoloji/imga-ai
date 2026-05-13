@@ -135,6 +135,11 @@ function SidebarNavLink({ item, isActive, collapsed, onNavigate }: SidebarNavLin
   // native `title` attribute (browser-native tooltip). Base UI's
   // Tooltip primitive is button-only and would emit the wrong ARIA
   // for an anchor; the title attribute is simple and accessible.
+  //
+  // Sprint 9.6.1 — active item: indigo-tinted gradient pill with a
+  // soft brand-coloured ring + glow shadow. The hover state shares
+  // the same indigo wash so the affordance feels continuous (hover
+  // is the lighter precursor to active).
   return (
     <Link
       href={item.href}
@@ -143,13 +148,27 @@ function SidebarNavLink({ item, isActive, collapsed, onNavigate }: SidebarNavLin
       aria-label={collapsed ? item.label : undefined}
       title={collapsed ? item.label : undefined}
       className={cn(
-        "flex h-9 items-center gap-3 rounded-md px-3 text-sm font-medium transition-colors",
+        "relative flex h-10 items-center gap-3 rounded-xl px-3 text-sm font-medium",
+        "transition-[background,color,box-shadow] duration-[var(--motion-duration)] [transition-timing-function:var(--motion-ease)]",
         "text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
-        isActive && "bg-sidebar-accent text-sidebar-accent-foreground",
+        isActive &&
+          "bg-gradient-to-r from-primary/15 to-primary/5 text-primary ring-1 ring-primary/15 dark:from-primary/20 dark:to-primary/5 dark:text-primary dark:ring-primary/25",
         collapsed && "justify-center px-0",
       )}
     >
-      <Icon className="size-4 shrink-0" aria-hidden />
+      {/* Active marker — a thin gradient bar on the left edge. Gives
+          the active item a magazine-style indicator without relying
+          on background alone (helps when sidebar bg is busy). */}
+      {isActive && !collapsed ? (
+        <span
+          aria-hidden
+          className="from-primary to-[oklch(0.55_0.22_290)] dark:to-[oklch(0.78_0.18_290)] absolute left-1.5 top-1/2 h-5 w-1 -translate-y-1/2 rounded-full bg-gradient-to-b"
+        />
+      ) : null}
+      <Icon
+        className={cn("size-4 shrink-0", isActive && "text-primary")}
+        aria-hidden
+      />
       {collapsed ? null : <span className="truncate">{item.label}</span>}
     </Link>
   );
