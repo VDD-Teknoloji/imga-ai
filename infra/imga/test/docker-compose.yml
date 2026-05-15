@@ -187,6 +187,8 @@ services:
           tests/test_admin_invitations.py \
           tests/test_default_model_name_constants.py \
           tests/test_batch_audit_token_capture.py \
+          tests/test_swot_audit_path.py \
+          tests/test_okr_audit_path.py \
           tests-core/test_key_rotation.py \
           tests-core/test_metrics_pure_formulas.py \
           tests-core/test_gemini_swot_okr.py \

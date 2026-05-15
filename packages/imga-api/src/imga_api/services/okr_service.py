@@ -151,9 +151,64 @@ class OkrService:
                         break
                 raise
 
+        # Sprint 9.5.6 — LLM call governance audit. Mirrors the SWOT
+        # service's wrap (which mirrors the briefing service's, see
+        # there for the full deferred-raise rationale). Pre-9.5.6
+        # OKR generation never wrote an llm_call_audit row, so the
+        # 504-storm we hit during the gemini-3-flash-preview cutover
+        # was invisible on /admin/llm-audit for both SWOT and OKR.
+        from imga_api.services.llm_audit_service import (
+            CALL_TYPE_OKR,
+            LLMCallAuditor,
+            LLMCallContext,
+        )
+
+        audit_ctx = LLMCallContext(
+            tenant_id=self._tenant_id,
+            call_type=CALL_TYPE_OKR,
+            model_name=DEFAULT_MODEL_NAME,
+            model_provider="gemini",
+            prompt_template_key="okr",
+            prompt_template_version="v1",
+            actor_user_id=self._user_id,
+            related_entity_type="strategic_report",
+            related_entity_id=source.id,
+        )
+        auditor = LLMCallAuditor(self._session, audit_ctx, prompt=user_prompt)
         start = time.monotonic()
+        token_usage: dict[str, int] | None = None
         try:
-            (response, token_usage), key_used = await rotator.call_with_rotation(_call)
+            async with auditor:
+                try:
+                    (response, token_usage), key_used = (
+                        await rotator.call_with_rotation(_call)
+                    )
+                except AllKeysExhaustedError as exc:
+                    auditor.record_failure(
+                        error_type="all_keys_exhausted",
+                        error_message=str(exc.__cause__ or exc)[:1024],
+                    )
+                    raise
+                except LLMError as exc:
+                    auditor.record_failure(
+                        error_type="api_error",
+                        error_message=str(exc)[:1024],
+                    )
+                    raise
+                except Exception as exc:
+                    auditor.record_failure(
+                        error_type="other",
+                        error_message=f"{type(exc).__name__}: {exc}"[:1024],
+                    )
+                    raise
+                auditor.record_success(
+                    input_tokens=(
+                        token_usage.get("input") if token_usage else None
+                    ),
+                    output_tokens=(
+                        token_usage.get("output") if token_usage else None
+                    ),
+                )
         except AllKeysExhaustedError:
             await mark_keys_failed(self._session, failed_invalid_key_ids)
             raise

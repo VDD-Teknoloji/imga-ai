@@ -191,9 +191,73 @@ class SwotService:
                         break
                 raise
 
+        # Sprint 9.5.6 — LLM call governance audit. Pre-9.5.6 the
+        # llm_call_audit table never carried SWOT rows: the auditor
+        # was wired into briefing + /analyze + batch chunks but
+        # SWOT/OKR were left out, so the 504-storm during the 9.5.4
+        # gemini-3-flash-preview cutover was invisible on
+        # /admin/llm-audit. Same deferred-raise pattern as the
+        # briefing service (Sprint 9.4.4 + 9.4.5): classify the
+        # failure at the call site, let __aexit__ flush the row
+        # inside its savepoint, then re-raise outside the auditor
+        # so the request still surfaces 503.
+        from imga_api.services.llm_audit_service import (
+            CALL_TYPE_STRATEGIC_REPORT,
+            LLMCallAuditor,
+            LLMCallContext,
+        )
+
+        audit_ctx = LLMCallContext(
+            tenant_id=self._tenant_id,
+            call_type=CALL_TYPE_STRATEGIC_REPORT,
+            model_name=DEFAULT_MODEL_NAME,
+            model_provider="gemini",
+            prompt_template_key="swot",
+            prompt_template_version="v1",
+            actor_user_id=self._user_id,
+            related_entity_type="strategic_report",
+        )
+        auditor = LLMCallAuditor(self._session, audit_ctx, prompt=user_prompt)
         start = time.monotonic()
+        token_usage: dict[str, int] | None = None
         try:
-            (response, token_usage), key_used = await rotator.call_with_rotation(_call)
+            async with auditor:
+                try:
+                    (response, token_usage), key_used = (
+                        await rotator.call_with_rotation(_call)
+                    )
+                except AllKeysExhaustedError as exc:
+                    auditor.record_failure(
+                        error_type="all_keys_exhausted",
+                        error_message=str(exc.__cause__ or exc)[:1024],
+                    )
+                    raise
+                except LLMError as exc:
+                    auditor.record_failure(
+                        error_type="api_error",
+                        error_message=str(exc)[:1024],
+                    )
+                    raise
+                except Exception as exc:
+                    # LLMProviderError + anything else the rotator
+                    # surfaces. Sprint 9.4.3 B broadened the rotator
+                    # to rotate on LLMProviderError, so a 504-storm
+                    # ends at AllKeysExhaustedError above; this catch
+                    # exists so a truly unexpected raise still lands
+                    # an audit row instead of silently disappearing.
+                    auditor.record_failure(
+                        error_type="other",
+                        error_message=f"{type(exc).__name__}: {exc}"[:1024],
+                    )
+                    raise
+                auditor.record_success(
+                    input_tokens=(
+                        token_usage.get("input") if token_usage else None
+                    ),
+                    output_tokens=(
+                        token_usage.get("output") if token_usage else None
+                    ),
+                )
         except AllKeysExhaustedError:
             # Mark every key we identified as InvalidKey before re-raising.
             await mark_keys_failed(self._session, failed_invalid_key_ids)
