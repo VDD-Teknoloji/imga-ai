@@ -31,6 +31,7 @@ from imga_api.middleware import RequestIDMiddleware, register_error_handlers
 from imga_api.routes import auth as auth_routes
 from imga_api.routes import invitations as public_invitation_routes
 from imga_api.routes import metric_definitions as metric_definitions_routes
+from imga_api.routes import public_trial as public_trial_routes
 from imga_api.routes import tenant_action_items as tenant_action_items_routes
 from imga_api.routes import tenant_analytics as tenant_analytics_routes
 from imga_api.routes import tenant_analyze as tenant_analyze_routes
@@ -358,6 +359,8 @@ app.include_router(admin_tenant_routes.router)
 app.include_router(admin_invitation_routes.router)
 app.include_router(admin_prompt_templates_routes.router)
 app.include_router(public_invitation_routes.router)
+# Sprint 9.7 — imga.ai marketing-site trial proxy.
+app.include_router(public_trial_routes.router)
 # Sprint 9.2 A — public KPI metric registry.
 app.include_router(metric_definitions_routes.router)
 # Sprint 9.3 — governance + dimensions + decisions + prompt templates.

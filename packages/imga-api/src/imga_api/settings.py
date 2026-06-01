@@ -158,6 +158,14 @@ class Settings:
     # inference. Flip to true only when an external integration
     # explicitly relies on the legacy contract.
     enable_public_demo_endpoints: bool = False
+    # Sprint 9.7 — shared bearer for the imga.ai marketing site's
+    # trial proxy (POST /public/trial/analyze). The marketing
+    # backend signs server-to-server requests with this token; we
+    # compare via hmac.compare_digest. None disables the endpoint
+    # entirely (returns 503) so a misconfigured deploy can't accept
+    # unauthenticated trial traffic. Min 32 chars enforced at load
+    # time.
+    imga_api_trial_key: str | None = None
 
     @classmethod
     def from_env(cls) -> Settings:
@@ -246,6 +254,17 @@ class Settings:
             == "true"
         )
 
+        # Sprint 9.7 — trial proxy bearer. Refuse anything shorter
+        # than 32 chars at load time; a too-short key in env is a
+        # config bug, not a security exemption.
+        trial_key_raw = os.environ.get("IMGA_API_TRIAL_KEY")
+        if trial_key_raw is not None and len(trial_key_raw) < 32:
+            raise ValueError(
+                "IMGA_API_TRIAL_KEY must be at least 32 characters "
+                "(set to a 64-byte hex via `python -c 'import secrets; "
+                "print(secrets.token_hex(32))'`)"
+            )
+
         return cls(
             bert_model=os.environ.get("IMGA_BERT_MODEL", DEFAULT_BERT_MODEL),
             knowledge_base_path=_opt_path("IMGA_KB_PATH"),
@@ -257,4 +276,5 @@ class Settings:
             batch=batch,
             report=report,
             enable_public_demo_endpoints=enable_public_demo_endpoints,
+            imga_api_trial_key=trial_key_raw,
         )

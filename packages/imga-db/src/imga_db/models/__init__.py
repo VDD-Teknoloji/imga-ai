@@ -43,6 +43,7 @@ from imga_db.models.tenant_business_dimension import TenantBusinessDimension
 from imga_db.models.tenant_kpi_goal import TenantKpiGoal
 from imga_db.models.tenant_llm_credential import TenantLlmCredential
 from imga_db.models.trend_alert import TrendAlert
+from imga_db.models.trial_analysis import TrialAnalysis
 from imga_db.models.ticket import (
     CancellationReason,
     Ticket,
@@ -102,6 +103,7 @@ __all__ = [
     "TicketStateTransition",
     "TimestampMixin",
     "TrendAlert",
+    "TrialAnalysis",
     "User",
     "UserTenantLink",
     "UserTenantRole",
