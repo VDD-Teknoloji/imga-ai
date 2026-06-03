@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import * as React from "react";
 
 import { useAuthStore } from "@/lib/auth-store";
 import { cn } from "@/lib/utils";
@@ -110,15 +111,39 @@ function SidebarSection({
           />
         )
       ) : null}
-      {items.map((item) => (
-        <SidebarNavLink
-          key={item.href}
-          item={item}
-          isActive={isActiveLink(pathname, item.href)}
-          collapsed={collapsed}
-          onNavigate={onNavigate}
-        />
-      ))}
+      {/* Sprint 9.9 — Madde 3: ardışık aynı subgroup'lu item'lardan
+          ilkinin önüne mini bir "subgroup heading" + indent ekle.
+          Kullanıcı Operasyon altında "Veri Yükle" alt-konusunu
+          görsel olarak ayırt eder. collapsed mode'da subgroup
+          tamamen gizleniyor — icon dock'unun sade kalmasını
+          istiyoruz. */}
+      {items.map((item, i) => {
+        const prev = items[i - 1];
+        const showSubgroupHeader =
+          !collapsed &&
+          !!item.subgroup &&
+          item.subgroup !== prev?.subgroup;
+        const indented = !collapsed && !!item.subgroup;
+        return (
+          <React.Fragment key={item.href}>
+            {showSubgroupHeader ? (
+              <p
+                className="text-muted-foreground/80 mt-2 mb-0.5 px-3 text-[10px] font-semibold tracking-[0.10em] uppercase"
+                aria-label={`${item.subgroup} alt grubu`}
+              >
+                {item.subgroup}
+              </p>
+            ) : null}
+            <SidebarNavLink
+              item={item}
+              isActive={isActiveLink(pathname, item.href)}
+              collapsed={collapsed}
+              indented={indented}
+              onNavigate={onNavigate}
+            />
+          </React.Fragment>
+        );
+      })}
     </>
   );
 }
@@ -132,10 +157,20 @@ interface SidebarNavLinkProps {
   item: NavItem;
   isActive: boolean;
   collapsed: boolean;
+  /** Sprint 9.9 — Madde 3: subgroup item ise sol kenarda 4 unit
+   *  ek padding ve ince bir indikatör çizgi. Görsel hiyerarşi:
+   *  "Operasyon > Veri Yükle > Manuel/Toplu". */
+  indented?: boolean;
   onNavigate?: () => void;
 }
 
-function SidebarNavLink({ item, isActive, collapsed, onNavigate }: SidebarNavLinkProps) {
+function SidebarNavLink({
+  item,
+  isActive,
+  collapsed,
+  indented = false,
+  onNavigate,
+}: SidebarNavLinkProps) {
   const Icon = item.icon;
   // In collapsed mode the icon-only link gets the full label via the
   // native `title` attribute (browser-native tooltip). Base UI's
@@ -160,6 +195,11 @@ function SidebarNavLink({ item, isActive, collapsed, onNavigate }: SidebarNavLin
         isActive &&
           "bg-gradient-to-r from-primary/15 to-primary/5 text-primary ring-1 ring-primary/15 dark:from-primary/20 dark:to-primary/5 dark:text-primary dark:ring-primary/25",
         collapsed && "justify-center px-0",
+        // Sprint 9.9 — Madde 3: subgroup item ise sol tarafa ek
+        // padding + ince border-l ile alt-grup işareti. Active
+        // state daha güçlü visual taşıdığı için border-l rengini
+        // soft tutuyoruz; non-active'lerde gri/sidebar-border.
+        indented && !collapsed && "ml-4 border-l border-sidebar-border/60 pl-3 rounded-l-none",
       )}
     >
       {/* Active marker — a thin gradient bar on the left edge. Gives

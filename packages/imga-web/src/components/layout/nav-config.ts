@@ -32,6 +32,13 @@ export interface NavItem {
   label: string;
   href: string;
   icon: LucideIcon;
+  /** Sprint 9.9 — Madde 3 (UML feedback): bazı item'lar görsel
+   *  olarak kendi mini-grubu gibi durmalı (Manuel Analiz + Toplu
+   *  Yükleme = "Veri Yükle"). `subgroup` aynı stringi taşıyan
+   *  ardışık item'ları sidebar'da hafifçe indent + üst etiketle
+   *  bir alt-grup haline getiriyor. Boş bırakılırsa item bağımsız
+   *  bir satır olarak render edilir. */
+  subgroup?: string;
 }
 
 export interface NavSection {
@@ -83,12 +90,27 @@ export const NAV_SECTIONS: ReadonlyArray<NavSection> = [
   // "Ticket'lar" → "Talepler" — daha doğal Türkçe, CRM bağlamında
   // alışıldık. Madde 5: Bekleyen Bildirimler buradan çıkarıldı —
   // sadece super_admin'e ADMIN_NAV_ITEMS altında gösteriliyor.
+  //
+  // Sprint 9.9 — Madde 3: Manuel Analiz + Toplu Yükleme görsel
+  // olarak "Veri Yükle" mini-grubu altında, hafif indent ile.
+  // Operasyon altında "data ingestion"ın bir alt-konu olduğunu
+  // sezgisel veriyor.
   {
     heading: "Operasyon",
     items: [
       { label: "Talepler", href: "/tickets", icon: Ticket },
-      { label: "Manuel Analiz", href: "/analyze", icon: Sparkles },
-      { label: "Toplu Yükleme", href: "/analyze/upload", icon: Upload },
+      {
+        label: "Manuel Analiz",
+        href: "/analyze",
+        icon: Sparkles,
+        subgroup: "Veri Yükle",
+      },
+      {
+        label: "Toplu Yükleme",
+        href: "/analyze/upload",
+        icon: Upload,
+        subgroup: "Veri Yükle",
+      },
     ],
   },
   // Settings alone — no own heading, just stays last with a divider

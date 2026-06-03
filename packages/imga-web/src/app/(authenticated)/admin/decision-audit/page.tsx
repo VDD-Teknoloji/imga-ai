@@ -15,8 +15,8 @@ import {
 } from "@/hooks/use-decision-audit";
 
 const DECISION_LABELS: Record<string, string> = {
-  briefing_acknowledged: "Brifing onaylandı",
-  briefing_dismissed: "Brifing reddedildi",
+  briefing_acknowledged: "Yönetici özeti onaylandı",
+  briefing_dismissed: "Yönetici özeti reddedildi",
   strategic_report_approved: "Stratejik rapor onaylandı",
   strategic_report_rejected: "Stratejik rapor reddedildi",
   action_item_assigned: "Aksiyon atandı",

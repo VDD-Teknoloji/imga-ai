@@ -143,7 +143,7 @@ function Content() {
               Aksiyonlar
             </h1>
             <p className="text-muted-foreground text-sm">
-              Brifing ve SWOT raporlarından çıkarılan veya manuel
+              Yönetici özeti ve SWOT raporlarından çıkarılan veya manuel
               eklenen takip görevleri.
             </p>
           </div>
@@ -342,7 +342,7 @@ function ActionItemRow({ item }: { item: ActionItem }) {
         )}
         {item.source_briefing_id && (
           <span className="text-muted-foreground text-xs">
-            kaynak: Brifing
+            kaynak: Yönetici Özeti
           </span>
         )}
       </div>

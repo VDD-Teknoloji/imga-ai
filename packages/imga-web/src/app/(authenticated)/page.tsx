@@ -30,6 +30,7 @@
 // analyst persona; the dashboard doesn't need them.
 
 import { AttentionList } from "@/components/dashboard/attention-list";
+import { ClassificationQualityChip } from "@/components/dashboard/classification-quality-chip";
 import { HealthHero } from "@/components/dashboard/health-hero";
 import { KpiGoalCards } from "@/components/dashboard/KpiGoalCards";
 import { NpsMonthlyTrend } from "@/components/dashboard/nps-monthly-trend";
@@ -54,6 +55,11 @@ export default function DashboardPage() {
       </header>
 
       <HealthHero />
+
+      {/* Sprint 9.9 — Madde 1 (UML feedback): operatöre belirsiz oran
+          uyarısı. Iyi durumdaysa veya hiç veri yoksa kendini
+          gizliyor, dashboard'a yer kaplamıyor. */}
+      <ClassificationQualityChip />
 
       <QuickActions />
 

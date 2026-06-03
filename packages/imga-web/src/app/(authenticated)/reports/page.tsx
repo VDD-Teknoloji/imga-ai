@@ -45,8 +45,9 @@ import { cn } from "@/lib/utils";
 
 const TYPE_LABELS: Record<ReportType, string> = {
   comprehensive: "Kapsamlı",
-  reviews_only: "Sadece Analizler",
-  tickets_only: "Sadece Biletler",
+  // Sprint 9.9 — Madde 13 rename ile uyumlu: "Biletler" → "Talepler"
+  reviews_only: "Sadece Yorumlar",
+  tickets_only: "Sadece Talepler",
 };
 
 const STATUS_LABELS: Record<ReportStatus, string> = {

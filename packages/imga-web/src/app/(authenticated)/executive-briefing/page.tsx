@@ -149,7 +149,7 @@ function Content() {
           <AlertTriangle className="size-5 text-amber-600" aria-hidden />
           <div className="flex-1 text-sm">
             <p className="font-medium text-amber-900">
-              Brifing oluşturmak için Gemini API anahtarı gerekli.
+              Yönetici özeti oluşturmak için Gemini API anahtarı gerekli.
             </p>
             <p className="text-amber-800">
               En az bir aktif anahtar tanımlanana kadar üretim devre dışı.
@@ -183,7 +183,7 @@ function Content() {
           <CardContent className="space-y-2 p-6 text-sm">
             <p className="font-medium">Henüz brifing yok.</p>
             <p className="text-muted-foreground">
-              Aşağıdaki form ile ilk dönemsel brifingi üretin —
+              Aşağıdaki form ile ilk dönemsel özeti üretin —
               KPI değişimleri, kritik içgörüler ve öncelikli aksiyonlar
               hazırlanır.
             </p>
@@ -226,13 +226,13 @@ function Content() {
           ) : (
             <Wand2 className="size-4" aria-hidden />
           )}
-          Yeni brifing üret
+          Yeni özet üret
         </Button>
       </div>
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Geçmiş Brifingler</CardTitle>
+          <CardTitle className="text-base">Geçmiş Özetler</CardTitle>
         </CardHeader>
         <CardContent>
           {list.isLoading ? (

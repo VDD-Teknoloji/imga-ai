@@ -40,7 +40,7 @@ const ROWS: ReadonlyArray<QuickActionRow> = [
   },
   {
     href: "/executive-briefing",
-    label: "Brifing üret",
+    label: "Yönetici Özeti",
     hint: "Aylık yönetici özeti",
     Icon: ClipboardList,
   },
