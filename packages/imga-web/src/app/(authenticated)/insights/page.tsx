@@ -108,7 +108,10 @@ const TAB_LABELS: Record<TabKey, string> = {
   heatmap: "Isı haritası",
   cohort: "Kohort",
   wordcloud: "Kelimeler",
-  overrides: "Override",
+  // Madde 11 (UML) — "Override" yabancı kelime; Türkçe karşılığı
+  // "Kural Katmanları" daha anlaşılır (tier1/tier2/critical yorum-
+  // tabanlı kural override katmanları için).
+  overrides: "Kural Katmanları",
 };
 
 // Sprint 8.3.4 round-2 — wrap the search-params-reading subtree in
@@ -316,15 +319,38 @@ function InsightsContent() {
         onSourceTypesChange={handleSourceTypesChange}
       />
 
+      {/* Sprint 9.8 — Madde 8 (UML): tarih filtresi boşken kullanıcı
+          ne gördüğünü bilmiyordu. Açık bir rozet ile "Tüm zamanlar"
+          gösteriliyor; bir tarih girilirse rozet gizleniyor. */}
+      {!dateFrom && !dateTo && (
+        <div className="bg-muted/40 border-border flex items-center gap-2 rounded-lg border px-3 py-2 text-xs">
+          <span className="bg-primary/15 text-primary inline-flex items-center rounded-full px-2 py-0.5 font-medium">
+            Tüm zamanlar
+          </span>
+          <span className="text-muted-foreground">
+            Filtre uygulanmadı — başlangıç ve bitiş seçerek daraltın.
+          </span>
+        </div>
+      )}
+
       <Tabs value={tab} onValueChange={(v) => handleTabChange(v as TabKey)}>
         {/* Sprint 9.6 redesign — tab strip wraps onto multiple lines
             instead of squishing into a fixed 10-column grid. Each
             tab gets a comfortable hit area; the strip stays readable
             without horizontal scroll on tablet / sidebar-narrow
             viewports. */}
-        <TabsList className="flex flex-wrap h-auto justify-start gap-1 p-1">
+        {/* Sprint 9.8 — Madde 7 (UML): sekmeler birbiri içine geçiyor.
+            flex-wrap + auto height + whitespace-nowrap her tab'a
+            kendi içinde sığma garantisi veriyor; mobile'da satır
+            artıyor ama tab'lar overlap etmiyor. min-w-fit each
+            trigger için yer açarken text-xs scroll'a düşmüyor. */}
+        <TabsList className="flex flex-wrap items-center justify-start gap-1 p-1 h-auto">
           {(Object.keys(TAB_LABELS) as TabKey[]).map((k) => (
-            <TabsTrigger key={k} value={k} className="px-3">
+            <TabsTrigger
+              key={k}
+              value={k}
+              className="px-3 whitespace-nowrap min-w-fit shrink-0"
+            >
               {TAB_LABELS[k]}
             </TabsTrigger>
           ))}
@@ -670,33 +696,92 @@ function CrossAnalysisTab({
       </CardHeader>
       <CardContent>
         <ChartFrame state={matrix} isEmpty={(d) => d.categories.length === 0} height={300}>
-          {(d) => (
-            <Heatmap
-              rows={d.category_labels_tr}
-              cols={d.sentiments}
-              matrix={d.matrix}
-              rowTotals={d.totals_by_category}
-              colTotals={d.totals_by_sentiment}
-              colorScale="blue"
-              tooltip={(value, rowLabel, colLabel) => `${rowLabel} × ${colLabel}: ${value} analiz`}
-              onCellClick={(i, j) => {
-                const cat = d.categories[i];
-                const sent = d.sentiments[j];
-                if (!cat || !sent) return;
-                // Sprint 8.3.10 — pre-fix this URL silently dropped
-                // ``category`` (the /reviews page never read it). The
-                // backend now accepts ``primary_categories`` (CSV) and
-                // the page parses it into the filter chain.
-                router.push(
-                  `/reviews?sentiment_labels=${encodeURIComponent(sent)}&primary_categories=${encodeURIComponent(cat)}`,
-                );
-              }}
-            />
-          )}
+          {(d) => {
+            // Sprint 9.8 — Madde 10 + 11 (UML): "Belirsiz" kategorisi
+            // sıralamada en üstte ve en büyük kümede görünüyordu —
+            // bu sınıflandırılamayan yorumların heatmap'in ana sinyalini
+            // bastırması demek. Belirsiz satırını listenin SONUNA
+            // gönderiyoruz; matrix + totals da paralel olarak yeniden
+            // sıralanıyor ki onCellClick doğru kategoriyi seçmeye
+            // devam etsin. Tüm dizilerde index aynı olduğu için tek
+            // bir permütasyon yetiyor.
+            const reordered = reorderBelirsizLast(
+              d.categories,
+              d.category_labels_tr,
+              d.matrix,
+              d.totals_by_category,
+            );
+            return (
+              <Heatmap
+                rows={reordered.labels}
+                cols={d.sentiments}
+                matrix={reordered.matrix}
+                rowTotals={reordered.rowTotals}
+                colTotals={d.totals_by_sentiment}
+                colorScale="blue"
+                tooltip={(value, rowLabel, colLabel) =>
+                  `${rowLabel} × ${colLabel}: ${value} analiz`
+                }
+                onCellClick={(i, j) => {
+                  const cat = reordered.codes[i];
+                  const sent = d.sentiments[j];
+                  if (!cat || !sent) return;
+                  // Sprint 8.3.10 — pre-fix this URL silently dropped
+                  // ``category`` (the /reviews page never read it). The
+                  // backend now accepts ``primary_categories`` (CSV) and
+                  // the page parses it into the filter chain.
+                  router.push(
+                    `/reviews?sentiment_labels=${encodeURIComponent(sent)}&primary_categories=${encodeURIComponent(cat)}`,
+                  );
+                }}
+              />
+            );
+          }}
         </ChartFrame>
+        <p className="text-muted-foreground mt-3 text-xs leading-relaxed">
+          &quot;Belirsiz&quot; kategori sınıflandırılamayan yorumları
+          kapsar — büyük rakam genelde aşırı geniş veya çok kısa
+          yorumlardan kaynaklanır. Tablonun sonuna alındı ki
+          sinyalleri görmek kolaylaşsın.
+        </p>
       </CardContent>
     </Card>
   );
+}
+
+/** Sprint 9.8 — Madde 10+11: "belirsiz" satırını listenin sonuna
+ *  it. Tüm paralel dizileri (codes, labels, matrix, totals) aynı
+ *  permütasyonla yeniden sıralar; index-tabanlı consumer'lar
+ *  (onCellClick, rowTotals) çalışmaya devam eder. */
+function reorderBelirsizLast(
+  codes: ReadonlyArray<string>,
+  labels: ReadonlyArray<string>,
+  matrix: ReadonlyArray<ReadonlyArray<number>>,
+  rowTotals: ReadonlyArray<number>,
+): {
+  codes: string[];
+  labels: string[];
+  matrix: number[][];
+  rowTotals: number[];
+} {
+  const indices = codes.map((_, i) => i);
+  const belirsizIdx = codes.findIndex((c) => c?.toLowerCase() === "belirsiz");
+  if (belirsizIdx === -1) {
+    return {
+      codes: [...codes],
+      labels: [...labels],
+      matrix: matrix.map((r) => [...r]),
+      rowTotals: [...rowTotals],
+    };
+  }
+  const tail = indices.splice(belirsizIdx, 1);
+  const order = [...indices, ...tail];
+  return {
+    codes: order.map((i) => codes[i] ?? ""),
+    labels: order.map((i) => labels[i] ?? ""),
+    matrix: order.map((i) => [...(matrix[i] ?? [])]),
+    rowTotals: order.map((i) => rowTotals[i] ?? 0),
+  };
 }
 
 function OverridesTab({ filters }: { filters: AnalyticsFilters }) {

@@ -5,6 +5,7 @@ import {
   ArrowRight,
   CheckCircle2,
   ChevronLeft,
+  Download,
   FileSpreadsheet,
   Loader2,
   Upload,
@@ -50,7 +51,11 @@ const MAX_FILE_BYTES = 50 * 1024 * 1024;
 export default function BatchUploadPage() {
   const [step, setStep] = useState<Step>(1);
   const [file, setFile] = useState<File | null>(null);
-  const [textColumn, setTextColumn] = useState("text");
+  // Sprint 9.8 — default "text" → "yorum" (şablonla uyumlu).
+  // smart preview detector zaten REVIEW_TEXT kolonunu bulup
+  // textColumn'a yazıyor; bu default sadece preview yokken
+  // veya kullanıcı manuel girene kadar geçerli.
+  const [textColumn, setTextColumn] = useState("yorum");
   const [sourceColumn, setSourceColumn] = useState("");
   const [autoCreateTickets, setAutoCreateTickets] = useState(false);
   const [activeJobId, setActiveJobId] = useState<string | null>(null);
@@ -91,7 +96,7 @@ export default function BatchUploadPage() {
 
   function reset() {
     setFile(null);
-    setTextColumn("text");
+    setTextColumn("yorum");
     setSourceColumn("");
     setAutoCreateTickets(false);
     setActiveJobId(null);
@@ -153,7 +158,10 @@ export default function BatchUploadPage() {
       <StepIndicator step={step} />
 
       {step === 1 && (
-        <Step1FilePick file={file} setFile={handleFilePicked} />
+        <>
+          <TemplateBanner />
+          <Step1FilePick file={file} setFile={handleFilePicked} />
+        </>
       )}
 
       {step === 2 && file && (
@@ -178,7 +186,7 @@ export default function BatchUploadPage() {
             upload.mutate(
               {
                 file,
-                textColumn: textColumn.trim() || "text",
+                textColumn: textColumn.trim() || "yorum",
                 sourceColumn: sourceColumn.trim() || null,
                 autoCreateTickets,
               },
@@ -255,6 +263,76 @@ function StepIndicator({ step }: { step: Step }) {
         );
       })}
     </ol>
+  );
+}
+
+function TemplateBanner() {
+  // Sprint 9.8 — OTAN feedback: kullanıcı bir formata zorlanmalı,
+  // şablon indirilebilir olmalı. Banner Step 1 üstünde duruyor —
+  // ilk işi şablonu indirmek olsun. İndirme isteği server'dan
+  // bytes alıp blob → <a download> ile dosyayı kullanıcıya
+  // veriyor (cookie credentials:'include' lazım, bu yüzden plain
+  // <a href> yerine fetch).
+  const [downloading, setDownloading] = useState(false);
+  const apiBase =
+    process.env.NEXT_PUBLIC_API_URL || "http://localhost:8003";
+
+  async function handleDownload() {
+    setDownloading(true);
+    try {
+      const res = await fetch(`${apiBase}/tenants/me/analyze/batch/template`, {
+        credentials: "include",
+      });
+      if (!res.ok) {
+        toast.error("Şablon indirilemedi. Lütfen daha sonra tekrar deneyin.");
+        return;
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "imga-toplu-yukleme-sablonu.xlsx";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch {
+      toast.error("Şablon indirilemedi.");
+    } finally {
+      setDownloading(false);
+    }
+  }
+
+  return (
+    <Card className="border-primary/30 bg-primary/5">
+      <CardContent className="flex flex-wrap items-center gap-4 p-4">
+        <div className="bg-primary/15 text-primary flex size-10 shrink-0 items-center justify-center rounded-xl">
+          <FileSpreadsheet className="size-5" aria-hidden />
+        </div>
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-semibold">
+            İlk defa mı yüklüyorsunuz? Önce şablonu indirin.
+          </p>
+          <p className="text-muted-foreground text-xs leading-relaxed">
+            Yorumlarınızı şablondaki <strong>yorum</strong> kolonuna
+            yapıştırın. Şablona uymayan dosyalar reddedilir.
+          </p>
+        </div>
+        <Button
+          variant="outline"
+          onClick={handleDownload}
+          disabled={downloading}
+          className="gap-2"
+        >
+          {downloading ? (
+            <Loader2 className="size-4 animate-spin" aria-hidden />
+          ) : (
+            <Download className="size-4" aria-hidden />
+          )}
+          Şablonu İndir
+        </Button>
+      </CardContent>
+    </Card>
   );
 }
 

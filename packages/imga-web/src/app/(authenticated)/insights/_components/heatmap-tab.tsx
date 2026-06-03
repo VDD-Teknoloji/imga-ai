@@ -271,21 +271,41 @@ function HeatmapGrid({ data, colorFor, maxCell, onCellClick }: GridProps) {
         ))}
       </div>
 
-      <div className="mt-3 flex items-center gap-3 text-xs text-muted-foreground">
-        <span>Düşük</span>
-        <div className="flex h-3 w-40 overflow-hidden rounded">
-          {Array.from({ length: 20 }).map((_, i) => (
-            <div
-              key={i}
-              className="flex-1"
-              style={{ background: colorFor(i / 19) }}
-            />
-          ))}
+      {/* Sprint 9.8 — Madde 12 (UML): heatmap göstergeleri belirgin
+          değildi (etiketler küçük, palette dar, min/max sağa atılmıştı).
+          Genişletilmiş palette + her uca rakamla etiketleme +
+          ortalama referans noktası. Renk skalası neyi temsil
+          ettiğini metric label ile birleştirdik. */}
+      <div className="mt-4 space-y-2">
+        <div className="text-foreground/80 text-xs font-medium">
+          {data.metric_label} skalası
         </div>
-        <span>Yüksek</span>
-        <span className="ml-auto tabular-nums">
-          min {data.metric_min} · max {data.metric_max}
-        </span>
+        <div className="flex items-center gap-3 text-xs">
+          <span className="text-muted-foreground tabular-nums shrink-0 min-w-[3rem] text-right">
+            {data.metric_min}
+            <span className="text-muted-foreground/60 ml-1">düşük</span>
+          </span>
+          <div className="h-4 flex-1 overflow-hidden rounded-md ring-1 ring-border">
+            {Array.from({ length: 24 }).map((_, i) => (
+              <div
+                key={i}
+                className="float-left h-full"
+                style={{
+                  width: `${100 / 24}%`,
+                  background: colorFor(i / 23),
+                }}
+              />
+            ))}
+          </div>
+          <span className="text-muted-foreground tabular-nums shrink-0 min-w-[3rem]">
+            <span className="text-muted-foreground/60 mr-1">yüksek</span>
+            {data.metric_max}
+          </span>
+        </div>
+        <p className="text-muted-foreground text-[11px]">
+          Her hücre o saat × gün kesişimindeki <strong>{data.metric_label.toLocaleLowerCase("tr-TR")}</strong> değerini gösterir.
+          Renk koyulaştıkça değer yükselir. Boş hücre = veri yok.
+        </p>
       </div>
     </div>
   );

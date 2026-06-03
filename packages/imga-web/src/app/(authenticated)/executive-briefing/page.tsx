@@ -50,7 +50,7 @@ function HeaderSkeleton() {
       <header className="flex items-center gap-2">
         <ClipboardList className="text-primary size-6" aria-hidden />
         <div>
-          <h1 className="text-2xl font-semibold">Yönetici Brifingi</h1>
+          <h1 className="text-2xl font-semibold">Yönetici Özeti</h1>
           <p className="text-muted-foreground text-sm">Yükleniyor…</p>
         </div>
       </header>
@@ -135,7 +135,7 @@ function Content() {
         <ClipboardList className="text-primary size-6" aria-hidden />
         <div>
           <h1 className="text-2xl font-semibold tracking-tight md:text-3xl">
-            Yönetici Brifingi
+            Yönetici Özeti
           </h1>
           <p className="text-muted-foreground text-sm">
             Otomatik dönemsel özet — KPI değişimleri, kritik içgörüler ve

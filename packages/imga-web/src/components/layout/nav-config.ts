@@ -41,6 +41,12 @@ export interface NavSection {
   items: ReadonlyArray<NavItem>;
 }
 
+// Sprint 9.8 — UML test feedback rename'leri:
+//   * Madde 4: "Analizler" → "Analiz Arşivi" (Manuel Analiz ile karışmasın)
+//   * Madde 6: "Brifing" → "Yönetici Özeti" (menü + sayfa başlığı tekil)
+//   * Madde 11: "Override Katmanları" → "Kural Katmanları" (Türkçe — insights tab'da)
+//   * Madde 13: "Ticket'lar" → "Talepler" (CRM bağlamında daha doğal Türkçe)
+//   * Madde 5: "Bekleyen Bildirimler" admin-only oldu — sidebar-nav buna göre filtreliyor
 export const NAV_SECTIONS: ReadonlyArray<NavSection> = [
   // Yönetici — C-level reach-for-first surfaces. No section header;
   // these are the implicit primary group, like the home-screen dock
@@ -49,31 +55,40 @@ export const NAV_SECTIONS: ReadonlyArray<NavSection> = [
     heading: "",
     items: [
       { label: "Panel", href: "/", icon: LayoutDashboard },
-      { label: "Brifing", href: "/executive-briefing", icon: ClipboardList },
+      // Madde 6 — "Brifing" → "Yönetici Özeti"
+      {
+        label: "Yönetici Özeti",
+        href: "/executive-briefing",
+        icon: ClipboardList,
+      },
       { label: "Aksiyonlar", href: "/action-items", icon: ListChecks },
       { label: "Uyarılar", href: "/trend-alerts", icon: Bell },
       { label: "Strateji", href: "/strategy", icon: Compass },
     ],
   },
-  // Analitik — analyst persona's daily surfaces.
+  // Analitik — analyst persona's daily surfaces. Madde 3 not'u:
+  // Operasyon altına Manuel Analiz + Toplu Yükleme alındı; Analiz
+  // Arşivi (eski "Analizler") burada kalıyor çünkü ana iş "arşiv
+  // gezme" — analyst persona.
   {
     heading: "Analitik",
     items: [
       { label: "İçgörüler", href: "/insights", icon: TrendingUp },
-      { label: "Analizler", href: "/reviews", icon: FileSearch },
+      // Madde 4 — "Analizler" → "Analiz Arşivi"
+      { label: "Analiz Arşivi", href: "/reviews", icon: FileSearch },
       { label: "Raporlar", href: "/reports", icon: FileBarChart },
     ],
   },
-  // Operasyon — ticket queue + manual/batch ingestion + webhook
-  // outbox; operator persona's bread and butter.
+  // Operasyon — ticket queue + manual/batch ingestion. Madde 13:
+  // "Ticket'lar" → "Talepler" — daha doğal Türkçe, CRM bağlamında
+  // alışıldık. Madde 5: Bekleyen Bildirimler buradan çıkarıldı —
+  // sadece super_admin'e ADMIN_NAV_ITEMS altında gösteriliyor.
   {
     heading: "Operasyon",
     items: [
-      { label: "Ticket'lar", href: "/tickets", icon: Ticket },
+      { label: "Talepler", href: "/tickets", icon: Ticket },
       { label: "Manuel Analiz", href: "/analyze", icon: Sparkles },
       { label: "Toplu Yükleme", href: "/analyze/upload", icon: Upload },
-      // Sprint 9.0.5-B B — manuel SLA webhook dispatch kuyruğu.
-      { label: "Bekleyen Bildirimler", href: "/pending-webhooks", icon: Send },
     ],
   },
   // Settings alone — no own heading, just stays last with a divider
@@ -104,6 +119,15 @@ export const ADMIN_NAV_ITEMS: ReadonlyArray<NavItem> = [
     label: "Prompt Şablonları",
     href: "/admin/prompt-templates",
     icon: Code2,
+  },
+  // Sprint 9.8 — Madde 5: Bekleyen Bildirimler içerik çok teknik
+  // (SLA webhook dispatch detayı). Operasyon grubundan çıkarıldı,
+  // admin-only oldu. Normal kullanıcı görmez; super_admin trend
+  // ihlali yöneten kişi zaten gerekiyorsa erişir.
+  {
+    label: "Bekleyen Bildirimler",
+    href: "/pending-webhooks",
+    icon: Send,
   },
 ];
 

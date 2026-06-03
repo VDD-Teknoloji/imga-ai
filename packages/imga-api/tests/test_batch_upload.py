@@ -80,6 +80,11 @@ async def test_upload_rejects_unknown_text_column(
     semi_auto_tenant: tuple[User, UUID, str],
     tmp_path: Path,
 ) -> None:
+    """Sprint 9.8 — şablon uyum kontrolü artık ilk önce çalışıyor:
+    header'da 'yorum' (veya legacy 'text') yoksa daha kullanışlı bir
+    422 mesajıyla reddediyoruz, eski "text column 'metin' not in
+    header" 400 yerine. text_column'a farklı bir değer geçilirse de
+    sonuç aynı — kullanıcı şablonu indirsin uyarısı düşer."""
     user, tid, pw = semi_auto_tenant
     token = login_token(batch_client, user.email, pw, tid)
 
@@ -87,8 +92,12 @@ async def test_upload_rejects_unknown_text_column(
     r = upload_csv(
         batch_client, token=token, path=csv_path, text_column="metin"
     )
-    assert r.status_code == 400, r.text
-    assert "metin" in r.json()["detail"]
+    assert r.status_code == 422, r.text
+    detail = r.json()["detail"]
+    # Mesaj kullanıcıyı şablona yönlendirmeli ve mevcut kolonları
+    # (yani "foo"'yu) raporlamalı ki yanlışı düzeltebilsin.
+    assert "yorum" in detail
+    assert "foo" in detail
 
 
 @pytest.mark.asyncio

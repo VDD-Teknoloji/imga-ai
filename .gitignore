@@ -90,3 +90,10 @@ infra/imga/*/secrets/
 # Sprint handoff patches — temporary transfer artefact between agents,
 # never checked in (handoff itself lives under docs/handoffs/).
 sprint-*.patch
+
+# QA / smoke test result Excel'leri — UML + OTAN'dan gelen test çıktıları
+# repo'da değil, lokal review için tutuluyor. Bulgular task / commit
+# mesajına geçer, kaynak dosya değil.
+test sonuç*.xlsx
+*test sonuç*.xlsx
+*test_sonuc*.xlsx

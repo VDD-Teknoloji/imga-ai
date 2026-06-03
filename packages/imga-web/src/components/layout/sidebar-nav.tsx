@@ -87,12 +87,18 @@ function SidebarSection({
             className="bg-sidebar-border mx-3 my-2 h-px"
           />
         ) : heading ? (
-          <p
-            className="text-muted-foreground mt-4 mb-1 px-3 text-[10px] font-semibold tracking-wider uppercase"
-            aria-label={`${heading} bölümü`}
-          >
-            {heading}
-          </p>
+          // Sprint 9.8 — Madde 2: Hiyerarşik gruplama görsel olarak
+          // daha belirgin. Header'lar daha kalın + ince üst divider
+          // ile gruplar arası ayrım netleştirildi.
+          <div className="mt-5 mb-1 px-3">
+            <div className="bg-sidebar-border mx-0 mb-2 h-px" aria-hidden />
+            <p
+              className="text-sidebar-foreground/70 text-[11px] font-bold tracking-[0.12em] uppercase"
+              aria-label={`${heading} bölümü`}
+            >
+              {heading}
+            </p>
+          </div>
         ) : (
           // Headingless follow-up section gets a divider but no
           // heading — keeps Ayarlar visually separated from

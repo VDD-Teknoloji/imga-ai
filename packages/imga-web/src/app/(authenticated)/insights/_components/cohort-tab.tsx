@@ -8,6 +8,17 @@
 // with the other tabs.
 
 import { useMemo } from "react";
+
+// Sprint 9.8 — Madde 9 (UML): Tarih formatı Amerikan değil Türk
+// (dd.mm.yyyy). XAxis tick'leri için ISO "YYYY-MM-DD" → "dd.mm.yyyy"
+// dönüşümü. Locale-aware Intl Türk başlangıçta "06 May 2026" gibi
+// uzun string üretiyor; chart eksenleri için kısa "01.05" yeterli.
+function formatPeriodStartTr(value: string): string {
+  if (typeof value !== "string" || value.length < 10) return value;
+  const [yyyy, mm, dd] = value.slice(0, 10).split("-");
+  if (!yyyy || !mm || !dd) return value;
+  return `${dd}.${mm}`;
+}
 import {
   CartesianGrid,
   Legend,
@@ -162,7 +173,11 @@ export function CohortTab({
             <ResponsiveContainer width="100%" height={360}>
               <LineChart data={chartData.points}>
                 <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="period_start" fontSize={10} />
+                <XAxis
+                  dataKey="period_start"
+                  fontSize={10}
+                  tickFormatter={formatPeriodStartTr}
+                />
                 <YAxis fontSize={10} />
                 <Tooltip />
                 <Legend wrapperStyle={{ fontSize: 12 }} />

@@ -115,9 +115,16 @@ def _resolve_columns(
     try:
         text_idx = norm_header.index(target_text)
     except ValueError as exc:
+        # Sprint 9.8 — OTAN feedback: hata mesajları Türkçe ve
+        # eyleme dönük olmalı. İngilizce "text column 'X' not in
+        # header" yerine kullanıcıya neyi yapması gerektiğini
+        # söyleyen bir mesaj.
         raise UnknownColumnError(
-            f"text column {text_column!r} not in header (available: "
-            f"{', '.join(repr(c) for c in header)})"
+            f"'{text_column}' adlı kolon dosyada bulunamadı. "
+            f"Dosyadaki mevcut kolonlar: "
+            f"{', '.join(repr(c) for c in header)}. "
+            "Lütfen 'Şablonu İndir' butonundan örnek dosyayı alın "
+            "ve verinizi 'yorum' kolonuna yapıştırın."
         ) from exc
 
     source_idx: int | None = None
@@ -127,7 +134,9 @@ def _resolve_columns(
             source_idx = norm_header.index(target_source)
         except ValueError as exc:
             raise UnknownColumnError(
-                f"source column {source_column!r} not in header"
+                f"'{source_column}' adlı kaynak kolonu dosyada "
+                "bulunamadı. Mevcut kolonlar: "
+                f"{', '.join(repr(c) for c in header)}."
             ) from exc
 
     nps_idx: int | None = None
@@ -181,7 +190,10 @@ def _iter_csv(
         try:
             header = next(reader)
         except StopIteration as exc:
-            raise FileParseError("file is empty") from exc
+            raise FileParseError(
+                "Dosya boş görünüyor. Lütfen şablonu indirin, "
+                "yorumlarınızı doldurun ve yeniden deneyin."
+            ) from exc
 
         text_idx, source_idx, nps_idx, dim_idx_by_key = _resolve_columns(
             header,
@@ -229,13 +241,19 @@ def _iter_xlsx(
     try:
         sheet = workbook.active
         if sheet is None:
-            raise FileParseError("workbook has no active sheet")
+            raise FileParseError(
+                "Excel dosyasında aktif bir sayfa bulunamadı. "
+                "Dosyayı yeniden kaydedin ve tekrar deneyin."
+            )
 
         rows_iter = sheet.iter_rows(values_only=True)
         try:
             raw_header = next(rows_iter)
         except StopIteration as exc:
-            raise FileParseError("file is empty") from exc
+            raise FileParseError(
+                "Dosya boş görünüyor. Lütfen şablonu indirin, "
+                "yorumlarınızı doldurun ve yeniden deneyin."
+            ) from exc
 
         header = [str(c) if c is not None else "" for c in raw_header]
         text_idx, source_idx, nps_idx, dim_idx_by_key = _resolve_columns(
@@ -307,7 +325,8 @@ def iter_rows(
             dimension_mapping=dimension_mapping,
         )
     raise UnsupportedFormatError(
-        f"unsupported file extension {suffix!r}; expected .csv or .xlsx"
+        f"Desteklenmeyen dosya türü: {suffix!r}. "
+        "Yalnızca .csv ve .xlsx dosyaları kabul edilir."
     )
 
 
@@ -330,7 +349,8 @@ def count_rows(path: Path) -> int:
         finally:
             workbook.close()
     raise UnsupportedFormatError(
-        f"unsupported file extension {suffix!r}; expected .csv or .xlsx"
+        f"Desteklenmeyen dosya türü: {suffix!r}. "
+        "Yalnızca .csv ve .xlsx dosyaları kabul edilir."
     )
 
 
@@ -360,7 +380,8 @@ def peek_header(path: Path) -> list[str]:
         finally:
             workbook.close()
     raise UnsupportedFormatError(
-        f"unsupported file extension {suffix!r}; expected .csv or .xlsx"
+        f"Desteklenmeyen dosya türü: {suffix!r}. "
+        "Yalnızca .csv ve .xlsx dosyaları kabul edilir."
     )
 
 

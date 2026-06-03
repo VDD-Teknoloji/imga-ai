@@ -23,6 +23,7 @@ from fastapi import (
     Form,
     HTTPException,
     Request,
+    Response,
     UploadFile,
     status,
 )
@@ -39,6 +40,10 @@ from imga_api.services import (
     BatchJobNotCancellableError,
     BatchJobNotFoundError,
 )
+from imga_api.services.batch_template import (
+    TEMPLATE_REQUIRED_COLUMNS,
+    build_batch_template_xlsx,
+)
 from imga_api.services.smart_parser import SmartColumnDetector
 from imga_api.services.smart_parser.sampler import sample_columns
 from imga_api.settings import Settings
@@ -50,6 +55,7 @@ from imga_api.workers.file_parser import (
     peek_header,
 )
 from imga_api.workers.scheduler import enqueue_batch_job
+from imga_core.text_utils import normalize_turkish
 
 log = logging.getLogger("imga-api.routes.batch")
 
@@ -145,6 +151,45 @@ def _require_active_tenant(current: CurrentUser) -> UUID:
     return current.active_tenant_id
 
 
+def _ensure_template_compliance(header: list[str], file_path: Path) -> None:
+    """Sprint 9.8 — yüklenen dosya şablona uymalı.
+
+    OTAN feedback: "Kesinlikle kullanıcı bir formata zorlanmalı".
+    Şablonun zorunlu kolonları (şu an: 'yorum') header'da yoksa,
+    422 ile reddediyoruz ve kullanıcıyı 'Şablonu İndir' butonuna
+    yönlendiriyoruz. Tek noktadan tek kontrat — yeni zorunlu
+    kolon ekleneceğinde TEMPLATE_REQUIRED_COLUMNS güncellenir,
+    burası otomatik korur.
+
+    Karşılaştırma normalize_turkish ile yapılıyor — kullanıcı
+    'Yorum' veya 'YORUM' yazmış olabilir, hepsi geçerli sayılır.
+    Legacy 'text' header'ları için de bir tanıma kapısı bırakıldı
+    (eski uploads geri uyumluluk).
+    """
+    normalized = {normalize_turkish(h).strip() for h in header}
+    legacy_alias = {"text"}  # eski uploads için
+    accepted = normalized | (normalized & legacy_alias)
+    for required in TEMPLATE_REQUIRED_COLUMNS:
+        if normalize_turkish(required) in accepted:
+            return
+        if normalized & legacy_alias:
+            # Eski 'text' kolon adı bulundu — şablon uyumlu sayılır
+            # ama Türkçe geçişe doğru itelersek iyi olur (uyarı
+            # değil, sessiz kabul).
+            return
+    file_path.unlink(missing_ok=True)
+    raise HTTPException(
+        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+        detail=(
+            "Dosya İmga şablonuna uygun değil. Zorunlu 'yorum' "
+            "kolonu bulunamadı. Lütfen 'Şablonu İndir' butonundan "
+            "Excel şablonunu alın, yorumlarınızı 'yorum' kolonuna "
+            "yapıştırın ve yeniden yükleyin. "
+            f"Dosyadaki mevcut kolonlar: {', '.join(repr(h) for h in header)}."
+        ),
+    )
+
+
 def _job_view(job: Any) -> BatchJobResponse:
     """Project an AnalyzeBatchJob ORM row onto the wire shape. Status
     casts to its enum's value so JSON gets the lowercase string."""
@@ -195,6 +240,52 @@ def _job_view(job: Any) -> BatchJobResponse:
 
 
 # --- endpoints --------------------------------------------------------
+
+
+@router.get(
+    "/template",
+    summary="İmga toplu yükleme şablonu (XLSX) indir.",
+    description=(
+        "Sprint 9.8 — OTAN feedback'i: kullanıcılar bir formata "
+        "zorlanmalı. Bu endpoint operatör dostu bir Excel şablonu "
+        "döner. Kolonlar: yorum (ZORUNLU), tarih, kaynak, nps. "
+        "Şablon ayrı bir TALIMAT sayfası taşır — kolon kuralları, "
+        "format kabulleri ve yaygın hatalar. Yüklenen dosya bu "
+        "şablonun zorunlu kolonlarını taşımıyorsa /analyze/batch "
+        "endpoint'i 422 ile reddeder."
+    ),
+    response_class=Response,
+    responses={
+        200: {
+            "content": {
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": {}
+            },
+            "description": "Hazır şablon dosyası.",
+        },
+    },
+)
+async def download_batch_template(
+    current: Annotated[CurrentUser, _AnyMember],
+) -> Response:
+    """Şablonu binary indir. Auth, herhangi bir tenant üyesine açık —
+    viewer rolündeki kullanıcı bile şablonu görüntüleyebilir (yükleme
+    yetkisi olmayabilir ama "neyi nasıl dolduracağım" bilgisine
+    erişebilir)."""
+    _ = current  # auth dependency için, gövdede kullanılmıyor
+    xlsx_bytes = build_batch_template_xlsx()
+    return Response(
+        content=xlsx_bytes,
+        media_type=(
+            "application/vnd.openxmlformats-officedocument."
+            "spreadsheetml.sheet"
+        ),
+        headers={
+            "Content-Disposition": (
+                'attachment; filename="imga-toplu-yukleme-sablonu.xlsx"'
+            ),
+            "Cache-Control": "private, max-age=300",
+        },
+    )
 
 
 @router.post(
@@ -331,10 +422,13 @@ async def create_batch(
     current: Annotated[CurrentUser, _TenantMember],
     app_session: Annotated[AsyncSession, Depends(get_app_session)],
     file: Annotated[UploadFile, File(...)],
-    text_column: Annotated[str, Form()] = "text",
+    text_column: Annotated[str, Form()] = "yorum",
     source_column: Annotated[str | None, Form()] = None,
     auto_create_tickets: Annotated[bool, Form()] = False,
 ) -> BatchJobResponse:
+    # Sprint 9.8 — text_column default'u "yorum"a çekildi
+    # (eski "text" değeri legacy_alias üzerinden hala kabul
+    # edilir; bkz. _ensure_template_compliance).
     tenant_id = _require_active_tenant(current)
     settings: Settings = request.app.state.settings
     batch_settings = settings.batch
@@ -342,14 +436,18 @@ async def create_batch(
     if file.filename is None or not file.filename.strip():
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="dosya adı boş olamaz",
+            detail="Dosya adı boş olamaz.",
         )
     safe_name = Path(file.filename).name  # strip any path components
     suffix = Path(safe_name).suffix.lower()
     if suffix not in (".csv", ".xlsx"):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="desteklenmeyen dosya türü; sadece .csv ve .xlsx kabul edilir",
+            detail=(
+                "Desteklenmeyen dosya türü. Yalnızca .csv ve .xlsx "
+                "kabul edilir. Lütfen 'Şablonu İndir' butonundan "
+                "Excel şablonunu alıp kullanın."
+            ),
         )
 
     # Allocate the job's storage path BEFORE writing — the file path
@@ -391,11 +489,22 @@ async def create_batch(
             status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)
         ) from exc
 
+    # Sprint 9.8 — OTAN feedback: yüklenen dosya İmga şablonuna
+    # uymalı. Header'da zorunlu "yorum" kolonu (case + accent
+    # insensitive) yoksa erken reddet. Eski "text" kolon adı da
+    # tarihi yüklemeleri için tanıdık olmaya devam ediyor ama
+    # yeni kullanıcı şablondan başlasın diye mesajda yorum'a
+    # yönlendiriyoruz.
+    _ensure_template_compliance(header, file_path)
+
     if total_rows <= 0:
         file_path.unlink(missing_ok=True)
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="dosya boş ya da yalnızca başlık satırı içeriyor",
+            detail=(
+                "Dosya boş ya da yalnızca başlık satırı içeriyor. "
+                "Yorumlarınızı 'yorum' kolonuna yazıp tekrar deneyin."
+            ),
         )
     if total_rows > batch_settings.max_rows:
         file_path.unlink(missing_ok=True)
