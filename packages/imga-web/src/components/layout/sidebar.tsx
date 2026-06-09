@@ -3,6 +3,7 @@
 import { PanelLeft } from "lucide-react";
 import { useEffect } from "react";
 
+import { ImgaMark, ImgaWordmark } from "@/components/brand/imga-logo";
 import { SidebarNav } from "@/components/layout/sidebar-nav";
 import { TenantSwitcher } from "@/components/layout/tenant-switcher";
 import { UserMenu } from "@/components/layout/user-menu";
@@ -58,31 +59,57 @@ export function Sidebar({ variant, onNavigate }: SidebarProps) {
     >
       <header
         className={cn(
-          "bg-sidebar sticky top-0 z-10 flex shrink-0 items-center gap-2 p-2",
-          isCollapsed ? "flex-col" : "flex-row",
+          "bg-sidebar sticky top-0 z-10 flex shrink-0 flex-col gap-2 p-2",
         )}
       >
-        <div className={cn("min-w-0 flex-1", isCollapsed && "w-full flex-none")}>
-          <TenantSwitcher collapsed={isCollapsed} />
+        {/* Sprint 10.2 — marka satırı. Lacivert rail'in tepesinde
+            logo: açıkken wordmark (turuncu kare = i'nin noktası),
+            kapalıyken arma. Rail'in kendisi marka laciverti olduğu
+            için logo "uygulamanın imzası" gibi durur. */}
+        <div
+          className={cn(
+            "flex items-center",
+            isCollapsed ? "justify-center py-1.5" : "justify-between px-2 py-1.5",
+          )}
+        >
+          {isCollapsed ? (
+            <ImgaMark className="size-6 text-sidebar-foreground" />
+          ) : (
+            <>
+              <span className="flex items-center gap-2.5">
+                <ImgaMark className="size-6 text-sidebar-foreground" />
+                <ImgaWordmark className="text-sidebar-foreground" />
+              </span>
+              {variant === "desktop" ? (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={toggleSidebar}
+                  aria-label="Kenar çubuğunu daralt"
+                  className="hover:bg-sidebar-accent size-8 shrink-0 text-sidebar-foreground/70 hover:text-sidebar-foreground"
+                >
+                  <PanelLeft className="size-4" aria-hidden />
+                </Button>
+              ) : null}
+            </>
+          )}
         </div>
 
-        {variant === "desktop" ? (
+        {isCollapsed && variant === "desktop" ? (
           <Button
             variant="ghost"
             size="icon"
             onClick={toggleSidebar}
-            aria-label={isCollapsed ? "Kenar çubuğunu genişlet" : "Kenar çubuğunu daralt"}
-            className="size-8 shrink-0"
+            aria-label="Kenar çubuğunu genişlet"
+            className="hover:bg-sidebar-accent mx-auto size-8 shrink-0 text-sidebar-foreground/70 hover:text-sidebar-foreground"
           >
-            <PanelLeft
-              className={cn(
-                "size-4 transition-transform duration-200",
-                isCollapsed && "rotate-180",
-              )}
-              aria-hidden
-            />
+            <PanelLeft className="size-4 rotate-180" aria-hidden />
           </Button>
         ) : null}
+
+        <div className={cn("min-w-0", isCollapsed && "w-full")}>
+          <TenantSwitcher collapsed={isCollapsed} />
+        </div>
       </header>
 
       <Separator />

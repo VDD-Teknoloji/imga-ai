@@ -18,7 +18,7 @@ const buttonVariants = cva(
         // doesn't feel busy, but distinctive enough that it
         // reads as the brand surface.
         default:
-          "bg-gradient-to-br from-primary to-[oklch(0.55_0.22_290)] dark:to-[oklch(0.78_0.18_290)] text-primary-foreground shadow-soft hover:shadow-glow hover:scale-[1.02]",
+          "bg-gradient-to-br from-primary to-brand text-primary-foreground shadow-soft hover:shadow-glow hover:scale-[1.02]",
         outline:
           "border-border bg-background hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground dark:border-input dark:bg-input/30 dark:hover:bg-input/50",
         secondary:

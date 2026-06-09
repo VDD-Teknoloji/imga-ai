@@ -88,7 +88,7 @@ def _build_data_sheet(wb: Workbook) -> None:
 
     # Header bandı — koyu indigo zemin, beyaz font, kalın.
     header_fill = PatternFill(
-        start_color="3F2E91", end_color="3F2E91", fill_type="solid"
+        start_color="141C32", end_color="141C32", fill_type="solid"
     )
     header_font = Font(name="Calibri", size=11, bold=True, color="FFFFFF")
     center = Alignment(horizontal="center", vertical="center")
@@ -108,7 +108,7 @@ def _build_data_sheet(wb: Workbook) -> None:
     # olduğu hissi verilsin. Operatör bu satırları silip kendi
     # datasını yazacak.
     sample_fill = PatternFill(
-        start_color="F2EEFF", end_color="F2EEFF", fill_type="solid"
+        start_color="FCEFE6", end_color="FCEFE6", fill_type="solid"
     )
     sample_font = Font(name="Calibri", size=11, italic=True, color="555555")
     for row_idx, sample in enumerate(_SAMPLE_ROWS, start=2):
@@ -133,7 +133,7 @@ def _build_instruction_sheet(wb: Workbook) -> None:
     ws.column_dimensions["A"].width = 22
     ws.column_dimensions["B"].width = 80
 
-    title_font = Font(name="Calibri", size=14, bold=True, color="3F2E91")
+    title_font = Font(name="Calibri", size=14, bold=True, color="141C32")
     section_font = Font(name="Calibri", size=11, bold=True)
     body_font = Font(name="Calibri", size=11)
 

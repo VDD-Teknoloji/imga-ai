@@ -131,7 +131,7 @@ export function QuickActionFab() {
         className={cn(
           "text-primary-foreground focus-visible:ring-ring inline-flex size-14 items-center justify-center rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2",
           "shadow-pop hover:shadow-glow transition-[transform,box-shadow] duration-[var(--motion-duration)] [transition-timing-function:var(--motion-ease)]",
-          "bg-gradient-to-br from-primary to-[oklch(0.55_0.22_290)] dark:to-[oklch(0.78_0.18_290)]",
+          "bg-gradient-to-br from-primary to-brand",
           open && "rotate-45 scale-95",
           !open && "hover:scale-[1.04]",
         )}

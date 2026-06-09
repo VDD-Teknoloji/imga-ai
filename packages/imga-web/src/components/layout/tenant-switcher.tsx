@@ -67,11 +67,15 @@ export function TenantSwitcher({ collapsed }: TenantSwitcherProps) {
       disabled={isSwitching}
       className={cn(
         "h-10 w-full justify-between gap-2 px-3 font-medium",
+        // Sprint 10.2 — lacivert rail üstünde outline buton soluk
+        // kalıyordu; trigger sidebar token'larıyla boyanır.
+        "border-sidebar-border bg-sidebar-accent/60 text-sidebar-foreground",
+        "hover:bg-sidebar-accent hover:text-sidebar-foreground",
         collapsed && "justify-center px-0",
       )}
     >
       <span className="flex min-w-0 items-center gap-2">
-        <Building2 className="text-muted-foreground size-4 shrink-0" aria-hidden />
+        <Building2 className="text-sidebar-foreground/60 size-4 shrink-0" aria-hidden />
         {collapsed ? null : <span className="truncate">{activeTenantName}</span>}
       </span>
       {collapsed ? null : <ChevronsUpDown className="size-4 shrink-0 opacity-60" aria-hidden />}

@@ -53,11 +53,13 @@ const DIMENSION_LABELS: Record<CohortDimension, string> = {
 
 // Distinct line colours — picked for contrast on a white background;
 // 10 entries match the default top-10 limit, after which we wrap.
+// Sprint 10.2 — palet marka çiftiyle açılır (turuncu + lacivert),
+// kalanı ayırt edilebilirlik için geniş hue yelpazesi.
 const LINE_COLOURS = [
-  "#2563eb",
-  "#dc2626",
+  "#e26622",
+  "#44557d",
   "#16a34a",
-  "#ea580c",
+  "#dc2626",
   "#9333ea",
   "#0891b2",
   "#db2777",

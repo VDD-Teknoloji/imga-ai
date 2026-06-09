@@ -6,7 +6,7 @@
 // "etkisiz" bulundu: %81 memnuniyetsizlik sıradan bir bilgi gibi
 // duruyordu. Bu sürümün ilkesi: YÜZEY DURUMU HAYKIRIR.
 //
-//   * Koyu (grafit + indigo glow) panel — sayfanın geri kalanından
+//   * Koyu (marka laciverti + turuncu glow) panel — sayfanın geri kalanından
 //     kopar, göz önce buraya gider.
 //   * Dev radyal gösterge: Memnuniyet Skoru (pozitif oran). Renk
 //     duruma göre: yeşil / amber / kırmızı.
@@ -83,8 +83,8 @@ function bandFor(posPct: number, negPct: number): BandVisual {
     stamp: "DENGELİ GÖRÜNÜM",
     stampClass: "bg-white/10 text-zinc-200 ring-1 ring-white/20",
     dotClass: "bg-zinc-300",
-    gaugeStroke: "#a5b4fc",
-    gaugeGlow: "rgba(165,180,252,0.35)",
+    gaugeStroke: "#94a3b8",
+    gaugeGlow: "rgba(148,163,184,0.3)",
   };
 }
 
@@ -126,8 +126,8 @@ export function ExecutiveHero({ overview, isLoading }: Props) {
 
   if (total === 0) {
     return (
-      <section className="rise-in shadow-elevated relative overflow-hidden rounded-3xl bg-zinc-950 p-10 text-center ring-1 ring-white/10">
-        <HeroGlow color="rgba(99,102,241,0.35)" />
+      <section className="rise-in shadow-elevated relative overflow-hidden rounded-3xl bg-navy p-10 text-center ring-1 ring-white/10">
+        <HeroGlow color="rgba(226,102,34,0.30)" />
         <h2 className="relative text-2xl md:text-3xl font-semibold tracking-tight text-white">
           Müşterilerinizin sesini dinlemeye başlayın
         </h2>
@@ -137,7 +137,7 @@ export function ExecutiveHero({ overview, isLoading }: Props) {
         </p>
         <Link
           href="/analyze/upload"
-          className="relative mt-6 inline-flex items-center gap-2 rounded-xl bg-white px-6 py-3 text-sm font-semibold text-zinc-900 transition-transform hover:scale-[1.03]"
+          className="bg-brand text-navy relative mt-6 inline-flex items-center gap-2 rounded-xl px-6 py-3 text-sm font-bold transition-transform hover:scale-[1.03]"
         >
           <Upload className="size-4" aria-hidden /> İlk dosyanızı yükleyin
         </Link>
@@ -152,7 +152,7 @@ export function ExecutiveHero({ overview, isLoading }: Props) {
 
   return (
     <section
-      className="rise-in shadow-elevated relative overflow-hidden rounded-3xl bg-zinc-950 p-6 md:p-10 ring-1 ring-white/10"
+      className="rise-in shadow-elevated relative overflow-hidden rounded-3xl bg-navy p-6 md:p-10 ring-1 ring-white/10"
       aria-label="Müşteri memnuniyet durumu"
     >
       <HeroGlow color={visual.gaugeGlow} />
@@ -218,7 +218,7 @@ export function ExecutiveHero({ overview, isLoading }: Props) {
                   ? "/reviews"
                   : "/reviews?sentiment_labels=NEGATİF"
               }
-              className="inline-flex items-center gap-2 rounded-xl bg-white px-5 py-2.5 text-sm font-semibold text-zinc-900 transition-transform hover:scale-[1.03]"
+              className="bg-brand text-navy inline-flex items-center gap-2 rounded-xl px-5 py-2.5 text-sm font-bold transition-transform hover:scale-[1.03]"
             >
               {visual.band === "healthy"
                 ? "Müşteri yorumlarını incele"
@@ -272,7 +272,7 @@ function HeroGlow({ color }: { color: string }) {
       aria-hidden
       className="pointer-events-none absolute inset-0"
       style={{
-        background: `radial-gradient(720px circle at 12% 0%, ${color}, transparent 55%), radial-gradient(560px circle at 100% 100%, rgba(99,102,241,0.18), transparent 60%)`,
+        background: `radial-gradient(720px circle at 12% 0%, ${color}, transparent 55%), radial-gradient(560px circle at 100% 100%, rgba(226,102,34,0.14), transparent 60%)`,
       }}
     />
   );

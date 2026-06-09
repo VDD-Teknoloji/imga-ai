@@ -63,7 +63,7 @@ export function UserMenu({ collapsed }: UserMenuProps) {
       {collapsed ? null : (
         <span className="flex min-w-0 flex-1 flex-col items-start text-left">
           <span className="w-full truncate text-sm font-medium">{user.full_name}</span>
-          <span className="text-muted-foreground w-full truncate text-xs">{user.email}</span>
+          <span className="text-sidebar-foreground/60 w-full truncate text-xs">{user.email}</span>
         </span>
       )}
       {collapsed ? null : <ChevronsUpDown className="size-4 shrink-0 opacity-60" aria-hidden />}

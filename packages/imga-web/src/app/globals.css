@@ -5,36 +5,45 @@
 @custom-variant dark (&:is(.dark *));
 
 /*
- * Sprint 9.6.1 — design system overhaul.
+ * Sprint 10.2 — "Yapı & Sinyal" marka tasarım sistemi.
  *
- * Identity: premium AI / decision intelligence. Not the workmanlike
- * teal-on-stone of the pre-9.6 build; this version trades cool
- * tradesperson neutrals for a paper-white base and a deep indigo
- * primary, with a violet accent that shows up on hero numbers,
- * focus rings, and the FAB. The palette aims to feel like a tool
- * a C-level operator would notice on their CFO's screen.
+ * Kimlik logodan türetildi (logo.svg / logo-arma.svg):
+ *   #141c32 — gece laciverti. Logonun geometrik bloklar yapısı;
+ *             mürekkep rengi, sidebar yüzeyi, hero zemini.
+ *   #e26622 — sinyal turuncusu. Logoda blokların tam merkezindeki
+ *             kare — "gürültünün içindeki sinyal". Aksiyon rengi:
+ *             CTA'lar, aktif nav işareti, focus ring, vurgular.
+ *
+ * 9.6.1'in indigo-violet kimliği markayla bağlantısızdı; bu sürüm
+ * paleti tamamen marka çiftine oturtur. İlke: lacivert YAPI kurar,
+ * turuncu HAREKETE GEÇİRİR. Durum renkleri (yeşil/amber/kırmızı)
+ * semantiktir ve markadan bağımsız kalır.
  *
  * Token model:
+ *   --brand               saf marka turuncusu (#e26622). Gradient
+ *                         uçları, glow'lar, logo motifi. Üzerine
+ *                         metin koyacaksan lacivert kullan.
+ *   --primary             metin-güvenli koyu turuncu — beyaz
+ *                         üzerinde AA geçer; link + buton rengi.
  *   --radius              load-bearing base; cards and surfaces
  *                         derive their rounded corners from this.
- *   --shadow-soft         resting card elevation.
- *   --shadow-elevated     hover state.
- *   --shadow-pop          floating elements (FAB, popovers).
- *   --shadow-glow         primary-tinted ring around CTAs.
+ *   --shadow-soft/elevated/pop/glow — elevation merdiveni.
  *   --motion-duration     canonical transition speed (240ms).
  *   --motion-ease         Apple-style ease-out quart cubic-bezier.
  *
  * Contrast notes (WCAG AA, 4.5:1 normal text / 3:1 large):
- *   foreground on background                ≈ 14:1 AAA
- *   primary-foreground on primary           ≈ 7.5:1 AAA (white on indigo-700)
+ *   foreground on background                ≈ 13:1 AAA (lacivert mürekkep)
+ *   primary (koyu turuncu) on background    ≈ 4.8:1 AA
+ *   primary-foreground on primary           ≈ 4.8:1 AA (beyaz on koyu turuncu)
+ *   sidebar-primary on sidebar              parlak turuncu on lacivert, büyük/bold
  *   muted-foreground on background          ≈ 6.5:1 AA
- *   accent-foreground on accent             ≈ 6.0:1 AA
- *   destructive default kept; AA on white.
  */
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
+  --color-brand: var(--brand);
+  --color-navy: var(--navy);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
   --font-heading: var(--font-geist-sans);
@@ -79,104 +88,116 @@
   /* Shadow ladder — composed of two layers (close + ambient) so cards
    * sit on the surface rather than appearing flat. The "glow" variant
    * tints the close layer with primary so CTAs glow softly on hover. */
+  /* Gölgeler lacivert mürekkeple tonlanır — gri yerine markanın
+   * yapı rengiyle gölgelenen kartlar zemine "ait" görünür. */
   --shadow-soft:
-    0 1px 2px -1px oklch(0.2 0.04 270 / 0.04),
-    0 2px 8px -2px oklch(0.2 0.04 270 / 0.06);
+    0 1px 2px -1px oklch(0.23 0.04 265 / 0.05),
+    0 2px 8px -2px oklch(0.23 0.04 265 / 0.07);
   --shadow-elevated:
-    0 2px 4px -1px oklch(0.2 0.04 270 / 0.06),
-    0 8px 24px -6px oklch(0.2 0.04 270 / 0.12);
+    0 2px 4px -1px oklch(0.23 0.04 265 / 0.07),
+    0 8px 24px -6px oklch(0.23 0.04 265 / 0.14);
   --shadow-pop:
-    0 4px 8px -2px oklch(0.15 0.04 270 / 0.08),
-    0 16px 40px -8px oklch(0.15 0.04 270 / 0.16);
+    0 4px 8px -2px oklch(0.18 0.04 265 / 0.09),
+    0 16px 40px -8px oklch(0.18 0.04 265 / 0.18);
   --shadow-glow:
-    0 0 0 1px oklch(0.45 0.22 270 / 0.18),
-    0 6px 20px -4px oklch(0.45 0.22 270 / 0.35);
+    0 0 0 1px oklch(0.66 0.175 45 / 0.22),
+    0 6px 20px -4px oklch(0.66 0.175 45 / 0.38);
   --motion-duration: 240ms;
   --motion-ease: cubic-bezier(0.2, 0, 0, 1);
 }
 
 /*
- * Light theme — paper base + indigo-violet primary.
+ * Light theme — kağıt zemin + lacivert mürekkep + turuncu sinyal.
  *
  * The background isn't pure white; it's a near-paper with the
  * faintest cool tint so cards (true white) have something to sit on.
  * Borders are almost imperceptible — surfaces lean on shadow + soft
  * ring instead of hard rules.
+ *
+ * Sidebar BİLEREK koyu: marka laciverti (#141c32) — uygulamanın
+ * sol kenarı logonun kendisi gibi durur, içerik alanı aydınlık
+ * kalır. Aktif nav işareti turuncu KARE (logodaki merkez kare).
  */
 :root {
-  --background: oklch(0.985 0.003 264); /* paper, faintest cool tint */
-  --foreground: oklch(0.18 0.02 266); /* near-black with hint of blue */
+  --brand: oklch(0.66 0.175 45); /* #e26622 — saf marka turuncusu */
+  --navy: oklch(0.23 0.04 265); /* #141c32 — marka laciverti */
+  --background: oklch(0.984 0.003 260); /* paper, faintest cool tint */
+  --foreground: oklch(0.23 0.04 265); /* lacivert mürekkep */
   --card: oklch(1 0 0); /* true white — pops off the paper bg */
-  --card-foreground: oklch(0.18 0.02 266);
+  --card-foreground: oklch(0.23 0.04 265);
   --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.18 0.02 266);
-  --primary: oklch(0.48 0.21 271); /* deep indigo */
+  --popover-foreground: oklch(0.23 0.04 265);
+  --primary: oklch(0.58 0.16 45); /* metin-güvenli koyu turuncu */
   --primary-foreground: oklch(1 0 0);
-  --secondary: oklch(0.965 0.008 268); /* very subtle indigo wash */
-  --secondary-foreground: oklch(0.18 0.02 266);
-  --muted: oklch(0.965 0.008 268);
-  --muted-foreground: oklch(0.46 0.02 266); /* AA on background */
-  --accent: oklch(0.95 0.04 280); /* soft violet wash for hover */
-  --accent-foreground: oklch(0.32 0.18 280); /* deep violet text on accent */
-  --destructive: oklch(0.58 0.24 25);
-  --border: oklch(0.92 0.01 266); /* barely-there */
-  --input: oklch(0.92 0.01 266);
-  --ring: oklch(0.48 0.21 271);
-  /* Chart palette — indigo lead, then warm + cool accents that stay
-   * legible side-by-side without clashing with the brand primary. */
-  --chart-1: oklch(0.48 0.21 271); /* primary indigo */
-  --chart-2: oklch(0.62 0.2 35); /* warm orange */
-  --chart-3: oklch(0.58 0.25 17); /* rose */
-  --chart-4: oklch(0.62 0.18 195); /* teal */
-  --chart-5: oklch(0.55 0.13 290); /* violet */
+  --secondary: oklch(0.962 0.006 260); /* subtle lacivert wash */
+  --secondary-foreground: oklch(0.23 0.04 265);
+  --muted: oklch(0.962 0.006 260);
+  --muted-foreground: oklch(0.45 0.025 262); /* AA on background */
+  --accent: oklch(0.955 0.025 60); /* yumuşak turuncu hover wash */
+  --accent-foreground: oklch(0.45 0.13 45); /* koyu turuncu metin */
+  /* Koyu kırmızı — primary turuncudan hem hue hem LÜMİNANS olarak
+   * ayrışır (0.50 vs 0.58): renk körlüğünde bile silme butonu
+   * normal butondan koyuluğuyla ayırt edilir. */
+  --destructive: oklch(0.5 0.21 25);
+  --border: oklch(0.92 0.008 260); /* barely-there */
+  --input: oklch(0.92 0.008 260);
+  --ring: oklch(0.62 0.165 45);
+  /* Chart palette — turuncu lider, lacivert ikinci; kalanı duygu
+   * renkleriyle çakışmayan soğuk/sıcak aksanlar. */
+  --chart-1: oklch(0.66 0.175 45); /* marka turuncusu */
+  --chart-2: oklch(0.38 0.07 265); /* lacivert */
+  --chart-3: oklch(0.62 0.18 195); /* teal */
+  --chart-4: oklch(0.58 0.25 17); /* rose */
+  --chart-5: oklch(0.55 0.1 290); /* sakin mor */
   --radius: 0.875rem; /* 14px base */
-  --sidebar: oklch(0.972 0.005 266); /* slightly off bg */
-  --sidebar-foreground: oklch(0.18 0.02 266);
-  --sidebar-primary: oklch(0.48 0.21 271);
-  --sidebar-primary-foreground: oklch(1 0 0);
-  --sidebar-accent: oklch(0.93 0.025 274); /* indigo-tinted hover */
-  --sidebar-accent-foreground: oklch(0.32 0.18 280);
-  --sidebar-border: oklch(0.92 0.01 266);
-  --sidebar-ring: oklch(0.48 0.21 271);
+  --sidebar: oklch(0.23 0.04 265); /* marka laciverti — koyu rail */
+  --sidebar-foreground: oklch(0.93 0.008 260); /* kırık beyaz */
+  --sidebar-primary: oklch(0.72 0.17 48); /* lacivert üstünde parlak turuncu */
+  --sidebar-primary-foreground: oklch(0.23 0.04 265);
+  --sidebar-accent: oklch(0.29 0.045 265); /* lacivert bir ton açık — hover */
+  --sidebar-accent-foreground: oklch(0.97 0.005 260);
+  --sidebar-border: oklch(1 0 0 / 10%);
+  --sidebar-ring: oklch(0.72 0.17 48);
 }
 
 /*
- * Dark theme — deep graphite with a hint of cool blue, indigo
- * brightened so the brand color stays legible without going
- * fluorescent.
+ * Dark theme — marka lacivertinin derin tonu zemin olur; turuncu
+ * parlatılır ki koyu üstünde canlı kalsın ama fosforlamasın.
  */
 .dark {
-  --background: oklch(0.14 0.012 268); /* deep graphite */
-  --foreground: oklch(0.97 0.005 264);
-  --card: oklch(0.18 0.014 268); /* one step lighter than bg */
-  --card-foreground: oklch(0.97 0.005 264);
-  --popover: oklch(0.18 0.014 268);
-  --popover-foreground: oklch(0.97 0.005 264);
-  --primary: oklch(0.74 0.16 273); /* indigo brightened for dark */
-  --primary-foreground: oklch(0.14 0.012 268);
-  --secondary: oklch(0.24 0.018 270);
-  --secondary-foreground: oklch(0.97 0.005 264);
-  --muted: oklch(0.24 0.018 270);
-  --muted-foreground: oklch(0.72 0.012 266);
-  --accent: oklch(0.27 0.04 280); /* deeper violet wash */
-  --accent-foreground: oklch(0.85 0.1 280);
+  --brand: oklch(0.7 0.17 48); /* koyu zeminde parlatılmış turuncu */
+  --navy: oklch(0.23 0.04 265);
+  --background: oklch(0.15 0.025 265); /* lacivert-siyah */
+  --foreground: oklch(0.96 0.005 260);
+  --card: oklch(0.19 0.03 265); /* one step lighter than bg */
+  --card-foreground: oklch(0.96 0.005 260);
+  --popover: oklch(0.19 0.03 265);
+  --popover-foreground: oklch(0.96 0.005 260);
+  --primary: oklch(0.7 0.17 48); /* parlak turuncu */
+  --primary-foreground: oklch(0.15 0.025 265); /* lacivert metin */
+  --secondary: oklch(0.24 0.035 265);
+  --secondary-foreground: oklch(0.96 0.005 260);
+  --muted: oklch(0.24 0.035 265);
+  --muted-foreground: oklch(0.72 0.015 262);
+  --accent: oklch(0.27 0.05 50); /* koyu turuncu wash */
+  --accent-foreground: oklch(0.86 0.1 55);
   --destructive: oklch(0.72 0.18 23);
   --border: oklch(1 0 0 / 8%);
   --input: oklch(1 0 0 / 12%);
-  --ring: oklch(0.74 0.16 273);
-  --chart-1: oklch(0.74 0.16 273);
-  --chart-2: oklch(0.78 0.18 65);
-  --chart-3: oklch(0.74 0.2 17);
-  --chart-4: oklch(0.7 0.16 195);
-  --chart-5: oklch(0.68 0.14 290);
-  --sidebar: oklch(0.17 0.014 268);
-  --sidebar-foreground: oklch(0.97 0.005 264);
-  --sidebar-primary: oklch(0.74 0.16 273);
-  --sidebar-primary-foreground: oklch(0.14 0.012 268);
-  --sidebar-accent: oklch(0.27 0.04 280);
-  --sidebar-accent-foreground: oklch(0.85 0.1 280);
+  --ring: oklch(0.7 0.17 48);
+  --chart-1: oklch(0.7 0.17 48); /* turuncu */
+  --chart-2: oklch(0.68 0.09 262); /* aydınlatılmış lacivert-mavi */
+  --chart-3: oklch(0.7 0.16 195);
+  --chart-4: oklch(0.74 0.2 17);
+  --chart-5: oklch(0.68 0.1 290);
+  --sidebar: oklch(0.17 0.03 265); /* zeminden bir tık koyu lacivert */
+  --sidebar-foreground: oklch(0.93 0.008 260);
+  --sidebar-primary: oklch(0.72 0.17 48);
+  --sidebar-primary-foreground: oklch(0.17 0.03 265);
+  --sidebar-accent: oklch(0.24 0.04 265);
+  --sidebar-accent-foreground: oklch(0.97 0.005 260);
   --sidebar-border: oklch(1 0 0 / 8%);
-  --sidebar-ring: oklch(0.74 0.16 273);
+  --sidebar-ring: oklch(0.72 0.17 48);
   /* Shadows in dark mode lean blacker so the elevation still reads
    * against the graphite background. */
   --shadow-soft:
@@ -189,8 +210,8 @@
     0 4px 8px -2px oklch(0 0 0 / 0.5),
     0 16px 40px -8px oklch(0 0 0 / 0.6);
   --shadow-glow:
-    0 0 0 1px oklch(0.74 0.16 273 / 0.32),
-    0 6px 20px -4px oklch(0.74 0.16 273 / 0.45);
+    0 0 0 1px oklch(0.7 0.17 48 / 0.32),
+    0 6px 20px -4px oklch(0.7 0.17 48 / 0.45);
 }
 
 @layer base {
@@ -204,14 +225,14 @@
      * with a "looked-at" surface. Dark mode keeps a flat graphite. */
     background-image: radial-gradient(
       circle at 0% 0%,
-      oklch(0.48 0.21 271 / 0.04) 0%,
+      oklch(0.66 0.175 45 / 0.045) 0%,
       transparent 50%
     );
   }
   .dark body {
     background-image: radial-gradient(
       circle at 100% 0%,
-      oklch(0.74 0.16 273 / 0.08) 0%,
+      oklch(0.7 0.17 48 / 0.07) 0%,
       transparent 50%
     );
   }
@@ -269,8 +290,8 @@
   .gradient-text {
     background: linear-gradient(
       135deg,
-      oklch(0.48 0.21 271) 0%,
-      oklch(0.55 0.22 290) 100%
+      oklch(0.56 0.155 45) 0%,
+      oklch(0.7 0.19 55) 100%
     );
     -webkit-background-clip: text;
     background-clip: text;
@@ -279,8 +300,8 @@
   .dark .gradient-text {
     background: linear-gradient(
       135deg,
-      oklch(0.74 0.16 273) 0%,
-      oklch(0.78 0.18 290) 100%
+      oklch(0.7 0.17 48) 0%,
+      oklch(0.8 0.16 60) 100%
     );
     -webkit-background-clip: text;
     background-clip: text;
@@ -295,7 +316,7 @@
     -webkit-backdrop-filter: blur(16px) saturate(140%);
   }
   .dark .glass {
-    background: oklch(0.18 0.014 268 / 0.7);
+    background: oklch(0.19 0.03 265 / 0.7);
   }
 }
 

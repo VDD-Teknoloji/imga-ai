@@ -324,7 +324,7 @@ export function BatchProgressBar({
                 </div>
               ) : (
                 <div
-                  className="h-3 rounded-full bg-gradient-to-r from-primary to-[oklch(0.55_0.22_290)] transition-[width] duration-500 [transition-timing-function:var(--motion-ease)]"
+                  className="h-3 rounded-full bg-gradient-to-r from-primary to-brand transition-[width] duration-500 [transition-timing-function:var(--motion-ease)]"
                   style={{ width: `${pct}%` }}
                   aria-valuenow={Math.round(pct)}
                   aria-valuemin={0}

@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg id="katman_1" data-name="katman 1" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 475.28 152.17">
+  <defs>
+    <style>
+      .cls-1, .cls-2 {
+        fill: #141c32;
+      }
+
+      .cls-2 {
+        font-family: Inter-Regular, Inter;
+        font-size: 121.17px;
+        font-variation-settings: 'opsz' 14, 'wght' 400;
+      }
+
+      .cls-3 {
+        fill: #e26622;
+      }
+    </style>
+  </defs>
+  <polygon class="cls-1" points="0 0 0 62.16 32.94 62.16 32.94 34 60.87 34 60.87 0 0 0"/>
+  <polygon class="cls-1" points="103.08 75.02 103.08 104.13 75.3 104.13 75.3 138.52 138.8 138.52 138.8 75.02 103.08 75.02"/>
+  <polygon class="cls-1" points="32.94 75.02 3.84 75.02 3.84 131.92 62.05 131.92 62.05 104.13 32.94 104.13 32.94 75.02"/>
+  <polygon class="cls-1" points="75.29 6.21 75.29 34 104.4 34 104.4 63.11 133.51 63.11 133.51 6.21 75.29 6.21"/>
+  <rect class="cls-3" x="56.77" y="57.82" width="22.49" height="22.49"/>
+  <text class="cls-2" transform="translate(186.41 113.12) scale(1.04 1)"><tspan x="0" y="0">imga</tspan></text>
+  <rect class="cls-3" x="193.82" y="20.75" width="15.84" height="15.84"/>
+</svg>

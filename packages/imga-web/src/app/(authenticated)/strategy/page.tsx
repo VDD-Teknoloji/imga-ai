@@ -850,7 +850,7 @@ function HistoryTab({
                   className={
                     r.report_type === "swot"
                       ? "border-emerald-300 bg-emerald-50 text-emerald-800"
-                      : "border-indigo-300 bg-indigo-50 text-indigo-800"
+                      : "border-primary/30 bg-accent text-accent-foreground"
                   }
                 >
                   {r.report_type === "swot" ? "SWOT" : "OKR"}

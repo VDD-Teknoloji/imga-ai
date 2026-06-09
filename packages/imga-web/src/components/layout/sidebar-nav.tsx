@@ -128,7 +128,7 @@ function SidebarSection({
           <React.Fragment key={item.href}>
             {showSubgroupHeader ? (
               <p
-                className="text-muted-foreground/80 mt-2 mb-0.5 px-3 text-[10px] font-semibold tracking-[0.10em] uppercase"
+                className="text-sidebar-foreground/55 mt-2 mb-0.5 px-3 text-[10px] font-semibold tracking-[0.10em] uppercase"
                 aria-label={`${item.subgroup} alt grubu`}
               >
                 {item.subgroup}
@@ -177,10 +177,9 @@ function SidebarNavLink({
   // Tooltip primitive is button-only and would emit the wrong ARIA
   // for an anchor; the title attribute is simple and accessible.
   //
-  // Sprint 9.6.1 — active item: indigo-tinted gradient pill with a
-  // soft brand-coloured ring + glow shadow. The hover state shares
-  // the same indigo wash so the affordance feels continuous (hover
-  // is the lighter precursor to active).
+  // Sprint 10.2 — sidebar artık marka laciverti. Aktif item:
+  // bir ton açık lacivert pill + parlak turuncu metin + sol kenarda
+  // TURUNCU KARE — logodaki merkez karenin motifi ("sinyal").
   return (
     <Link
       href={item.href}
@@ -191,9 +190,9 @@ function SidebarNavLink({
       className={cn(
         "relative flex h-10 items-center gap-3 rounded-xl px-3 text-sm font-medium",
         "transition-[background,color,box-shadow] duration-[var(--motion-duration)] [transition-timing-function:var(--motion-ease)]",
-        "text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
+        "text-sidebar-foreground/85 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
         isActive &&
-          "bg-gradient-to-r from-primary/15 to-primary/5 text-primary ring-1 ring-primary/15 dark:from-primary/20 dark:to-primary/5 dark:text-primary dark:ring-primary/25",
+          "bg-sidebar-accent text-sidebar-primary ring-1 ring-sidebar-primary/25",
         collapsed && "justify-center px-0",
         // Sprint 9.9 — Madde 3: subgroup item ise sol tarafa ek
         // padding + ince border-l ile alt-grup işareti. Active
@@ -202,17 +201,17 @@ function SidebarNavLink({
         indented && !collapsed && "ml-4 border-l border-sidebar-border/60 pl-3 rounded-l-none",
       )}
     >
-      {/* Active marker — a thin gradient bar on the left edge. Gives
-          the active item a magazine-style indicator without relying
-          on background alone (helps when sidebar bg is busy). */}
+      {/* Active marker — logodaki merkez turuncu kare. Arka plan
+          tek başına yetmediğinde (yoğun lacivert rail) aktif öğeyi
+          marka motifiyle işaretler. */}
       {isActive && !collapsed ? (
         <span
           aria-hidden
-          className="from-primary to-[oklch(0.55_0.22_290)] dark:to-[oklch(0.78_0.18_290)] absolute left-1.5 top-1/2 h-5 w-1 -translate-y-1/2 rounded-full bg-gradient-to-b"
+          className="bg-sidebar-primary absolute left-1 top-1/2 size-1.5 -translate-y-1/2 rounded-[2px]"
         />
       ) : null}
       <Icon
-        className={cn("size-4 shrink-0", isActive && "text-primary")}
+        className={cn("size-4 shrink-0", isActive && "text-sidebar-primary")}
         aria-hidden
       />
       {collapsed ? null : <span className="truncate">{item.label}</span>}

@@ -29,10 +29,10 @@ interface HeatmapProps {
 }
 
 const SCALES: Record<string, [string, string]> = {
-  blue: ["#dbeafe", "#1e3a8a"],
+  blue: ["#e8ebf3", "#141c32"],
   green: ["#dcfce7", "#14532d"],
   red: ["#fee2e2", "#7f1d1d"],
-  diverging: ["#fee2e2", "#1e3a8a"],
+  diverging: ["#fee2e2", "#141c32"],
 };
 
 const CELL_W = 64;
