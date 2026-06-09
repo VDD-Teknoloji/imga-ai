@@ -1,49 +1,54 @@
 "use client";
 
-// Sprint 9.6 redesign — C-level landing page.
+// Sprint 10.0 — C-level ana sayfa, ikinci nesil.
 //
-// Tear-down of the Sprint 8.3.5.6 7-card grid + donut + bar +
-// 30-day trend + mini heatmap stack. C-level operators don't want
-// a wall of charts; they want one big signal at the top + the 3-4
-// actions they actually take.
+// Tasarım ilkesi (ürün sahibinin sözleriyle): "her şey çok net,
+// çok büyük, çok anlaşılır ve çok basit olmalı. Basit yapmak
+// zordur — biz zoru başarıp bu işi çok basit hale getireceğiz."
 //
-// New shape, top to bottom:
+// Bilgi mimarisi, yukarıdan aşağı:
 //
-//   1. Greeting + tenant name (minimal header).
-//   2. HealthHero — one giant NPS-band card + plain Turkish
-//      narrative + data-coverage chips.
-//   3. QuickActions — 4 prominent tiles (Yeni yükleme, Brifing
-//      üret, Aksiyonlar, Strateji raporu). Same 4 actions also
-//      live in the universal FAB so they're reachable from every
-//      route — multi-entry pattern, like the iPhone camera on
-//      lock screen + control center + apps.
-//   4. NpsMonthlyTrend + AttentionList side by side — trend gives
-//      direction, AttentionList answers "what needs fixing right
-//      now" (replaces SentimentDonut + CategoryChart raw-count
-//      visuals).
-//   5. KpiGoalCards — per-tenant goal progress (unchanged).
-//   6. RecentTicketsTable — last few tickets (kept).
+//   1. Selamlama (minimal).
+//   2. ExecutiveHero — "Müşterileriniz ne söylüyor?" Üç dev sayı
+//      (Pozitif/Nötr/Negatif) + oran barı + tek cümle Türkçe yorum.
+//   3. AiInsightStrip — son yapay zeka yönetici özeti (headline +
+//      3 kritik içgörü). Yoksa 1-dakika CTA.
+//   4. VoiceOfCustomer — gerçek müşteri alıntıları. "Veri değil
+//      bilgi": yönetici rakam yerine müşterisinin cümlesini okur.
+//   5. SwotSnapshotCard | OkrSnapshotCard — son stratejik durum.
+//   6. NpsMonthlyTrend + QuickActions — yön + hızlı girişler.
+//   7. ClassificationQualityChip — kalite sinyali (kendini gizler).
 //
-// Dropped: HeadlineMetricsCards 6-card grid (rolled into hero),
-// SentimentDonut, CategoryChart, SentimentTrend (30-day),
-// CategorySentimentMiniHeatmap. These live on /insights for the
-// analyst persona; the dashboard doesn't need them.
+// Tüm üst veri TEK round-trip'ten gelir (useExecutiveOverview) —
+// eski sayfa 6+ ayrı HTTP çağrısı yapıyordu.
+//
+// Sayfadan çıkarılanlar: HealthHero (ExecutiveHero'ya devretti),
+// AttentionList (hero cümlesine katlandı), KpiGoalCards +
+// RecentTicketsTable (operasyonel — /settings/kpi-goals ve
+// /tickets bir tık uzakta; C-level ilk ekranında yer kaplamasın).
 
-import { AttentionList } from "@/components/dashboard/attention-list";
+import { AiInsightStrip } from "@/components/dashboard/ai-insight-strip";
 import { ClassificationQualityChip } from "@/components/dashboard/classification-quality-chip";
-import { HealthHero } from "@/components/dashboard/health-hero";
-import { KpiGoalCards } from "@/components/dashboard/KpiGoalCards";
+import { ExecutiveHero } from "@/components/dashboard/executive-hero";
 import { NpsMonthlyTrend } from "@/components/dashboard/nps-monthly-trend";
 import { QuickActions } from "@/components/dashboard/quick-actions";
-import { RecentTicketsTable } from "@/components/dashboard/recent-tickets";
+import {
+  OkrSnapshotCard,
+  SwotSnapshotCard,
+} from "@/components/dashboard/strategy-snapshots";
+import { VoiceOfCustomer } from "@/components/dashboard/voice-of-customer";
+import { useExecutiveOverview } from "@/hooks/use-executive-overview";
 import { useAuthStore } from "@/lib/auth-store";
 
 export default function DashboardPage() {
   const user = useAuthStore((s) => s.user);
   const activeContext = useAuthStore((s) => s.activeContext);
+  const overview = useExecutiveOverview();
 
   const tenantName = activeContext?.tenant_name ?? "Aktif tenant yok";
   const firstName = user?.full_name?.split(" ")[0] ?? "";
+  const isLoading = overview.isLoading;
+  const data = overview.data;
 
   return (
     <main className="mx-auto w-full max-w-6xl space-y-6 px-4 py-6 md:p-8">
@@ -54,25 +59,22 @@ export default function DashboardPage() {
         <p className="text-muted-foreground text-sm">{tenantName}</p>
       </header>
 
-      <HealthHero />
+      <ExecutiveHero overview={data} isLoading={isLoading} />
 
-      {/* Sprint 9.9 — Madde 1 (UML feedback): operatöre belirsiz oran
-          uyarısı. Iyi durumdaysa veya hiç veri yoksa kendini
-          gizliyor, dashboard'a yer kaplamıyor. */}
-      <ClassificationQualityChip />
+      <AiInsightStrip briefing={data?.latest_briefing} isLoading={isLoading} />
+
+      <VoiceOfCustomer quotes={data?.voice_of_customer} isLoading={isLoading} />
+
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <SwotSnapshotCard swot={data?.latest_swot} isLoading={isLoading} />
+        <OkrSnapshotCard okr={data?.latest_okr} isLoading={isLoading} />
+      </div>
 
       <QuickActions />
 
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-        <div className="lg:col-span-2">
-          <NpsMonthlyTrend />
-        </div>
-        <AttentionList />
-      </div>
+      <NpsMonthlyTrend />
 
-      <KpiGoalCards />
-
-      <RecentTicketsTable />
+      <ClassificationQualityChip />
     </main>
   );
 }

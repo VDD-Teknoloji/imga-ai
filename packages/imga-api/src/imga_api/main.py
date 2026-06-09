@@ -50,6 +50,7 @@ from imga_api.routes import (
     tenant_decision_audit as tenant_decision_audit_routes,
 )
 from imga_api.routes import tenant_directory as tenant_directory_routes
+from imga_api.routes import tenant_executive as tenant_executive_routes
 from imga_api.routes import (
     tenant_executive_briefings as tenant_executive_briefings_routes,
 )
@@ -340,6 +341,8 @@ app.include_router(tenant_batch_progress_routes.router)
 app.include_router(tenant_reviews_routes.router)
 app.include_router(tenant_reports_routes.router)
 app.include_router(tenant_analytics_routes.router)
+# Sprint 10.0 — C-level dashboard tek-bakış aggregate'i.
+app.include_router(tenant_executive_routes.router)
 app.include_router(tenant_directory_routes.router)
 app.include_router(tenant_taxonomies_routes.router)
 app.include_router(tenant_sla_rules_routes.router)

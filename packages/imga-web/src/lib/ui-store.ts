@@ -9,8 +9,15 @@ import { create } from "zustand";
 const SIDEBAR_COLLAPSED_KEY = "imga_sidebar_collapsed";
 
 function readInitialCollapsed(): boolean {
-  if (typeof window === "undefined") return false;
-  return window.localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === "1";
+  // Sprint 10.0 — default KAPALI. C-level redesign'da dashboard
+  // tam genişlikte açılır; sidebar icon-dock olarak başlar.
+  // Kullanıcı genişletirse tercih localStorage'da yaşamaya devam
+  // eder ("0" yazılır ve sonraki ziyarette açık gelir). SSR'da da
+  // kapalı varsayıyoruz ki hydration sırasında genişten dara
+  // çökme (layout shift) olmasın.
+  if (typeof window === "undefined") return true;
+  const stored = window.localStorage.getItem(SIDEBAR_COLLAPSED_KEY);
+  return stored === null ? true : stored === "1";
 }
 
 function persistCollapsed(value: boolean): void {

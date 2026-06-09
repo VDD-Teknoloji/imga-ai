@@ -313,6 +313,18 @@
   }
 }
 
+/* Sprint 10.0 — batch upload "ısınma" şeridi. İlk chunk commit'i
+ * gelmeden progress bar donmuş %0 yerine soldan sağa kayan bir
+ * indigo şerit gösterir ("çalışıyor" sinyali). */
+@keyframes progress-slide {
+  0% {
+    left: -33%;
+  }
+  100% {
+    left: 100%;
+  }
+}
+
 @layer utilities {
   .rise-in {
     animation: rise-in var(--motion-duration) var(--motion-ease) both;

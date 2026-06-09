@@ -337,6 +337,20 @@ async def _run_job(
         auto_create = job.auto_create_tickets
         triggered_by_user_id = job.triggered_by_user_id
         chunk_size = context.settings.chunk_size
+        # Sprint 10.0 — adaptive chunk: progress yazımı her chunk
+        # SONUNDA bir kez yapılır, dolayısıyla chunk_size aynı
+        # zamanda kullanıcının gördüğü güncelleme sıklığıdır.
+        # Configured default 200; 100 satırlık bir dosya tek
+        # chunk'a sığar ve UI işlem bitene kadar 0'da donar (UML
+        # test feedback'i). total_rows upload route'unda count_rows
+        # ile dolduruluyor ve job row'unda hazır — küçük dosyada
+        # chunk'ı küçültüp en az ~10 progress güncellemesi
+        # garantiliyoruz. Büyük dosyada (total/10 > configured)
+        # configured değer kazanır, davranış değişmez.
+        total_rows_known = int(job.total_rows or 0)
+        if total_rows_known > 0:
+            target_chunk = max(10, -(-total_rows_known // 10))  # ceil(total/10)
+            chunk_size = max(1, min(chunk_size, target_chunk))
         # Sprint 9.0 — resume support. last_checkpoint_row > 0 means a
         # previous run made it through that row before failing /
         # being cancelled; the operator hit /retry to pick up here.

@@ -191,6 +191,7 @@ services:
           tests/test_okr_audit_path.py \
           tests/test_trial_analyze.py \
           tests/test_batch_template.py \
+          tests/test_executive_overview.py \
           tests-core/test_key_rotation.py \
           tests-core/test_metrics_pure_formulas.py \
           tests-core/test_gemini_swot_okr.py \

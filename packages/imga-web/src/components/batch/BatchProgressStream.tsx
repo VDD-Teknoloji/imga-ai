@@ -247,10 +247,27 @@ export function BatchProgressStream({
   return <>{children ? children(snapshot, error) : null}</>;
 }
 
+/** Sprint 10.0 — yüzdeye göre Türkçe aşama etiketi. Bar henüz
+ *  ilerlemiyorken bile kullanıcı "ne oluyor"u okur; işlem hiçbir
+ *  anda sessiz görünmez (UML feedback: 100 satırlık dosyada işlem
+ *  bitene kadar ekranda bir şey olmuyordu). */
+function stageLabel(pct: number, processed: number): string {
+  if (processed === 0) return "Yapay zeka yorumlarınızı okumaya başladı…";
+  if (pct < 25) return "Duygu analizi yapılıyor…";
+  if (pct < 50) return "Kategoriler belirleniyor…";
+  if (pct < 75) return "Sonuçlar kaydediliyor…";
+  if (pct < 100) return "Son kontroller yapılıyor…";
+  return "Tamamlandı";
+}
+
 /**
- * Default progress renderer used by /analyze/upload. Shows a bar +
- * processed/total + ETA. Caller can build their own UI by passing
- * a ``children`` prop to ``BatchProgressStream`` directly instead.
+ * Default progress renderer used by /analyze/upload.
+ *
+ * Sprint 10.0 — yoğun geri bildirim: büyük yüzde, aşama etiketi,
+ * canlı başarı/hata sayaçları ve processed===0 iken kayan şerit
+ * (indeterminate shimmer) — backend adaptive chunk ile birlikte
+ * (worker artık küçük dosyada ~10 kez progress yazar) bar hiçbir
+ * aşamada donmuş görünmez.
  */
 export function BatchProgressBar({
   jobId,
@@ -268,39 +285,75 @@ export function BatchProgressBar({
         }
         if (!snapshot) {
           return (
-            <div className="text-sm text-muted-foreground">
-              Canlı ilerleme bağlantısı kuruluyor…
+            <div className="space-y-2">
+              <div className="h-3 w-full overflow-hidden rounded-full bg-zinc-200 dark:bg-zinc-800">
+                <div className="h-3 w-1/3 animate-pulse rounded-full bg-primary/40" />
+              </div>
+              <p className="text-sm text-muted-foreground">
+                Canlı bağlantı kuruluyor…
+              </p>
             </div>
           );
         }
         const pct = Math.max(0, Math.min(100, snapshot.percent));
+        const warmingUp = snapshot.processed === 0 && pct < 100;
         const eta =
           snapshot.eta_seconds != null
-            ? `Kalan ~${Math.max(1, Math.round(snapshot.eta_seconds / 60))} dk`
+            ? snapshot.eta_seconds < 90
+              ? `~${Math.max(5, Math.round(snapshot.eta_seconds / 5) * 5)} sn kaldı`
+              : `~${Math.round(snapshot.eta_seconds / 60)} dk kaldı`
             : null;
         return (
-          <div className="space-y-2">
-            <div className="h-2 w-full rounded-full bg-zinc-200 dark:bg-zinc-800">
-              <div
-                className="h-2 rounded-full bg-blue-600 transition-[width] duration-300"
-                style={{ width: `${pct}%` }}
-                aria-valuenow={Math.round(pct)}
-                aria-valuemin={0}
-                aria-valuemax={100}
-                role="progressbar"
-              />
+          <div className="space-y-3">
+            {/* Büyük yüzde + aşama — net, büyük, anlaşılır. */}
+            <div className="flex items-baseline justify-between gap-3">
+              <p className="text-2xl font-semibold tabular-nums tracking-tight">
+                %{pct.toFixed(0)}
+              </p>
+              <p className="text-muted-foreground text-sm">
+                {stageLabel(pct, snapshot.processed)}
+              </p>
             </div>
-            <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-muted-foreground">
-              <span>
+
+            <div className="h-3 w-full overflow-hidden rounded-full bg-zinc-200 dark:bg-zinc-800">
+              {warmingUp ? (
+                // İlk chunk commit'i gelmeden: kayan şerit. Donmuş
+                // %0 bar yerine "çalışıyor" hissi.
+                <div className="relative h-3 w-full">
+                  <div className="absolute inset-y-0 w-1/3 animate-[progress-slide_1.2s_ease-in-out_infinite] rounded-full bg-gradient-to-r from-primary/30 via-primary to-primary/30" />
+                </div>
+              ) : (
+                <div
+                  className="h-3 rounded-full bg-gradient-to-r from-primary to-[oklch(0.55_0.22_290)] transition-[width] duration-500 [transition-timing-function:var(--motion-ease)]"
+                  style={{ width: `${pct}%` }}
+                  aria-valuenow={Math.round(pct)}
+                  aria-valuemin={0}
+                  aria-valuemax={100}
+                  role="progressbar"
+                />
+              )}
+            </div>
+
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted-foreground">
+              <span className="tabular-nums">
                 {snapshot.processed.toLocaleString("tr-TR")} /{" "}
                 {snapshot.total.toLocaleString("tr-TR")} yorum
               </span>
-              <span>%{pct.toFixed(1)}</span>
+              {snapshot.succeeded > 0 && (
+                <span className="text-emerald-700 dark:text-emerald-400 tabular-nums">
+                  ✓ {snapshot.succeeded.toLocaleString("tr-TR")} başarılı
+                </span>
+              )}
+              {snapshot.failed > 0 && (
+                <span className="text-red-600 dark:text-red-400 tabular-nums">
+                  ✗ {snapshot.failed.toLocaleString("tr-TR")} hatalı
+                </span>
+              )}
               {eta && <span>{eta}</span>}
               {snapshot.tickets_created > 0 && (
-                <span>
-                  {snapshot.tickets_created.toLocaleString("tr-TR")}{" "}
-                  bilet oluşturuldu
+                <span className="tabular-nums">
+                  {snapshot.tickets_created.toLocaleString("tr-TR")} talep
+                  oluşturuldu
                 </span>
               )}
             </div>
