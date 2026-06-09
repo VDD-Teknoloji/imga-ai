@@ -93,7 +93,7 @@ export function AttentionList() {
           {rows.map((r) => (
             <li key={r.code}>
               <Link
-                href={`/reviews?primary_categories=${encodeURIComponent(r.code)}&sentiment_labels=NEGATİF`}
+                href={`/reviews?primary_categories=${encodeURIComponent(r.code)}&sentiment_labels=NEGATIF`}
                 className="hover:bg-accent/60 group flex items-center gap-3 rounded-xl px-2 py-2.5 transition-colors duration-[var(--motion-duration)]"
               >
                 <span

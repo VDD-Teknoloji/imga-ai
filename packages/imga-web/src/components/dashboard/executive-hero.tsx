@@ -28,6 +28,7 @@ import {
 import Link from "next/link";
 
 import { Skeleton } from "@/components/ui/skeleton";
+import { useCountUp, useMounted } from "@/hooks/use-count-up";
 import type {
   ExecutiveOverview,
   ExecutiveSentimentTrend,
@@ -216,7 +217,7 @@ export function ExecutiveHero({ overview, isLoading }: Props) {
               href={
                 visual.band === "healthy"
                   ? "/reviews"
-                  : "/reviews?sentiment_labels=NEGATİF"
+                  : "/reviews?sentiment_labels=NEGATIF"
               }
               className="bg-brand text-navy inline-flex items-center gap-2 rounded-xl px-5 py-2.5 text-sm font-bold transition-transform hover:scale-[1.03]"
             >
@@ -278,8 +279,12 @@ function HeroGlow({ color }: { color: string }) {
   );
 }
 
-/** SVG radyal gösterge — Memnuniyet Skoru. CSS transition ile
- *  stroke-dashoffset yumuşak açılır (mount sonrası tek geçiş). */
+/** SVG radyal gösterge — Memnuniyet Skoru.
+ *
+ *  Sprint 10.3 — açılış animasyonu: gösterge SIFIRDAN dolar
+ *  (useMounted ilk frame'de %0 çizer, sonraki frame hedefe geçer;
+ *  CSS transition dolmayı 900ms'de oynatır) ve ortadaki yüzde
+ *  sayarak yükselir (useCountUp, reduced-motion'a saygılı). */
 function RadialGauge({
   pct,
   stroke,
@@ -292,7 +297,10 @@ function RadialGauge({
   const R = 84;
   const C = 2 * Math.PI * R;
   const clamped = Math.max(0, Math.min(100, pct));
-  const offset = C * (1 - clamped / 100);
+  const mounted = useMounted();
+  const shown = mounted ? clamped : 0;
+  const offset = C * (1 - shown / 100);
+  const counted = useCountUp(clamped, 900);
   return (
     <div
       className="relative size-44 shrink-0 md:size-[216px]"
@@ -319,7 +327,7 @@ function RadialGauge({
           className="text-4xl md:text-6xl font-semibold tabular-nums tracking-tight text-white"
           style={{ letterSpacing: "-0.03em" }}
         >
-          %{clamped}
+          %{Math.round(counted)}
         </span>
         <span className="mt-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-zinc-300">
           Memnuniyet
@@ -338,12 +346,14 @@ function CountChip({
   label: string;
   value: number;
 }) {
+  // Açılışta sayılar 0'dan hedefe sayar — gauge ile senkron.
+  const counted = useCountUp(value, 900);
   return (
     <span className="inline-flex items-center gap-1.5 rounded-full bg-white/8 px-3 py-1.5 text-xs font-medium text-zinc-200 ring-1 ring-white/15">
       <span className={`size-2 rounded-full ${dot}`} aria-hidden />
       {label}{" "}
       <strong className="text-white tabular-nums">
-        {value.toLocaleString("tr-TR")}
+        {Math.round(counted).toLocaleString("tr-TR")}
       </strong>
     </span>
   );

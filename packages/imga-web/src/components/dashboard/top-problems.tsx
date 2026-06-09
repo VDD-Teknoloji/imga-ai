@@ -23,6 +23,7 @@ import { ArrowRight, Sparkles, TriangleAlert } from "lucide-react";
 import Link from "next/link";
 
 import { Skeleton } from "@/components/ui/skeleton";
+import { useMounted } from "@/hooks/use-count-up";
 import type { ExecutiveTopProblem } from "@/hooks/use-executive-overview";
 
 interface Props {
@@ -31,6 +32,10 @@ interface Props {
 }
 
 export function TopProblems({ problems, isLoading }: Props) {
+  // Pay barları açılışta sıfırdan dolar (width transition'ı mount
+  // sonrası hedefe geçince oynar). Hook, early return'lardan ÖNCE.
+  const mounted = useMounted();
+
   if (isLoading) {
     return (
       <section className="space-y-3">
@@ -72,7 +77,7 @@ export function TopProblems({ problems, isLoading }: Props) {
         {problems.map((p, idx) => (
           <Link
             key={p.code}
-            href={`/reviews?primary_categories=${encodeURIComponent(p.code)}&sentiment_labels=NEGATİF`}
+            href={`/reviews?primary_categories=${encodeURIComponent(p.code)}&sentiment_labels=NEGATIF`}
             style={{ animationDelay: `${idx * 70}ms` }}
             className="rise-in hover-lift shadow-soft group bg-card ring-foreground/5 flex items-start gap-4 rounded-2xl p-4 md:p-5 ring-1"
           >
@@ -107,13 +112,13 @@ export function TopProblems({ problems, isLoading }: Props) {
               <div className="mt-2.5 h-2 w-full overflow-hidden rounded-full bg-red-500/10">
                 <div
                   className="h-2 rounded-full bg-gradient-to-r from-red-500 to-red-400 transition-[width] duration-700 [transition-timing-function:var(--motion-ease)]"
-                  style={{ width: `${(p.share_pct / maxShare) * 100}%` }}
+                  style={{ width: mounted ? `${(p.share_pct / maxShare) * 100}%` : "0%" }}
                 />
               </div>
 
               {p.sample_text && (
                 <p
-                  className="text-muted-foreground mt-2.5 line-clamp-2 text-sm italic leading-relaxed"
+                  className="text-muted-foreground mt-2.5 line-clamp-2 text-sm italic leading-relaxed [overflow-wrap:anywhere]"
                   title={p.sample_text}
                 >
                   &ldquo;{p.sample_text}&rdquo;

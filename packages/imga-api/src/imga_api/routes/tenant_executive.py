@@ -28,6 +28,7 @@ tek çağrı hem hızlı hem atomik bir görüntü verir.
 from __future__ import annotations
 
 import logging
+import re
 from datetime import UTC, datetime, timedelta
 from typing import Annotated, Any
 from uuid import UUID
@@ -63,6 +64,23 @@ _AnyMember = Depends(require_role(
 _QUOTE_MIN_CHARS = 40
 # Alıntı metni bu uzunlukta kırpılır (kart taşmasın).
 _QUOTE_MAX_CHARS = 280
+
+# Gerçek müşteri verisinde (örn. LCW export'u) yorum metnine gömülü
+# ham URL'ler ve dosya adları var — yönetici kartında URL gösterilmez
+# ve uzun kesintisiz token'lar kart taşmasına yol açar (Sprint 10.3
+# ekran görüntüsü kanıtı). Alıntı metni sunulmadan önce temizlenir.
+_URL_RE = re.compile(r"https?://\S+|www\.\S+", re.IGNORECASE)
+_WS_RE = re.compile(r"\s+")
+
+
+def _clean_quote(text: str) -> str:
+    """Alıntıyı yönetici ekranı için arındırır: URL'leri söker,
+    boşlukları normalize eder, sarmalayan tırnakları soyar ve
+    _QUOTE_MAX_CHARS'a kırpar."""
+    cleaned = _URL_RE.sub("", text)
+    cleaned = _WS_RE.sub(" ", cleaned).strip()
+    cleaned = cleaned.strip("\"'«»“”‘’ ").strip()
+    return cleaned[:_QUOTE_MAX_CHARS]
 
 
 # --- response models ----------------------------------------------------
@@ -277,7 +295,9 @@ async def _top_problems(
 
     problems: list[TopProblem] = []
     for code, label_tr, count in rows:
-        sample = (
+        # Birkaç aday çek; URL temizliği sonrası kısalan/boşalan
+        # metinleri atla, ilk hâlâ-anlamlı adayı kullan.
+        sample_rows = (
             await session.execute(
                 select(Review.text)
                 .where(Review.tenant_id == tenant_id)
@@ -286,9 +306,15 @@ async def _top_problems(
                 .where(Review.primary_category == code)
                 .where(func.length(Review.text) >= _QUOTE_MIN_CHARS)
                 .order_by(Review.sentiment_score.asc())
-                .limit(1)
+                .limit(5)
             )
-        ).scalar_one_or_none()
+        ).scalars().all()
+        sample_text: str | None = None
+        for raw in sample_rows:
+            cleaned = _clean_quote(raw)
+            if len(cleaned) >= _QUOTE_MIN_CHARS:
+                sample_text = cleaned
+                break
         share = (
             round((int(count) / total_negative) * 100, 1)
             if total_negative > 0
@@ -300,9 +326,7 @@ async def _top_problems(
                 label=label_tr or code,
                 count=int(count),
                 share_pct=share,
-                sample_text=(
-                    sample.strip()[:_QUOTE_MAX_CHARS] if sample else None
-                ),
+                sample_text=sample_text,
             )
         )
     return problems
@@ -347,22 +371,30 @@ async def _voice_of_customer(
                 .where(Review.tenant_id == tenant_id)
                 .where(Review.deleted_at.is_(None))
                 .where(Review.sentiment_label == label)
+                # 'belirsiz' alıntı kartında kategori chip'i olarak
+                # görünür — sınıflandırılamayan yorum yönetici
+                # vitrinine çıkmaz (Ana Sorunlar ile aynı ilke).
+                .where(Review.primary_category != "belirsiz")
                 .where(func.length(Review.text) >= _QUOTE_MIN_CHARS)
                 .order_by(order_col, Review.analyzed_at.desc())
-                .limit(5)
+                .limit(10)
             )
         ).all()
         picked: list[CustomerQuote] = []
         seen_texts: set[str] = set()
         for rid, text, slabel, category, analyzed_at in rows:
-            normalized = text.strip()[:80].lower()
+            cleaned = _clean_quote(text)
+            # URL söküldükten sonra cılızlaşan metin vitrine çıkmaz.
+            if len(cleaned) < _QUOTE_MIN_CHARS:
+                continue
+            normalized = cleaned[:80].lower()
             if normalized in seen_texts:
                 continue
             seen_texts.add(normalized)
             picked.append(
                 CustomerQuote(
                     id=rid,
-                    text=text.strip()[:_QUOTE_MAX_CHARS],
+                    text=cleaned,
                     sentiment_label=slabel,
                     category_code=category,
                     category_label=label_map.get(category, category),

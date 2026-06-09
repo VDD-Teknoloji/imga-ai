@@ -918,7 +918,7 @@ function NpsTab({ dateFrom, dateTo }: { dateFrom: string; dateTo: string }) {
                   <Line
                     type="monotone"
                     dataKey="score"
-                    stroke="#2563eb"
+                    stroke="var(--chart-1)"
                     strokeWidth={2.5}
                     dot={{ r: 3 }}
                     connectNulls={false}

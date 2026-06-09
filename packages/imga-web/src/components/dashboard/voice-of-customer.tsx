@@ -80,7 +80,7 @@ export function VoiceOfCustomer({ quotes, isLoading }: Props) {
               className="text-muted-foreground/30 size-6 shrink-0"
               aria-hidden
             />
-            <p className="mt-2 flex-1 text-sm md:text-base leading-relaxed text-foreground/90">
+            <p className="mt-2 flex-1 text-sm md:text-base leading-relaxed text-foreground/90 [overflow-wrap:anywhere]">
               &ldquo;{q.text}&rdquo;
             </p>
             <div className="mt-4 flex flex-wrap items-center gap-2 text-xs">

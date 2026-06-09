@@ -91,11 +91,11 @@
   /* Gölgeler lacivert mürekkeple tonlanır — gri yerine markanın
    * yapı rengiyle gölgelenen kartlar zemine "ait" görünür. */
   --shadow-soft:
-    0 1px 2px -1px oklch(0.23 0.04 265 / 0.05),
-    0 2px 8px -2px oklch(0.23 0.04 265 / 0.07);
+    0 1px 2px -1px oklch(0.23 0.04 265 / 0.06),
+    0 2px 10px -2px oklch(0.23 0.04 265 / 0.09);
   --shadow-elevated:
-    0 2px 4px -1px oklch(0.23 0.04 265 / 0.07),
-    0 8px 24px -6px oklch(0.23 0.04 265 / 0.14);
+    0 2px 4px -1px oklch(0.23 0.04 265 / 0.08),
+    0 10px 28px -6px oklch(0.23 0.04 265 / 0.16);
   --shadow-pop:
     0 4px 8px -2px oklch(0.18 0.04 265 / 0.09),
     0 16px 40px -8px oklch(0.18 0.04 265 / 0.18);
@@ -121,7 +121,10 @@
 :root {
   --brand: oklch(0.66 0.175 45); /* #e26622 — saf marka turuncusu */
   --navy: oklch(0.23 0.04 265); /* #141c32 — marka laciverti */
-  --background: oklch(0.984 0.003 260); /* paper, faintest cool tint */
+  /* Sprint 10.3 — zemin bir tık koyulaştı (0.984 → 0.97): beyaz
+   * kartlar zeminden net ayrışır; hero altındaki bölümlerin "sönük"
+   * kalma şikayetinin ana sebebi kart/zemin kontrastsızlığıydı. */
+  --background: oklch(0.97 0.004 260);
   --foreground: oklch(0.23 0.04 265); /* lacivert mürekkep */
   --card: oklch(1 0 0); /* true white — pops off the paper bg */
   --card-foreground: oklch(0.23 0.04 265);
@@ -129,9 +132,9 @@
   --popover-foreground: oklch(0.23 0.04 265);
   --primary: oklch(0.58 0.16 45); /* metin-güvenli koyu turuncu */
   --primary-foreground: oklch(1 0 0);
-  --secondary: oklch(0.962 0.006 260); /* subtle lacivert wash */
+  --secondary: oklch(0.945 0.007 260); /* subtle lacivert wash */
   --secondary-foreground: oklch(0.23 0.04 265);
-  --muted: oklch(0.962 0.006 260);
+  --muted: oklch(0.945 0.007 260);
   --muted-foreground: oklch(0.45 0.025 262); /* AA on background */
   --accent: oklch(0.955 0.025 60); /* yumuşak turuncu hover wash */
   --accent-foreground: oklch(0.45 0.13 45); /* koyu turuncu metin */
@@ -360,8 +363,25 @@
   }
 }
 
+/* Sprint 10.3 — global sayfa girişi (PageTransition). rise-in'den
+ * ayrı: biraz daha uzun ve daha derin yükselme, rota değişiminde
+ * tüm içerik bloğu tek vücut halinde açılır. */
+@keyframes page-enter {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 @layer utilities {
   .rise-in {
     animation: rise-in var(--motion-duration) var(--motion-ease) both;
+  }
+  .page-enter {
+    animation: page-enter 320ms var(--motion-ease) both;
   }
 }

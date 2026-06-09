@@ -3,6 +3,7 @@
 import { Menu } from "lucide-react";
 import { useState } from "react";
 
+import { PageTransition } from "@/components/layout/page-transition";
 import { QuickActionFab } from "@/components/layout/quick-action-fab";
 import { Sidebar } from "@/components/layout/sidebar";
 import { Button } from "@/components/ui/button";
@@ -53,8 +54,12 @@ export function AppShell({ children }: AppShellProps) {
 
         {/* Each route page renders its own <main>; the shell's
             wrapper stays a <div> so we don't have two `main`
-            landmarks on the same page (a11y guard). */}
-        <div className="min-w-0 flex-1">{children}</div>
+            landmarks on the same page (a11y guard).
+            Sprint 10.3 — PageTransition: her rota geçişinde içerik
+            fade+rise ile açılır (tüm sayfalara giriş animasyonu). */}
+        <div className="min-w-0 flex-1">
+          <PageTransition>{children}</PageTransition>
+        </div>
       </div>
 
       {/* Sprint 9.6 redesign — universal floating action button.
