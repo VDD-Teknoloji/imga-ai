@@ -6,19 +6,11 @@
 
 import { create } from "zustand";
 
-const SIDEBAR_COLLAPSED_KEY = "imga_sidebar_collapsed";
-
-function readInitialCollapsed(): boolean {
-  // Sprint 10.0 — default KAPALI. C-level redesign'da dashboard
-  // tam genişlikte açılır; sidebar icon-dock olarak başlar.
-  // Kullanıcı genişletirse tercih localStorage'da yaşamaya devam
-  // eder ("0" yazılır ve sonraki ziyarette açık gelir). SSR'da da
-  // kapalı varsayıyoruz ki hydration sırasında genişten dara
-  // çökme (layout shift) olmasın.
-  if (typeof window === "undefined") return true;
-  const stored = window.localStorage.getItem(SIDEBAR_COLLAPSED_KEY);
-  return stored === null ? true : stored === "1";
-}
+// Sprint 10.1 — key versiyonlandı (v2): eski key'de kalan "0"
+// (açık) tercihi yeni "default kapalı" kararını eziyordu. v2 ile
+// herkes bir kez kapalı başlar; kullanıcı açarsa tercihi buradan
+// itibaren yeniden öğrenilir.
+const SIDEBAR_COLLAPSED_KEY = "imga_sidebar_collapsed_v2";
 
 function persistCollapsed(value: boolean): void {
   if (typeof window === "undefined") return;
@@ -29,10 +21,17 @@ interface UiState {
   sidebarCollapsed: boolean;
   toggleSidebar: () => void;
   setSidebarCollapsed: (value: boolean) => void;
+  /** Mount sonrası localStorage'daki tercihi uygular. Initial state
+   *  her zaman ``true`` (kapalı) — server ve client ilk render'ı
+   *  aynı olur, hydration mismatch çıkmaz; kayıtlı "açık" tercihi
+   *  ilk frame'den sonra animasyonlu genişlemeyle gelir. */
+  hydrateSidebar: () => void;
 }
 
 export const useUiStore = create<UiState>((set, get) => ({
-  sidebarCollapsed: readInitialCollapsed(),
+  // Sprint 10.0/10.1 — default KAPALI. C-level redesign'da dashboard
+  // tam genişlikte açılır; sidebar icon-dock olarak başlar.
+  sidebarCollapsed: true,
   toggleSidebar: () => {
     const next = !get().sidebarCollapsed;
     persistCollapsed(next);
@@ -41,5 +40,12 @@ export const useUiStore = create<UiState>((set, get) => ({
   setSidebarCollapsed: (value) => {
     persistCollapsed(value);
     set({ sidebarCollapsed: value });
+  },
+  hydrateSidebar: () => {
+    if (typeof window === "undefined") return;
+    const stored = window.localStorage.getItem(SIDEBAR_COLLAPSED_KEY);
+    if (stored !== null) {
+      set({ sidebarCollapsed: stored === "1" });
+    }
   },
 }));

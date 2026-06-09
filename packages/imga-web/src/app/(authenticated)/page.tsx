@@ -36,6 +36,7 @@ import {
   OkrSnapshotCard,
   SwotSnapshotCard,
 } from "@/components/dashboard/strategy-snapshots";
+import { TopProblems } from "@/components/dashboard/top-problems";
 import { VoiceOfCustomer } from "@/components/dashboard/voice-of-customer";
 import { useExecutiveOverview } from "@/hooks/use-executive-overview";
 import { useAuthStore } from "@/lib/auth-store";
@@ -60,6 +61,11 @@ export default function DashboardPage() {
       </header>
 
       <ExecutiveHero overview={data} isLoading={isLoading} />
+
+      {/* Sprint 10.1 — Ana Sorunlar: olumsuzluğun kaynağı, hero'nun
+          hemen altında. Yönetici durumu gördükten sonra "neden"i
+          ve "ne yapacağım"ı burada bulur. */}
+      <TopProblems problems={data?.top_problems} isLoading={isLoading} />
 
       <AiInsightStrip briefing={data?.latest_briefing} isLoading={isLoading} />
 

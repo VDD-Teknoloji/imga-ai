@@ -325,6 +325,20 @@
   }
 }
 
+/* Sprint 10.1 — erişilebilirlik: hareket azaltma tercihi olan
+ * kullanıcılarda tüm dekoratif animasyonlar (rise-in, animate-ping
+ * nabız, progress-slide, hover-lift geçişleri) tek karede biter.
+ * İçerik kaybı yok — animasyonlar yalnızca süsleme. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
 @layer utilities {
   .rise-in {
     animation: rise-in var(--motion-duration) var(--motion-ease) both;

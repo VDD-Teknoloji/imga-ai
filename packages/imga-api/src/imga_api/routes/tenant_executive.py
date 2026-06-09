@@ -28,7 +28,7 @@ tek çağrı hem hızlı hem atomik bir görüntü verir.
 from __future__ import annotations
 
 import logging
-from datetime import datetime
+from datetime import UTC, datetime, timedelta
 from typing import Annotated, Any
 from uuid import UUID
 
@@ -41,7 +41,7 @@ from imga_db.models import (
     UserTenantRole,
 )
 from pydantic import BaseModel
-from sqlalchemy import func, select
+from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from imga_api.auth_deps import CurrentUser, bind_tenant, require_role
@@ -68,19 +68,17 @@ _QUOTE_MAX_CHARS = 280
 # --- response models ----------------------------------------------------
 
 
-class SentimentTotals(BaseModel):
-    POZITIF: int
-    NEGATIF: int
-    NOTR: int  # JSON anahtarı "NÖTR" olamaz (alan adı); alias ile eşle
-    total: int
+class TopProblem(BaseModel):
+    """Ana Sorunlar bloğunun bir satırı. ``share_pct`` tüm NEGATIF
+    yorumlar içindeki pay; ``sample_text`` o kategorinin en sert,
+    anlamlı (≥40 karakter) şikayet cümlesi — yönetici satırda
+    rakamla birlikte müşterisinin sesini de duyar."""
 
-    model_config = {"populate_by_name": True}
-
-
-class TopCategory(BaseModel):
     code: str
     label: str
     count: int
+    share_pct: float
+    sample_text: str | None
 
 
 class CustomerQuote(BaseModel):
@@ -137,9 +135,21 @@ class OkrSnapshot(BaseModel):
     objectives: list[OkrObjective]
 
 
+class SentimentTrend(BaseModel):
+    """Son 30 gün vs önceki 30 gün pozitif-oran karşılaştırması.
+    C-level'ın "hareket ediyor muyuz?" sorusunun cevabı — statik
+    fotoğraf değil, yön. Önceki pencerede hiç yorum yoksa endpoint
+    null döner (yeni tenant'ta uydurma trend gösterme)."""
+
+    current_positive_pct: float
+    previous_positive_pct: float
+    delta_points: float
+
+
 class ExecutiveOverviewResponse(BaseModel):
     sentiment: dict[str, int]  # {"POZITIF": n, "NEGATIF": n, "NÖTR": n, "total": n}
-    top_negative_category: TopCategory | None
+    trend: SentimentTrend | None
+    top_problems: list[TopProblem]
     nps_score: float | None
     voice_of_customer: list[CustomerQuote]
     latest_briefing: BriefingSnapshot | None
@@ -182,13 +192,67 @@ async def _sentiment_totals(
     return counts
 
 
-async def _top_negative_category(
+async def _sentiment_trend(
     session: AsyncSession, tenant_id: UUID
-) -> TopCategory | None:
-    """En çok negatif yorum alan kategori. 'belirsiz' hariç —
-    sınıflandırılamayan yorumlar yönetici anlatısına girmemeli
-    (hero cümlesi "En büyük şikayet: Belirsiz" derse güven kaybı)."""
-    row = (
+) -> SentimentTrend | None:
+    """Son 30 gün vs önceki 30 gün pozitif oranı. İki pencere de
+    ``created_at`` üzerinden; önceki pencere boşsa None (trend
+    iddia etme)."""
+    now = datetime.now(UTC)
+    cur_start = now - timedelta(days=30)
+    prev_start = now - timedelta(days=60)
+
+    async def _window(start: datetime, end: datetime | None) -> tuple[int, int]:
+        stmt = (
+            select(
+                func.count().label("total"),
+                func.sum(
+                    case((Review.sentiment_label == "POZITIF", 1), else_=0)
+                ).label("pos"),
+            )
+            .where(Review.tenant_id == tenant_id)
+            .where(Review.deleted_at.is_(None))
+            .where(Review.created_at >= start)
+        )
+        if end is not None:
+            stmt = stmt.where(Review.created_at < end)
+        row = (await session.execute(stmt)).first()
+        if row is None:
+            return 0, 0
+        total, pos = row
+        return int(total or 0), int(pos or 0)
+
+    cur_total, cur_pos = await _window(cur_start, None)
+    prev_total, prev_pos = await _window(prev_start, cur_start)
+
+    if prev_total == 0 or cur_total == 0:
+        return None
+    cur_pct = round((cur_pos / cur_total) * 100, 1)
+    prev_pct = round((prev_pos / prev_total) * 100, 1)
+    return SentimentTrend(
+        current_positive_pct=cur_pct,
+        previous_positive_pct=prev_pct,
+        delta_points=round(cur_pct - prev_pct, 1),
+    )
+
+
+async def _top_problems(
+    session: AsyncSession,
+    tenant_id: UUID,
+    *,
+    total_negative: int,
+    take: int = 3,
+) -> list[TopProblem]:
+    """Ana Sorunlar: en çok negatif yorum alan ``take`` kategori.
+    'belirsiz' hariç — sınıflandırılamayan yorumlar yönetici
+    anlatısına girmemeli ("En büyük sorun: Belirsiz" güven kaybı).
+
+    ``share_pct`` paydası TÜM negatif yorumlar (belirsiz dahil) —
+    "olumsuzların %30'u İade/Değişim hakkında" cümlesi dürüst kalır.
+    Her kategori için en sert (en düşük sentiment_score) anlamlı
+    şikayet cümlesi de döner; satırda rakam + müşteri sesi yan yana.
+    """
+    rows = (
         await session.execute(
             select(
                 Review.primary_category,
@@ -207,13 +271,41 @@ async def _top_negative_category(
             .where(Review.primary_category != "belirsiz")
             .group_by(Review.primary_category, Category.label_tr)
             .order_by(func.count().desc())
-            .limit(1)
+            .limit(take)
         )
-    ).first()
-    if row is None:
-        return None
-    code, label_tr, count = row
-    return TopCategory(code=code, label=label_tr or code, count=int(count))
+    ).all()
+
+    problems: list[TopProblem] = []
+    for code, label_tr, count in rows:
+        sample = (
+            await session.execute(
+                select(Review.text)
+                .where(Review.tenant_id == tenant_id)
+                .where(Review.deleted_at.is_(None))
+                .where(Review.sentiment_label == "NEGATIF")
+                .where(Review.primary_category == code)
+                .where(func.length(Review.text) >= _QUOTE_MIN_CHARS)
+                .order_by(Review.sentiment_score.asc())
+                .limit(1)
+            )
+        ).scalar_one_or_none()
+        share = (
+            round((int(count) / total_negative) * 100, 1)
+            if total_negative > 0
+            else 0.0
+        )
+        problems.append(
+            TopProblem(
+                code=code,
+                label=label_tr or code,
+                count=int(count),
+                share_pct=share,
+                sample_text=(
+                    sample.strip()[:_QUOTE_MAX_CHARS] if sample else None
+                ),
+            )
+        )
+    return problems
 
 
 async def _voice_of_customer(
@@ -438,7 +530,11 @@ async def executive_overview(
             await bind_tenant(app_session, current)
 
             sentiment = await _sentiment_totals(app_session, tenant_id)
-            top_negative = await _top_negative_category(app_session, tenant_id)
+            trend = await _sentiment_trend(app_session, tenant_id)
+            top_problems = await _top_problems(
+                app_session, tenant_id,
+                total_negative=sentiment["NEGATIF"],
+            )
             voice = await _voice_of_customer(app_session, tenant_id)
             briefing = await _latest_briefing(app_session, tenant_id)
             swot = await _latest_swot(app_session, tenant_id)
@@ -451,7 +547,8 @@ async def executive_overview(
 
         return ExecutiveOverviewResponse(
             sentiment=sentiment,
-            top_negative_category=top_negative,
+            trend=trend,
+            top_problems=top_problems,
             nps_score=nps.score,
             voice_of_customer=voice,
             latest_briefing=briefing,

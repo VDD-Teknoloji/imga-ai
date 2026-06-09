@@ -1,6 +1,7 @@
 "use client";
 
 import { PanelLeft } from "lucide-react";
+import { useEffect } from "react";
 
 import { SidebarNav } from "@/components/layout/sidebar-nav";
 import { TenantSwitcher } from "@/components/layout/tenant-switcher";
@@ -34,6 +35,13 @@ interface SidebarProps {
 export function Sidebar({ variant, onNavigate }: SidebarProps) {
   const collapsed = useUiStore((s) => s.sidebarCollapsed);
   const toggleSidebar = useUiStore((s) => s.toggleSidebar);
+
+  // Store her zaman "kapalı" başlar (SSR ile birebir — hydration
+  // mismatch yok); kullanıcının kayıtlı "açık" tercihi mount
+  // sonrası uygulanır ve mevcut width transition'ı ile genişler.
+  useEffect(() => {
+    useUiStore.getState().hydrateSidebar();
+  }, []);
 
   // Mobile sheet always renders the expanded version.
   const isCollapsed = variant === "desktop" && collapsed;

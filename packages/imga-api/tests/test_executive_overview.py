@@ -13,7 +13,7 @@ C-level dashboard'un tek-bakış endpoint'i. İki kontrat:
 
 from __future__ import annotations
 
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from uuid import UUID
 
 import pytest
@@ -40,28 +40,32 @@ async def _seed_review(
     sentiment_label: str,
     sentiment_score: float,
     primary_category: str = "kargo",
+    created_at: datetime | None = None,
 ) -> None:
     async with admin_session.begin():
         await admin_session.execute(
             text("SELECT set_config('app.current_tenant_id', :t, true)"),
             {"t": str(tenant_id)},
         )
-        row = Review(
-            tenant_id=tenant_id,
-            text=text_value,
-            text_hash=review_text_hash(text_value),
-            sentiment_label=sentiment_label,
-            sentiment_score=sentiment_score,
-            primary_category=primary_category,
-            primary_confidence=0.8,
-            automation_mode="semi_auto",
-            decision=ReviewDecision.SKIPPED_THRESHOLD,
-            decision_reason=None,
-            ticket_id=None,
-            submitted_by_user_id=None,
-            batch_job_id=None,
-            analyzed_at=datetime.now(UTC),
-        )
+        kwargs: dict[str, object] = {
+            "tenant_id": tenant_id,
+            "text": text_value,
+            "text_hash": review_text_hash(text_value),
+            "sentiment_label": sentiment_label,
+            "sentiment_score": sentiment_score,
+            "primary_category": primary_category,
+            "primary_confidence": 0.8,
+            "automation_mode": "semi_auto",
+            "decision": ReviewDecision.SKIPPED_THRESHOLD,
+            "decision_reason": None,
+            "ticket_id": None,
+            "submitted_by_user_id": None,
+            "batch_job_id": None,
+            "analyzed_at": datetime.now(UTC),
+        }
+        if created_at is not None:
+            kwargs["created_at"] = created_at
+        row = Review(**kwargs)
         admin_session.add(row)
         await admin_session.flush()
         admin_session.expunge(row)
@@ -83,7 +87,8 @@ async def test_overview_empty_tenant_returns_nulls_and_zeros(
     assert body["sentiment"] == {
         "POZITIF": 0, "NEGATIF": 0, "NÖTR": 0, "total": 0,
     }
-    assert body["top_negative_category"] is None
+    assert body["top_problems"] == []
+    assert body["trend"] is None
     assert body["nps_score"] is None
     assert body["voice_of_customer"] == []
     assert body["latest_briefing"] is None
@@ -248,10 +253,21 @@ async def test_overview_populated_returns_full_payload(
     assert body["sentiment"]["NÖTR"] == 1
     assert body["sentiment"]["total"] == 10
 
-    # En negatif kategori: belirsiz 4 satırla önde AMA elenir → kargo (3).
-    assert body["top_negative_category"] is not None
-    assert body["top_negative_category"]["code"] == "kargo"
-    assert body["top_negative_category"]["count"] == 3
+    # Trend: tüm yorumlar şimdi seed'lendi → önceki 30 günlük pencere
+    # boş → trend iddia edilmez (None).
+    assert body["trend"] is None
+
+    # Ana Sorunlar: belirsiz 4 satırla önde AMA elenir → kargo (3)
+    # tek satır olarak döner. share_pct paydası TÜM negatifler (7):
+    # 3/7 ≈ %42.9. sample_text en sert ANLAMLI yorum — "çok kötü"
+    # (-0.99) kısa olduğu için elenir, long_neg_1 (-0.95) seçilir.
+    problems = body["top_problems"]
+    assert len(problems) == 1
+    assert problems[0]["code"] == "kargo"
+    assert problems[0]["count"] == 3
+    assert 42.0 <= problems[0]["share_pct"] <= 43.5
+    assert problems[0]["sample_text"] is not None
+    assert problems[0]["sample_text"].startswith("Kargom üç gündür")
 
     # Müşterinin Sesi: 2 negatif + 1 pozitif; "çok kötü" (kısa) elenmiş
     # olmalı, en negatif UZUN yorumlar dönmeli.
@@ -287,3 +303,55 @@ async def test_overview_populated_returns_full_payload(
     kr = okr_snap["objectives"][0]["key_results"][0]
     assert kr["metric"] == "avg_delivery_days"
     assert kr["target"] == "2"
+
+
+@pytest.mark.asyncio
+async def test_overview_trend_compares_30_day_windows(
+    batch_client: TestClient,
+    semi_auto_tenant: tuple[User, UUID, str],
+    admin_session: AsyncSession,
+) -> None:
+    """Önceki pencere (30-60 gün önce): 1 pozitif / 2 yorum = %50.
+    Güncel pencere (son 30 gün): 3 pozitif / 4 yorum = %75.
+    delta = +25 puan."""
+    user, tid, pw = semi_auto_tenant
+    now = datetime.now(UTC)
+    old = now - timedelta(days=45)
+
+    await _seed_review(
+        admin_session, tenant_id=tid,
+        text_value="Eski dönemden memnun bir müşteri yorumu kaydı.",
+        sentiment_label="POZITIF", sentiment_score=0.7,
+        primary_category="urun-kalitesi", created_at=old,
+    )
+    await _seed_review(
+        admin_session, tenant_id=tid,
+        text_value="Eski dönemden memnuniyetsiz bir müşteri yorumu kaydı.",
+        sentiment_label="NEGATIF", sentiment_score=-0.7,
+        primary_category="kargo", created_at=old,
+    )
+    for i in range(3):
+        await _seed_review(
+            admin_session, tenant_id=tid,
+            text_value=f"Yeni dönem pozitif müşteri yorumu numara {i}.",
+            sentiment_label="POZITIF", sentiment_score=0.8,
+            primary_category="urun-kalitesi",
+        )
+    await _seed_review(
+        admin_session, tenant_id=tid,
+        text_value="Yeni dönem negatif müşteri yorumu kaydı burada.",
+        sentiment_label="NEGATIF", sentiment_score=-0.8,
+        primary_category="kargo",
+    )
+
+    token = login_token(batch_client, user.email, pw, tid)
+    r = batch_client.get(
+        "/tenants/me/executive/overview",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert r.status_code == 200, r.text
+    trend = r.json()["trend"]
+    assert trend is not None
+    assert trend["previous_positive_pct"] == 50.0
+    assert trend["current_positive_pct"] == 75.0
+    assert trend["delta_points"] == 25.0

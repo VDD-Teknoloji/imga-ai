@@ -10,10 +10,14 @@ import { useQuery } from "@tanstack/react-query";
 
 import { apiRequest } from "@/lib/api-client";
 
-export interface ExecutiveTopCategory {
+export interface ExecutiveTopProblem {
   code: string;
   label: string;
   count: number;
+  /** Tüm negatif yorumlar içindeki pay (0-100). */
+  share_pct: number;
+  /** Kategorinin en sert, anlamlı şikayet cümlesi (≤280 kr). */
+  sample_text: string | null;
 }
 
 export interface ExecutiveQuote {
@@ -64,6 +68,13 @@ export interface ExecutiveOkrSnapshot {
   }>;
 }
 
+export interface ExecutiveSentimentTrend {
+  current_positive_pct: number;
+  previous_positive_pct: number;
+  /** Pozitif oranın puan cinsinden değişimi (son 30g vs önceki 30g). */
+  delta_points: number;
+}
+
 export interface ExecutiveOverview {
   sentiment: {
     POZITIF: number;
@@ -71,7 +82,9 @@ export interface ExecutiveOverview {
     "NÖTR": number;
     total: number;
   };
-  top_negative_category: ExecutiveTopCategory | null;
+  /** null: önceki 30 günlük pencerede yorum yok (trend iddia edilmez). */
+  trend: ExecutiveSentimentTrend | null;
+  top_problems: ExecutiveTopProblem[];
   nps_score: number | null;
   voice_of_customer: ExecutiveQuote[];
   latest_briefing: ExecutiveBriefingSnapshot | null;
