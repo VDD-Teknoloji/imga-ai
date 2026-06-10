@@ -9,13 +9,20 @@ API kabul.
 
 ## 0. Keşif — mevcut durumun iki kritik gerçeği
 
-**Gerçek 1 — darboğaz BERT değil.** Ölçüm: BERT CPU'da ~0.49 ms/satır
-(2.852 satır ≈ 1.4 sn; `batch_analyzer.py` yorumları). Saatlerce süren
-yüklemelerin kaynağı: düşük güvenli satırların kategori için **tek tek
-Gemini'ye gitmesi** (~%30 satır × ~2 sn/çağrı, free-tier 10-15 RPM
-limitiyle boğuluyor → 10K satırda 3K çağrı ≈ saatler). BERT'in gerçek
-maliyeti RAM/CPU baskısı: paralel chunk başına ~500 MB model kopyası
-(4 chunk = ~2 GB) + image'a gömülü 440 MB.
+**Gerçek 1 — darboğaz İKİLİ: BERT + kategori fallback'i.**
+(DÜZELTME 2026-06-10: bu bölümün ilk hali "BERT ~0.49 ms/satır,
+suçlu değil" diyordu — kod yorumunun ters okunmasıydı.) Gerçek
+kanıtlar: `batch_analyzer.py:754` "~1.4s × 2852 = ~67 min projected"
+→ bu sunucunun CPU'sunda BERT **satır başına ~1.4 sn** = 10K satırda
+tek başına ~4 saat. Ayrıca `settings.py:230` aynı koşuyu "LLM-bound
+run" diye anıyor → düşük güvenli satırların kategori için tek tek
+Gemini'ye gitmesi (free-tier RPM'iyle boğularak) ikinci büyük kalemi
+oluşturuyor. Hangisinin payı büyükse yüklemenin fallback oranına
+bağlı; kesin ayrım için worker'ın "batch chunk processed" log
+satırındaki `bert_ms` / `total_ms` alanlarına bakılır. Mimari karar
+iki suçluyu birden ortadan kaldırdığı için teşhisteki bu düzeltme
+planı değiştirmez. BERT'in ek maliyeti RAM: paralel chunk başına
+~500 MB model kopyası (4 chunk = ~2 GB) + image'a gömülü 440 MB.
 
 **Gerçek 2 — eski "Train & Save" modeli hiç eğitmiyordu.** Legacy
 akış (legacy/app.py 506-518): düzeltme → `training_data.csv` append →
