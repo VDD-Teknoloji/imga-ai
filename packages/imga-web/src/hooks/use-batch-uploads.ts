@@ -103,13 +103,19 @@ export function useBatchProgressStream(
   const [error, setError] = useState<string | null>(null);
   const handleRef = useRef<SseHandle | null>(null);
 
+  // jobId değişiminde state sıfırlama — async-mirror istisnası
+  // (upload/page.tsx'teki onaylı pattern ile aynı): tetikleyici bir
+  // event değil, prop'un kendisi; SSE aboneliği de bu effect'te
+  // kurulduğu için reset'in başka bir eve taşınamaz.
   useEffect(() => {
     if (!jobId) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setData(null);
       setIsLoading(false);
       setError(null);
       return;
     }
+     
     setIsLoading(true);
     setError(null);
     let cancelled = false;
@@ -190,6 +196,30 @@ export function useBatchHistory(limit = 50) {
       const consumed = pages.reduce((sum, p) => sum + p.jobs.length, 0);
       return lastPage.jobs.length < limit ? undefined : consumed;
     },
+  });
+}
+
+/** Sprint 11.1 — "sayfayı terk edince işlem iptal oluyor" algısının
+ * çözümü. İş sunucuda (api-worker) tarayıcıdan bağımsız koşmaya
+ * devam eder; kaybolan şey UI'ın işe BAĞLANTISIYDI — sayfaya dönen
+ * kullanıcı ilerlemeyi göremiyordu ve işi iptal olmuş sanıyordu.
+ * Bu hook en yeni queued/processing job'ı bulur; upload sayfası ve
+ * dashboard Hızlı Yükleme kartı mount'ta ona yeniden bağlanır. */
+export function useActiveBatchJob() {
+  return useQuery<BatchJob | null>({
+    queryKey: ["batch-active"],
+    queryFn: async () => {
+      const data = await apiRequest<BatchJobListResponse>(
+        "/tenants/me/analyze/batch?limit=10&offset=0",
+      );
+      return (
+        data.jobs.find(
+          (j) => j.status === "queued" || j.status === "processing",
+        ) ?? null
+      );
+    },
+    // Mount'ta bir kez yeter — aktif iş bulunursa SSE devralır.
+    staleTime: 5_000,
   });
 }
 

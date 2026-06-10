@@ -22,6 +22,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import {
+  useActiveBatchJob,
   useBatchProgressStream,
   useBatchUploadMutation,
   useCancelBatchJobMutation,
@@ -93,6 +94,25 @@ export default function BatchUploadPage() {
       setStep(4);
     }
   }, [job.data, step]);
+
+  // Sprint 11.1 — yeniden bağlanma. Kullanıcı sayfadan ayrılıp
+  // dönünce iş sunucuda koşmaya devam ediyordu ama UI step 1'e
+  // sıfırlandığı için "iptal oldu" sanılıyordu. Mount'ta devam eden
+  // iş bulunursa doğrudan ilerleme adımına bağlan. Aynı async-mirror
+  // istisnası: tetikleyici, sorgunun sonuçlanması.
+  const activeJob = useActiveBatchJob();
+  useEffect(() => {
+    if (step !== 1 || activeJobId !== null) return;
+    const running = activeJob.data;
+    if (running) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setActiveJobId(running.job_id);
+      setStep(3);
+      toast.info(
+        `Devam eden yükleme bulundu (${running.file_name}) — ilerlemeye yeniden bağlanıldı.`,
+      );
+    }
+  }, [activeJob.data, step, activeJobId]);
 
   function reset() {
     setFile(null);

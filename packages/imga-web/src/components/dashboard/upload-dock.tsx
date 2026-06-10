@@ -26,11 +26,14 @@ import {
 import Link from "next/link";
 import { useQueryClient } from "@tanstack/react-query";
 import * as React from "react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
 import { BatchProgressBar } from "@/components/batch/BatchProgressStream";
-import { useBatchUploadMutation } from "@/hooks/use-batch-uploads";
+import {
+  useActiveBatchJob,
+  useBatchUploadMutation,
+} from "@/hooks/use-batch-uploads";
 import { ApiError } from "@/lib/api-client";
 import type { BatchJob } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -50,6 +53,25 @@ export function UploadDock() {
   const [dragOver, setDragOver] = useState(false);
   const upload = useBatchUploadMutation();
   const queryClient = useQueryClient();
+
+  // Sprint 11.1 — yeniden bağlanma: başka sayfadan/dashboard'a
+  // dönüldüğünde devam eden iş varsa kart kendiliğinden onun canlı
+  // ilerlemesini gösterir ("sayfayı terk edince iptal oluyor"
+  // algısının dashboard ayağı). Async-mirror istisnası: tetikleyici
+  // sorgunun sonuçlanması.
+  const activeJob = useActiveBatchJob();
+  useEffect(() => {
+    if (state.phase !== "idle") return;
+    const running = activeJob.data;
+    if (running) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setState({
+        phase: "processing",
+        jobId: running.job_id,
+        fileName: running.file_name,
+      });
+    }
+  }, [activeJob.data, state.phase]);
 
   function handleFile(file: File | null) {
     if (!file) return;
