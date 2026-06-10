@@ -218,14 +218,26 @@ class ExecutiveBriefingService:
             )
         rotator = GeminiKeyRotator(keys)
 
-        user_prompt = render_executive_briefing_user_prompt(prompt_ctx)
+        from imga_api.services.prompt_override import select_prompt
+
+        selection = await select_prompt(
+            self._session,
+            tenant_id=self._tenant_id,
+            template_key="briefing",
+            variables=prompt_ctx,
+            default_system_prompt=EXECUTIVE_BRIEFING_SYSTEM_PROMPT,
+            default_user_prompt=lambda: render_executive_briefing_user_prompt(
+                prompt_ctx
+            ),
+        )
+        user_prompt = selection.user_prompt
         failed_invalid_key_ids: list[UUID] = []
 
         async def _call(api_key: str) -> tuple[dict[str, Any], dict[str, int] | None]:
             try:
                 return await self._provider.generate_executive_briefing(
                     api_key=api_key,
-                    system_prompt=EXECUTIVE_BRIEFING_SYSTEM_PROMPT,
+                    system_prompt=selection.system_prompt,
                     user_prompt=user_prompt,
                     response_schema=EXECUTIVE_BRIEFING_RESPONSE_SCHEMA,
                 )

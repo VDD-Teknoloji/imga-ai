@@ -102,6 +102,62 @@ class TenantAnalyzeResponse(BaseModel):
     company_perspective_label_tr: str | None = None
 
 
+async def _apply_manual_corrections(
+    session: AsyncSession,
+    tenant_id: UUID,
+    text: str,
+    analysis: AnalysisResult,
+) -> AnalysisResult:
+    """Sprint 11.3 — manuel analizde düzeltme katmanları. Sıra batch
+    worker'la aynı: birebir text_hash > anlamsal ≥0.95 > model
+    kararı. Embedding best-effort: tenant'ın Gemini key'i yoksa ya
+    da embed çağrısı düşerse anlamsal katman sessizce atlanır."""
+    from imga_core.text_utils import review_text_hash
+
+    from imga_api.services.correction_store import (
+        latest_exact_correction,
+        patch_analysis_with_decision,
+        semantic_override_lookup,
+    )
+
+    exact = await latest_exact_correction(
+        session, tenant_id, review_text_hash(text)
+    )
+    if exact is not None:
+        patched: AnalysisResult = patch_analysis_with_decision(
+            analysis,
+            exact,
+            layer="user_correction_kb",
+            detail_prefix="Tenant düzeltme sözlüğü",
+        )
+        return patched
+
+    try:
+        from imga_api.services.embedding_service import embed_text
+        from imga_api.services.llm_credentials import (
+            load_active_gemini_keys,
+        )
+
+        keys = await load_active_gemini_keys(session, tenant_id)
+        if not keys:
+            return analysis
+        vector = await embed_text(text, keys)
+        if vector is None:
+            return analysis
+        decision = await semantic_override_lookup(session, tenant_id, vector)
+        if decision is None:
+            return analysis
+        patched = patch_analysis_with_decision(
+            analysis,
+            decision,
+            layer="user_correction_semantic",
+            detail_prefix="Anlamsal düzeltme eşleşmesi (≥0.95)",
+        )
+        return patched
+    except Exception:  # noqa: BLE001 — best-effort katman
+        return analysis
+
+
 def _require_active_tenant(current: CurrentUser) -> UUID:
     if current.active_tenant_id is None:
         raise HTTPException(
@@ -177,6 +233,16 @@ async def tenant_analyze(
             )
             auditor.mark_fallback_used(not llm_used)
             auditor.record_success()
+
+        # Sprint 11.3 — düzeltme katmanları manuel analizde de
+        # devrede: (1) birebir text_hash eşleşmesi; (2) anlamsal
+        # ≥0.95 benzerlik (embedding best-effort — tenant'ın Gemini
+        # key'i yoksa sessizce atlanır). Batch worker'daki
+        # _apply_corrections ile aynı sözleşme: insan kararı her
+        # yolu ezer, override izi düşer.
+        analysis = await _apply_manual_corrections(
+            app_session, tenant_id, body.text, analysis
+        )
 
         try:
             result = await reviews.record_and_decide(

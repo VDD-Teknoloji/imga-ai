@@ -304,6 +304,118 @@ def test_apply_corrections_patches_matching_rows() -> None:
     assert patched[1].overrides_applied == []
 
 
+@pytest.mark.asyncio
+async def test_semantic_override_lookup_threshold(
+    semi_auto_tenant: tuple[User, UUID, str],
+    admin_session: AsyncSession,
+) -> None:
+    """Sprint 11.3 — anlamsal doğrudan override: ≤0.05 cosine
+    mesafedeki sorgu kararı alır; uzak sorgu None döner."""
+    from imga_api.services.correction_store import semantic_override_lookup
+
+    _user, tid, _pw = semi_auto_tenant
+    review_id = await _seed_review(
+        admin_session, tenant_id=tid,
+        text_value="Anlamsal override esik testi icin yorum metni.",
+    )
+    base = [0.0] * 768
+    base[0] = 1.0
+    async with admin_session.begin():
+        await admin_session.execute(
+            text("SELECT set_config('app.current_tenant_id', :t, true)"),
+            {"t": str(tid)},
+        )
+        admin_session.add(
+            ReviewCorrection(
+                tenant_id=tid,
+                review_id=review_id,
+                text_hash=review_text_hash("anlamsal bir"),
+                review_text="Kargo cok gecikti, kutu hasarli.",
+                old_sentiment_label="NÖTR",
+                new_sentiment_label="NEGATIF",
+                old_category="belirsiz",
+                new_category="kargo",
+                reason=None,
+                embedding=base,
+            )
+        )
+        await admin_session.flush()
+
+    near_identical = list(base)  # distance 0
+    far = [0.0] * 768
+    far[1] = 1.0  # ortogonal — distance 1.0
+
+    async with admin_session.begin():
+        await admin_session.execute(
+            text("SELECT set_config('app.current_tenant_id', :t, true)"),
+            {"t": str(tid)},
+        )
+        hit = await semantic_override_lookup(admin_session, tid, near_identical)
+        miss = await semantic_override_lookup(admin_session, tid, far)
+    assert hit is not None
+    assert hit.sentiment_label == "NEGATIF"
+    assert hit.category == "kargo"
+    assert miss is None
+
+
+@pytest.mark.asyncio
+async def test_manual_analyze_corrections_exact_patch(
+    semi_auto_tenant: tuple[User, UUID, str],
+    admin_session: AsyncSession,
+) -> None:
+    """Manuel analiz yolu: birebir düzeltme analiz sonucunu ezer
+    (embedding'siz — tenant'ın Gemini key'i yokken de çalışır)."""
+    from imga_api.routes.tenant_analyze import _apply_manual_corrections
+
+    _user, tid, _pw = semi_auto_tenant
+    corrected_text = "Manuel analiz birebir duzeltme testi yorumu."
+    review_id = await _seed_review(
+        admin_session, tenant_id=tid, text_value=corrected_text,
+    )
+    async with admin_session.begin():
+        await admin_session.execute(
+            text("SELECT set_config('app.current_tenant_id', :t, true)"),
+            {"t": str(tid)},
+        )
+        admin_session.add(
+            ReviewCorrection(
+                tenant_id=tid,
+                review_id=review_id,
+                text_hash=review_text_hash(corrected_text),
+                review_text=corrected_text,
+                old_sentiment_label="POZITIF",
+                new_sentiment_label="NEGATIF",
+                old_category="kargo",
+                new_category="iade",
+                reason=None,
+                embedding=None,
+            )
+        )
+        await admin_session.flush()
+
+    analysis = AnalysisResult(
+        text=corrected_text,
+        sentiment_label="POZITIF",
+        sentiment_score=0.8,
+        overrides_applied=[],
+        categorization=CategoryClassification(
+            primary="kargo", primary_confidence=0.7
+        ),
+    )
+    async with admin_session.begin():
+        await admin_session.execute(
+            text("SELECT set_config('app.current_tenant_id', :t, true)"),
+            {"t": str(tid)},
+        )
+        patched = await _apply_manual_corrections(
+            admin_session, tid, corrected_text, analysis
+        )
+    assert patched.sentiment_label == "NEGATIF"
+    assert patched.categorization is not None
+    assert patched.categorization.primary == "iade"
+    assert patched.overrides_applied[-1].layer == "user_correction_kb"
+
+
 def test_merge_few_shot_prioritises_semantic_and_dedupes() -> None:
     from imga_api.services.correction_store import (
         CorrectionExample,

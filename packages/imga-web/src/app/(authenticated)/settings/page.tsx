@@ -89,6 +89,20 @@ export default function SettingsPage() {
           <ArrowRight className="text-muted-foreground size-4" aria-hidden />
         </Link>
         <Link
+          href="/admin/prompt-templates"
+          className="bg-card hover:bg-accent flex items-start gap-3 rounded-lg border p-4 transition-colors"
+        >
+          <KeyRound className="text-primary mt-0.5 size-5" aria-hidden />
+          <div className="flex-1">
+            <p className="text-sm font-medium">Yapay Zeka Prompt&apos;ları</p>
+            <p className="text-muted-foreground text-xs">
+              SWOT, OKR, Yönetici Özeti ve yorum sınıflandırma
+              prompt&apos;larını düzenleyin — deploy gerekmez.
+            </p>
+          </div>
+          <ArrowRight className="text-muted-foreground size-4" aria-hidden />
+        </Link>
+        <Link
           href="/settings/taxonomies"
           className="bg-card hover:bg-accent flex items-start gap-3 rounded-lg border p-4 transition-colors"
         >
@@ -138,7 +152,7 @@ export default function SettingsPage() {
           <div className="flex-1">
             <p className="text-sm font-medium">İş Boyutları</p>
             <p className="text-muted-foreground text-xs">
-              Segment / ürün hattı / kanal / müşteri tier'ı — CSV
+              Segment / ürün hattı / kanal / müşteri tier&apos;ı — CSV
               upload eşleştirmesi + dashboard kırılımı.
             </p>
           </div>
@@ -166,7 +180,7 @@ export default function SettingsPage() {
             <p className="text-sm font-medium">Zamanlanmış Brifingler</p>
             <p className="text-muted-foreground text-xs">
               Haftalık / aylık otomatik yönetici brifingi; alıcı listesi
-              + manuel "Şimdi gönder" testi.
+              + manuel &quot;Şimdi gönder&quot; testi.
             </p>
           </div>
           <ArrowRight className="text-muted-foreground size-4" aria-hidden />

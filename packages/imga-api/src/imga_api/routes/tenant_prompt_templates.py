@@ -117,6 +117,125 @@ class PromptTemplateTestResponse(BaseModel):
     source: str  # tenant_override | global_default
 
 
+class CodeDefaultTemplate(BaseModel):
+    """Sprint 11.3 — koda gömülü varsayılan şablon. DB'de satır yoksa
+    üretim bu içerikle akar; /settings/prompts sayfası 'mevcut
+    prompt'u göstermek için bunu okur. ``user_prompt_editable=False``
+    olan anahtarlarda (unified_classifier) user prompt yapısını kod
+    kurar — yalnız system prompt override edilebilir."""
+
+    template_key: str
+    title: str
+    description: str
+    system_prompt: str
+    user_prompt_template: str
+    response_schema: dict[str, Any]
+    model_name: str
+    required_variables: list[str]
+    user_prompt_editable: bool = True
+
+
+def _build_code_defaults() -> list[CodeDefaultTemplate]:
+    from imga_core.llm.unified_classifier import UNIFIED_SYSTEM_PROMPT
+
+    from imga_api.llm.prompts.executive_briefing_v1 import (
+        EXECUTIVE_BRIEFING_SYSTEM_PROMPT,
+        EXECUTIVE_BRIEFING_USER_PROMPT_TEMPLATE,
+    )
+    from imga_api.llm.prompts.okr_v1 import (
+        OKR_RESPONSE_SCHEMA,
+        OKR_SYSTEM_PROMPT,
+        OKR_USER_PROMPT_TEMPLATE,
+    )
+    from imga_api.llm.prompts.swot_v1 import (
+        SWOT_RESPONSE_SCHEMA,
+        SWOT_SYSTEM_PROMPT,
+        SWOT_USER_PROMPT_TEMPLATE,
+    )
+    from imga_api.services.executive_briefing_service import (
+        DEFAULT_MODEL_NAME as BRIEFING_MODEL,
+    )
+    from imga_api.services.okr_service import (
+        DEFAULT_MODEL_NAME as OKR_MODEL,
+    )
+    from imga_api.services.swot_service import (
+        DEFAULT_MODEL_NAME as SWOT_MODEL,
+    )
+
+    return [
+        CodeDefaultTemplate(
+            template_key="swot",
+            title="SWOT Analizi",
+            description=(
+                "Güçlü/zayıf yönler, fırsatlar, tehditler ve stratejik "
+                "tavsiyeleri üreten prompt."
+            ),
+            system_prompt=SWOT_SYSTEM_PROMPT,
+            user_prompt_template=SWOT_USER_PROMPT_TEMPLATE,
+            response_schema=SWOT_RESPONSE_SCHEMA,
+            model_name=SWOT_MODEL,
+            required_variables=[],
+        ),
+        CodeDefaultTemplate(
+            template_key="okr",
+            title="OKR Hedefleri",
+            description=(
+                "SWOT çıktısından 12 haftalık ölçülebilir hedefler "
+                "üreten prompt."
+            ),
+            system_prompt=OKR_SYSTEM_PROMPT,
+            user_prompt_template=OKR_USER_PROMPT_TEMPLATE,
+            response_schema=OKR_RESPONSE_SCHEMA,
+            model_name=OKR_MODEL,
+            required_variables=[],
+        ),
+        CodeDefaultTemplate(
+            template_key="briefing",
+            title="Yönetici Özeti",
+            description=(
+                "Dönemsel KPI değişimleri, kritik içgörüler ve "
+                "öncelikli aksiyonları üreten prompt."
+            ),
+            system_prompt=EXECUTIVE_BRIEFING_SYSTEM_PROMPT,
+            user_prompt_template=EXECUTIVE_BRIEFING_USER_PROMPT_TEMPLATE,
+            response_schema={},
+            model_name=BRIEFING_MODEL,
+            required_variables=[],
+        ),
+        CodeDefaultTemplate(
+            template_key="unified_classifier",
+            title="Yorum Sınıflandırma",
+            description=(
+                "Her yorumun duygu + kategori kararını veren birleşik "
+                "sınıflandırma sistemi prompt'u. Yorum listesi ve "
+                "düzeltme örnekleri sistem tarafından otomatik eklenir "
+                "— yalnız sistem talimatı düzenlenebilir."
+            ),
+            system_prompt=UNIFIED_SYSTEM_PROMPT,
+            user_prompt_template="(yorum listesi sistem tarafından kurulur)",
+            response_schema={},
+            model_name="gemini-3-flash-preview",
+            required_variables=[],
+            user_prompt_editable=False,
+        ),
+    ]
+
+
+@router.get(
+    "/code-defaults",
+    response_model=list[CodeDefaultTemplate],
+    summary=(
+        "Koda gömülü varsayılan prompt'lar — DB'de override yokken "
+        "üretimin kullandığı içerik."
+    ),
+)
+async def list_code_defaults(
+    current: Annotated[CurrentUser, _AnyMember],
+) -> list[CodeDefaultTemplate]:
+    _require_active_tenant(current)
+    return _build_code_defaults()
+
+
 def _require_active_tenant(current: CurrentUser) -> UUID:
     if current.active_tenant_id is None:
         raise HTTPException(

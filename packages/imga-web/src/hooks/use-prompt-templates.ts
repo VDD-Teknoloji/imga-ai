@@ -61,6 +61,32 @@ export interface TestRenderResponse {
 
 const QUERY_KEY = ["prompt-templates"] as const;
 
+// Sprint 11.3 — koda gömülü varsayılanlar: DB'de hiç satır yokken
+// bile sayfa dört şablonu (swot/okr/briefing/unified_classifier)
+// katalog olarak gösterebilsin diye.
+export interface CodeDefaultTemplate {
+  template_key: string;
+  title: string;
+  description: string;
+  system_prompt: string;
+  user_prompt_template: string;
+  response_schema: Record<string, unknown>;
+  model_name: string;
+  required_variables: string[];
+  user_prompt_editable: boolean;
+}
+
+export function usePromptCodeDefaults() {
+  return useQuery<CodeDefaultTemplate[]>({
+    queryKey: ["prompt-code-defaults"],
+    queryFn: () =>
+      apiRequest<CodeDefaultTemplate[]>(
+        "/tenants/me/prompt-templates/code-defaults",
+      ),
+    staleTime: 5 * 60_000, // kod sabitleri — deploy'suz değişmez
+  });
+}
+
 export function usePromptTemplates() {
   return useQuery<PromptTemplateRow[]>({
     queryKey: QUERY_KEY,

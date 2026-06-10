@@ -10,7 +10,8 @@ SentimentLabel = Literal["NEGATIF", "NÖTR", "POZITIF"]
 # Sprint 11.0 — "user_correction_kb": tenant duzeltme sozlugunden
 # (review_corrections, birebir text_hash eslesmesi) gelen insan karari.
 OverrideLayer = Literal[
-    "knowledge_base", "critical", "tier1", "sla", "tier2", "user_correction_kb"
+    "knowledge_base", "critical", "tier1", "sla", "tier2",
+    "user_correction_kb", "user_correction_semantic"
 ]
 RiskClass = Literal["NEGATIF", "NÖTR", "POZITIF"]
 ClassificationMethod = Literal["keyword", "llm", "ensemble"]

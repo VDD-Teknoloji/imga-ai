@@ -22,16 +22,64 @@ import {
   useCreatePromptOverride,
   useDeletePromptOverride,
   usePatchPromptOverride,
+  usePromptCodeDefaults,
   usePromptTemplates,
   useTestRender,
 } from "@/hooks/use-prompt-templates";
 import { formatApiErrorMessage } from "@/lib/api-client";
 
+// Sprint 11.3 — koda gömülü varsayılanlar listede "sanal satır"
+// olarak görünür: DB boşken bile dört üretim şablonu (SWOT, OKR,
+// Yönetici Özeti, Yorum Sınıflandırma) kataloglanır; düzenleyip
+// kaydedince gerçek tenant override'ına dönüşür.
+const CODE_ROW_PREFIX = "code:";
+
+const KEY_TITLES: Record<string, string> = {
+  swot: "SWOT Analizi",
+  okr: "OKR Hedefleri",
+  briefing: "Yönetici Özeti",
+  unified_classifier: "Yorum Sınıflandırma",
+};
+
 export default function PromptTemplatesPage() {
   const list = usePromptTemplates();
+  const codeDefaults = usePromptCodeDefaults();
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
-  const selected = list.data?.find((t) => t.id === selectedId);
+  // DB satırları + (DB'de hiç görünmeyen anahtarlar için) kod
+  // varsayılanlarından türetilen sanal satırlar.
+  const dbRows = list.data ?? [];
+  const dbKeys = new Set(dbRows.map((t) => t.template_key));
+  const virtualRows: PromptTemplateRow[] = (codeDefaults.data ?? [])
+    .filter((d) => !dbKeys.has(d.template_key))
+    .map((d) => ({
+      id: `${CODE_ROW_PREFIX}${d.template_key}`,
+      template_key: d.template_key,
+      version: "v1",
+      tenant_id: null,
+      system_prompt: d.system_prompt,
+      user_prompt_template: d.user_prompt_template,
+      response_schema: d.response_schema,
+      model_name: d.model_name,
+      temperature: 0.2,
+      top_p: 0.9,
+      max_output_tokens: 8192,
+      is_active: true,
+      is_default: true,
+      required_variables: d.required_variables,
+      created_at: "",
+      updated_at: "",
+      is_tenant_override: false,
+    }));
+  const allRows = [...dbRows, ...virtualRows];
+  const editableUserPrompt = new Map(
+    (codeDefaults.data ?? []).map((d) => [
+      d.template_key,
+      d.user_prompt_editable,
+    ]),
+  );
+
+  const selected = allRows.find((t) => t.id === selectedId);
 
   return (
     <main className="mx-auto w-full max-w-6xl space-y-6 px-4 py-6 md:p-8">
@@ -58,7 +106,17 @@ export default function PromptTemplatesPage() {
           ) : list.isError ? (
             <p className="text-destructive text-sm">Liste alınamadı.</p>
           ) : (
-            (list.data ?? []).map((t) => (
+            <>
+              {codeDefaults.isError && (
+                // Code review bulgusu: code-defaults düşerse katalog
+                // sessizce boşalıyordu — hatayı görünür kıl, kayıtlı
+                // override'lar listelenmeye devam etsin.
+                <p className="text-destructive p-2 text-xs">
+                  Varsayılan şablonlar alınamadı; yalnızca kayıtlı
+                  override&apos;lar listeleniyor.
+                </p>
+              )}
+            {allRows.map((t) => (
               <button
                 key={t.id}
                 type="button"
@@ -71,21 +129,22 @@ export default function PromptTemplatesPage() {
               >
                 <div className="flex items-center gap-2">
                   <span className="truncate font-medium">
-                    {t.template_key}
+                    {KEY_TITLES[t.template_key] ?? t.template_key}
                   </span>
                   {t.is_tenant_override ? (
-                    <Badge className="text-[10px]">override</Badge>
+                    <Badge className="text-[10px]">özel</Badge>
                   ) : (
                     <Badge variant="outline" className="text-[10px]">
-                      global
+                      varsayılan
                     </Badge>
                   )}
                 </div>
                 <p className="text-xs opacity-70">
-                  {t.version} · {t.is_default ? "default" : "draft"}
+                  {t.template_key} · {t.version}
                 </p>
               </button>
-            ))
+            ))}
+            </>
           )}
         </aside>
 
@@ -96,7 +155,14 @@ export default function PromptTemplatesPage() {
             // the same component instance, useState keeps the previous
             // template's edits, and the next save merges form state
             // from template A onto template B's metadata.
-            <TemplateEditor key={selected.id} template={selected} />
+            <TemplateEditor
+              key={selected.id}
+              template={selected}
+              isVirtual={selected.id.startsWith(CODE_ROW_PREFIX)}
+              userPromptEditable={
+                editableUserPrompt.get(selected.template_key) ?? true
+              }
+            />
           ) : (
             <Card>
               <CardContent className="p-6 text-center text-sm text-muted-foreground">
@@ -110,7 +176,19 @@ export default function PromptTemplatesPage() {
   );
 }
 
-function TemplateEditor({ template }: { template: PromptTemplateRow }) {
+function TemplateEditor({
+  template,
+  isVirtual = false,
+  userPromptEditable = true,
+}: {
+  template: PromptTemplateRow;
+  /** Kod varsayılanından türeyen sanal satır — DB id'si yok; test
+   *  render kapalı, kaydet her zaman yeni override oluşturur. */
+  isVirtual?: boolean;
+  /** unified_classifier: user prompt yapısını kod kurar — yalnız
+   *  system prompt düzenlenebilir. */
+  userPromptEditable?: boolean;
+}) {
   const create = useCreatePromptOverride();
   const patch = usePatchPromptOverride();
   const remove = useDeletePromptOverride();
@@ -215,6 +293,12 @@ function TemplateEditor({ template }: { template: PromptTemplateRow }) {
               value={userPrompt}
               onChange={(e) => setUserPrompt(e.target.value)}
               className="font-mono text-xs"
+              disabled={!userPromptEditable}
+              title={
+                userPromptEditable
+                  ? undefined
+                  : "Bu şablonda yorum listesi sistem tarafından kurulur — yalnız sistem talimatı düzenlenebilir."
+              }
             />
           </div>
           {template.required_variables.length > 0 && (
@@ -272,7 +356,12 @@ function TemplateEditor({ template }: { template: PromptTemplateRow }) {
           <Button
             size="sm"
             onClick={onTestRender}
-            disabled={testRender.isPending}
+            disabled={isVirtual || testRender.isPending}
+            title={
+              isVirtual
+                ? "Test render kayıtlı şablonlarda çalışır — önce override oluşturun."
+                : undefined
+            }
           >
             {testRender.isPending ? "Render…" : "Render et"}
           </Button>

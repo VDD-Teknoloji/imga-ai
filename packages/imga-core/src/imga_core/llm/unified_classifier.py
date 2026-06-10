@@ -98,7 +98,10 @@ _RESPONSE_SCHEMA: dict[str, Any] = {
     },
 }
 
-_SYSTEM_PROMPT = """\
+# Sprint 11.3 — public isim: /settings/prompts code-defaults endpoint'i
+# bu sabiti gösterir; tenant override'ı engine'e system_prompt param
+# olarak gelir.
+UNIFIED_SYSTEM_PROMPT = """\
 Sen Türkçe müşteri yorumlarını analiz eden kıdemli bir sınıflandırıcısın.
 
 Her yorum için döndür:
@@ -119,8 +122,9 @@ def _build_prompt(
     texts: list[str],
     available_categories: list[str],
     few_shot: tuple[FewShotExample, ...],
+    system_prompt: str | None = None,
 ) -> str:
-    parts: list[str] = [_SYSTEM_PROMPT]
+    parts: list[str] = [system_prompt or UNIFIED_SYSTEM_PROMPT]
     parts.append("Kategori kodları: " + ", ".join(available_categories))
 
     if few_shot:
@@ -170,6 +174,9 @@ class GeminiUnifiedEngine:
         model_name: str,
         call_batch_size: int = DEFAULT_CALL_BATCH_SIZE,
         concurrency: int = DEFAULT_CONCURRENCY,
+        # Sprint 11.3 — /settings/prompts'tan tenant override'ı;
+        # None = koddaki UNIFIED_SYSTEM_PROMPT.
+        system_prompt: str | None = None,
     ) -> None:
         if not keys:
             raise ValueError("GeminiUnifiedEngine requires at least one key")
@@ -177,6 +184,7 @@ class GeminiUnifiedEngine:
         self._model_name = model_name
         self._call_batch_size = max(1, call_batch_size)
         self._concurrency = max(1, concurrency)
+        self._system_prompt = system_prompt
 
     @property
     def model_name(self) -> str:
@@ -241,7 +249,9 @@ class GeminiUnifiedEngine:
         few_shot: tuple[FewShotExample, ...],
         stats: UnifiedBatchStats,
     ) -> dict[int, UnifiedPrediction]:
-        prompt = _build_prompt(chunk, available_categories, few_shot)
+        prompt = _build_prompt(
+            chunk, available_categories, few_shot, self._system_prompt
+        )
 
         async def _operation(api_key: str) -> dict[int, UnifiedPrediction]:
             try:

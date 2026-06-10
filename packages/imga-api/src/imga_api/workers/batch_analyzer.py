@@ -778,9 +778,10 @@ async def _process_chunk(
         # (sentiment + kategori tek çağrı setinde, few-shot düzeltme
         # örnekleriyle). Motor üretemezse klasik yola düşülür: BERT
         # zinciri (uzak Modal → lazy lokal) + keyword/LLM classifier.
+        semantic_hits: dict[int, Any] = {}
         if unified_ctx is not None:
             try:
-                few_shot = await _few_shot_for_chunk(
+                few_shot, semantic_hits = await _few_shot_for_chunk(
                     unified_ctx, texts, context, tenant_id
                 )
                 analyses = await pipeline.analyze_batch_unified_async(
@@ -803,9 +804,12 @@ async def _process_chunk(
                 classifier=classifier_override,
                 classifier_stats_sink=classifier_stats,
             )
-        # Birebir düzeltme katmanı — insan kararı her yolu ezer.
+        # Düzeltme katmanları — insan kararı her yolu ezer
+        # (birebir + anlamsal).
         if unified_ctx is not None:
-            analyses = _apply_corrections(analyses, texts, unified_ctx)
+            analyses = _apply_corrections(
+                analyses, texts, unified_ctx, semantic_hits
+            )
         bert_seconds = time.monotonic() - bert_started_at
     except Exception as exc:
         log.exception("batch chunk inference failed: %s", exc)
@@ -1343,6 +1347,31 @@ async def _build_unified_context(
             await set_current_tenant(session, tenant_id)
             keys = await load_active_gemini_keys(session, tenant_id)
             store = await load_correction_store(session, tenant_id)
+            # Sprint 11.3 — /settings/prompts override'ı: tenant
+            # 'unified_classifier' şablonunu düzenlediyse system
+            # prompt oradan akar (user prompt yapısını kod kurar).
+            # Kendi try'ında — override OPSİYONEL; şablon sorgusu
+            # patlarsa unified yolun tamamı feda edilmez, kod
+            # varsayılanıyla devam edilir (code review bulgusu).
+            system_prompt_override: str | None = None
+            try:
+                from imga_api.services.prompt_resolver import (
+                    PromptResolver,
+                )
+
+                template_row = await PromptResolver(
+                    session
+                ).resolve_template(
+                    template_key="unified_classifier", tenant_id=tenant_id
+                )
+                if template_row is not None:
+                    system_prompt_override = template_row.system_prompt
+            except Exception:  # noqa: BLE001 — override best-effort
+                log.warning(
+                    "unified prompt override lookup failed; using "
+                    "code default system prompt",
+                    extra={"tenant_id": str(tenant_id)},
+                )
     except Exception:
         log.exception(
             "batch worker: unified context build failed; classic path",
@@ -1363,6 +1392,7 @@ async def _build_unified_context(
         keys,
         model_name=_unified_model_name(),
         concurrency=max(1, context.settings.llm_concurrency // 2),
+        system_prompt=system_prompt_override,
     )
     log.info(
         "batch worker: unified classifier active (model=%s, keys=%d, "
@@ -1385,18 +1415,27 @@ async def _few_shot_for_chunk(
     texts: list[str],
     context: WorkerContext,
     tenant_id: UUID,
-) -> tuple[FewShotExample, ...]:
-    """Chunk için few-shot seçimi: güncel düzeltmeler + (best-effort)
-    chunk merkezine anlamsal en yakın düzeltmeler (RAG). Embedding
-    erişilemezse sessizce güncel-örnek moduna düşer."""
+) -> tuple[tuple[FewShotExample, ...], dict[int, Any]]:
+    """Chunk için düzeltme bağlamı (RAG):
+
+      * few-shot — güncel düzeltmeler + chunk merkezine anlamsal en
+        yakın düzeltmeler;
+      * semantik doğrudan override (Sprint 11.3) — embed edilen
+        satırlardan, bir düzeltmeye cosine ≥ 0.95 benzeyenler insan
+        kararını devralır (index -> CorrectedDecision).
+
+    Embedding erişilemezse sessizce (few-shot=güncel, override=boş)
+    moduna düşer — RAG hiçbir zaman analizi bloklamaz."""
     from imga_api.services.correction_store import (
         merge_few_shot,
         nearest_corrections,
+        semantic_override_lookup,
     )
     from imga_api.services.embedding_service import embed_texts
 
     recent = unified_ctx.store.recent_examples
     semantic = []
+    semantic_hits: dict[int, Any] = {}
     if recent:
         try:
             sample = texts[:64]
@@ -1415,10 +1454,22 @@ async def _few_shot_for_chunk(
                     semantic = await nearest_corrections(
                         session, tenant_id, centroid
                     )
+                    # Satır-bazlı doğrudan override — HNSW indeksli
+                    # k=1 sorgular, embed edilen örneklem için (ek
+                    # API maliyeti yok; vektörler zaten elimizde).
+                    # Tenant'ta embedding'li düzeltme yoksa atla —
+                    # chunk başına 64 boş sorgu (code review bulgusu).
+                    if unified_ctx.store.has_embeddings:
+                        for i, vector in enumerate(vectors):
+                            decision = await semantic_override_lookup(
+                                session, tenant_id, vector
+                            )
+                            if decision is not None:
+                                semantic_hits[i] = decision
         except Exception as exc:  # noqa: BLE001 — RAG best-effort
             log.warning("semantic few-shot lookup failed: %s", exc)
     merged = merge_few_shot(list(recent), list(semantic))
-    return tuple(
+    few_shot = tuple(
         FewShotExample(
             text=e.text,
             sentiment_label=e.sentiment_label,
@@ -1427,60 +1478,55 @@ async def _few_shot_for_chunk(
         )
         for e in merged
     )
+    return few_shot, semantic_hits
 
 
 def _apply_corrections(
     analyses: list[AnalysisResult],
     texts: list[str],
     unified_ctx: UnifiedJobContext,
+    semantic_hits: dict[int, Any] | None = None,
 ) -> list[AnalysisResult]:
-    """Birebir düzeltme katmanı: text_hash eşleşen satırlar insan
-    kararını alır (eski 'Train & Save' KB davranışının DB-bazlı,
-    tenant-scoped hali). Pipeline sonrası uygulanır — hangi yol
-    üretmiş olursa olsun insan kararı kazanır."""
-    if not unified_ctx.store.has_corrections:
+    """Düzeltme katmanları (insan kararı her yolu ezer):
+
+      1. Birebir — text_hash eşleşmesi (eski 'Train & Save' KB
+         davranışının DB-bazlı, tenant-scoped hali).
+      2. Anlamsal (Sprint 11.3) — embed edilen satırlardan bir
+         düzeltmeye cosine ≥ 0.95 benzeyenler. Birebir eşleşme
+         önceliklidir."""
+    from imga_api.services.correction_store import (
+        patch_analysis_with_decision,
+    )
+
+    hits = semantic_hits or {}
+    if not unified_ctx.store.has_corrections and not hits:
         return analyses
-    from imga_api.services.correction_service import SCORE_FOR_LABEL
 
     patched: list[AnalysisResult] = []
-    for text, analysis in zip(texts, analyses, strict=True):
+    for i, (text, analysis) in enumerate(zip(texts, analyses, strict=True)):
         decision = unified_ctx.store.exact_lookup(review_text_hash(text))
-        if decision is None:
-            patched.append(analysis)
+        if decision is not None:
+            patched.append(
+                patch_analysis_with_decision(
+                    analysis,
+                    decision,
+                    layer="user_correction_kb",
+                    detail_prefix="Tenant düzeltme sözlüğü",
+                )
+            )
             continue
-        score = SCORE_FOR_LABEL.get(decision.sentiment_label, 0.0)
-        overrides = [
-            *analysis.overrides_applied,
-            OverrideHit(
-                layer="user_correction_kb",
-                matched_keywords=(),
-                score=score,
-                detail=(
-                    "Tenant düzeltme sözlüğü: "
-                    f"{decision.sentiment_label}/{decision.category}"
-                ),
-            ),
-        ]
-        categorization = analysis.categorization
-        if categorization is not None:
-            categorization = categorization.model_copy(
-                update={
-                    "primary": decision.category,
-                    "primary_confidence": 1.0,
-                    "requires_manual_review": False,
-                }
+        semantic_decision = hits.get(i)
+        if semantic_decision is not None:
+            patched.append(
+                patch_analysis_with_decision(
+                    analysis,
+                    semantic_decision,
+                    layer="user_correction_semantic",
+                    detail_prefix="Anlamsal düzeltme eşleşmesi (≥0.95)",
+                )
             )
-        patched.append(
-            analysis.model_copy(
-                update={
-                    "sentiment_label": decision.sentiment_label,
-                    "sentiment_score": score,
-                    "risk_class": decision.sentiment_label,
-                    "overrides_applied": overrides,
-                    "categorization": categorization,
-                }
-            )
-        )
+            continue
+        patched.append(analysis)
     return patched
 
 

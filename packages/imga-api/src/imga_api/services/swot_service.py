@@ -164,8 +164,21 @@ class SwotService:
             )
         rotator = GeminiKeyRotator(keys)
 
-        # 5. Prompt rendering
-        user_prompt = render_swot_user_prompt(self._render_context(stats))
+        # 5. Prompt rendering — Sprint 11.3: DB override (tenant >
+        # global) varsa onu kullan, yoksa kod sabitleri. /settings/
+        # prompts sayfasından yapilan duzenlemeler buradan akar.
+        from imga_api.services.prompt_override import select_prompt
+
+        _ctx = self._render_context(stats)
+        selection = await select_prompt(
+            self._session,
+            tenant_id=self._tenant_id,
+            template_key="swot",
+            variables=_ctx,
+            default_system_prompt=SWOT_SYSTEM_PROMPT,
+            default_user_prompt=lambda: render_swot_user_prompt(_ctx),
+        )
+        user_prompt = selection.user_prompt
 
         # 6. LLM call with rotation. ``failed_key_ids`` accumulates the
         # ids of any InvalidKey-flagged keys; we mark them
@@ -178,7 +191,7 @@ class SwotService:
             try:
                 return await self._provider.generate_swot(
                     api_key=api_key,
-                    system_prompt=SWOT_SYSTEM_PROMPT,
+                    system_prompt=selection.system_prompt,
                     user_prompt=user_prompt,
                     response_schema=SWOT_RESPONSE_SCHEMA,
                 )
@@ -213,7 +226,7 @@ class SwotService:
             model_name=DEFAULT_MODEL_NAME,
             model_provider="gemini",
             prompt_template_key="swot",
-            prompt_template_version="v1",
+            prompt_template_version=selection.version,
             actor_user_id=self._user_id,
             related_entity_type="strategic_report",
         )

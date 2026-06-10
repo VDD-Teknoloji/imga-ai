@@ -131,7 +131,18 @@ class OkrService:
 
         # 3. Render the OKR user prompt from the SWOT payload + the
         # tenant context the SWOT input_stats already snapshotted.
-        user_prompt = render_okr_user_prompt(self._render_context(source))
+        from imga_api.services.prompt_override import select_prompt
+
+        _ctx = self._render_context(source)
+        selection = await select_prompt(
+            self._session,
+            tenant_id=self._tenant_id,
+            template_key="okr",
+            variables=_ctx,
+            default_system_prompt=OKR_SYSTEM_PROMPT,
+            default_user_prompt=lambda: render_okr_user_prompt(_ctx),
+        )
+        user_prompt = selection.user_prompt
 
         # 4. LLM call with rotation.
         failed_invalid_key_ids: list[UUID] = []
@@ -140,7 +151,7 @@ class OkrService:
             try:
                 return await self._provider.generate_okr(
                     api_key=api_key,
-                    system_prompt=OKR_SYSTEM_PROMPT,
+                    system_prompt=selection.system_prompt,
                     user_prompt=user_prompt,
                     response_schema=OKR_RESPONSE_SCHEMA,
                 )
