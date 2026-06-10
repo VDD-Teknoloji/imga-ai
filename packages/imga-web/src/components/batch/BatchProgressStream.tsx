@@ -121,12 +121,16 @@ export function BatchProgressStream({
   // Sprint 9.5.5 B — polling-fallback bookkeeping. Refs (not state)
   // because the watchdog reads + writes them every tick; routing
   // through useState would cause a re-render storm.
-  const lastEventAtRef = useRef<number>(Date.now());
+  const lastEventAtRef = useRef<number>(0);
   const pollingTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const watchdogTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
     if (!jobId) {
+      // jobId reset'i — async-mirror istisnası (projedeki onaylı
+      // pattern): tetikleyici prop'un kendisi; SSE aboneliği de bu
+      // effect'te kurulduğundan reset başka eve taşınamaz.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setSnapshot(null);
       setError(null);
       completedRef.current = false;
@@ -187,7 +191,20 @@ export function BatchProgressStream({
         progress: (payload) => {
           lastEventAtRef.current = Date.now();
           if (payload && typeof payload === "object") {
-            setSnapshot(payload as BatchProgressSnapshot);
+            const snap = payload as BatchProgressSnapshot;
+            setSnapshot(snap);
+            // Sprint 11.4 — terminal durum HANGİ kare tipiyle gelirse
+            // gelsin tamamlanma sayılır. İş bittikten sonra yeniden
+            // kurulan SSE, son durumu 'progress' tipinde yollar;
+            // yalnız 'complete' karesine güvenmek UI'ı sonsuza dek
+            // "işleniyor"da bırakıyordu (üstelik her reconnect kare
+            // getirdiği için sessizlik bekçisi de hiç tetiklenmiyordu).
+            if (TERMINAL_STATUSES.has(snap.status)) {
+              fireOnCompleteOnce(snap);
+              stopPolling();
+              handleRef.current?.close();
+              handleRef.current = null;
+            }
           }
         },
         complete: (payload) => {

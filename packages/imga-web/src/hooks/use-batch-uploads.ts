@@ -144,10 +144,22 @@ export function useBatchProgressStream(
           // the SSE payload is a subset of BatchJob keys, structured
           // fields persist from the initial fetch.
           setData((prev) => mergeProgress(prev, payload as Partial<BatchJob>));
+          // Sprint 11.4 — terminal durum 'progress' karesiyle de
+          // gelebilir (iş bittikten sonra kurulan SSE'nin ilk karesi).
+          // Akışı kapat ki reconnect döngüsü oluşmasın; sayfanın
+          // adım-ilerletme effect'i data.status üzerinden zaten
+          // tetiklenir.
+          const status = (payload as Partial<BatchJob>).status;
+          if (status && TERMINAL_STATUSES.has(status)) {
+            handleRef.current?.close();
+            handleRef.current = null;
+          }
         },
         complete: (payload) => {
           if (!payload || typeof payload !== "object") return;
           setData((prev) => mergeProgress(prev, payload as Partial<BatchJob>));
+          handleRef.current?.close();
+          handleRef.current = null;
         },
         ping: () => {
           /* keepalive */
