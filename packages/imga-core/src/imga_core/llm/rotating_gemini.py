@@ -92,7 +92,7 @@ class RotatingGeminiProvider(LLMProvider):
     def __init__(
         self,
         keys: list[GeminiKey],
-        model_name: str = "gemini-2.5-flash",
+        model_name: str = "gemini-3-flash-preview",  # Sprint 11.2 — tek model ailesi
         # Sprint 9.0.5-A R7 — match GeminiProvider's 10s default
         # (was 5s); see that constructor's comment for the SDK
         # retry-disable rationale.

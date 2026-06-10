@@ -1322,7 +1322,7 @@ def _unified_model_name() -> str:
     return (
         os.environ.get("IMGA_UNIFIED_GEMINI_MODEL")
         or os.environ.get("IMGA_GEMINI_MODEL")
-        or "gemini-2.5-flash"
+        or "gemini-3-flash-preview"
     )
 
 

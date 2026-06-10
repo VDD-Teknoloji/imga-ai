@@ -54,7 +54,7 @@ def _build_gemini() -> LLMProvider | None:
         )
         return None
 
-    model_name = os.environ.get("IMGA_GEMINI_MODEL", "gemini-2.5-flash")
+    model_name = os.environ.get("IMGA_GEMINI_MODEL", "gemini-3-flash-preview")  # Sprint 11.2 — tek model ailesi
 
     # Imported here so the package works when google-genai isn't
     # installed and LLM fallback is disabled (Sprint 9.1 H — migrated

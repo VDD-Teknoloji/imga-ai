@@ -114,7 +114,7 @@ class GeminiProvider(LLMProvider):
     def __init__(
         self,
         api_key: str,
-        model_name: str = "gemini-2.5-flash",
+        model_name: str = "gemini-3-flash-preview",  # Sprint 11.2 — tek model ailesi
         # Sprint 9.0.5-A R7 — bumped 5s -> 10s. The old SDK's retry
         # path was previously turning a single 30s timeout into a 90+s
         # wall-clock through its default exponential backoff (3-5x).

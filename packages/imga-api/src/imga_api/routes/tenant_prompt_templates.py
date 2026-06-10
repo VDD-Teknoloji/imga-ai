@@ -84,7 +84,7 @@ class PromptTemplateUpsertRequest(BaseModel):
     system_prompt: str = Field(..., min_length=1)
     user_prompt_template: str = Field(..., min_length=1)
     response_schema: dict[str, Any] = Field(default_factory=dict)
-    model_name: str = "gemini-2.5-flash"
+    model_name: str = "gemini-3-flash-preview"
     temperature: float = Field(default=0.2, ge=0.0, le=2.0)
     top_p: float = Field(default=0.9, ge=0.0, le=1.0)
     max_output_tokens: int = Field(default=8192, ge=1, le=65536)
