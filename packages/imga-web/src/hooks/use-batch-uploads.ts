@@ -102,6 +102,8 @@ export function useBatchProgressStream(
   const [isLoading, setIsLoading] = useState<boolean>(jobId !== null);
   const [error, setError] = useState<string | null>(null);
   const handleRef = useRef<SseHandle | null>(null);
+  // Sprint 11.5 — emniyet sorgusu zamanlayıcısı (aşağıya bakın).
+  const safetyPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // jobId değişiminde state sıfırlama — async-mirror istisnası
   // (upload/page.tsx'teki onaylı pattern ile aynı): tetikleyici bir
@@ -171,10 +173,46 @@ export function useBatchProgressStream(
       },
     });
     handleRef.current = handle;
+
+    // Sprint 11.5 — HER DURUMDA çalışan emniyet sorgusu. Üretim
+    // kanıtı (Kitap1.xlsx, 0/98'de donma): SSE bağlantısı proxy
+    // katmanında sessizce ölebiliyor — ne kare ne hata geliyor;
+    // sayfa ilk GET'in görüntüsünde sonsuza dek kalıyordu. 9.5.5
+    // B'nin watchdog'u yalnız BatchProgressStream BİLEŞENİNE
+    // eklenmişti; bu hook (upload sayfası) korumasızdı. Çözüm,
+    // bileşendekinden de basit: terminal duruma kadar 5 sn'de bir
+    // job satırını oku (tek-satır GET — ucuz), DB durumu her zaman
+    // otoritedir. SSE sağlıklıysa aradaki kareler saniye-altı
+    // canlılığı zaten verir; ölüyse emniyet sorgusu hem ilerlemeyi
+    // hem bitişi garanti eder.
+    safetyPollRef.current = setInterval(() => {
+      void apiRequest<BatchJob>(`/tenants/me/analyze/batch/${jobId}`)
+        .then((row) => {
+          if (cancelled) return;
+          setData((prev) => mergeProgress(prev, row));
+          if (TERMINAL_STATUSES.has(row.status)) {
+            if (safetyPollRef.current) {
+              clearInterval(safetyPollRef.current);
+              safetyPollRef.current = null;
+            }
+            handleRef.current?.close();
+            handleRef.current = null;
+          }
+        })
+        .catch(() => {
+          // Geçici hata — sonraki tik yeniden dener; kalıcı 401
+          // api-client'ın onSessionExpired akışından yürür.
+        });
+    }, 5_000);
+
     return () => {
       cancelled = true;
       handle.close();
       handleRef.current = null;
+      if (safetyPollRef.current) {
+        clearInterval(safetyPollRef.current);
+        safetyPollRef.current = null;
+      }
     };
   }, [jobId]);
 
