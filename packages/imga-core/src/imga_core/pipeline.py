@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from imga_core.analyzers.base import AnalyzerPrediction, SentimentAnalyzer
 from imga_core.classifiers.base import CategoryClassifier
@@ -30,6 +31,12 @@ from imga_core.perspectives import (
 )
 from imga_core.rules import RuleEngine
 from imga_core.summary import generate_heuristic_summary
+
+if TYPE_CHECKING:
+    from imga_core.llm.unified_classifier import (
+        FewShotExample,
+        GeminiUnifiedEngine,
+    )
 
 _logger = logging.getLogger(__name__)
 
@@ -63,6 +70,71 @@ class AnalysisPipeline:
 
     def analyze(self, text: str) -> AnalysisResult:
         return self.analyze_batch([text])[0]
+
+    async def analyze_batch_unified_async(
+        self,
+        texts: list[str],
+        *,
+        engine: "GeminiUnifiedEngine",
+        available_categories: list[str],
+        few_shot: tuple["FewShotExample", ...] = (),
+        stats_sink: dict[str, int] | None = None,
+    ) -> list[AnalysisResult]:
+        """Sprint 11.0 — birleşik LLM yolu: sentiment + kategori tek
+        Gemini batch çağrı setinden gelir; BERT ve keyword/LLM-fallback
+        classifier hiç çalışmaz.
+
+        Override sözleşmesi klasik yolla birebir: pre-BERT katmanları
+        (KB/critical/tier1) LLM'den ÖNCE kararı kilitler; post
+        katmanları (SLA/tier2) LLM sentiment'i üstünde aynı kurallarla
+        oynar — LLM, BERT'in koltuğuna oturur, mimari değişmez.
+
+        Hata sözleşmesi: motor üretemezse exception BURADAN yükselir;
+        çağıran (worker/route) klasik ``analyze_batch_async``'e düşer.
+        Few-shot örnekleri tenant düzeltmelerinden gelir — "modelin
+        öğrenmesi" bu enjeksiyondur.
+        """
+        n = len(texts)
+        if n == 0:
+            return []
+        normalized = [t if isinstance(t, str) else "" for t in texts]
+
+        pre_overrides: list[OverrideHit | None] = [None] * n
+        for i, text in enumerate(normalized):
+            pre_overrides[i] = self._pre_bert_lookup(text)
+
+        predictions, stats = await engine.classify_unified_batch_async(
+            normalized,
+            available_categories=available_categories,
+            few_shot=few_shot,
+        )
+        if stats_sink is not None:
+            stats_sink["llm_total_input_tokens"] = stats.input_tokens
+            stats_sink["llm_total_output_tokens"] = stats.output_tokens
+            stats_sink["llm_duration_ms"] = stats.duration_ms
+            stats_sink["llm_calls"] = stats.calls
+
+        results: list[AnalysisResult] = []
+        for i, text in enumerate(normalized):
+            unified = predictions[i]
+            categorization = CategoryClassification(
+                primary=unified.category,
+                primary_confidence=unified.category_confidence,
+                method="llm",
+                requires_manual_review=unified.category_confidence < 0.3,
+            )
+            results.append(
+                self._build_result(
+                    text,
+                    pre_overrides[i],
+                    AnalyzerPrediction(
+                        label=unified.sentiment_label,
+                        score=unified.sentiment_score,
+                    ),
+                    categorization,
+                )
+            )
+        return results
 
     async def analyze_batch_async(
         self,

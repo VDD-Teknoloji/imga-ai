@@ -51,6 +51,12 @@ from imga_core import (
 )
 from imga_core.categorizers import TaxonomyEntry, apply_company_heuristic
 from imga_core.llm import RotatingGeminiProvider
+from imga_core.llm.unified_classifier import (
+    FewShotExample,
+    GeminiUnifiedEngine,
+)
+from imga_core.models import OverrideHit
+from imga_core.text_utils import review_text_hash
 from imga_db import create_engine, create_session_factory, set_current_tenant
 from imga_db.models import (
     AnalyzeBatchJob,
@@ -413,6 +419,8 @@ async def _run_job(
     # ONCE per job so the rotator state (priority order + RateLimit
     # fall-through) lives for the full run.
     tenant_classifier = await _build_tenant_classifier(tenant_id, context)
+    # Sprint 11.0 — birleşik LLM bağlamı (motor + düzeltme deposu).
+    unified_ctx = await _build_unified_context(tenant_id, context)
 
     # Sprint 9.0 — resume filter. When resume_from_row > 0 we drop
     # already-processed rows from the iterator before they hit
@@ -446,6 +454,7 @@ async def _run_job(
                 seen_hashes=seen_hashes_in_batch,
                 context=context,
                 classifier_override=tenant_classifier,
+                unified_ctx=unified_ctx,
             )
     else:
         # Sprint 9.0.5-A B3 — bounded parallel path. Up to
@@ -468,6 +477,7 @@ async def _run_job(
             context=context,
             chunk_concurrency=chunk_concurrency,
             classifier_override=tenant_classifier,
+            unified_ctx=unified_ctx,
         )
         if await _is_cancelled(job_id, tenant_id, context):
             log.info("batch worker: job %s cancelled (parallel)", job_id)
@@ -536,6 +546,7 @@ async def _run_chunks_parallel(
     context: WorkerContext,
     chunk_concurrency: int,
     classifier_override: CategoryClassifier | None = None,
+    unified_ctx: UnifiedJobContext | None = None,
 ) -> None:
     """Drive ``_process_chunk`` in parallel with a bounded in-flight
     set. Each task acquires the pool semaphore before invoking
@@ -563,6 +574,7 @@ async def _run_chunks_parallel(
                 triggered_by_user_id=triggered_by_user_id,
                 seen_hashes=seen_hashes, context=context,
                 classifier_override=classifier_override,
+                unified_ctx=unified_ctx,
             )
         return
 
@@ -580,6 +592,7 @@ async def _run_chunks_parallel(
                 context=context,
                 chunk_index=idx,
                 classifier_override=classifier_override,
+                unified_ctx=unified_ctx,
             )
 
     in_flight: set[asyncio.Task[None]] = set()
@@ -677,6 +690,7 @@ async def _process_chunk(
     context: WorkerContext,
     chunk_index: int | None = None,
     classifier_override: CategoryClassifier | None = None,
+    unified_ctx: UnifiedJobContext | None = None,
 ) -> None:
     """Analyze and persist one chunk worth of rows. Each chunk is its
     own transaction so a row-level error rolls back ONLY the bad row,
@@ -759,11 +773,39 @@ async def _process_chunk(
         # llm_total_input_tokens / llm_total_output_tokens /
         # llm_duration_ms from the BatchClassificationResult.
         classifier_stats: dict[str, int] = {}
-        analyses: list[AnalysisResult] = await pipeline.analyze_batch_async(
-            texts,
-            classifier=classifier_override,
-            classifier_stats_sink=classifier_stats,
-        )
+        analyses: list[AnalysisResult] | None = None
+        # Sprint 11.0 — birincil yol: birleşik Gemini sınıflandırma
+        # (sentiment + kategori tek çağrı setinde, few-shot düzeltme
+        # örnekleriyle). Motor üretemezse klasik yola düşülür: BERT
+        # zinciri (uzak Modal → lazy lokal) + keyword/LLM classifier.
+        if unified_ctx is not None:
+            try:
+                few_shot = await _few_shot_for_chunk(
+                    unified_ctx, texts, context, tenant_id
+                )
+                analyses = await pipeline.analyze_batch_unified_async(
+                    texts,
+                    engine=unified_ctx.engine,
+                    available_categories=unified_ctx.available_categories,
+                    few_shot=few_shot,
+                    stats_sink=classifier_stats,
+                )
+            except Exception as exc:  # noqa: BLE001 — fallback zinciri
+                log.warning(
+                    "unified classifier failed for chunk; falling back "
+                    "to classic pipeline: %s",
+                    exc,
+                )
+                analyses = None
+        if analyses is None:
+            analyses = await pipeline.analyze_batch_async(
+                texts,
+                classifier=classifier_override,
+                classifier_stats_sink=classifier_stats,
+            )
+        # Birebir düzeltme katmanı — insan kararı her yolu ezer.
+        if unified_ctx is not None:
+            analyses = _apply_corrections(analyses, texts, unified_ctx)
         bert_seconds = time.monotonic() - bert_started_at
     except Exception as exc:
         log.exception("batch chunk inference failed: %s", exc)
@@ -1249,6 +1291,197 @@ async def _build_tenant_classifier(
         llm_provider=RotatingGeminiProvider(keys=keys),
         llm_concurrency=llm_concurrency,
     )
+
+
+# --- Sprint 11.0 — birleşik LLM sınıflandırma bağlamı -------------------
+
+
+@dataclass
+class UnifiedJobContext:
+    """Job-ömürlü birleşik sınıflandırma durumu: motor + kategori
+    listesi + tenant düzeltme deposu + embedding key'leri. None ise
+    job klasik yolda koşar (BERT zinciri + keyword/LLM classifier)."""
+
+    engine: GeminiUnifiedEngine
+    available_categories: list[str]
+    store: Any  # CorrectionStore — imga_api.services.correction_store
+    keys: list[Any]  # list[GeminiKey] — embedding çağrıları için
+
+
+def _unified_enabled() -> bool:
+    import os
+
+    return os.environ.get(
+        "IMGA_UNIFIED_CLASSIFIER_ENABLED", "true"
+    ).strip().lower() in ("1", "true", "yes")
+
+
+def _unified_model_name() -> str:
+    import os
+
+    return (
+        os.environ.get("IMGA_UNIFIED_GEMINI_MODEL")
+        or os.environ.get("IMGA_GEMINI_MODEL")
+        or "gemini-2.5-flash"
+    )
+
+
+async def _build_unified_context(
+    tenant_id: UUID, context: WorkerContext
+) -> UnifiedJobContext | None:
+    """Tenant'ın Gemini key'leri varsa birleşik motoru kur; yoksa
+    None — job klasik yola düşer. Düzeltme deposu da burada, job
+    başında bir kez yüklenir (snapshot semantiği)."""
+    if not _unified_enabled():
+        return None
+
+    from imga_api.services.correction_store import load_correction_store
+    from imga_api.services.llm_credentials import load_active_gemini_keys
+
+    try:
+        async with context.admin_session_factory() as session, session.begin():
+            await set_current_tenant(session, tenant_id)
+            keys = await load_active_gemini_keys(session, tenant_id)
+            store = await load_correction_store(session, tenant_id)
+    except Exception:
+        log.exception(
+            "batch worker: unified context build failed; classic path",
+            extra={"tenant_id": str(tenant_id)},
+        )
+        return None
+    if not keys:
+        log.info(
+            "batch worker: no Gemini keys; unified classifier disabled "
+            "for this job (classic BERT+keyword path)",
+            extra={"tenant_id": str(tenant_id)},
+        )
+        return None
+
+    from imga_core.categories.taxonomy import GLOBAL_CATEGORY_CODES
+
+    engine = GeminiUnifiedEngine(
+        keys,
+        model_name=_unified_model_name(),
+        concurrency=max(1, context.settings.llm_concurrency // 2),
+    )
+    log.info(
+        "batch worker: unified classifier active (model=%s, keys=%d, "
+        "corrections=%d)",
+        engine.model_name,
+        len(keys),
+        len(store.exact),
+        extra={"tenant_id": str(tenant_id)},
+    )
+    return UnifiedJobContext(
+        engine=engine,
+        available_categories=list(GLOBAL_CATEGORY_CODES),
+        store=store,
+        keys=keys,
+    )
+
+
+async def _few_shot_for_chunk(
+    unified_ctx: UnifiedJobContext,
+    texts: list[str],
+    context: WorkerContext,
+    tenant_id: UUID,
+) -> tuple[FewShotExample, ...]:
+    """Chunk için few-shot seçimi: güncel düzeltmeler + (best-effort)
+    chunk merkezine anlamsal en yakın düzeltmeler (RAG). Embedding
+    erişilemezse sessizce güncel-örnek moduna düşer."""
+    from imga_api.services.correction_store import (
+        merge_few_shot,
+        nearest_corrections,
+    )
+    from imga_api.services.embedding_service import embed_texts
+
+    recent = unified_ctx.store.recent_examples
+    semantic = []
+    if recent:
+        try:
+            sample = texts[:64]
+            vectors = await embed_texts(sample, unified_ctx.keys)
+            if vectors:
+                dim = len(vectors[0])
+                centroid = [
+                    sum(v[d] for v in vectors) / len(vectors)
+                    for d in range(dim)
+                ]
+                async with (
+                    context.admin_session_factory() as session,
+                    session.begin(),
+                ):
+                    await set_current_tenant(session, tenant_id)
+                    semantic = await nearest_corrections(
+                        session, tenant_id, centroid
+                    )
+        except Exception as exc:  # noqa: BLE001 — RAG best-effort
+            log.warning("semantic few-shot lookup failed: %s", exc)
+    merged = merge_few_shot(list(recent), list(semantic))
+    return tuple(
+        FewShotExample(
+            text=e.text,
+            sentiment_label=e.sentiment_label,
+            category=e.category,
+            reason=e.reason,
+        )
+        for e in merged
+    )
+
+
+def _apply_corrections(
+    analyses: list[AnalysisResult],
+    texts: list[str],
+    unified_ctx: UnifiedJobContext,
+) -> list[AnalysisResult]:
+    """Birebir düzeltme katmanı: text_hash eşleşen satırlar insan
+    kararını alır (eski 'Train & Save' KB davranışının DB-bazlı,
+    tenant-scoped hali). Pipeline sonrası uygulanır — hangi yol
+    üretmiş olursa olsun insan kararı kazanır."""
+    if not unified_ctx.store.has_corrections:
+        return analyses
+    from imga_api.services.correction_service import SCORE_FOR_LABEL
+
+    patched: list[AnalysisResult] = []
+    for text, analysis in zip(texts, analyses, strict=True):
+        decision = unified_ctx.store.exact_lookup(review_text_hash(text))
+        if decision is None:
+            patched.append(analysis)
+            continue
+        score = SCORE_FOR_LABEL.get(decision.sentiment_label, 0.0)
+        overrides = [
+            *analysis.overrides_applied,
+            OverrideHit(
+                layer="user_correction_kb",
+                matched_keywords=(),
+                score=score,
+                detail=(
+                    "Tenant düzeltme sözlüğü: "
+                    f"{decision.sentiment_label}/{decision.category}"
+                ),
+            ),
+        ]
+        categorization = analysis.categorization
+        if categorization is not None:
+            categorization = categorization.model_copy(
+                update={
+                    "primary": decision.category,
+                    "primary_confidence": 1.0,
+                    "requires_manual_review": False,
+                }
+            )
+        patched.append(
+            analysis.model_copy(
+                update={
+                    "sentiment_label": decision.sentiment_label,
+                    "sentiment_score": score,
+                    "risk_class": decision.sentiment_label,
+                    "overrides_applied": overrides,
+                    "categorization": categorization,
+                }
+            )
+        )
+    return patched
 
 
 async def _fetch_dimension_mapping(

@@ -39,15 +39,13 @@ COPY packages/imga-api/pyproject.toml packages/imga-api/README.md /build/imga-ap
 COPY packages/imga-api/src /build/imga-api/src
 RUN pip install --no-cache-dir /build/imga-api
 
-# Pre-download BERT model into HF cache so the runtime image starts cold
-# without an HF Hub call. Cached as a Docker layer keyed on the model id;
-# subsequent rebuilds reuse it as long as the model id stays the same.
+# Sprint 11.0 — BERT model bake KALDIRILDI (~440 MB image tasarrufu).
+# Sentiment artık birincil olarak Gemini unified'dan; BERT zincirin
+# son halkası: önce uzak Modal servisi (IMGA_REMOTE_BERT_URL), o da
+# yoksa lokal lazy yükleme — model HF Hub'dan İLK kullanımda iner ve
+# HF_HOME volume'ünde/container yaşamında cache'lenir. Normal
+# işleyişte bu yol hiç ısınmaz.
 ENV HF_HOME=/cache/huggingface
-RUN mkdir -p /cache/huggingface \
- && python -c "from transformers import AutoTokenizer, AutoModelForSequenceClassification; \
-m='savasy/bert-base-turkish-sentiment-cased'; \
-AutoTokenizer.from_pretrained(m); \
-AutoModelForSequenceClassification.from_pretrained(m)"
 
 # ---------------------------------------------------------------------------
 FROM python:${PYTHON_VERSION}-slim AS runtime
@@ -81,9 +79,9 @@ WORKDIR /app
 
 COPY --from=builder /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
 COPY --from=builder /usr/local/bin /usr/local/bin
-# Bake the BERT model into the image (~440MB) so first /analyze is a
-# disk-to-memory load, not an HF download.
-COPY --from=builder --chown=imga:imga /cache/huggingface /cache/huggingface
+# Sprint 11.0 — model bake yok; /cache/huggingface boş ve imga-owned
+# kalır (yukarıdaki mkdir). Acil-durum lokal BERT'i ilk kullanımda
+# buraya indirir.
 
 # Runtime alembic.ini — points script_location at the installed
 # imga_db package's alembic dir (absolute path, since WORKDIR /app

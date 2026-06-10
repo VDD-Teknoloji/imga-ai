@@ -19,7 +19,7 @@ name: imga-production
 
 services:
   postgres:
-    image: postgres:17-alpine
+    image: pgvector/pgvector:pg17
     container_name: imga-prod-postgres
     restart: unless-stopped
     env_file: /etc/imga/production/postgres.env

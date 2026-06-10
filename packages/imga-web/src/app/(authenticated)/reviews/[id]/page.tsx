@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { toast } from "sonner";
 
+import { CorrectReviewDialog } from "@/components/reviews/correct-review-dialog";
 import { OverrideStack } from "@/components/reviews/override-display";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -117,8 +118,16 @@ export default function ReviewDetailPage() {
           </Card>
 
           <Card>
-            <CardHeader>
+            <CardHeader className="flex flex-row items-center justify-between gap-3 space-y-0">
               <CardTitle className="text-base">Analiz</CardTitle>
+              {/* Sprint 11.0 — düzeltme-geri-besleme girişi. Yanlış
+                  karar buradan düzeltilir; sistem benzer yorumlarda
+                  düzeltmeyi örnek alır. */}
+              <CorrectReviewDialog
+                reviewId={detail.data.id}
+                currentSentiment={detail.data.sentiment.label}
+                currentCategory={detail.data.categorization.primary}
+              />
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">

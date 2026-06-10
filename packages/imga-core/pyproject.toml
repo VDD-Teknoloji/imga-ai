@@ -21,6 +21,8 @@ classifiers = [
     "Topic :: Text Processing :: Linguistic",
 ]
 dependencies = [
+    # Sprint 11.0 — RemoteHTTPSentimentAnalyzer (uzak BERT) HTTP istemcisi.
+    "httpx>=0.27",
     "transformers>=4.40,<5.0",
     "torch>=2.0,<3.0",
     "pandas>=2.0,<3.0",

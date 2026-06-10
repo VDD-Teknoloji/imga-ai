@@ -14,8 +14,9 @@ from typing import Annotated, Literal
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from imga_db.models import UserTenantRole
+from imga_db.models import Review, UserTenantRole
 from pydantic import BaseModel
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from imga_api.auth_deps import CurrentUser, bind_tenant, require_role
@@ -27,6 +28,13 @@ from imga_api.services import (
     ReviewNotFoundError,
     ReviewService,
 )
+from imga_api.services.correction_service import (
+    SCORE_FOR_LABEL,
+    CorrectionError,
+    CorrectionService,
+)
+from imga_api.services.embedding_service import embed_text
+from imga_api.services.llm_credentials import load_active_gemini_keys
 from imga_api.services.review_list_service import (
     ReviewListFilters,
     ReviewListItem,
@@ -361,6 +369,109 @@ async def manually_create_ticket(
             review_id=review_id,
             ticket_id=ticket.id,
             ticket_state=str(ticket.state),
+        )
+
+
+# --- Sprint 11.0 — kullanıcı düzeltmesi (düzeltme-geri-besleme) -----
+
+
+class CorrectReviewRequest(BaseModel):
+    """En az bir alan zorunlu; verilmeyen alan mevcut kararda kalır."""
+
+    sentiment_label: Literal["POZITIF", "NEGATIF", "NÖTR"] | None = None
+    primary_category: str | None = None
+    reason: str | None = None
+
+
+class CorrectReviewResponse(BaseModel):
+    review_id: UUID
+    sentiment_label: str
+    sentiment_score: float
+    primary_category: str
+    correction_id: UUID
+    # Frontend "düzeltme kaydedildi + benzer yorumlara genellenecek"
+    # mesajını embedding başarısına göre tonlayabilir.
+    embedding_stored: bool
+
+
+@router.post(
+    "/{review_id}/correct",
+    response_model=CorrectReviewResponse,
+    summary="Yanlış model kararını düzelt (düzeltme-geri-besleme).",
+    description=(
+        "Analiz kararını insan kararıyla değiştirir: reviews satırı "
+        "anında güncellenir, düzeltme review_corrections'a yazılır. "
+        "Düzeltme üç katmanda 'öğrenir': aynı metin bir daha gelirse "
+        "birebir override; Gemini sınıflandırma prompt'una few-shot "
+        "örneği; embedding (best-effort) ile anlamsal komşu araması. "
+        "Viewer rolü düzeltemez."
+    ),
+    responses={
+        400: {"description": "Geçersiz alanlar / değişiklik yok."},
+        403: {"description": "Viewer rolü düzeltme yapamaz."},
+        404: {"description": "Yorum bulunamadı / RLS gizledi."},
+    },
+)
+async def correct_review(
+    review_id: UUID,
+    body: CorrectReviewRequest,
+    current: Annotated[CurrentUser, _WriteMember],
+    app_session: Annotated[AsyncSession, Depends(get_app_session)],
+) -> CorrectReviewResponse:
+    tenant_id = _require_active_tenant(current)
+
+    # Embedding, düzeltme transaction'ı AÇILMADAN önce best-effort
+    # hesaplanır — dış API beklerken satır kilidi tutulmaz. Metin +
+    # tenant key'leri kısa bir ön-transaction'da okunur.
+    embedding: list[float] | None = None
+    text_value: str | None = None
+    keys: list = []
+    async with app_session.begin():
+        await bind_tenant(app_session, current)
+        text_value = (
+            await app_session.execute(
+                select(Review.text)
+                .where(Review.id == review_id)
+                .where(Review.tenant_id == tenant_id)
+                .where(Review.deleted_at.is_(None))
+            )
+        ).scalar_one_or_none()
+        if text_value is not None:
+            try:
+                keys = await load_active_gemini_keys(app_session, tenant_id)
+            except Exception:
+                keys = []
+    if text_value is not None and keys:
+        embedding = await embed_text(text_value, keys)
+
+    async with app_session.begin():
+        await bind_tenant(app_session, current)
+        service = CorrectionService(app_session)
+        try:
+            correction = await service.correct_review(
+                tenant_id=tenant_id,
+                review_id=review_id,
+                new_sentiment_label=body.sentiment_label,
+                new_category=(body.primary_category or "").strip() or None,
+                reason=body.reason,
+                corrected_by_user_id=current.user_id,
+                embedding=embedding,
+            )
+        except CorrectionError as exc:
+            detail = str(exc)
+            code = (
+                status.HTTP_404_NOT_FOUND
+                if "bulunamadı" in detail
+                else status.HTTP_400_BAD_REQUEST
+            )
+            raise HTTPException(status_code=code, detail=detail) from exc
+        return CorrectReviewResponse(
+            review_id=review_id,
+            sentiment_label=correction.new_sentiment_label,
+            sentiment_score=SCORE_FOR_LABEL[correction.new_sentiment_label],
+            primary_category=correction.new_category,
+            correction_id=correction.id,
+            embedding_stored=embedding is not None,
         )
 
 

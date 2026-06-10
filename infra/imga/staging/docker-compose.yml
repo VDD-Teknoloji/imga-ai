@@ -15,7 +15,7 @@ name: imga-staging
 
 services:
   postgres:
-    image: postgres:17-alpine
+    image: pgvector/pgvector:pg17
     container_name: imga-staging-postgres
     restart: unless-stopped
     env_file: /etc/imga/staging/postgres.env

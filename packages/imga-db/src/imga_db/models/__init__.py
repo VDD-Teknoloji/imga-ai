@@ -30,6 +30,7 @@ from imga_db.models.report_job import (
     ReportType,
 )
 from imga_db.models.review import Review, ReviewDecision
+from imga_db.models.review_correction import ReviewCorrection
 from imga_db.models.sla_rule import SlaRule
 from imga_db.models.strategic_report import StrategicReport
 from imga_db.models.taxonomy_edit_audit import TaxonomyEditAudit
@@ -103,6 +104,7 @@ __all__ = [
     "TicketStateTransition",
     "TimestampMixin",
     "TrendAlert",
+    "ReviewCorrection",
     "TrialAnalysis",
     "User",
     "UserTenantLink",

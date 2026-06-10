@@ -43,10 +43,39 @@ def build_classifier() -> CategoryClassifier:
     return HybridClassifier(keyword_classifier=keyword, llm_provider=llm)
 
 
+def build_sentiment_analyzer(settings: Settings) -> Any:
+    """Sprint 11.0 — sentiment fallback zinciri.
+
+    Birincil sınıflandırma artık Gemini unified'dan (worker tarafında);
+    bu analyzer zinciri yalnızca unified üretemediğinde devreye girer:
+
+      1. Uzak BERT (Modal) — IMGA_REMOTE_BERT_URL ayarlıysa. VPS'e
+         model yüklenmez, RAM/CPU baskısı sıfır.
+      2. Lokal BERT (lazy) — son çare; model image'a artık bake
+         edilmediği için İLK kullanımda HF Hub'dan iner.
+    """
+    import os
+
+    from imga_core.analyzers.chained import ChainedSentimentAnalyzer
+    from imga_core.analyzers.remote_http import RemoteHTTPSentimentAnalyzer
+
+    local = BertSentimentAnalyzer(model_name=settings.bert_model)
+    remote_url = os.environ.get("IMGA_REMOTE_BERT_URL", "").strip()
+    if not remote_url:
+        return local
+    remote = RemoteHTTPSentimentAnalyzer(
+        remote_url,
+        token=os.environ.get("IMGA_REMOTE_BERT_TOKEN") or None,
+    )
+    return ChainedSentimentAnalyzer(
+        [("remote-modal", remote), ("local-bert", local)]
+    )
+
+
 def build_pipeline(settings: Settings) -> AnalysisPipeline:
     """Construct the pipeline. Called once at startup."""
     return AnalysisPipeline(
-        analyzer=BertSentimentAnalyzer(model_name=settings.bert_model),
+        analyzer=build_sentiment_analyzer(settings),
         knowledge_base_path=settings.knowledge_base_path,
         rules_path=settings.rules_path,
         sla_params=SLAParams(

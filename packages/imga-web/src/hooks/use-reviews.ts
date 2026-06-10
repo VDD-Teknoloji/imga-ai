@@ -28,6 +28,44 @@ export function useManualPromoteReview() {
   });
 }
 
+// --- Sprint 11.0 — kullanıcı düzeltmesi (düzeltme-geri-besleme) ------
+
+export interface CorrectReviewPayload {
+  reviewId: string;
+  sentiment_label?: "POZITIF" | "NEGATIF" | "NÖTR";
+  primary_category?: string;
+  reason?: string;
+}
+
+export interface CorrectReviewResponse {
+  review_id: string;
+  sentiment_label: string;
+  sentiment_score: number;
+  primary_category: string;
+  correction_id: string;
+  embedding_stored: boolean;
+}
+
+/** POST /tenants/me/reviews/{id}/correct — yanlış model kararını
+ * insan kararıyla değiştirir. Karar anında güncellenir; düzeltme
+ * birebir-eşleşme sözlüğüne + Gemini few-shot havuzuna + (embedding
+ * başarılıysa) anlamsal komşu aramasına girer. */
+export function useCorrectReview() {
+  const queryClient = useQueryClient();
+  return useMutation<CorrectReviewResponse, Error, CorrectReviewPayload>({
+    mutationFn: async ({ reviewId, ...body }) =>
+      apiRequest<CorrectReviewResponse>(
+        `/tenants/me/reviews/${reviewId}/correct`,
+        { method: "POST", body: JSON.stringify(body) },
+      ),
+    onSuccess: (_data, { reviewId }) => {
+      queryClient.invalidateQueries({ queryKey: ["review-detail", reviewId] });
+      queryClient.invalidateQueries({ queryKey: ["reviews"] });
+      queryClient.invalidateQueries({ queryKey: ["executive-overview"] });
+    },
+  });
+}
+
 function buildQueryString(filters: ReviewListFilters, offset: number, limit: number): string {
   const params = new URLSearchParams();
   params.set("limit", String(limit));

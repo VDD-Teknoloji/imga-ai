@@ -20,7 +20,7 @@ name: imga-test
 
 services:
   postgres-test:
-    image: postgres:17-alpine
+    image: pgvector/pgvector:pg17
     container_name: imga-test-postgres
     # Test conftest'i hard-coded parolaları bekler (imga_dev_password /
     # imga_app_password / imga_admin_password). Init script POSTGRES_USER
@@ -192,7 +192,9 @@ services:
           tests/test_trial_analyze.py \
           tests/test_batch_template.py \
           tests/test_executive_overview.py \
+          tests/test_review_corrections.py \
           tests-core/test_key_rotation.py \
+          tests-core/test_unified_classifier.py \
           tests-core/test_metrics_pure_formulas.py \
           tests-core/test_gemini_swot_okr.py \
           tests-core/test_bert_thread_safety.py \

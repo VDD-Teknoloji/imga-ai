@@ -7,7 +7,11 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 SentimentLabel = Literal["NEGATIF", "NÖTR", "POZITIF"]
-OverrideLayer = Literal["knowledge_base", "critical", "tier1", "sla", "tier2"]
+# Sprint 11.0 — "user_correction_kb": tenant duzeltme sozlugunden
+# (review_corrections, birebir text_hash eslesmesi) gelen insan karari.
+OverrideLayer = Literal[
+    "knowledge_base", "critical", "tier1", "sla", "tier2", "user_correction_kb"
+]
 RiskClass = Literal["NEGATIF", "NÖTR", "POZITIF"]
 ClassificationMethod = Literal["keyword", "llm", "ensemble"]
 
