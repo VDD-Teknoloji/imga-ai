@@ -106,6 +106,7 @@ function Content() {
     if (briefingId) return;
     const latest = list.data?.[0];
     if (!latest) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setBriefingIdState(latest.id);
   }, [briefingId, list.data]);
 

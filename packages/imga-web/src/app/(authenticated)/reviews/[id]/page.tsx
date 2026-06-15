@@ -19,7 +19,7 @@ import type { ReviewDecision } from "@/lib/types";
 // bag of enum values. Reasons mirror the bridge's decision tree in
 // imga_api.services.review_service.
 const DECISION_LABELS_TR: Record<ReviewDecision, string> = {
-  create: "Bilet Açıldı",
+  create: "Ticket Açıldı",
   skipped_belirsiz: "Atlandı (Kategori Belirsiz)",
   skipped_mode: "Atlandı (Manuel Mod)",
   skipped_threshold: "Atlandı (Eşik Altı)",
@@ -51,7 +51,7 @@ export default function ReviewDetailPage() {
     if (!detail.data) return;
     promote.mutate(detail.data.id, {
       onSuccess: () => {
-        toast.success("Manuel olarak bilet açıldı.");
+        toast.success("Manuel olarak Ticket açıldı.");
         detail.refetch();
       },
       onError: (err) => {
@@ -60,10 +60,10 @@ export default function ReviewDetailPage() {
           return;
         }
         if (err instanceof ApiError && err.status === 409) {
-          toast.error("Bu analiz zaten bir bilete bağlı.");
+          toast.error("Bu analiz zaten bir Ticket'a bağlı.");
           return;
         }
-        toast.error("Bilet açılamadı.");
+        toast.error("Ticket açılamadı.");
       },
     });
   }
@@ -194,7 +194,7 @@ export default function ReviewDetailPage() {
 
           <Card>
             <CardHeader>
-              <CardTitle className="text-base">Override Katmanları</CardTitle>
+              <CardTitle className="text-base">Kural Katmanları</CardTitle>
             </CardHeader>
             <CardContent>
               <OverrideStack hits={detail.data.overrides_applied} />
@@ -221,11 +221,11 @@ export default function ReviewDetailPage() {
               {detail.data.ticket_id ? (
                 <div className="bg-muted/30 flex items-center justify-between rounded-md border p-3">
                   <p className="text-sm">
-                    Bağlı bilet:{" "}
+                    Bağlı Ticket:{" "}
                     <span className="font-mono">#{detail.data.ticket_id.slice(0, 8)}</span>
                   </p>
                   <Button size="sm" render={<Link href={`/tickets/${detail.data.ticket_id}`} />}>
-                    Bilete Git →
+                    Ticket&apos;a Git →
                   </Button>
                 </div>
               ) : canPromote ? (
@@ -242,10 +242,10 @@ export default function ReviewDetailPage() {
                     ) : (
                       <ArrowRight className="size-4" aria-hidden />
                     )}
-                    Bu Analizi Bilete Dönüştür
+                    Bu Analizi Ticket&apos;a Dönüştür
                   </Button>
                   <span className="text-muted-foreground text-xs">
-                    Manuel override — bridge bu karar için bilet açmamıştı.
+                    Elle açıldı — sistem bu karar için Ticket açmamıştı.
                   </span>
                 </div>
               ) : null}

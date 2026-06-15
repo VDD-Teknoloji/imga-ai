@@ -71,6 +71,7 @@ function LlmAuditPageInner() {
 
   useEffect(() => {
     const ct = searchParams.get("call_type") ?? "";
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setCallType((prev) => (prev === ct ? prev : ct));
     const sf = searchParams.get("success") ?? "";
     setSuccessFilter((prev) => (prev === sf ? prev : sf));

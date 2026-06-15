@@ -101,7 +101,7 @@ function InvalidTokenView() {
         <div className="space-y-1">
           <p className="font-medium">Bu davet geçersiz veya süresi dolmuş.</p>
           <p className="text-muted-foreground text-sm">
-            Lütfen tenant yöneticinizle iletişime geçip yeni bir davet
+            Lütfen kurum yöneticinizle iletişime geçip yeni bir davet
             isteyin.
           </p>
         </div>
@@ -283,7 +283,7 @@ function ExistingUserAcceptForm({ preview, token }: ValidInviteProps) {
       }
       await joinTenant(token, password);
       toast.success("Davet kabul edildi", {
-        description: `${preview.tenant_name} artık tenant listende.`,
+        description: `${preview.tenant_name} artık kurum listende.`,
       });
       router.replace("/");
     } catch (err) {
@@ -302,7 +302,7 @@ function ExistingUserAcceptForm({ preview, token }: ValidInviteProps) {
       <div className="space-y-1">
         <p className="text-sm font-medium">Mevcut hesap ile katıl</p>
         <p className="text-muted-foreground text-xs">
-          Bu e-posta zaten kayıtlı. Şifrenle doğrulayıp tenant&apos;a
+          Bu e-posta zaten kayıtlı. Şifrenle doğrulayıp kuruma
           ekleneceksin — yeni hesap açılmıyor.
         </p>
       </div>

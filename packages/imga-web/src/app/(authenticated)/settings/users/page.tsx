@@ -129,7 +129,7 @@ function InviteForm({ tenantId }: { tenantId: string | null }) {
       return;
     }
     if (!tenantId) {
-      toast.error("Aktif tenant bulunamadı.");
+      toast.error("Aktif kurum bulunamadı.");
       return;
     }
     create.mutate(

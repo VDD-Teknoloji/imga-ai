@@ -90,9 +90,9 @@ export default function PromptTemplatesPage() {
             Prompt Şablonları
           </h1>
           <p className="text-muted-foreground text-sm">
-            LLM çağrıları için sistem + kullanıcı prompt&apos;ları.
-            Global default&apos;ları kopyalayıp tenant override
-            oluşturun. Test butonu sunucuda Jinja2 render eder.
+            LLM çağrıları için sistem + kullanıcı istemleri.
+            Varsayılanları kopyalayıp kuruma özel şablon
+            oluşturun. Test butonu sunucuda Jinja2 çalıştırır.
           </p>
         </div>
       </header>
@@ -113,7 +113,7 @@ export default function PromptTemplatesPage() {
                 // override'lar listelenmeye devam etsin.
                 <p className="text-destructive p-2 text-xs">
                   Varsayılan şablonlar alınamadı; yalnızca kayıtlı
-                  override&apos;lar listeleniyor.
+                  özelleştirmeler listeleniyor.
                 </p>
               )}
             {allRows.map((t) => (
@@ -211,7 +211,7 @@ function TemplateEditor({
           },
         },
         {
-          onSuccess: () => toast.success("Override güncellendi."),
+          onSuccess: () => toast.success("Özelleştirme güncellendi."),
           onError: (err) => toast.error(formatApiErrorMessage(err)),
         },
       );
@@ -232,7 +232,7 @@ function TemplateEditor({
           make_default: true,
         },
         {
-          onSuccess: () => toast.success("Tenant override oluşturuldu."),
+          onSuccess: () => toast.success("Kuruma özel şablon oluşturuldu."),
           onError: (err) => toast.error(formatApiErrorMessage(err)),
         },
       );
@@ -252,7 +252,7 @@ function TemplateEditor({
       {
         onSuccess: (resp) => {
           setRenderResult(resp.rendered_prompt);
-          toast.success(`Render başarılı (${resp.source}).`);
+          toast.success(`Test başarılı (${resp.source}).`);
         },
         onError: (err) => toast.error(formatApiErrorMessage(err)),
       },
@@ -269,14 +269,14 @@ function TemplateEditor({
               {template.version}
             </Badge>
             <Badge variant={isOverride ? "default" : "outline"} className="text-xs">
-              {isOverride ? "Tenant override" : "Global default"}
+              {isOverride ? "Kuruma özel" : "Varsayılan"}
             </Badge>
             <span className="text-muted-foreground ml-auto text-xs">
               {template.model_name} · t={template.temperature}
             </span>
           </div>
           <div className="space-y-1">
-            <Label className="text-xs">System prompt</Label>
+            <Label className="text-xs">Sistem istemi</Label>
             <Textarea
               rows={4}
               value={systemPrompt}
@@ -286,7 +286,7 @@ function TemplateEditor({
           </div>
           <div className="space-y-1">
             <Label className="text-xs">
-              User prompt template (Jinja2 — {"{{"} variable {"}}"} kullanın)
+              Kullanıcı istem şablonu (Jinja2 — {"{{"} variable {"}}"} kullanın)
             </Label>
             <Textarea
               rows={10}
@@ -317,7 +317,7 @@ function TemplateEditor({
               onClick={onSave}
               disabled={create.isPending || patch.isPending}
             >
-              {isOverride ? "Override güncelle" : "Tenant override oluştur"}
+              {isOverride ? "Özelleştirmeyi güncelle" : "Kuruma özel oluştur"}
             </Button>
             {isOverride && (
               <Button
@@ -325,16 +325,16 @@ function TemplateEditor({
                 variant="ghost"
                 disabled={remove.isPending}
                 onClick={() => {
-                  if (!confirm("Override silinsin? Tenant global'e döner."))
+                  if (!confirm("Özelleştirme silinsin? Kurum varsayılana döner."))
                     return;
                   remove.mutate(template.id, {
-                    onSuccess: () => toast.success("Override silindi."),
+                    onSuccess: () => toast.success("Özelleştirme silindi."),
                     onError: (err) => toast.error(formatApiErrorMessage(err)),
                   });
                 }}
                 className="text-red-700 hover:text-red-900"
               >
-                Override sil
+                Özelleştirmeyi sil
               </Button>
             )}
           </div>
@@ -343,7 +343,7 @@ function TemplateEditor({
 
       <Card>
         <CardContent className="space-y-3 p-4">
-          <h3 className="text-sm font-semibold">Test render</h3>
+          <h3 className="text-sm font-semibold">Test çalıştırması</h3>
           <div className="space-y-1">
             <Label className="text-xs">Variables (JSON)</Label>
             <Input
@@ -359,11 +359,11 @@ function TemplateEditor({
             disabled={isVirtual || testRender.isPending}
             title={
               isVirtual
-                ? "Test render kayıtlı şablonlarda çalışır — önce override oluşturun."
+                ? "Test çalıştırması kayıtlı şablonlarda çalışır — önce özelleştirme oluşturun."
                 : undefined
             }
           >
-            {testRender.isPending ? "Render…" : "Render et"}
+            {testRender.isPending ? "Çalıştırılıyor…" : "Test et"}
           </Button>
           {renderResult !== null && (
             <pre className="bg-muted overflow-x-auto rounded p-3 font-mono text-xs">

@@ -6,8 +6,8 @@ export function ForbiddenNotice() {
       <ShieldAlert className="text-muted-foreground size-10" aria-hidden />
       <h1 className="text-2xl font-semibold tracking-tight">Yetkiniz yok</h1>
       <p className="text-muted-foreground text-sm">
-        Tenant yapılandırması yalnızca yöneticiler tarafından düzenlenebilir.
-        Yetki için tenant yöneticinize başvurun.
+        Kurum yapılandırması yalnızca yöneticiler tarafından düzenlenebilir.
+        Yetki için kurum yöneticinize başvurun.
       </p>
     </main>
   );

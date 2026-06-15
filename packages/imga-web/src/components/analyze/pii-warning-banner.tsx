@@ -43,7 +43,7 @@ export function PiiWarningBanner({ preview, consented, onConsentChange }: Props)
           </p>
           <p className="text-amber-800 text-xs">
             Bu sütunlardaki değerler analiz sürecinde işlenecek ve
-            ilgili tenant&apos;ın veri kayıtlarında saklanabilir. KVKK
+            ilgili kurumun veri kayıtlarında saklanabilir. KVKK
             uyarınca yüklemeye devam etmek için aşağıdaki onayı
             işaretleyin.
           </p>

@@ -127,7 +127,7 @@ export function CustomCategoryDialog({
             <DialogDescription>
               {isEdit
                 ? "Etiketleri ve açıklamayı güncelleyebilirsin. Kod sabit kalır."
-                : "Tenant'a özel kategori ekle. Kod sonradan değiştirilemez."}
+                : "Kuruma özel kategori ekle. Kod sonradan değiştirilemez."}
             </DialogDescription>
           </DialogHeader>
 

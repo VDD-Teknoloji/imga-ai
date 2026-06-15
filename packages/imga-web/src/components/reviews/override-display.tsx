@@ -105,7 +105,7 @@ export function OverrideStack({ hits }: { hits: OverrideHit[] }) {
   if (hits.length === 0) {
     return (
       <p className="text-muted-foreground text-sm">
-        Bu analiz için hiçbir override katmanı tetiklenmedi.
+        Bu analiz için hiçbir kural katmanı tetiklenmedi.
       </p>
     );
   }

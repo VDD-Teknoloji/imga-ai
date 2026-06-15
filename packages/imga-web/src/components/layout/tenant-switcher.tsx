@@ -34,7 +34,7 @@ export function TenantSwitcher({ collapsed }: TenantSwitcherProps) {
   const [isSwitching, setIsSwitching] = useState(false);
   const [inviteDialogOpen, setInviteDialogOpen] = useState(false);
 
-  const activeTenantName = activeContext?.tenant_name ?? "Tenant seçilmedi";
+  const activeTenantName = activeContext?.tenant_name ?? "Kurum seçilmedi";
   const activeTenantId = activeContext?.tenant_id ?? null;
 
   // Sprint 7.7.3: even single-tenant users see the popover so
@@ -50,9 +50,9 @@ export function TenantSwitcher({ collapsed }: TenantSwitcherProps) {
     setIsSwitching(true);
     try {
       await switchTenant(tenantId);
-      toast.success("Tenant değiştirildi");
+      toast.success("Kurum değiştirildi");
     } catch {
-      toast.error("Tenant değiştirilemedi");
+      toast.error("Kurum değiştirilemedi");
     } finally {
       setIsSwitching(false);
       setOpen(false);
@@ -63,7 +63,7 @@ export function TenantSwitcher({ collapsed }: TenantSwitcherProps) {
     <Button
       variant="outline"
       aria-expanded={open}
-      aria-label={`Aktif tenant: ${activeTenantName}. Değiştirmek için açın.`}
+      aria-label={`Aktif kurum: ${activeTenantName}. Değiştirmek için açın.`}
       disabled={isSwitching}
       className={cn(
         "h-10 w-full justify-between gap-2 px-3 font-medium",
@@ -89,11 +89,11 @@ export function TenantSwitcher({ collapsed }: TenantSwitcherProps) {
         <PopoverContent align="start" className="w-[260px] p-0">
           <Command>
             {availableTenants.length > 1 ? (
-              <CommandInput placeholder="Tenant ara..." />
+              <CommandInput placeholder="Kurum ara..." />
             ) : null}
             <CommandList>
-              <CommandEmpty>Eşleşen tenant yok.</CommandEmpty>
-              <CommandGroup heading="Mevcut tenant'lar">
+              <CommandEmpty>Eşleşen kurum yok.</CommandEmpty>
+              <CommandGroup heading="Mevcut kurumlar">
                 {availableTenants.map((tenant) => (
                   <CommandItem
                     key={tenant.id}

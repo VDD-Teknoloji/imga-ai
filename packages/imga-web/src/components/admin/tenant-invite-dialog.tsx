@@ -171,7 +171,7 @@ export function TenantInviteDialog({
 function describeError(err: unknown): string {
   if (err instanceof ApiError) {
     if (err.status === 403) return "Yetkin yok.";
-    if (err.status === 404) return "Tenant bulunamadı.";
+    if (err.status === 404) return "Kurum bulunamadı.";
     if (err.status === 409) return "Bu e-posta için zaten açık davet var.";
     if (err.status === 422) return "E-posta geçersiz.";
   }

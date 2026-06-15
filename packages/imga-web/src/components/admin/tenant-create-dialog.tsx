@@ -125,15 +125,15 @@ export function TenantCreateDialog({
       setCreatedTenantName(result.tenant.name);
       if (result.initial_invitation_token) {
         setSuccessToken(result.initial_invitation_token);
-        toast.success("Tenant oluşturuldu", {
+        toast.success("Kurum oluşturuldu", {
           description: "İlk admin daveti hazır — linki paylaşın.",
         });
       } else {
-        toast.success("Tenant oluşturuldu");
+        toast.success("Kurum oluşturuldu");
         onOpenChange(false);
       }
     } catch (err) {
-      toast.error("Tenant oluşturulamadı", {
+      toast.error("Kurum oluşturulamadı", {
         description: describeError(err),
       });
     }
@@ -151,7 +151,7 @@ export function TenantCreateDialog({
         ) : (
           <form onSubmit={handleSubmit} className="space-y-4">
             <DialogHeader>
-              <DialogTitle>Yeni tenant</DialogTitle>
+              <DialogTitle>Yeni kurum</DialogTitle>
               <DialogDescription>
                 İsim ve slug zorunlu. Opsiyonel olarak ilk admin daveti
                 aynı işlemde oluşturulabilir.
@@ -240,7 +240,7 @@ export function TenantCreateDialog({
                 <div className="space-y-0.5">
                   <Label htmlFor="seed-admin">İlk admin daveti gönder</Label>
                   <p className="text-muted-foreground text-xs">
-                    Tenant oluşturulurken davet token&apos;ı üretilir.
+                    Kurum oluşturulurken davet token&apos;ı üretilir.
                   </p>
                 </div>
                 <Switch

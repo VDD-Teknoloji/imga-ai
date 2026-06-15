@@ -48,7 +48,7 @@ function ForbiddenView() {
           Yetkiniz yok
         </h1>
         <p className="text-muted-foreground text-sm">
-          Tenant yönetimi sayfası yalnızca süper-yönetici hesaplara
+          Kurum yönetimi sayfası yalnızca süper-yönetici hesaplara
           açıktır.
         </p>
       </div>
@@ -77,16 +77,16 @@ function AdminTenantsBody() {
         <div className="space-y-1">
           <h1 className="flex items-center gap-2 text-2xl font-semibold tracking-tight md:text-3xl">
             <Building2 className="text-primary size-5 md:size-6" aria-hidden />
-            Tenant&apos;lar
+            Kurumlar
           </h1>
           <p className="text-muted-foreground text-sm">
-            Süper-yönetici görünümü. Tenant oluştur, düzenle, davet
+            Süper-yönetici görünümü. Kurum oluştur, düzenle, davet
             gönder veya soft-delete.
           </p>
         </div>
         <Button onClick={() => setCreateOpen(true)} className="gap-2">
           <Plus className="size-4" aria-hidden />
-          Yeni Tenant
+          Yeni Kurum
         </Button>
       </header>
 
@@ -200,14 +200,14 @@ function EmptyState({ onCreate }: { onCreate: () => void }) {
     <div className="bg-card flex flex-col items-center gap-3 rounded-lg border p-12 text-center">
       <Building2 className="text-muted-foreground size-10" aria-hidden />
       <div className="space-y-1">
-        <h2 className="text-base font-medium">Henüz tenant yok</h2>
+        <h2 className="text-base font-medium">Henüz kurum yok</h2>
         <p className="text-muted-foreground text-sm">
-          İlk tenant&apos;ı oluştur ve admin davetini gönder.
+          İlk kurumu oluştur ve admin davetini gönder.
         </p>
       </div>
       <Button onClick={onCreate} className="mt-2 gap-2">
         <Plus className="size-4" aria-hidden />
-        Yeni Tenant
+        Yeni Kurum
       </Button>
     </div>
   );

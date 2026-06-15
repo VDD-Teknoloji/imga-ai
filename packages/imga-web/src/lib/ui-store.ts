@@ -6,11 +6,12 @@
 
 import { create } from "zustand";
 
-// Sprint 10.1 — key versiyonlandı (v2): eski key'de kalan "0"
-// (açık) tercihi yeni "default kapalı" kararını eziyordu. v2 ile
-// herkes bir kez kapalı başlar; kullanıcı açarsa tercihi buradan
-// itibaren yeniden öğrenilir.
-const SIDEBAR_COLLAPSED_KEY = "imga_sidebar_collapsed_v2";
+// Sprint 12 — key v3: ürün sahibi kararı "sol menü varsayılan AÇIK
+// gelsin". Eski v2 key'inde "default kapalı" döneminde kapalı (1)
+// kaydedilmiş tercihler yeni açık kararını ezecekti; v3 ile herkes
+// bir kez açık başlar, kullanıcı kapatırsa tercihi buradan itibaren
+// yeniden öğrenilir.
+const SIDEBAR_COLLAPSED_KEY = "imga_sidebar_collapsed_v3";
 
 function persistCollapsed(value: boolean): void {
   if (typeof window === "undefined") return;
@@ -22,16 +23,17 @@ interface UiState {
   toggleSidebar: () => void;
   setSidebarCollapsed: (value: boolean) => void;
   /** Mount sonrası localStorage'daki tercihi uygular. Initial state
-   *  her zaman ``true`` (kapalı) — server ve client ilk render'ı
-   *  aynı olur, hydration mismatch çıkmaz; kayıtlı "açık" tercihi
-   *  ilk frame'den sonra animasyonlu genişlemeyle gelir. */
+   *  her zaman ``false`` (açık) — server ve client ilk render'ı
+   *  aynı olur, hydration mismatch çıkmaz; kayıtlı "kapalı" tercihi
+   *  ilk frame'den sonra animasyonlu daralmayla gelir. */
   hydrateSidebar: () => void;
 }
 
 export const useUiStore = create<UiState>((set, get) => ({
-  // Sprint 10.0/10.1 — default KAPALI. C-level redesign'da dashboard
-  // tam genişlikte açılır; sidebar icon-dock olarak başlar.
-  sidebarCollapsed: true,
+  // Sprint 12 — default AÇIK. Ürün sahibi: "soldaki menü varsayılan
+  // açık gelsin." Yöneticiler nereye gidebileceklerini ilk bakışta
+  // görsün; kapatmak isteyen tek tıkla icon-dock'a indirir.
+  sidebarCollapsed: false,
   toggleSidebar: () => {
     const next = !get().sidebarCollapsed;
     persistCollapsed(next);

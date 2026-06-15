@@ -66,6 +66,7 @@ export function QuickActionFab() {
   // Close on route change so a click-through doesn't leave the
   // panel open over the new page.
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setOpen(false);
   }, [pathname]);
 

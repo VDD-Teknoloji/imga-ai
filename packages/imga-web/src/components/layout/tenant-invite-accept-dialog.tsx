@@ -94,7 +94,7 @@ export function TenantInviteAcceptDialog({
     try {
       await joinTenant(token.trim(), password);
       toast.success("Davet kabul edildi", {
-        description: `${preview.data.tenant_name} artık tenant listende.`,
+        description: `${preview.data.tenant_name} artık kurum listende.`,
       });
       onOpenChange(false);
     } catch (err) {
@@ -118,7 +118,7 @@ export function TenantInviteAcceptDialog({
           <DialogTitle>Yeni davet kabul et</DialogTitle>
           <DialogDescription>
             Davet linkindeki token&apos;ı yapıştır, mevcut hesabınla yeni
-            tenant&apos;a katıl.
+            kuruma katıl.
           </DialogDescription>
         </DialogHeader>
 
@@ -179,7 +179,7 @@ export function TenantInviteAcceptDialog({
                 disabled={submitting}
               />
               <p className="text-muted-foreground text-xs">
-                Güvenlik için yeni tenant&apos;a katılırken şifrenle doğrulan.
+                Güvenlik için yeni kuruma katılırken şifrenle doğrulan.
               </p>
             </div>
           ) : null}

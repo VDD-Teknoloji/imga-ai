@@ -75,7 +75,7 @@ export default function BatchHistoryPage() {
               <TableHead>Durum</TableHead>
               <TableHead className="hidden text-right md:table-cell">Başarılı</TableHead>
               <TableHead className="hidden text-right md:table-cell">Hata</TableHead>
-              <TableHead className="hidden text-right md:table-cell">Bilet</TableHead>
+              <TableHead className="hidden text-right md:table-cell">Ticket</TableHead>
               <TableHead />
             </TableRow>
           </TableHeader>

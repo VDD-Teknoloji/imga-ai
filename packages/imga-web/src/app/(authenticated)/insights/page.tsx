@@ -104,7 +104,7 @@ const TAB_LABELS: Record<TabKey, string> = {
   nps: "NPS",
   cross: "Çapraz",
   perspective: "Perspektif",
-  tickets: "Bilet",
+  tickets: "Ticket",
   heatmap: "Isı haritası",
   cohort: "Kohort",
   wordcloud: "Kelimeler",
@@ -305,7 +305,7 @@ function InsightsContent() {
         <div>
           <h1 className="text-2xl font-semibold">İçgörüler</h1>
           <p className="text-muted-foreground text-sm">
-            Duygu, kategori ve bilet metriklerinin derin dalış görünümü.
+            Duygu, kategori ve Ticket metriklerinin ayrıntılı görünümü.
           </p>
         </div>
       </header>
@@ -789,7 +789,7 @@ function OverridesTab({ filters }: { filters: AnalyticsFilters }) {
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="text-base">Override Katmanları</CardTitle>
+        <CardTitle className="text-base">Kural Katmanları</CardTitle>
       </CardHeader>
       <CardContent>
         <ChartFrame state={stats} isEmpty={(d) => d.data.length === 0} height={260}>
@@ -806,7 +806,7 @@ function OverridesTab({ filters }: { filters: AnalyticsFilters }) {
           )}
         </ChartFrame>
         <p className="text-muted-foreground mt-2 text-xs">
-          Override katman sayımı Sprint 8.3.4&apos;te doldurulacak (<code>overrides_applied</code>{" "}
+          Kural katman sayımı Sprint 8.3.4&apos;te doldurulacak (<code>overrides_applied</code>{" "}
           JSONB kolonu); şimdilik 5 katman sıfır sayımla gösteriliyor.
         </p>
       </CardContent>

@@ -944,8 +944,8 @@ export type SlaActionType =
   | "notify_email";
 
 export const SLA_ACTION_LABELS: Record<SlaActionType, string> = {
-  warn_only: "Uyarı (sadece logla)",
-  create_ticket: "Bilet oluştur",
+  warn_only: "Uyarı (yalnızca kaydet)",
+  create_ticket: "Ticket oluştur",
   escalate: "Yükselt",
   notify_email: "E-posta gönder",
 };

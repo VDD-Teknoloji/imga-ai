@@ -122,9 +122,9 @@ function SlaRulesContent() {
               SLA Kuralları
             </h1>
             <p className="text-muted-foreground text-sm">
-              Belirlenen koşullara uyan analiz veya biletler için
+              Belirlenen koşullara uyan analiz veya Ticket&apos;lar için
               yanıt/çözüm sürelerini izle. Şu an sadece &quot;Uyarı&quot;
-              aksiyonu aktif; bilet oluşturma ve e-posta bildirimi
+              aksiyonu aktif; Ticket oluşturma ve e-posta bildirimi
               ileriki sprint&apos;lerde devreye girecek.
             </p>
           </div>
@@ -581,7 +581,7 @@ function RuleFormFields({
           value={form.name}
           onChange={(e) => setForm({ ...form, name: e.target.value })}
           maxLength={128}
-          placeholder="Örn. Acil bilet — kritik yanıt SLA"
+          placeholder="Örn. Acil Ticket — kritik yanıt SLA"
         />
       </div>
 
@@ -750,7 +750,7 @@ function DispatchModeCard() {
         toast.error(
           err instanceof ApiError
             ? err.detail
-            : "Dispatch mode değişikliği başarısız.",
+            : "Gönderim modu değişikliği başarısız.",
         ),
     });
   };

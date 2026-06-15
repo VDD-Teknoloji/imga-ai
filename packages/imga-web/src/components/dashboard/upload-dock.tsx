@@ -116,21 +116,21 @@ export function UploadDock() {
   return (
     <section
       aria-label="Hızlı yükleme"
-      className="rise-in shadow-elevated bg-card ring-foreground/8 overflow-hidden rounded-2xl ring-1"
+      className="rise-in shadow-soft bg-card ring-foreground/5 overflow-hidden rounded-3xl ring-1"
     >
-      <header className="bg-navy flex items-center gap-2.5 px-4 py-3">
-        <span className="bg-brand/20 text-brand ring-brand/30 flex size-8 items-center justify-center rounded-lg ring-1">
+      <header className="flex items-center gap-2.5 px-5 pt-4 pb-1">
+        <span className="bg-muted text-foreground/70 flex size-8 items-center justify-center rounded-xl">
           <UploadCloud className="size-4" aria-hidden />
         </span>
         <div className="min-w-0">
-          <h2 className="text-sm font-semibold text-white">Hızlı Yükleme</h2>
-          <p className="text-[11px] text-zinc-300">
+          <h2 className="text-sm font-semibold">Hızlı yükleme</h2>
+          <p className="text-muted-foreground text-xs">
             Dosyayı bırakın — analiz burada başlasın
           </p>
         </div>
       </header>
 
-      <div className="p-4">
+      <div className="p-5">
         {state.phase === "idle" && (
           <DropZone dragOver={dragOver} setDragOver={setDragOver} onFile={handleFile} />
         )}

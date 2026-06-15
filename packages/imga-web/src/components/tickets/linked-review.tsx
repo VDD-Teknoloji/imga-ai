@@ -1,6 +1,6 @@
 "use client";
 
-// Sprint 8.3.4 — "Bu Bileti Açan Analiz" panel.
+// Sprint 8.3.4 — "Bu Ticket'ı Açan Analiz" panel.
 //
 // Renders a compact preview of the originating review on the ticket
 // detail page: trigger pills (override layer Türkçe labels) + a link
@@ -26,7 +26,7 @@ export function LinkedReviewSection({ reviewId }: { reviewId: string | null }) {
   if (review.isLoading) {
     return (
       <section className="bg-card flex flex-col gap-2 rounded-lg border p-4">
-        <h2 className="text-sm font-semibold">Bu Bileti Açan Analiz</h2>
+        <h2 className="text-sm font-semibold">Bu Ticket&apos;ı Açan Analiz</h2>
         <p className="text-muted-foreground text-xs">Yükleniyor…</p>
       </section>
     );
@@ -41,7 +41,7 @@ export function LinkedReviewSection({ reviewId }: { reviewId: string | null }) {
   return (
     <section className="bg-card flex flex-col gap-3 rounded-lg border p-4">
       <header className="flex items-center justify-between gap-2">
-        <h2 className="text-sm font-semibold">Bu Bileti Açan Analiz</h2>
+        <h2 className="text-sm font-semibold">Bu Ticket&apos;ı Açan Analiz</h2>
         <OverrideChip count={hits.length} />
       </header>
       <p className="text-muted-foreground line-clamp-2 text-xs">

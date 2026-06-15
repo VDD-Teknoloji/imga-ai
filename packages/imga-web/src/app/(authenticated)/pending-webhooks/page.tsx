@@ -131,7 +131,7 @@ function Content() {
               Bekleyen Bildirimler
             </h1>
             <p className="text-muted-foreground text-sm">
-              Manuel modda tetiklenen SLA webhook&apos;ları. Buradan onay
+              Manuel modda tetiklenen SLA bildirimleri. Buradan onay
               vererek Slack/Teams kanallarına gönder veya iptal et.
             </p>
           </div>
@@ -228,7 +228,7 @@ function PendingRow({ event }: { event: PendingWebhookEvent }) {
 
   const onDispatch = () => {
     dispatch.mutate(event.id, {
-      onSuccess: () => toast.success("Webhook gönderildi."),
+      onSuccess: () => toast.success("Bildirim gönderildi."),
       onError: (err) =>
         toast.error(
           err instanceof ApiError ? err.detail : "Gönderim başarısız.",

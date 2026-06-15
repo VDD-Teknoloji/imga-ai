@@ -37,7 +37,7 @@ export function TenantDeleteDialog({
   async function handleConfirm() {
     try {
       await remove.mutateAsync({ tenantId: tenant.id });
-      toast.success("Tenant silindi", {
+      toast.success("Kurum silindi", {
         description: `${tenant.name} arşivlendi (soft-delete).`,
       });
       onOpenChange(false);
@@ -54,9 +54,9 @@ export function TenantDeleteDialog({
         <AlertDialogHeader>
           <AlertDialogTitle>{tenant.name}&apos;ı sil</AlertDialogTitle>
           <AlertDialogDescription>
-            Bu tenant&apos;ı silmek üzeresin. Tüm verisi soft-delete
+            Bu kurumu silmek üzeresin. Tüm verisi soft-delete
             edilir; gerekirse veritabanı seviyesinde geri yüklenebilir.
-            Aktif kullanıcılar artık bu tenant&apos;ı göremez.
+            Aktif kullanıcılar artık bu kurumu göremez.
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
@@ -77,7 +77,7 @@ export function TenantDeleteDialog({
 
 function describeError(err: unknown): string {
   if (err instanceof ApiError) {
-    if (err.status === 404) return "Tenant zaten silinmiş veya bulunamadı.";
+    if (err.status === 404) return "Kurum zaten silinmiş veya bulunamadı.";
     if (err.status === 403) return "Bu işlem için süper-yönetici yetkisi gerekli.";
   }
   return "Beklenmeyen bir hata oluştu.";

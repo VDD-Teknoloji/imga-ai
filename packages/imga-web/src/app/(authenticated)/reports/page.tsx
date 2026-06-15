@@ -45,9 +45,8 @@ import { cn } from "@/lib/utils";
 
 const TYPE_LABELS: Record<ReportType, string> = {
   comprehensive: "Kapsamlı",
-  // Sprint 9.9 — Madde 13 rename ile uyumlu: "Biletler" → "Talepler"
   reviews_only: "Sadece Yorumlar",
-  tickets_only: "Sadece Talepler",
+  tickets_only: "Sadece Ticket'lar",
 };
 
 const STATUS_LABELS: Record<ReportStatus, string> = {
@@ -90,7 +89,7 @@ export default function ReportsPage() {
           <div>
             <h1 className="text-2xl font-semibold">Raporlar</h1>
             <p className="text-muted-foreground text-sm">
-              Excel veya CSV olarak çok-sayfalı analiz + bilet raporları
+              Excel veya CSV olarak çok-sayfalı analiz + Ticket raporları
               üretip 24 saat boyunca indirin.
             </p>
           </div>
@@ -663,7 +662,7 @@ function Step3Preview({
         )}
         {estimate.ticket_rows > 0 && (
           <>
-            <dt className="text-muted-foreground">Bilet satırı:</dt>
+            <dt className="text-muted-foreground">Ticket satırı:</dt>
             <dd className="tabular-nums">{estimate.ticket_rows.toLocaleString("tr-TR")}</dd>
           </>
         )}

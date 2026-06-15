@@ -97,6 +97,7 @@ function DimensionCard({
   // (initial render fires before useQuery resolves).
   useEffect(() => {
     if (existing) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setLabel(existing.display_label);
       setEnabled(existing.enabled);
       setCsvCol(existing.csv_column_mapping ?? "");

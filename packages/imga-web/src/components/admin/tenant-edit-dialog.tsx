@@ -94,7 +94,7 @@ export function TenantEditDialog({
     }
     try {
       await update.mutateAsync({ tenantId: tenant.id, patch });
-      toast.success("Tenant güncellendi");
+      toast.success("Kurum güncellendi");
       onOpenChange(false);
     } catch (err) {
       toast.error("Güncellenemedi", {
@@ -108,7 +108,7 @@ export function TenantEditDialog({
       <DialogContent>
         <form onSubmit={handleSubmit} className="space-y-4">
           <DialogHeader>
-            <DialogTitle>Tenant düzenle</DialogTitle>
+            <DialogTitle>Kurum düzenle</DialogTitle>
             <DialogDescription>
               Slug değiştirilemez. İsim ve plan / otomasyon ayarlarını
               güncelleyebilirsin.
@@ -194,7 +194,7 @@ export function TenantEditDialog({
 
 function describeError(err: unknown): string {
   if (err instanceof ApiError) {
-    if (err.status === 404) return "Tenant bulunamadı.";
+    if (err.status === 404) return "Kurum bulunamadı.";
     if (err.status === 403) return "Bu işlem için süper-yönetici yetkisi gerekli.";
     if (err.status === 422) return "Form alanları geçersiz.";
   }

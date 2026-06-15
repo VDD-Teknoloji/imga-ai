@@ -52,7 +52,7 @@ export interface NavSection {
 //   * Madde 4: "Analizler" → "Analiz Arşivi" (Manuel Analiz ile karışmasın)
 //   * Madde 6: "Brifing" → "Yönetici Özeti" (menü + sayfa başlığı tekil)
 //   * Madde 11: "Override Katmanları" → "Kural Katmanları" (Türkçe — insights tab'da)
-//   * Madde 13: "Ticket'lar" → "Talepler" (CRM bağlamında daha doğal Türkçe)
+//   * Madde 13: support-ticket etiketi standart terim olarak "Ticket'lar"
 //   * Madde 5: "Bekleyen Bildirimler" admin-only oldu — sidebar-nav buna göre filtreliyor
 export const NAV_SECTIONS: ReadonlyArray<NavSection> = [
   // Yönetici — C-level reach-for-first surfaces. No section header;
@@ -87,9 +87,9 @@ export const NAV_SECTIONS: ReadonlyArray<NavSection> = [
     ],
   },
   // Operasyon — ticket queue + manual/batch ingestion. Madde 13:
-  // "Ticket'lar" → "Talepler" — daha doğal Türkçe, CRM bağlamında
-  // alışıldık. Madde 5: Bekleyen Bildirimler buradan çıkarıldı —
-  // sadece super_admin'e ADMIN_NAV_ITEMS altında gösteriliyor.
+  // support-ticket etiketi standart terim olarak "Ticket'lar". Madde 5:
+  // Bekleyen Bildirimler buradan çıkarıldı — sadece super_admin'e
+  // ADMIN_NAV_ITEMS altında gösteriliyor.
   //
   // Sprint 9.9 — Madde 3: Manuel Analiz + Toplu Yükleme görsel
   // olarak "Veri Yükle" mini-grubu altında, hafif indent ile.
@@ -98,7 +98,7 @@ export const NAV_SECTIONS: ReadonlyArray<NavSection> = [
   {
     heading: "Operasyon",
     items: [
-      { label: "Talepler", href: "/tickets", icon: Ticket },
+      { label: "Ticket'lar", href: "/tickets", icon: Ticket },
       {
         label: "Manuel Analiz",
         href: "/analyze",
@@ -134,7 +134,7 @@ export const NAV_SECTIONS: ReadonlyArray<NavSection> = [
  * humans decided, what prompts shaped both.
  */
 export const ADMIN_NAV_ITEMS: ReadonlyArray<NavItem> = [
-  { label: "Tenant'lar", href: "/admin/tenants", icon: Building2 },
+  { label: "Kurumlar", href: "/admin/tenants", icon: Building2 },
   { label: "LLM Denetimi", href: "/admin/llm-audit", icon: Cpu },
   { label: "Karar Geçmişi", href: "/admin/decision-audit", icon: History },
   {

@@ -23,9 +23,9 @@ const DECISION_LABELS: Record<string, string> = {
   action_item_priority_changed: "Aksiyon önceliği değişti",
   sla_rule_changed: "SLA kuralı değişti",
   kpi_goal_set: "KPI hedefi konuldu",
-  webhook_dispatched_manually: "Webhook manuel gönderildi",
-  tenant_setting_changed: "Tenant ayarı değişti",
-  prompt_template_overridden: "Prompt template override edildi",
+  webhook_dispatched_manually: "Bildirim manuel gönderildi",
+  tenant_setting_changed: "Kurum ayarı değişti",
+  prompt_template_overridden: "İstem şablonu özelleştirildi",
 };
 
 export default function DecisionAuditPage() {
@@ -58,6 +58,7 @@ function DecisionAuditPageInner() {
 
   useEffect(() => {
     const fromUrl = searchParams.get("decision_type") ?? "";
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setDecisionType((prev) => (prev === fromUrl ? prev : fromUrl));
   }, [searchParams]);
 

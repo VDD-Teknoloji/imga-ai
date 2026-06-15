@@ -210,7 +210,7 @@ export function AssigneeDropdown({
 
                 {!isAdmin && selectableMembers.length === 0 ? (
                   <p className="text-muted-foreground p-3 text-xs">
-                    Sadece tenant yöneticisi başka kullanıcıya atayabilir.
+                    Sadece kurum yöneticisi başka kullanıcıya atayabilir.
                     <UserRound className="ml-1 inline size-3" aria-hidden />
                   </p>
                 ) : null}

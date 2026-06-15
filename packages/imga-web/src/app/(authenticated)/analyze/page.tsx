@@ -108,8 +108,8 @@ export default function AnalyzePage() {
           Yorum Analiz Et
         </h1>
         <p className="text-muted-foreground text-sm">
-          Müşteri yorumunu yapıştırın. Duygu ve kategori analizi yapılır; tenant otomasyon moduna
-          göre gerekirse bilet otomatik açılır.
+          Müşteri yorumunu yapıştırın. Duygu ve kategori analizi yapılır; kurum otomasyon ayarına
+          göre gerekirse Ticket otomatik açılır.
         </p>
       </header>
 
@@ -338,35 +338,35 @@ const DECISION_VARIANTS: Record<ReviewDecision, DecisionVariant> = {
   create: {
     variant: "success",
     Icon: CheckCircle2,
-    title: "Otomatik bilet açıldı",
-    message: "Tenant'ınızın otomasyon modu bu yoruma göre yeni bir bilet açtı.",
+    title: "Otomatik Ticket açıldı",
+    message: "Kurumunuzun otomasyon ayarı bu yoruma göre yeni bir Ticket açtı.",
   },
   skipped_dedup: {
     variant: "info",
     Icon: Info,
     title: "Aynı metin son 24 saatte zaten analiz edildi",
-    message: "Tekrar bilet açılmadı; mevcut biletin altında çalışmaya devam et.",
+    message: "Tekrar Ticket açılmadı; mevcut Ticket'ın altında çalışmaya devam et.",
   },
   skipped_mode: {
     variant: "info",
     Icon: ShieldOff,
-    title: "Otomasyon modu manuel — bilet açılmadı",
+    title: "Otomasyon modu manuel — Ticket açılmadı",
     message:
-      "Manuel modda /analyze sadece sentiment ve kategori döner; biletleme için tenant ayarlarını full_auto veya semi_auto yap.",
+      "Manuel modda yalnızca duygu ve kategori analizi yapılır; Ticket açma için kurum ayarlarını Tam veya Yarı otomatik yap.",
   },
   skipped_threshold: {
     variant: "info",
     Icon: CircleAlert,
-    title: "Eşik altı — bilet açılmadı",
+    title: "Eşik altı — Ticket açılmadı",
     message:
-      "Tenant otomasyon eşiği bu yorumu otomatik biletlemek için yeterli bulmadı; metni manuel inceleyebilirsin.",
+      "Kurum otomasyon eşiği bu yorumu otomatik Ticket açmak için yeterli bulmadı; metni manuel inceleyebilirsin.",
   },
   skipped_belirsiz: {
     variant: "info",
     Icon: HelpCircle,
     title: "Kategori belirsiz — manuel sınıflandırma gerekli",
     message:
-      "Sınıflandırıcı bu metni emin bir kategoriye yerleştiremedi. Hangi modda olursan ol, belirsiz yorumlardan otomatik bilet açılmaz.",
+      "Sınıflandırıcı bu metni emin bir kategoriye yerleştiremedi. Hangi modda olursan ol, belirsiz yorumlardan otomatik Ticket açılmaz.",
   },
 };
 
@@ -399,7 +399,7 @@ function DecisionCard({
     promote.mutate(result.review_id, {
       onSuccess: (data) => {
         onPromoted(data.ticket_id);
-        toast.success("Manuel olarak bilet açıldı.");
+        toast.success("Manuel olarak Ticket açıldı.");
       },
       onError: (err) => {
         if (err instanceof ApiError && err.status === 403) {
@@ -407,10 +407,10 @@ function DecisionCard({
           return;
         }
         if (err instanceof ApiError && err.status === 409) {
-          toast.error("Bu analiz zaten bir bilete bağlı.");
+          toast.error("Bu analiz zaten bir Ticket'a bağlı.");
           return;
         }
-        toast.error("Bilet açılamadı.");
+        toast.error("Ticket açılamadı.");
       },
     });
   }
@@ -427,11 +427,11 @@ function DecisionCard({
       {result.ticket_id ? (
         <CardContent className="flex flex-wrap items-center gap-3">
           <Button render={<Link href={`/tickets/${result.ticket_id}`} />} className="gap-2">
-            {result.decision === "create" ? "Yeni bilete git" : "Mevcut bilete git"}
+            {result.decision === "create" ? "Yeni Ticket'a git" : "Mevcut Ticket'a git"}
             <ArrowRight className="size-4" aria-hidden />
           </Button>
           <span className="text-muted-foreground text-xs">
-            Bilet ID: <code className="font-mono">{result.ticket_id.slice(0, 8)}</code>
+            Ticket ID: <code className="font-mono">{result.ticket_id.slice(0, 8)}</code>
           </span>
         </CardContent>
       ) : canPromote ? (
@@ -448,10 +448,10 @@ function DecisionCard({
             ) : (
               <ArrowRight className="size-4" aria-hidden />
             )}
-            Yine de Bilet Aç
+            Yine de Ticket Aç
           </Button>
           <span className="text-muted-foreground text-xs">
-            Sistem güvenini override et — manuel olarak bilet aç.
+            Sistem güvenini geçersiz kıl — manuel olarak Ticket aç.
           </span>
         </CardContent>
       ) : null}

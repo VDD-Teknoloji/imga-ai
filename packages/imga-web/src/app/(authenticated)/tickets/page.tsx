@@ -34,11 +34,11 @@ export default function TicketsListPage() {
   return (
     <main className="mx-auto w-full max-w-7xl space-y-4 p-6 md:p-8">
       <header className="space-y-1">
-        <h1 className="text-2xl font-semibold tracking-tight md:text-3xl">Talepler</h1>
+        <h1 className="text-2xl font-semibold tracking-tight md:text-3xl">Ticket&apos;lar</h1>
         <p className="text-muted-foreground text-sm">
           {tickets.isLoading
             ? "Yükleniyor..."
-            : `${rows.length} talep gösteriliyor / toplam ${total}`}
+            : `${rows.length} Ticket gösteriliyor / toplam ${total}`}
         </p>
       </header>
 

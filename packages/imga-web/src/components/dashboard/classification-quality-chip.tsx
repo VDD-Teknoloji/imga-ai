@@ -1,19 +1,18 @@
 "use client";
 
-// Sprint 9.9 — Madde 1 (UML feedback): "Bu kadar fazla belirsiz yorum
-// olmamalı". Test ekranında kategori dağılımı 'belirsiz' satırı 3262
-// yorumla en üstte gelmişti. Bunun gerçek çözümü LLM prompt revize
-// + kategori lexicon genişletme (ayrı sprint) ama operatöre AYNI
-// DASHBOARD'DA görsel sinyal vermek, sorunu fark etmesini sağlar.
+// Sprint 9.9 / 12 — sınıflandırma kalite sinyali (sakin sürüm).
 //
-// Bu chip:
-//   * Belirsiz / toplam oran ≤ %15 → mavi "iyi" → sessiz
-//   * %15 < oran ≤ %30 → sarı "iyileştirilebilir"
-//   * %30 < oran → kırmızı "düşük"
-//   + Tıklandığında /insights?tab=category sayfasına gider, operatör
-//     hangi kategorilerin "kaybolduğunu" görür.
+// 'belirsiz' oranı yükselince operatöre AYNI dashboard'da görünür
+// uyarı verir. Sakinleştirildi: gradient kutular + sparkle ikon
+// kaldırıldı; aydınlık kart + tek renkli durum noktası. Sessizlik
+// kazanımı korunur: oran düşükse hiç render etmez.
+//
+//   * ≤ %15 → "iyi" (genelde sessiz)
+//   * %15 < oran ≤ %30 → "iyileştirilebilir"
+//   * %30 < oran → "düşük"
+//   Tıklanınca /insights?tab=category — hangi kategoriler kayıp.
 
-import { AlertTriangle, ArrowRight, CheckCircle2, Sparkles } from "lucide-react";
+import { ArrowRight } from "lucide-react";
 import Link from "next/link";
 
 import { Skeleton } from "@/components/ui/skeleton";
@@ -23,54 +22,41 @@ type QualityBand = "good" | "watch" | "low";
 
 interface BandVisual {
   band: QualityBand;
-  container: string;
-  iconWrap: string;
-  text: string;
+  dotClass: string;
+  labelClass: string;
   label: string;
-  Icon: typeof AlertTriangle;
 }
 
 function bandFor(ratio: number): BandVisual {
   if (ratio <= 0.15) {
     return {
       band: "good",
-      container:
-        "border-emerald-200/70 bg-gradient-to-br from-emerald-50/80 to-card dark:from-emerald-950/25 dark:to-card",
-      iconWrap:
-        "from-emerald-500/20 to-emerald-500/5 ring-emerald-500/25 text-emerald-700 dark:text-emerald-300",
-      text: "text-emerald-800 dark:text-emerald-300",
+      dotClass: "bg-emerald-500",
+      labelClass: "text-emerald-700 dark:text-emerald-400",
       label: "İyi",
-      Icon: CheckCircle2,
     };
   }
   if (ratio <= 0.3) {
     return {
       band: "watch",
-      container:
-        "border-amber-200/70 bg-gradient-to-br from-amber-50/80 to-card dark:from-amber-950/25 dark:to-card",
-      iconWrap:
-        "from-amber-500/20 to-amber-500/5 ring-amber-500/25 text-amber-700 dark:text-amber-300",
-      text: "text-amber-800 dark:text-amber-300",
+      dotClass: "bg-amber-500",
+      labelClass: "text-amber-700 dark:text-amber-400",
       label: "İyileştirilebilir",
-      Icon: Sparkles,
     };
   }
   return {
     band: "low",
-    container:
-      "border-red-200/70 bg-gradient-to-br from-red-50/80 to-card dark:from-red-950/25 dark:to-card",
-    iconWrap:
-      "from-red-500/20 to-red-500/5 ring-red-500/25 text-red-700 dark:text-red-300",
-    text: "text-red-800 dark:text-red-300",
+    dotClass: "bg-red-500",
+    labelClass: "text-red-700 dark:text-red-400",
     label: "Düşük",
-    Icon: AlertTriangle,
   };
 }
 
-function copyFor(ratio: number, belirsizCount: number, totalCount: number): {
-  headline: string;
-  hint: string;
-} {
+function copyFor(
+  ratio: number,
+  belirsizCount: number,
+  totalCount: number,
+): { headline: string; hint: string } {
   const pct = Math.round(ratio * 100);
   if (ratio <= 0.15) {
     return {
@@ -80,23 +66,17 @@ function copyFor(ratio: number, belirsizCount: number, totalCount: number): {
   }
   if (ratio <= 0.3) {
     return {
-      headline: `${belirsizCount.toLocaleString(
-        "tr-TR",
-      )} yorum 'belirsiz' (%${pct})`,
+      headline: `${belirsizCount.toLocaleString("tr-TR")} yorum 'belirsiz' (%${pct})`,
       hint:
         "Çok kısa veya bağlamsız yorumlar genellikle 'belirsiz'e düşer. " +
         "Özel kategori eklemek oranı iyileştirir.",
     };
   }
   return {
-    headline: `${belirsizCount.toLocaleString(
-      "tr-TR",
-    )} yorum 'belirsiz' (%${pct})`,
+    headline: `${belirsizCount.toLocaleString("tr-TR")} yorum 'belirsiz' (%${pct})`,
     hint:
-      "Belirsiz oranı yüksek. /Ayarlar/Kategoriler menüsünden özel " +
-      `kategoriler ekleyerek ${totalCount.toLocaleString(
-        "tr-TR",
-      )} yorumun daha büyük kısmını doğru sınıflandırabilirsiniz.`,
+      "Belirsiz oranı yüksek. Ayarlar / Kategoriler menüsünden özel " +
+      `kategoriler ekleyerek ${totalCount.toLocaleString("tr-TR")} yorumun daha büyük kısmını doğru sınıflandırabilirsiniz.`,
   };
 }
 
@@ -104,11 +84,8 @@ export function ClassificationQualityChip() {
   const dist = useCategoryDistribution({}, 50);
 
   if (dist.isLoading) {
-    return <Skeleton className="h-20 w-full rounded-2xl" />;
+    return <Skeleton className="h-20 w-full rounded-3xl" />;
   }
-  // Sessizlik kazanımı: veri yoksa veya henüz analizlenmiş yorum
-  // yoksa chip rendering yapmıyoruz — boş bir uyarı kart kasvet
-  // yaratır.
   if (dist.isError || !dist.data || dist.data.total === 0) {
     return null;
   }
@@ -118,8 +95,7 @@ export function ClassificationQualityChip() {
   const total = dist.data.total;
   const ratio = total > 0 ? belirsizCount / total : 0;
 
-  // İyi banttayken ve belirsiz hiç yoksa chip'i de sessizleştir —
-  // dashboard'a gereksiz yer kaplamasın.
+  // İyi banttayken ve belirsiz neredeyse yoksa sessizleş.
   if (ratio <= 0.05) {
     return null;
   }
@@ -130,29 +106,26 @@ export function ClassificationQualityChip() {
   return (
     <Link
       href="/insights?tab=category"
-      className={`rise-in shadow-soft hover:shadow-elevated group flex items-center gap-4 rounded-2xl border p-4 transition-shadow ${visual.container}`}
+      className="rise-in hover-lift shadow-soft group bg-card ring-foreground/5 flex items-start gap-3.5 rounded-3xl p-5 ring-1"
       aria-label="Sınıflandırma kalite uyarısı"
     >
       <span
-        className={`flex size-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br ring-1 ${visual.iconWrap}`}
-      >
-        <visual.Icon className="size-5" aria-hidden />
-      </span>
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2 flex-wrap">
+        className={`mt-1.5 size-2.5 shrink-0 rounded-full ${visual.dotClass}`}
+        aria-hidden
+      />
+      <div className="min-w-0 flex-1">
+        <div className="flex flex-wrap items-center gap-2">
           <p className="text-sm font-semibold">{text.headline}</p>
-          <span
-            className={`text-[10px] font-semibold uppercase tracking-[0.14em] ${visual.text}`}
-          >
+          <span className={`text-xs font-semibold ${visual.labelClass}`}>
             {visual.label}
           </span>
         </div>
-        <p className="text-muted-foreground mt-1 text-xs leading-relaxed">
+        <p className="text-muted-foreground mt-1 text-sm leading-relaxed">
           {text.hint}
         </p>
       </div>
       <ArrowRight
-        className="text-muted-foreground/60 group-hover:text-foreground size-4 shrink-0 transition-colors"
+        className="text-muted-foreground/40 group-hover:text-foreground mt-0.5 size-4 shrink-0 transition-colors"
         aria-hidden
       />
     </Link>
