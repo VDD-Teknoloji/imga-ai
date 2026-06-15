@@ -53,8 +53,8 @@ export default function SettingsPage() {
   if (!isAdmin) return <ForbiddenNotice />;
 
   return (
-    <main className="mx-auto w-full max-w-3xl space-y-6 px-4 py-6 md:p-8">
-      <header className="space-y-1">
+    <main className="mx-auto w-full max-w-3xl space-y-6 px-4 py-6 md:px-8 md:py-10">
+      <header className="space-y-1.5">
         <h1 className="text-2xl font-semibold tracking-tight md:text-3xl">Ayarlar</h1>
         <p className="text-muted-foreground text-sm">
           Tenant yapılandırması — otomasyon politikası, kategori taksonomisi.
@@ -64,7 +64,7 @@ export default function SettingsPage() {
       <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
         <Link
           href="/settings/profile"
-          className="bg-card hover:bg-accent flex items-start gap-3 rounded-lg border p-4 transition-colors"
+          className="bg-card hover:bg-accent ring-foreground/5 shadow-soft flex items-start gap-3 rounded-2xl p-5 ring-1 transition-colors"
         >
           <Building2 className="text-primary mt-0.5 size-5" aria-hidden />
           <div className="flex-1">
@@ -77,7 +77,7 @@ export default function SettingsPage() {
         </Link>
         <Link
           href="/settings/integrations"
-          className="bg-card hover:bg-accent flex items-start gap-3 rounded-lg border p-4 transition-colors"
+          className="bg-card hover:bg-accent ring-foreground/5 shadow-soft flex items-start gap-3 rounded-2xl p-5 ring-1 transition-colors"
         >
           <KeyRound className="text-primary mt-0.5 size-5" aria-hidden />
           <div className="flex-1">
@@ -90,7 +90,7 @@ export default function SettingsPage() {
         </Link>
         <Link
           href="/admin/prompt-templates"
-          className="bg-card hover:bg-accent flex items-start gap-3 rounded-lg border p-4 transition-colors"
+          className="bg-card hover:bg-accent ring-foreground/5 shadow-soft flex items-start gap-3 rounded-2xl p-5 ring-1 transition-colors"
         >
           <KeyRound className="text-primary mt-0.5 size-5" aria-hidden />
           <div className="flex-1">
@@ -104,7 +104,7 @@ export default function SettingsPage() {
         </Link>
         <Link
           href="/settings/taxonomies"
-          className="bg-card hover:bg-accent flex items-start gap-3 rounded-lg border p-4 transition-colors"
+          className="bg-card hover:bg-accent ring-foreground/5 shadow-soft flex items-start gap-3 rounded-2xl p-5 ring-1 transition-colors"
         >
           <Tags className="text-primary mt-0.5 size-5" aria-hidden />
           <div className="flex-1">
@@ -117,7 +117,7 @@ export default function SettingsPage() {
         </Link>
         <Link
           href="/settings/sla-rules"
-          className="bg-card hover:bg-accent flex items-start gap-3 rounded-lg border p-4 transition-colors"
+          className="bg-card hover:bg-accent ring-foreground/5 shadow-soft flex items-start gap-3 rounded-2xl p-5 ring-1 transition-colors"
         >
           <ShieldAlert className="text-primary mt-0.5 size-5" aria-hidden />
           <div className="flex-1">
@@ -132,7 +132,7 @@ export default function SettingsPage() {
             URL-only secrets before now show up in the index. */}
         <Link
           href="/settings/kpi-goals"
-          className="bg-card hover:bg-accent flex items-start gap-3 rounded-lg border p-4 transition-colors"
+          className="bg-card hover:bg-accent ring-foreground/5 shadow-soft flex items-start gap-3 rounded-2xl p-5 ring-1 transition-colors"
         >
           <Target className="text-primary mt-0.5 size-5" aria-hidden />
           <div className="flex-1">
@@ -146,7 +146,7 @@ export default function SettingsPage() {
         </Link>
         <Link
           href="/settings/business-dimensions"
-          className="bg-card hover:bg-accent flex items-start gap-3 rounded-lg border p-4 transition-colors"
+          className="bg-card hover:bg-accent ring-foreground/5 shadow-soft flex items-start gap-3 rounded-2xl p-5 ring-1 transition-colors"
         >
           <Layers className="text-primary mt-0.5 size-5" aria-hidden />
           <div className="flex-1">
@@ -160,7 +160,7 @@ export default function SettingsPage() {
         </Link>
         <Link
           href="/settings/users"
-          className="bg-card hover:bg-accent flex items-start gap-3 rounded-lg border p-4 transition-colors"
+          className="bg-card hover:bg-accent ring-foreground/5 shadow-soft flex items-start gap-3 rounded-2xl p-5 ring-1 transition-colors"
         >
           <Users className="text-primary mt-0.5 size-5" aria-hidden />
           <div className="flex-1">
@@ -173,7 +173,7 @@ export default function SettingsPage() {
         </Link>
         <Link
           href="/settings/scheduled-briefings"
-          className="bg-card hover:bg-accent flex items-start gap-3 rounded-lg border p-4 transition-colors"
+          className="bg-card hover:bg-accent ring-foreground/5 shadow-soft flex items-start gap-3 rounded-2xl p-5 ring-1 transition-colors"
         >
           <CalendarClock className="text-primary mt-0.5 size-5" aria-hidden />
           <div className="flex-1">

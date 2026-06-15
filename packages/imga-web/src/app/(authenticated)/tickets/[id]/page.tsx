@@ -44,7 +44,7 @@ export default function TicketDetailPage() {
   const categoryLabel = data ? labelMap.data?.get(data.category_id) : undefined;
 
   return (
-    <main className="mx-auto w-full max-w-7xl space-y-6 p-6 md:p-8">
+    <main className="mx-auto w-full max-w-7xl space-y-6 px-4 py-6 md:px-8 md:py-10">
       <Link
         href="/tickets"
         className="text-muted-foreground hover:text-foreground inline-flex items-center gap-1 text-sm"

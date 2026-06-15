@@ -18,7 +18,6 @@
 import {
   AlertTriangle,
   ArrowRight,
-  Compass,
   Download,
   ExternalLink,
   Loader2,
@@ -74,13 +73,12 @@ export default function StrategyPage() {
 
 function HeaderSkeleton() {
   return (
-    <main className="mx-auto w-full max-w-5xl space-y-6 px-4 py-6 md:p-8">
-      <header className="flex items-center gap-2">
-        <Compass className="text-primary size-6" aria-hidden />
-        <div>
-          <h1 className="text-2xl font-semibold">Strateji</h1>
-          <p className="text-muted-foreground text-sm">Yükleniyor…</p>
-        </div>
+    <main className="mx-auto w-full max-w-5xl space-y-6 px-4 py-6 md:px-8 md:py-10">
+      <header className="space-y-1.5">
+        <h1 className="text-2xl font-semibold tracking-tight md:text-3xl">
+          Strateji
+        </h1>
+        <p className="text-muted-foreground text-sm">Yükleniyor…</p>
       </header>
     </main>
   );
@@ -167,18 +165,15 @@ function StrategyContent() {
   const credentialsLoaded = !credentials.isLoading;
 
   return (
-    <main className="mx-auto w-full max-w-5xl space-y-6 px-4 py-6 md:p-8">
-      <header className="flex items-center gap-2">
-        <Compass className="text-primary size-6" aria-hidden />
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight md:text-3xl">
-            Strateji
-          </h1>
-          <p className="text-muted-foreground text-sm">
-            Analizleriniz üzerine SWOT ve OKR raporları üretin. Raporlar
-            Gemini ile oluşturulur ve PDF olarak indirilebilir.
-          </p>
-        </div>
+    <main className="mx-auto w-full max-w-5xl space-y-6 px-4 py-6 md:px-8 md:py-10">
+      <header className="space-y-1.5">
+        <h1 className="text-2xl font-semibold tracking-tight md:text-3xl">
+          Strateji
+        </h1>
+        <p className="text-muted-foreground text-sm">
+          Analizleriniz üzerine SWOT ve OKR raporları üretin. Raporlar Gemini
+          ile oluşturulur ve PDF olarak indirilebilir.
+        </p>
       </header>
 
       {credentialsLoaded && !hasActiveKey && (
@@ -257,7 +252,7 @@ function StrategyContent() {
 
 function NoCredentialBanner({ onNavigate }: { onNavigate: () => void }) {
   return (
-    <div className="bg-amber-50 flex flex-col gap-3 rounded-lg border border-amber-300 p-4 sm:flex-row sm:items-center sm:justify-between">
+    <div className="bg-amber-50 dark:bg-amber-950/30 flex flex-col gap-3 rounded-2xl border border-amber-200 dark:border-amber-900/50 p-5 sm:flex-row sm:items-center sm:justify-between">
       <div className="flex items-start gap-3">
         <AlertTriangle className="mt-0.5 size-5 text-amber-600" aria-hidden />
         <div className="text-sm">

@@ -5,7 +5,7 @@
 // KPI deviation alert log. Manual evaluate trigger (admin only;
 // the cron driver lands in Sprint 8.6 alongside Prometheus).
 
-import { Bell, Check, Loader2, X } from "lucide-react";
+import { Check, Loader2, X } from "lucide-react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useState } from "react";
 import { toast } from "sonner";
@@ -42,13 +42,12 @@ export default function TrendAlertsPage() {
 
 function HeaderSkeleton() {
   return (
-    <main className="mx-auto w-full max-w-4xl space-y-6 p-6 md:p-8">
-      <header className="flex items-center gap-2">
-        <Bell className="text-primary size-6" aria-hidden />
-        <div>
-          <h1 className="text-2xl font-semibold">Trend Uyarıları</h1>
-          <p className="text-muted-foreground text-sm">Yükleniyor…</p>
-        </div>
+    <main className="mx-auto w-full max-w-4xl space-y-6 px-4 py-6 md:px-8 md:py-10">
+      <header className="space-y-1.5">
+        <h1 className="text-2xl font-semibold tracking-tight md:text-3xl">
+          Trend Uyarıları
+        </h1>
+        <p className="text-muted-foreground text-sm">Yükleniyor…</p>
       </header>
     </main>
   );
@@ -88,19 +87,16 @@ function Content() {
   const evaluate = useEvaluateTrendAlerts();
 
   return (
-    <main className="mx-auto w-full max-w-4xl space-y-6 p-6 md:p-8">
+    <main className="mx-auto w-full max-w-4xl space-y-6 px-4 py-6 md:px-8 md:py-10">
       <header className="flex flex-wrap items-start justify-between gap-3">
-        <div className="flex items-start gap-2">
-          <Bell className="text-primary mt-1 size-6" aria-hidden />
-          <div>
-            <h1 className="text-2xl font-semibold tracking-tight md:text-3xl">
-              Trend Uyarıları
-            </h1>
-            <p className="text-muted-foreground text-sm">
-              KPI sapması eşiklerini geçen değişimler. Manuel evaluate
-              ile yeni uyarıları yenileyebilirsiniz.
-            </p>
-          </div>
+        <div className="space-y-1.5">
+          <h1 className="text-2xl font-semibold tracking-tight md:text-3xl">
+            Trend Uyarıları
+          </h1>
+          <p className="text-muted-foreground text-sm">
+            KPI sapması eşiklerini geçen değişimler. Manuel evaluate ile yeni
+            uyarıları yenileyebilirsiniz.
+          </p>
         </div>
         <Button
           onClick={() =>
@@ -118,7 +114,7 @@ function Content() {
         </Button>
       </header>
 
-      <div className="bg-card flex flex-wrap items-center gap-3 rounded-lg border p-3">
+      <div className="bg-card ring-foreground/5 shadow-soft flex flex-wrap items-center gap-3 rounded-2xl p-4 ring-1">
         <Label className="text-xs">Durum</Label>
         <select
           value={statusFilter}

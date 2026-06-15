@@ -5,14 +5,7 @@
 // Tracks tasks extracted from SWOT recommendations / executive
 // briefings or added manually. URL state Path B (?status, ?priority).
 
-import {
-  ArchiveRestore,
-  History,
-  ListChecks,
-  Loader2,
-  Plus,
-  Trash2,
-} from "lucide-react";
+import { ArchiveRestore, History, Loader2, Plus, Trash2 } from "lucide-react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useState } from "react";
 import { toast } from "sonner";
@@ -65,13 +58,12 @@ export default function ActionItemsPage() {
 
 function HeaderSkeleton() {
   return (
-    <main className="mx-auto w-full max-w-5xl space-y-6 px-4 py-6 md:p-8">
-      <header className="flex items-center gap-2">
-        <ListChecks className="text-primary size-6" aria-hidden />
-        <div>
-          <h1 className="text-2xl font-semibold">Aksiyonlar</h1>
-          <p className="text-muted-foreground text-sm">Yükleniyor…</p>
-        </div>
+    <main className="mx-auto w-full max-w-5xl space-y-6 px-4 py-6 md:px-8 md:py-10">
+      <header className="space-y-1.5">
+        <h1 className="text-2xl font-semibold tracking-tight md:text-3xl">
+          Aksiyonlar
+        </h1>
+        <p className="text-muted-foreground text-sm">Yükleniyor…</p>
       </header>
     </main>
   );
@@ -134,19 +126,16 @@ function Content() {
   const focusItems = (focus.data ?? []).slice(0, 3);
 
   return (
-    <main className="mx-auto w-full max-w-5xl space-y-6 px-4 py-6 md:p-8">
+    <main className="mx-auto w-full max-w-5xl space-y-6 px-4 py-6 md:px-8 md:py-10">
       <header className="flex flex-wrap items-start justify-between gap-3">
-        <div className="flex items-start gap-2">
-          <ListChecks className="text-primary mt-1 size-6" aria-hidden />
-          <div>
-            <h1 className="text-2xl font-semibold tracking-tight md:text-3xl">
-              Aksiyonlar
-            </h1>
-            <p className="text-muted-foreground text-sm">
-              Yönetici özeti ve SWOT raporlarından çıkarılan veya manuel
-              eklenen takip görevleri.
-            </p>
-          </div>
+        <div className="space-y-1.5">
+          <h1 className="text-2xl font-semibold tracking-tight md:text-3xl">
+            Aksiyonlar
+          </h1>
+          <p className="text-muted-foreground text-sm">
+            Yönetici özeti ve SWOT raporlarından çıkarılan veya manuel eklenen
+            takip görevleri.
+          </p>
         </div>
         <Button onClick={() => setShowCreate(true)} className="gap-2">
           <Plus className="size-4" aria-hidden /> Yeni aksiyon
@@ -161,22 +150,17 @@ function Content() {
           specific status / priority. */}
       {focusItems.length > 0 && (
         <section
-          className="rise-in shadow-elevated rounded-2xl border border-red-200/60 bg-gradient-to-br from-red-50/80 via-card to-card p-5 dark:border-red-900/50 dark:from-red-950/30 dark:via-card dark:to-card"
+          className="rise-in shadow-soft bg-card ring-1 ring-red-200/70 dark:ring-red-900/50 rounded-2xl p-5 md:p-6"
           aria-label="Yüksek öncelikli açık aksiyonlar"
         >
           <header className="flex items-center justify-between gap-3">
-            <div className="flex items-start gap-2.5">
-              <span className="inline-flex size-7 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-red-500/20 to-red-500/5 ring-1 ring-red-500/25 text-red-700 dark:text-red-300">
-                <span className="text-[11px] font-bold" aria-hidden>!</span>
-              </span>
-              <div>
-                <p className="text-red-800 dark:text-red-300 text-[11px] font-semibold uppercase tracking-[0.14em]">
-                  Bugün dikkat
-                </p>
-                <p className="text-sm font-semibold">
-                  {focus.data!.length} yüksek öncelikli açık aksiyon
-                </p>
-              </div>
+            <div>
+              <p className="text-red-700 dark:text-red-400 text-xs font-semibold">
+                Bugün dikkat
+              </p>
+              <p className="mt-0.5 text-sm font-semibold">
+                {focus.data!.length} yüksek öncelikli açık aksiyon
+              </p>
             </div>
             {focus.data!.length > 3 && (
               <Button
@@ -198,11 +182,12 @@ function Content() {
             {focusItems.map((item) => (
               <li
                 key={item.id}
-                className="bg-card shadow-soft ring-foreground/5 flex items-start gap-3 rounded-xl p-3 ring-1"
+                className="bg-muted/40 flex items-start gap-3 rounded-xl p-3.5"
               >
-                <span className="mt-0.5 inline-flex size-7 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-red-500/20 to-red-500/5 text-[11px] font-bold text-red-700 dark:text-red-300 ring-1 ring-red-500/20">
-                  !
-                </span>
+                <span
+                  className="mt-1.5 size-2 shrink-0 rounded-full bg-red-500"
+                  aria-hidden
+                />
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-semibold truncate">{item.title}</p>
                   <p className="text-muted-foreground text-xs truncate">
@@ -215,7 +200,7 @@ function Content() {
         </section>
       )}
 
-      <div className="bg-card flex flex-wrap items-center gap-3 rounded-lg border p-3">
+      <div className="bg-card ring-foreground/5 shadow-soft flex flex-wrap items-center gap-3 rounded-2xl p-4 ring-1">
         <div>
           <Label className="text-xs">Durum</Label>
           <select
@@ -307,10 +292,10 @@ function ActionItemRow({ item }: { item: ActionItem }) {
   const [showHistory, setShowHistory] = useState(false);
   return (
     <li
-      className={`rounded-lg border p-3 ${
+      className={`rounded-2xl p-4 ${
         item.is_archived
-          ? "bg-muted/40 border-dashed opacity-80"
-          : "bg-card"
+          ? "bg-muted/40 border border-dashed opacity-80"
+          : "bg-card ring-foreground/5 shadow-soft ring-1"
       }`}
     >
       <div className="flex flex-wrap items-center gap-2">
@@ -473,7 +458,7 @@ function AuditPayloadSummary({ event }: { event: ActionItemEvent }) {
   return (
     <span className="text-muted-foreground">
       {summary && <span>{summary} · </span>}
-      <span className="text-[10px] uppercase">{event.actor_type}</span>
+      <span className="text-xs uppercase">{event.actor_type}</span>
     </span>
   );
 }

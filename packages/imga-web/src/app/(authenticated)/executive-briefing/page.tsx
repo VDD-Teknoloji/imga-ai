@@ -7,13 +7,7 @@
 // Gemini key the Generate button disables and a banner deep-links
 // to /settings/integrations (same pattern as /strategy).
 
-import {
-  AlertTriangle,
-  ArrowRight,
-  ClipboardList,
-  Loader2,
-  Wand2,
-} from "lucide-react";
+import { AlertTriangle, ArrowRight, Loader2, Wand2 } from "lucide-react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useState } from "react";
 import { toast } from "sonner";
@@ -46,13 +40,12 @@ export default function ExecutiveBriefingPage() {
 
 function HeaderSkeleton() {
   return (
-    <main className="mx-auto w-full max-w-4xl space-y-6 px-4 py-6 md:p-8">
-      <header className="flex items-center gap-2">
-        <ClipboardList className="text-primary size-6" aria-hidden />
-        <div>
-          <h1 className="text-2xl font-semibold">Yönetici Özeti</h1>
-          <p className="text-muted-foreground text-sm">Yükleniyor…</p>
-        </div>
+    <main className="mx-auto w-full max-w-4xl space-y-6 px-4 py-6 md:px-8 md:py-10">
+      <header className="space-y-1.5">
+        <h1 className="text-2xl font-semibold tracking-tight md:text-3xl">
+          Yönetici Özeti
+        </h1>
+        <p className="text-muted-foreground text-sm">Yükleniyor…</p>
       </header>
     </main>
   );
@@ -131,22 +124,19 @@ function Content() {
   }
 
   return (
-    <main className="mx-auto w-full max-w-4xl space-y-6 px-4 py-6 md:p-8">
-      <header className="flex items-center gap-2">
-        <ClipboardList className="text-primary size-6" aria-hidden />
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight md:text-3xl">
-            Yönetici Özeti
-          </h1>
-          <p className="text-muted-foreground text-sm">
-            Otomatik dönemsel özet — KPI değişimleri, kritik içgörüler ve
-            öncelikli aksiyonlar.
-          </p>
-        </div>
+    <main className="mx-auto w-full max-w-4xl space-y-6 px-4 py-6 md:px-8 md:py-10">
+      <header className="space-y-1.5">
+        <h1 className="text-2xl font-semibold tracking-tight md:text-3xl">
+          Yönetici Özeti
+        </h1>
+        <p className="text-muted-foreground text-sm">
+          Otomatik dönemsel özet — KPI değişimleri, kritik içgörüler ve
+          öncelikli aksiyonlar.
+        </p>
       </header>
 
       {credentialsLoaded && !hasActiveKey && (
-        <div className="bg-amber-50 flex items-center gap-3 rounded-lg border border-amber-300 p-4">
+        <div className="bg-amber-50 dark:bg-amber-950/30 flex items-center gap-3 rounded-2xl border border-amber-200 dark:border-amber-900/50 p-5">
           <AlertTriangle className="size-5 text-amber-600" aria-hidden />
           <div className="flex-1 text-sm">
             <p className="font-medium text-amber-900">
@@ -196,7 +186,7 @@ function Content() {
           its own card with a title. C-level operator looks at this
           weekly; weekly-habit affordances don't need a "Yeni brifing
           oluştur" preamble. */}
-      <div className="bg-card flex flex-wrap items-end gap-3 rounded-lg border p-3">
+      <div className="bg-card ring-foreground/5 shadow-soft flex flex-wrap items-end gap-3 rounded-2xl p-4 ring-1">
         <div>
           <Label className="text-xs">Dönem</Label>
           <select
@@ -344,7 +334,7 @@ function TopActionsSection({
             <li key={a.id}>
               <a
                 href={`/action-items/${a.id}`}
-                className="bg-muted/40 hover:bg-muted block rounded border p-3 transition-colors"
+                className="bg-muted/40 hover:bg-muted block rounded-xl border p-3 transition-colors"
               >
                 <div className="flex items-start justify-between gap-3">
                   <p className="text-sm font-medium">{a.title}</p>
@@ -360,7 +350,7 @@ function TopActionsSection({
       ) : (
         <ul className="space-y-2">
           {fallback.map((a, idx) => (
-            <li key={idx} className="bg-muted/40 rounded border p-3">
+            <li key={idx} className="bg-muted/40 rounded-xl border p-3">
               <p className="text-sm font-medium">{a.title}</p>
               <p className="text-muted-foreground mt-1 text-xs">
                 {a.rationale}

@@ -32,8 +32,8 @@ export default function TicketsListPage() {
   const total = tickets.data?.pages[0]?.total ?? 0;
 
   return (
-    <main className="mx-auto w-full max-w-7xl space-y-4 p-6 md:p-8">
-      <header className="space-y-1">
+    <main className="mx-auto w-full max-w-7xl space-y-6 px-4 py-6 md:px-8 md:py-10">
+      <header className="space-y-1.5">
         <h1 className="text-2xl font-semibold tracking-tight md:text-3xl">Ticket&apos;lar</h1>
         <p className="text-muted-foreground text-sm">
           {tickets.isLoading
@@ -105,7 +105,7 @@ function toBackendFilters(filters: TicketFilterValues): TicketBackendFilters {
 
 function SkeletonTable() {
   return (
-    <div className="space-y-2 rounded-lg border p-4">
+    <div className="bg-card ring-foreground/5 shadow-soft space-y-2 rounded-2xl p-4 ring-1">
       {[0, 1, 2, 3, 4, 5, 6, 7].map((i) => (
         <div key={i} className="flex items-center gap-4 py-2">
           <Skeleton className="h-4 flex-1" />

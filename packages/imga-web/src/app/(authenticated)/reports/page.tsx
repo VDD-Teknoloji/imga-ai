@@ -4,7 +4,6 @@ import {
   ArrowRight,
   CheckCircle2,
   Download,
-  FileBarChart,
   Loader2,
   Plus,
   Trash2,
@@ -82,17 +81,16 @@ export default function ReportsPage() {
   }, [polled.data, list]);
 
   return (
-    <main className="mx-auto w-full max-w-6xl space-y-6 px-4 py-8">
-      <header className="flex items-center justify-between gap-4">
-        <div className="flex items-center gap-2">
-          <FileBarChart className="text-primary size-6" aria-hidden />
-          <div>
-            <h1 className="text-2xl font-semibold">Raporlar</h1>
-            <p className="text-muted-foreground text-sm">
-              Excel veya CSV olarak çok-sayfalı analiz + Ticket raporları
-              üretip 24 saat boyunca indirin.
-            </p>
-          </div>
+    <main className="mx-auto w-full max-w-6xl space-y-6 px-4 py-6 md:px-8 md:py-10">
+      <header className="flex flex-wrap items-start justify-between gap-3">
+        <div className="space-y-1.5">
+          <h1 className="text-2xl font-semibold tracking-tight md:text-3xl">
+            Raporlar
+          </h1>
+          <p className="text-muted-foreground text-sm">
+            Excel veya CSV olarak çok-sayfalı analiz + Ticket raporları üretip
+            24 saat boyunca indirin.
+          </p>
         </div>
         <Button onClick={() => setModalOpen(true)}>
           <Plus className="size-4" /> Yeni Rapor
@@ -231,7 +229,7 @@ function StatusBadge({
         : "bg-amber-100 text-amber-700";
   return (
     <span
-      className={cn("inline-flex items-center gap-1 rounded px-2 py-0.5 text-xs", tone)}
+      className={cn("inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs", tone)}
       title={message ?? undefined}
     >
       <Icon
@@ -635,7 +633,7 @@ function Step3Preview({
   dateTo: string;
 }) {
   return (
-    <div className="bg-muted/30 space-y-3 rounded-md border p-4 text-sm">
+    <div className="bg-muted/30 space-y-3 rounded-xl border p-4 text-sm">
       <p className="font-medium">Önizleme</p>
       <dl className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
         <dt className="text-muted-foreground">Tahmini satır:</dt>

@@ -101,15 +101,14 @@ export default function AnalyzePage() {
   const submitDisabled = text.trim().length === 0 || overLimit || analyze.isPending;
 
   return (
-    <main className="mx-auto w-full max-w-3xl space-y-6 p-6 md:p-8">
-      <header className="space-y-1">
-        <h1 className="flex items-center gap-2 text-2xl font-semibold tracking-tight md:text-3xl">
-          <Sparkles className="text-primary size-5 md:size-6" aria-hidden />
+    <main className="mx-auto w-full max-w-3xl space-y-6 px-4 py-6 md:px-8 md:py-10">
+      <header className="space-y-1.5">
+        <h1 className="text-2xl font-semibold tracking-tight md:text-3xl">
           Yorum Analiz Et
         </h1>
         <p className="text-muted-foreground text-sm">
-          Müşteri yorumunu yapıştırın. Duygu ve kategori analizi yapılır; kurum otomasyon ayarına
-          göre gerekirse Ticket otomatik açılır.
+          Müşteri yorumunu yapıştırın. Duygu ve kategori analizi yapılır; kurum
+          otomasyon ayarına göre gerekirse Ticket otomatik açılır.
         </p>
       </header>
 

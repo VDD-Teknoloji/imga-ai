@@ -7,7 +7,6 @@
 // polish'inde yapılır). URL state: ?tab=...&date_from=...&date_to=...
 // Refresh-stable; cell-click navigation /reviews'a query params ile.
 
-import { TrendingUp } from "lucide-react";
 import dynamic from "next/dynamic";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useMemo, useState } from "react";
@@ -132,13 +131,12 @@ export default function InsightsPage() {
 
 function InsightsHeaderSkeleton() {
   return (
-    <main className="mx-auto w-full max-w-6xl space-y-6 px-4 py-8">
-      <header className="flex items-center gap-2">
-        <TrendingUp className="text-primary size-6" aria-hidden />
-        <div>
-          <h1 className="text-2xl font-semibold">İçgörüler</h1>
-          <p className="text-muted-foreground text-sm">Yükleniyor…</p>
-        </div>
+    <main className="mx-auto w-full max-w-6xl space-y-6 px-4 py-6 md:px-8 md:py-10">
+      <header className="space-y-1.5">
+        <h1 className="text-2xl font-semibold tracking-tight md:text-3xl">
+          İçgörüler
+        </h1>
+        <p className="text-muted-foreground text-sm">Yükleniyor…</p>
       </header>
     </main>
   );
@@ -299,15 +297,14 @@ function InsightsContent() {
   }
 
   return (
-    <main className="mx-auto w-full max-w-6xl space-y-6 px-4 py-8">
-      <header className="flex items-center gap-2">
-        <TrendingUp className="text-primary size-6" aria-hidden />
-        <div>
-          <h1 className="text-2xl font-semibold">İçgörüler</h1>
-          <p className="text-muted-foreground text-sm">
-            Duygu, kategori ve Ticket metriklerinin ayrıntılı görünümü.
-          </p>
-        </div>
+    <main className="mx-auto w-full max-w-6xl space-y-6 px-4 py-6 md:px-8 md:py-10">
+      <header className="space-y-1.5">
+        <h1 className="text-2xl font-semibold tracking-tight md:text-3xl">
+          İçgörüler
+        </h1>
+        <p className="text-muted-foreground text-sm">
+          Duygu, kategori ve Ticket metriklerinin ayrıntılı görünümü.
+        </p>
       </header>
 
       <FilterBar
@@ -323,7 +320,7 @@ function InsightsContent() {
           ne gördüğünü bilmiyordu. Açık bir rozet ile "Tüm zamanlar"
           gösteriliyor; bir tarih girilirse rozet gizleniyor. */}
       {!dateFrom && !dateTo && (
-        <div className="bg-muted/40 border-border flex items-center gap-2 rounded-lg border px-3 py-2 text-xs">
+        <div className="bg-muted/40 border-border flex items-center gap-2 rounded-2xl border px-4 py-2.5 text-xs">
           <span className="bg-primary/15 text-primary inline-flex items-center rounded-full px-2 py-0.5 font-medium">
             Tüm zamanlar
           </span>
