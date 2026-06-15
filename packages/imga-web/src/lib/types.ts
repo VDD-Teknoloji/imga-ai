@@ -1046,6 +1046,28 @@ export interface DetectedColumn {
   metadata: Record<string, unknown>;
 }
 
+/** Sprint 12 — yüklemeden önce yapısal + içerik doğrulama bulgusu.
+ *  Backend: imga_api.routes.tenant_batch.ValidationIssueResponse. */
+export interface ValidationIssue {
+  /** "error" engelleyici (yükleme açılmaz) | "warning" satır atlanır. */
+  severity: "error" | "warning";
+  code: string;
+  message: string;
+  /** 1-indeksli veri satırı; dosya seviyesi bulgularda null. */
+  row: number | null;
+  column: string | null;
+  hint: string | null;
+}
+
+export interface ValidationReport {
+  ok: boolean;
+  total_rows: number;
+  valid_rows: number;
+  error_count: number;
+  warning_count: number;
+  issues: ValidationIssue[];
+}
+
 export interface SmartPreviewResponse {
   headers: string[];
   row_count: number;
@@ -1054,6 +1076,9 @@ export interface SmartPreviewResponse {
    *  empty the UI shows the PII consent banner before the upload
    *  proceeds. Today only customer_name emits these. */
   pii_warnings: string[];
+  /** Sprint 12 — analiz başlamadan dosya doğrulaması (zorunlu kolon,
+   *  boş dosya, satır limiti + satır-bazlı boş/kopya uyarıları). */
+  validation: ValidationReport;
 }
 
 // ---------------------------------------------------------------------------

@@ -33,6 +33,7 @@ import type {
   BatchJob,
   SmartFieldName,
   SmartPreviewResponse,
+  ValidationReport,
 } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
@@ -171,7 +172,7 @@ export default function BatchUploadPage() {
         <h1 className="text-2xl font-semibold">Toplu Yükleme</h1>
         <p className="text-muted-foreground text-sm">
           CSV ya da XLSX yükleyin; metinler arka planda analiz edilir, sonuç
-          /reviews sayfasında görünür.
+          Analiz Arşivi&apos;nde görünür.
         </p>
       </header>
 
@@ -493,6 +494,9 @@ function Step2ColumnMapping({
   }, [derivedTextColumn, textColumn, setTextColumn]);
 
   const piiBlocked = preview !== null && preview.pii_warnings.length > 0 && !piiConsented;
+  // Sprint 12 — engelleyici doğrulama hatası varsa (zorunlu kolon yok,
+  // dosya boş, satır limiti) yükleme açılmaz; kullanıcı önce düzeltir.
+  const validationBlocked = preview !== null && !preview.validation.ok;
 
   return (
     <Card>
@@ -517,6 +521,7 @@ function Step2ColumnMapping({
           </div>
         ) : preview ? (
           <>
+            <ValidationReportPanel report={preview.validation} />
             <PiiWarningBanner
               preview={preview}
               consented={piiConsented}
@@ -573,11 +578,11 @@ function Step2ColumnMapping({
             className="mt-1"
           />
           <span className="text-sm">
-            <span className="font-medium">Otomatik bilet aç</span>
+            <span className="font-medium">Otomatik Ticket aç</span>
             <span className="text-muted-foreground mt-1 block text-xs">
-              Tenant&apos;ın automation_mode ayarına göre eşik tutturan satırlar
-              için otomatik ticket yaratılır. Kapalıysa hiçbir satır ticket
-              açmaz; tüm analizler /reviews sayfasında listelenir.
+              Kurumunuzun otomasyon modu ayarına göre eşiği geçen satırlar
+              için otomatik Ticket açılır. Kapalıysa hiçbir satır Ticket
+              açmaz; tüm analizler Analiz Arşivi&apos;nde listelenir.
             </span>
           </span>
         </label>
@@ -589,8 +594,14 @@ function Step2ColumnMapping({
           <Button
             type="button"
             onClick={onSubmit}
-            disabled={submitting || piiBlocked}
-            title={piiBlocked ? "Önce PII onayı verin" : undefined}
+            disabled={submitting || piiBlocked || validationBlocked}
+            title={
+              validationBlocked
+                ? "Dosyadaki engelleyici hataları düzeltip yeniden yükleyin"
+                : piiBlocked
+                  ? "Önce PII onayı verin"
+                  : undefined
+            }
           >
             {submitting ? (
               <>
@@ -627,7 +638,7 @@ function Step3Progress({
     return (
       <Card>
         <CardContent className="flex items-center gap-3 p-6">
-          <Loader2 className="size-5 animate-spin" /> Job bilgisi yükleniyor…
+          <Loader2 className="size-5 animate-spin" /> Yükleme bilgisi yükleniyor…
         </CardContent>
       </Card>
     );
@@ -658,7 +669,7 @@ function Step3Progress({
           <Stat label="Başarılı" value={job.succeeded_rows} />
           <Stat label="Hatalı" value={job.failed_rows} tone="danger" />
           <Stat label="Tekrar" value={job.duplicates_skipped} />
-          <Stat label="Bilet" value={job.tickets_created} tone="success" />
+          <Stat label="Ticket" value={job.tickets_created} tone="success" />
         </dl>
 
         {job.estimated_seconds !== null && job.estimated_seconds > 0 && (
@@ -696,7 +707,7 @@ function Step4Summary({ job, onReset }: { job: BatchJob; onReset: () => void }) 
           <Stat label="İşlenen" value={job.processed_rows} />
           <Stat label="Başarılı" value={job.succeeded_rows} tone="success" />
           <Stat label="Hatalı" value={job.failed_rows} tone="danger" />
-          <Stat label="Bilet" value={job.tickets_created} />
+          <Stat label="Ticket" value={job.tickets_created} />
         </dl>
         {job.error_summary.length > 0 && (
           <details className="rounded border p-3 text-sm">
@@ -714,7 +725,7 @@ function Step4Summary({ job, onReset }: { job: BatchJob; onReset: () => void }) 
         )}
         <div className="flex flex-wrap gap-2">
           <Button render={<Link href={`/reviews?batch_job_id=${job.job_id}`} />}>
-            Bu Batch&apos;in Analizlerini Gör <ArrowRight className="size-4" />
+            Bu Yüklemenin Analizlerini Gör <ArrowRight className="size-4" />
           </Button>
           <Button variant="outline" type="button" onClick={onReset}>
             Yeni Yükleme
@@ -722,6 +733,102 @@ function Step4Summary({ job, onReset }: { job: BatchJob; onReset: () => void }) 
         </div>
       </CardContent>
     </Card>
+  );
+}
+
+/**
+ * Sprint 12 — yüklemeden önce nokta-atışı doğrulama raporu.
+ *
+ *   * Engelleyici hata (zorunlu kolon yok / boş dosya / satır limiti):
+ *     kırmızı panel + düzeltme ipucu; "Yüklemeyi Başlat" kilitli.
+ *   * Yalnız uyarı (boş hücre / kopya satır): amber panel, satır
+ *     numaralarıyla; yükleme açılabilir, o satırlar atlanır.
+ *   * Temiz: yeşil onay + analiz edilecek satır sayısı.
+ */
+function ValidationReportPanel({ report }: { report: ValidationReport }) {
+  const errors = report.issues.filter((i) => i.severity === "error");
+  const warnings = report.issues.filter((i) => i.severity === "warning");
+
+  if (!report.ok) {
+    return (
+      <div className="rounded-2xl border border-red-200 bg-red-50 p-4 dark:border-red-900/60 dark:bg-red-950/30">
+        <div className="flex items-start gap-2.5">
+          <XCircle
+            className="mt-0.5 size-5 shrink-0 text-red-600 dark:text-red-400"
+            aria-hidden
+          />
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-semibold text-red-800 dark:text-red-300">
+              Bu dosya yüklenemez
+            </p>
+            <ul className="mt-2 space-y-2.5">
+              {errors.map((iss, idx) => (
+                <li
+                  key={idx}
+                  className="text-sm leading-relaxed text-red-800/90 [overflow-wrap:anywhere] dark:text-red-200"
+                >
+                  {iss.message}
+                  {iss.hint && (
+                    <span className="mt-0.5 block text-xs text-red-700/70 dark:text-red-300/70">
+                      {iss.hint}
+                    </span>
+                  )}
+                </li>
+              ))}
+            </ul>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (report.warning_count === 0) {
+    return (
+      <div className="flex items-center gap-2.5 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 dark:border-emerald-900/60 dark:bg-emerald-950/30">
+        <CheckCircle2
+          className="size-5 shrink-0 text-emerald-600 dark:text-emerald-400"
+          aria-hidden
+        />
+        <p className="text-sm text-emerald-800 dark:text-emerald-300">
+          Dosya şablona uygun —{" "}
+          <strong className="font-semibold tabular-nums">
+            {report.valid_rows.toLocaleString("tr-TR")}
+          </strong>{" "}
+          satır analiz edilecek.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 dark:border-amber-900/60 dark:bg-amber-950/30">
+      <div className="flex items-start gap-2.5">
+        <AlertCircle
+          className="mt-0.5 size-5 shrink-0 text-amber-600 dark:text-amber-400"
+          aria-hidden
+        />
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-semibold text-amber-800 dark:text-amber-300">
+            {report.valid_rows.toLocaleString("tr-TR")} satır analiz edilecek ·{" "}
+            {report.warning_count.toLocaleString("tr-TR")} satır atlanacak
+          </p>
+          <ul className="mt-2 max-h-44 space-y-1.5 overflow-y-auto pr-1">
+            {warnings.map((iss, idx) => (
+              <li
+                key={idx}
+                className="text-xs leading-relaxed text-amber-800/90 [overflow-wrap:anywhere] dark:text-amber-200"
+              >
+                {iss.message}
+              </li>
+            ))}
+          </ul>
+          <p className="mt-2 text-xs text-amber-700/70 dark:text-amber-300/70">
+            Bu satırları yine de yükleyebilirsiniz; atlanan satırlar analiz
+            edilmez.
+          </p>
+        </div>
+      </div>
+    </div>
   );
 }
 
