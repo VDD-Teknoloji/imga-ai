@@ -193,6 +193,7 @@ services:
           tests/test_batch_template.py \
           tests/test_executive_overview.py \
           tests/test_review_corrections.py \
+          tests/test_upload_validation.py \
           tests-core/test_key_rotation.py \
           tests-core/test_unified_classifier.py \
           tests-core/test_metrics_pure_formulas.py \
