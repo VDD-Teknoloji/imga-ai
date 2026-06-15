@@ -55,6 +55,7 @@ from imga_api.workers.file_parser import (
     peek_header,
 )
 from imga_api.workers.scheduler import enqueue_batch_job
+from imga_api.workers.upload_validation import validate_upload
 from imga_core.text_utils import normalize_turkish
 
 log = logging.getLogger("imga-api.routes.batch")
@@ -132,11 +133,33 @@ class DetectedColumnResponse(BaseModel):
     metadata: dict[str, Any]
 
 
+class ValidationIssueResponse(BaseModel):
+    """Sprint 12 — tek bir ön-doğrulama bulgusu (satır numarası + ipucu)."""
+
+    severity: str  # "error" (engelleyici) | "warning" (satır atlanır)
+    code: str
+    message: str
+    row: int | None = None
+    column: str | None = None
+    hint: str | None = None
+
+
+class ValidationReportResponse(BaseModel):
+    ok: bool
+    total_rows: int
+    valid_rows: int
+    error_count: int
+    warning_count: int
+    issues: list[ValidationIssueResponse] = Field(default_factory=list)
+
+
 class PreviewResponse(BaseModel):
     headers: list[str]
     row_count: int
     detected: list[DetectedColumnResponse]
     pii_warnings: list[str]
+    # Sprint 12 — yüklemeden önce yapısal + içerik doğrulama raporu.
+    validation: ValidationReportResponse
 
 
 # --- helpers ----------------------------------------------------------
@@ -366,9 +389,37 @@ async def preview_batch_columns(
         detector = SmartColumnDetector()
         result = detector.detect(headers, samples, row_count)
 
+        # Sprint 12 — analiz başlamadan tam doğrulama: zorunlu kolon,
+        # boş dosya, satır limiti + satır-bazlı boş/kopya uyarıları.
+        # Şablon standardı 'yorum' üzerinden doğrularız (strict).
+        report = validate_upload(
+            file_path,
+            text_column="yorum",
+            max_rows=batch_settings.max_rows,
+            required_columns=TEMPLATE_REQUIRED_COLUMNS,
+        )
+
         return PreviewResponse(
             headers=result.headers,
             row_count=result.row_count,
+            validation=ValidationReportResponse(
+                ok=report.ok,
+                total_rows=report.total_rows,
+                valid_rows=report.valid_rows,
+                error_count=report.error_count,
+                warning_count=report.warning_count,
+                issues=[
+                    ValidationIssueResponse(
+                        severity=issue.severity,
+                        code=issue.code,
+                        message=issue.message,
+                        row=issue.row,
+                        column=issue.column,
+                        hint=issue.hint,
+                    )
+                    for issue in report.issues
+                ],
+            ),
             detected=[
                 DetectedColumnResponse(
                     column_name=col.column_name,
