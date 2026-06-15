@@ -84,6 +84,29 @@ def _has_required_column(
     return any(normalize_turkish(req) in normalized for req in required_columns)
 
 
+def _effective_text_column(
+    header: list[str], text_column: str, required_columns: Sequence[str]
+) -> str:
+    """Satır taramasında HANGİ kolonun okunacağını çöz.
+
+    _has_required_column 'text' legacy alias'ını kabul ettiği için,
+    şablon kolonu ('yorum') header'da yokken bile dosya uyumlu sayılır.
+    Bu durumda tarama 'yorum'u değil gerçekte var olan kolonu okumalı —
+    yoksa iter_rows UnknownColumnError atar ve uyumlu dosya yanlışlıkla
+    'missing_required_column' olarak işaretlenirdi. Öncelik: istenen
+    text_column → şablonun zorunlu kolonu → legacy 'text' alias'ı."""
+    normalized = {normalize_turkish(h).strip() for h in header}
+    if normalize_turkish(text_column).strip() in normalized:
+        return text_column
+    for req in required_columns:
+        if normalize_turkish(req).strip() in normalized:
+            return req
+    for alias in _LEGACY_TEXT_ALIASES:
+        if alias in normalized:
+            return alias
+    return text_column
+
+
 def validate_upload(
     file_path: Path,
     *,
@@ -205,13 +228,16 @@ def validate_upload(
         )
 
     # --- içerik: boş hücre + kopya satır taraması --------------------
+    # Tarama gerçek metin kolonunu okur (legacy 'text' alias dahil),
+    # sabit 'yorum'u değil — bkz. _effective_text_column.
+    scan_column = _effective_text_column(header, text_column, required_columns)
     empty_rows: list[int] = []
     duplicate_rows: list[int] = []
     seen_hashes: set[str] = set()
     valid_rows = 0
 
     try:
-        for parsed in iter_rows(file_path, text_column=text_column):
+        for parsed in iter_rows(file_path, text_column=scan_column):
             text = parsed.text
             if not text:
                 empty_rows.append(parsed.row_number)
