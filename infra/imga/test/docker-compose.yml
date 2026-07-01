@@ -195,6 +195,7 @@ services:
           tests/test_review_corrections.py \
           tests/test_upload_validation.py \
           tests/test_api_token_security.py \
+          tests/test_api_tokens_service.py \
           tests-core/test_key_rotation.py \
           tests-core/test_unified_classifier.py \
           tests-core/test_metrics_pure_formulas.py \

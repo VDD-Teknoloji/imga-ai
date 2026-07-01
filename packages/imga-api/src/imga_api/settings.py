@@ -166,6 +166,14 @@ class Settings:
     # unauthenticated trial traffic. Min 32 chars enforced at load
     # time.
     imga_api_trial_key: str | None = None
+    # Sprint 13 — İmga v1 partner API (AsakAI). ``token_pepper`` = HMAC-SHA256
+    # pepper for opaque API-token at-rest hashing; prod + staging MUST differ
+    # (32-byte, never committed). None → partner API disabled (the token
+    # service fails fast on first use). ``environment`` (from IMGA_ENV) drives
+    # the Stripe-style token prefix + cross-env enforcement:
+    # production→imga_live_, everything else→imga_stg_.
+    token_pepper: str | None = None
+    environment: str = "development"
 
     @classmethod
     def from_env(cls) -> Settings:
@@ -265,6 +273,17 @@ class Settings:
                 "print(secrets.token_hex(32))'`)"
             )
 
+        # Sprint 13 — partner API token pepper. Same min-32 rule as the
+        # trial key: a too-short pepper in env is a config bug, not an
+        # exemption. None is allowed (partner API simply disabled).
+        token_pepper_raw = os.environ.get("IMGA_TOKEN_PEPPER")
+        if token_pepper_raw is not None and len(token_pepper_raw) < 32:
+            raise ValueError(
+                "IMGA_TOKEN_PEPPER must be at least 32 characters and "
+                "distinct between prod and staging (generate via "
+                "`python -c 'import secrets; print(secrets.token_hex(32))'`)"
+            )
+
         return cls(
             bert_model=os.environ.get("IMGA_BERT_MODEL", DEFAULT_BERT_MODEL),
             knowledge_base_path=_opt_path("IMGA_KB_PATH"),
@@ -277,4 +296,6 @@ class Settings:
             report=report,
             enable_public_demo_endpoints=enable_public_demo_endpoints,
             imga_api_trial_key=trial_key_raw,
+            token_pepper=token_pepper_raw,
+            environment=env_name,
         )

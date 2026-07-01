@@ -43,3 +43,26 @@ sunucu ajanına devir.
   diliminde gelecek); helper pepper'ı argüman olarak alıyor, import-time secret yok.
 - Kırmızı çıkarsa: tam pytest çıktısı + `alembic` hatası ile geri bildir;
   local-agent tek-satır düzeltir.
+
+## Güncelleme — §3.1 auth katmanı tamamlandı (commit sonrası)
+
+Migration + helper'a EK OLARAK auth yüzeyi yazıldı:
+- `settings.py`: `IMGA_TOKEN_PEPPER` (min-32, prod/staging AYRI) + `environment` (IMGA_ENV).
+- `services/api_tokens.py`: `ApiTokenService` (mint/verify/rotate/revoke/list/mark_used).
+  verify() **imga_admin (BYPASSRLS)** session ile lookup.
+- `v1/errors.py`: `PartnerApiError` + AnalyzeError render + exception handler.
+- `v1/auth.py`: `get_partner_principal` çift-yol (tenant/ops), cross-env (§8.1),
+  `require_tenant`/`require_ops` (§8.6), `bind_api_tenant`.
+- `v1/admin_tokens.py`: `POST /v1/admin/tokens/rotate` + `/{id}/revoke` + `GET ?tenant_id=`
+  (opsBearer, §4A.3-4A.5). External tenant_id = Tenant.slug.
+- `main.py`: exception handler register + router include.
+- `tests/test_api_tokens_service.py`: ops token mint/verify/revoke + validations
+  (admin_session, tenant FK gerektirmez). **Canonical listeye eklendi.**
+
+Ek istenen (yukarıdaki 4 maddeye ek):
+5. `test_api_tokens_service.py` yeşil mi? (ilk DB-backed test — admin_session
+   fixture + `@pytest.mark.asyncio` kullanımı doğru mu, collection sorunu var mı.)
+6. `mypy --strict` yeni `v1/` + `services/api_tokens.py` + `settings.py` temiz mi?
+7. **Bootstrap notu:** ilk ops token'ı mint edecek bir yol henüz yok (admin routes
+   opsBearer ister → tavuk-yumurta). Bir management CLI / seed script sonraki dilimde;
+   şimdilik test dışında ops token elle DB'ye eklenebilir.
