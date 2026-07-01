@@ -158,6 +158,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     from imga_api.workers.scheduler import (
         build_scheduler,
         schedule_cleanup,
+        schedule_data_retention,
         schedule_provider_healthcheck,
     )
 
@@ -198,6 +199,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     )
     # §3.5 — Gemini provider liveness probe (60sn). /v1/health bunu okur.
     schedule_provider_healthcheck(scheduler)
+    # §3.8 — KVKK 30-gün retention purge (günlük). api_request_log hard-delete.
+    schedule_data_retention(scheduler)
     scheduler.start()
     log.info(
         "scheduler started (upload_dir=%s, reports_dir=%s, retention=%sh)",
