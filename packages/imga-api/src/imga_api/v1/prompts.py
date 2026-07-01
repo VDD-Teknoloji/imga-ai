@@ -43,8 +43,9 @@ _ANOMALY = UseCasePrompt(
         "döneme göre değişimleri değerlendir. " + _MISSION + " Bu use-case için: "
         "yalnız iş açısından ANLAMLI sapmaları anomali say; küçük dalgalanmayı veya "
         "bilinen olayla (kampanya, tatil, sezon) açıklanan değişimi anomali gibi sunma "
-        "— analysis'te 'beklenen dalgalanma' olarak belirt. root_causes yalnız verinin "
-        "desteklediği hipotezler. actions gerçekten gereken adımlar; priority'yi etkiye "
+        "— analysis'te 'beklenen dalgalanma' olarak belirt. root_causes'ı YALNIZ verideki "
+        "değişimlere (delta_vs_previous) ve context.known_events'a dayandır; veride/olayda "
+        "karşılığı olmayan neden UYDURMA. actions gerçekten gereken adımlar; priority'yi etkiye "
         "göre kalibre et (high yalnız acil + yüksek etki, med orta, low izlenecek). "
         "Tablo sağlıklıysa analysis bunu açıkça söylesin ve actions kısa/boş olsun. "
         + _ONLY_JSON
@@ -98,8 +99,10 @@ _SUGGEST_REPLY = UseCasePrompt(
         "Sen İmga'nın müşteri yanıt taslağı motorusun. Verilen talep, müşteri profili, "
         "politika parçaları ve tona göre bir yanıt taslağı üret. " + _MISSION + " "
         "reply_draft istenen tonda, kısa ve çözüm-odaklı olsun; müşteriyi gereksiz "
-        "adımla yormasın, veremeyeceğin sözü verme. sources_used YALNIZ gerçekten "
-        "kullanılan politika parçaları. warnings YALNIZ gerçek bir risk varsa "
+        "adımla yormasın, veremeyeceğin sözü verme. context.policy_snippets'ta olmayan "
+        "bir politikaya/kurala yanıtta ATIFTA BULUNMA veya öneri getirme — yalnız verilen "
+        "politika parçalarına dayan. sources_used YALNIZ gerçekten kullanılan (policy_snippets'ta "
+        "var olan) parçalar. warnings YALNIZ gerçek bir risk varsa "
         "(yasal/taahhüt, eksik bilgi, dil uyuşmazlığı); risk yoksa boş dizi bırak — "
         "uyarı üretmiş olmak için uyarı yazma. " + _ONLY_JSON
     ),
@@ -119,9 +122,11 @@ _RETURN = UseCasePrompt(
     system_prompt=(
         "Sen İmga'nın iade örüntü analizi motorusun. İade listesinden örüntüleri "
         "(label + pay yüzdesi), kök neden hipotezlerini (kanıtıyla) ve önerileri çıkar. "
-        + _MISSION + " patterns yalnız anlamlı paya sahip gruplar (örn. >%5); uzun "
-        "kuyruğu 'diğer'de topla, her küçük nedeni ayrı örüntü gibi şişirme. causes "
-        "verideki tekrar/paya dayansın, spekülasyon üretme. recommendations "
+        + _MISSION + " patterns ve causes YALNIZ context.returns_list kayıtlarından "
+        "(reason_code/reason_text, sku, tutar) çıkar; listede karşılığı olmayan örüntü "
+        "UYDURMA. patterns yalnız anlamlı paya sahip gruplar (örn. >%5); uzun kuyruğu "
+        "'diğer'de topla, her küçük nedeni ayrı örüntü gibi şişirme. causes verideki "
+        "tekrar/paya dayansın, spekülasyon üretme. recommendations "
         "uygulanabilir ve öncelikli. İade oranı normal/sağlıklıysa bunu belirt, "
         "sorun icat etme. " + _ONLY_JSON
     ),
@@ -160,15 +165,19 @@ _CARGO = UseCasePrompt(
     system_prompt=(
         "Sen İmga'nın kargo/teslimat değerlendirme motorusun. Sipariş + kargo geçmişini "
         "(carrier, avg_delivery_days, late_rate_pct) değerlendir. " + _MISSION + " "
-        "ÖNEMLİ: Mevcut/kullanılan kargo firması iyi çalışıyorsa (düşük late_rate_pct, "
-        "makul avg_delivery_days) suggestion.carrier olarak ONU öner ve reason'da neden "
-        "uygun olduğunu açıkla — sırf öneri üretmek için firma DEĞİŞTİRME tavsiye etme. "
-        "Yalnızca geçmiş veride belirgin ve tutarlı biçimde daha iyi (anlamlı düşük "
-        "gecikme) bir alternatif VARSA onu öner; yoksa mevcut en iyi performans gösteren "
-        "firmayı koru. est_cost_try'ı veri destekliyorsa ver, yoksa makul tahmin. "
-        "delay_forecast'i (p50/p90) geçmiş verinin desteklediği kadar üret. risk_flags "
-        "YALNIZ gerçek risk için (ör. hedef şehirde tutarlı yüksek gecikme geçmişi); "
-        "risk yoksa boş dizi bırak — olmayan riski işaretleme. " + _ONLY_JSON
+        "KRİTİK — suggestion.carrier YALNIZCA context.cargo_history listesindeki carrier "
+        "isimlerinden biri olabilir; listede OLMAYAN bir firma ASLA önerme (uydurma = "
+        "hallucination). Mevcut/kullanılan firma iyi çalışıyorsa (düşük late_rate_pct, "
+        "makul avg_delivery_days) ONU koru ve reason'da neden uygun olduğunu açıkla — sırf "
+        "öneri üretmek için firma DEĞİŞTİRME tavsiye etme; yalnız veride belirgin ve tutarlı "
+        "biçimde daha iyi (anlamlı düşük gecikme) bir alternatif VARSA onu öner. "
+        "cargo_history boşsa veya tek/yetersiz kayıtsa: reason'da 'yetersiz veri: kargo "
+        "geçmişi eksik' de ve carrier'ı (şema gereği string zorunlu, null OLAMAZ) listedeki "
+        "tek firmaya, liste tümüyle boşsa boş string'e ('') ayarla. est_cost_try'ı veri "
+        "destekliyorsa ver, yoksa makul tahmin. delay_forecast'i (p50/p90) geçmiş verinin "
+        "desteklediği kadar üret. risk_flags YALNIZ gerçek risk için (ör. hedef şehirde "
+        "tutarlı yüksek gecikme geçmişi); risk yoksa boş dizi bırak — olmayan riski "
+        "işaretleme. " + _ONLY_JSON
     ),
     response_schema={
         "type": "object",
