@@ -66,3 +66,23 @@ Ek istenen (yukarıdaki 4 maddeye ek):
 7. **Bootstrap notu:** ilk ops token'ı mint edecek bir yol henüz yok (admin routes
    opsBearer ister → tavuk-yumurta). Bir management CLI / seed script sonraki dilimde;
    şimdilik test dışında ops token elle DB'ye eklenebilir.
+
+## Güncelleme 2 — §3.2 + §3.5 + migration 0033 (aynı foundation)
+
+Bu handoff artık **tüm N+1 foundation'ı** kapsıyor. Ek dosyalar:
+- `migration 0033`: `api_tenant_config` (quota/contact/residency_locks) +
+  `api_request_log` (usage/billing/export/erasure — ham gövde YOK). İkisi RLS+FORCE.
+- `models/api_tenant.py`: ApiTenantConfig + ApiRequestLog (+ kayıt).
+- `v1/admin_tenants.py`: POST tenants (slugify) + POST quota + GET usage (§4A.1/§4A.2).
+- `v1/health.py`: GET /v1/health (§4.7, unauth).
+
+**Sunucu ajanından (tümü):** `alembic upgrade head` → 0032 **ve** 0033 sorunsuz;
+canonical pytest (`test_api_token_security.py` + `test_api_tokens_service.py`) yeşil;
+ruff + mypy strict yeni `v1/` + `services/api_tokens.py` + `models/api_*.py` + `settings.py`
+temiz; `import imga_api.main` boot-time hatasız (router include + exception handler).
+Kırmızı → tam çıktı ile geri bildir.
+
+## Henüz YAPILMAYANLAR (sonraki dilimler — bu handoff kapsamı dışı)
+
+§3.3 analyze+Gemini · §3.4 SSE · §3.6 rate-limit (Redis) · §3.7 idempotency (Redis) ·
+§3.8 KVKK data lifecycle + purge worker · §3.10 contract test suite · §3.11 deploy.
