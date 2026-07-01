@@ -90,10 +90,18 @@ KARŞILANMAYACAK; yerine prod'da canlı-izleme + load test ile eşdeğer güvenc
 Bu owner kararıdır; ben yalnız kayda geçiriyorum. Öneri: prod'a çıktıktan sonra ilk
 24 saat yakın izleme + enjekte-502 smoke ile §7 (graceful degradation) doğrulansın.
 
-## 6.1 Bilinen sınır / v1.4 refinement — SSE gerçek token-streaming
+## 6.1 SSE gerçek token-streaming — YAZILDI (`33948a3`, owner "ekle" dedi)
 
-**Karar (local-agent mühendislik önerisi, geri alınabilir):** §2.4'ün "SSE ilk-token
-<800ms" alt-kriteri için **gerçek Gemini token-streaming v1.4'e ertelendi.** Gerekçe:
+**Durum güncellemesi:** Aşağıdaki erteleme kararı GÜNCEL DEĞİL — owner "ekleyelim"
+dedi, gerçek streaming yazıldı ve :5433'te doğrulandı (643 passed). `imga_core.
+stream_text` (`generate_content_stream`, `inspect.isawaitable` ile iki SDK-şekline
+dayanıklı) + `stream_free_analyze` + `stream.py` `sse_stream`. **Deploy + canlı
+doğrulama:** deploy prompt (aşağıda/ayrı mesaj) — server-agent prod'da tek `curl -N`
+SSE isteğiyle gerçek SDK çağrısını + ilk-token gecikmesini teyit eder.
+
+---
+_(tarihsel — supersede edildi:)_ **Karar (local-agent mühendislik önerisi):** §2.4'ün
+"SSE ilk-token <800ms" alt-kriteri için **gerçek Gemini token-streaming v1.4'e ertelendi.** Gerekçe:
 - SSE endpoint'i **fonksiyonel canlı ve kontrat-uyumlu** — `partial`/`meta`/`done`
   event ŞEKLİ doğru (cutover E-serisi ile prod'da çalışır durumda). Eksik olan yalnız
   TTFT (<800ms) performans hedefi; şu an tam yanıt parçalara bölünüyor.
