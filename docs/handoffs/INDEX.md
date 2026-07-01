@@ -2,6 +2,8 @@
 
 | Tarih      | Başlık                                                                                       | Yazar         | Hedef         | Durum    | Öncelik |
 |------------|----------------------------------------------------------------------------------------------|---------------|---------------|----------|---------|
+| 2026-07-01 | [asakai-n1-auth-migration-0032](2026-07-01-asakai-n1-auth-migration-0032.md)                 | local-agent   | server-agent  | open     | yüksek  |
+| 2026-07-01 | [asakai-n1-deploy-and-cutover](2026-07-01-asakai-n1-deploy-and-cutover.md)                   | local-agent   | server-agent  | open     | yüksek  |
 | 2026-05-13 | [batch-audit-and-sse-polling-hotfix](2026-05-13-batch-audit-and-sse-polling-hotfix.md)       | server-agent  | local-agent   | open     | orta    |
 | 2026-05-09 | [cookie-credentials-omit-hotfix](2026-05-09-cookie-credentials-omit-hotfix.md)               | server-agent  | local-agent   | resolved | kritik  |
 | 2026-05-08 | [cap-sys-ptrace-for-api-worker](2026-05-08-cap-sys-ptrace-for-api-worker.md)                 | server-agent  | local-agent   | open     | orta    |

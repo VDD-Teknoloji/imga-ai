@@ -116,6 +116,61 @@ def schedule_cleanup(
     _job()
 
 
+def schedule_provider_healthcheck(
+    scheduler: AsyncIOScheduler, *, interval_seconds: int = 60
+) -> None:
+    """§3.5 — Gemini provider liveness probe'u her ``interval_seconds`` sn.
+
+    Coroutine job (AsyncIOScheduler doğrudan çalıştırır). ``next_run_time`` =
+    şimdi → scheduler.start() sonrası ilk probe hemen koşar; böylece boot'tan
+    saniyeler sonra ``GET /v1/health`` gerçek provider durumunu yansıtır."""
+    from imga_api.services.provider_health import probe_provider
+
+    scheduler.add_job(
+        probe_provider,
+        trigger="interval",
+        seconds=interval_seconds,
+        id="provider-healthcheck",
+        replace_existing=True,
+        next_run_time=datetime.now(UTC),
+    )
+    log.info("scheduler: provider healthcheck every %ss", interval_seconds)
+
+
+def schedule_data_retention(
+    scheduler: AsyncIOScheduler, *, interval_hours: int = 24
+) -> None:
+    """§3.8 — 30-gün KVKK retention purge, günlük + boot'ta bir kez.
+
+    Her koşuda kısa-ömürlü admin (BYPASSRLS) engine kurar/kapatır — kalıcı bir
+    BYPASSRLS pool tutmamak için (job günde bir kez koşar). Boot'ta çalışması
+    idempotent: yalnız 30 günü aşmış satırlar silinir."""
+    from imga_db import create_engine, create_session_factory
+
+    from imga_api.services.data_retention import purge_expired
+
+    async def _job() -> None:
+        engine = create_engine("admin")
+        try:
+            factory = create_session_factory(engine)
+            async with factory() as session:
+                await purge_expired(session)
+        except Exception:
+            log.exception("data retention purge failed")
+        finally:
+            await engine.dispose()
+
+    scheduler.add_job(
+        _job,
+        trigger="interval",
+        hours=interval_hours,
+        id="data-retention-purge",
+        replace_existing=True,
+        next_run_time=datetime.now(UTC),
+    )
+    log.info("scheduler: data retention purge every %sh", interval_hours)
+
+
 async def enqueue_batch_job(
     app: FastAPI,
     *,
@@ -181,6 +236,8 @@ __all__ = [
     "build_scheduler",
     "enqueue_batch_job",
     "schedule_cleanup",
+    "schedule_data_retention",
+    "schedule_provider_healthcheck",
     "submit_batch_job",
     "submit_report_job",
 ]

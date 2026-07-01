@@ -1,0 +1,889 @@
+openapi: 3.1.0
+
+# =============================================================================
+# İmga v1 Partner API — OpenAPI (contract v1.3'e HİZALANMIŞ)
+# -----------------------------------------------------------------------------
+# Normatif kaynak: docs/imga-api-v1-contract.md v1.3 (Owner: İmga AI). İhtilafta
+# v1.3: residency düzleşti — tüm use-case outbound, Accept-Residency no-op.
+# kontrat kazanır. 2026-07-01'de v1.2'ye göre revize edildi.
+#
+# v1.2 eklemeleri bu dosyada: §2.1 idempotency (Idempotency-Replayed), §3.5 header
+# matrisi, §4.7 /health, §4A admin surface (5 route), §4.8/4.9 data lifecycle,
+# §5 yeni hata kodları (residency_denied/session_not_found/export_window_too_large),
+# §8.6 opsBearer (imga_ops_ prefix), §7 SSE meta.processed_in, §11 kabul kriterleri.
+#
+# AÇIK FLAG'LER (AsakAI'ye — bkz. turn-5 raporu):
+#   * AsakAI mock client (backend/app/imga/client.py) contract v1.2 ile UYUŞMUYOR:
+#     endpoint /v1/analyze (per-use-case değil), flat response (usage.prompt_tokens),
+#     period enum today/all fazlası. Contract kazanır → mock+frontend güncellenmeli.
+#   * §3 AnalyzeError.code enum (6 kod) ↔ §5 taxonomy (9 kod) tutarsız; §3 enum
+#     residency_denied/session_not_found/export_window_too_large içermeli.
+# =============================================================================
+
+info:
+  title: İmga v1 Partner API
+  version: 1.3.0
+  description: >
+    E-ticaret dikeyi çok-kiracılı AI analiz yüzeyi. Tüketici: AsakAI (VDD).
+    Residency v1.3'te düzleştirildi: tüm use-case outbound (Gemini kanonik);
+    Accept-Residency no-op, residency_denied dormant (§9). Auth: kiracı Bearer
+    (imga_live_/imga_stg_); admin: opsBearer.
+    KABUL KRİTERLERİ (§11): envelope/error/header shape + residency zone (non-stream+SSE)
+    + idempotency replay + revoke ≤60s + cross-env prefix reddi; contract test suite 7
+    ardışık gün %100 yeşil + p95<3s / SSE ilk token<800ms. Bkz. §11.
+  x-contract-source: docs/imga-api-v1-contract.md v1.3
+
+servers:
+  - url: https://api.imga.ai/v1
+    description: Production
+  - url: https://api-staging.imga.ai/v1
+    description: Staging
+
+security:
+  - bearerAuth: []
+
+tags:
+  - name: analyze
+    description: 6 use-case (§4)
+  - name: health
+    description: Liveness (§4.7)
+  - name: data
+    description: KVKK silme / export (§4.8/4.9)
+  - name: admin
+    description: VDD Ops — tenants & tokens (§4A) — opsBearer
+
+# =============================================================================
+paths:
+
+  # --------------------------- 4.1 anomaly-explain ---------------------------
+  /analyze/anomaly-explain:
+    post:
+      tags: [analyze]
+      summary: KPI sapma açıklaması + kök neden (§4.1)
+      operationId: analyzeAnomalyExplain
+      x-imga-residency: outbound
+      parameters: [{ $ref: '#/components/parameters/AcceptLanguage' }, { $ref: '#/components/parameters/XImgaPiiMode' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: '#/components/schemas/AnalyzeRequestBase'
+                - type: object
+                  required: [context]
+                  properties:
+                    use_case: { const: anomaly-explain }
+                    context: { $ref: '#/components/schemas/AnomalyExplainContext' }
+      responses:
+        '200': { $ref: '#/components/responses/AnomalyExplainResult' }
+        '400': { $ref: '#/components/responses/Err400' }
+        '401': { $ref: '#/components/responses/Err401' }
+        '429': { $ref: '#/components/responses/Err429' }
+        '502': { $ref: '#/components/responses/Err502' }
+        '504': { $ref: '#/components/responses/Err504' }
+
+  # --------------------------- 4.2 ticket-analyze ---------------------------
+  /analyze/ticket-analyze:
+    post:
+      tags: [analyze]
+      summary: Destek talebi duygu/kategori/aciliyet (§4.2)
+      operationId: analyzeTicket
+      x-imga-residency: outbound            # v1.3: tüm use-case outbound (residency düzleşti)
+      parameters: [{ $ref: '#/components/parameters/AcceptLanguage' }, { $ref: '#/components/parameters/XImgaPiiMode' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: '#/components/schemas/AnalyzeRequestBase'
+                - type: object
+                  required: [context]
+                  properties:
+                    use_case: { const: ticket-analyze }
+                    context: { $ref: '#/components/schemas/TicketAnalyzeContext' }
+      responses:
+        '200': { $ref: '#/components/responses/TicketAnalyzeResult' }
+        '400': { $ref: '#/components/responses/Err400' }
+        '401': { $ref: '#/components/responses/Err401' }
+        '429': { $ref: '#/components/responses/Err429' }
+        '502': { $ref: '#/components/responses/Err502' }
+        '504': { $ref: '#/components/responses/Err504' }
+
+  # --------------------------- 4.3 ticket-suggest-reply ---------------------------
+  /analyze/ticket-suggest-reply:
+    post:
+      tags: [analyze]
+      summary: Müşteri yanıt taslağı (§4.3)
+      operationId: analyzeSuggestReply
+      x-imga-residency: outbound
+      parameters: [{ $ref: '#/components/parameters/AcceptLanguage' }, { $ref: '#/components/parameters/XImgaPiiMode' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: '#/components/schemas/AnalyzeRequestBase'
+                - type: object
+                  required: [context]
+                  properties:
+                    use_case: { const: ticket-suggest-reply }
+                    context: { $ref: '#/components/schemas/TicketSuggestReplyContext' }
+      responses:
+        '200': { $ref: '#/components/responses/TicketSuggestReplyResult' }
+        '400': { $ref: '#/components/responses/Err400' }
+        '401': { $ref: '#/components/responses/Err401' }
+        '403': { $ref: '#/components/responses/Err403' }
+        '429': { $ref: '#/components/responses/Err429' }
+        '502': { $ref: '#/components/responses/Err502' }
+        '504': { $ref: '#/components/responses/Err504' }
+
+  # --------------------------- 4.4 return-analyze ---------------------------
+  /analyze/return-analyze:
+    post:
+      tags: [analyze]
+      summary: İade örüntüleri + kök neden (§4.4)
+      operationId: analyzeReturn
+      x-imga-residency: outbound
+      parameters: [{ $ref: '#/components/parameters/AcceptLanguage' }, { $ref: '#/components/parameters/XImgaPiiMode' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: '#/components/schemas/AnalyzeRequestBase'
+                - type: object
+                  required: [context]
+                  properties:
+                    use_case: { const: return-analyze }
+                    context: { $ref: '#/components/schemas/ReturnAnalyzeContext' }
+      responses:
+        '200': { $ref: '#/components/responses/ReturnAnalyzeResult' }
+        '400': { $ref: '#/components/responses/Err400' }
+        '401': { $ref: '#/components/responses/Err401' }
+        '429': { $ref: '#/components/responses/Err429' }
+        '502': { $ref: '#/components/responses/Err502' }
+        '504': { $ref: '#/components/responses/Err504' }
+
+  # --------------------------- 4.5 cargo-optimize ---------------------------
+  /analyze/cargo-optimize:
+    post:
+      tags: [analyze]
+      summary: Kargo şirketi seçimi + gecikme öngörüsü (§4.5)
+      operationId: analyzeCargoOptimize
+      x-imga-residency: outbound
+      parameters: [{ $ref: '#/components/parameters/AcceptLanguage' }, { $ref: '#/components/parameters/XImgaPiiMode' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: '#/components/schemas/AnalyzeRequestBase'
+                - type: object
+                  required: [context]
+                  properties:
+                    use_case: { const: cargo-optimize }
+                    context: { $ref: '#/components/schemas/CargoOptimizeContext' }
+      responses:
+        '200': { $ref: '#/components/responses/CargoOptimizeResult' }
+        '400': { $ref: '#/components/responses/Err400' }
+        '401': { $ref: '#/components/responses/Err401' }
+        '429': { $ref: '#/components/responses/Err429' }
+        '502': { $ref: '#/components/responses/Err502' }
+        '504': { $ref: '#/components/responses/Err504' }
+
+  # --------------------------- 4.6 free-analyze (non-stream) ---------------------------
+  /analyze/free-analyze:
+    post:
+      tags: [analyze]
+      summary: Serbest form soru-cevap, non-stream (§4.6)
+      operationId: analyzeFree
+      description: '`user_prompt` NORMATİF ZORUNLU (§2 not / §4.6); eksikse 400 invalid_input. Accept-Residency: outbound-ok ile outbound (KVKK m.9).'
+      x-imga-residency: outbound   # v1.3: Accept-Residency no-op
+      parameters:
+        - { $ref: '#/components/parameters/AcceptLanguage' }
+        - { $ref: '#/components/parameters/AcceptResidency' }
+        - { $ref: '#/components/parameters/XImgaPiiMode' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: '#/components/schemas/AnalyzeRequestBase'
+                - type: object
+                  required: [context, user_prompt]
+                  properties:
+                    use_case: { const: free-analyze }
+                    context: { $ref: '#/components/schemas/FreeAnalyzeContext' }
+      responses:
+        '200': { $ref: '#/components/responses/FreeAnalyzeResult' }
+        '400': { $ref: '#/components/responses/Err400' }
+        '401': { $ref: '#/components/responses/Err401' }
+        '429': { $ref: '#/components/responses/Err429' }
+        '502': { $ref: '#/components/responses/Err502' }
+        '504': { $ref: '#/components/responses/Err504' }
+
+  # --------------------------- 7. SSE (free-analyze) ---------------------------
+  /analyze/free-analyze/stream-token:
+    post:
+      tags: [analyze]
+      summary: SSE handshake — tek-kullanımlık stream token (§7 adım 1)
+      operationId: freeAnalyzeStreamToken
+      description: 'İdempotent: aynı client_request_id aynı stream_token''ı iade eder (§2.1).'
+      x-imga-residency: outbound   # v1.3: Accept-Residency no-op
+      parameters:
+        - { $ref: '#/components/parameters/AcceptLanguage' }
+        - { $ref: '#/components/parameters/AcceptResidency' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: '#/components/schemas/AnalyzeRequestBase'
+                - type: object
+                  required: [context, user_prompt]
+                  properties:
+                    use_case: { const: free-analyze }
+                    context: { $ref: '#/components/schemas/FreeAnalyzeContext' }
+      responses:
+        '200':
+          description: Stream token
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [stream_token, expires_in]
+                properties:
+                  stream_token: { type: string, description: 60 sn tek-kullanımlık }
+                  expires_in: { type: integer, example: 60 }
+        '400': { $ref: '#/components/responses/Err400' }
+        '401': { $ref: '#/components/responses/Err401' }
+        '429': { $ref: '#/components/responses/Err429' }
+
+  /analyze/stream:
+    get:
+      tags: [analyze]
+      summary: SSE akışı (§7 adım 2) — idempotent DEĞİL
+      operationId: analyzeStream
+      security: []          # yetki tek-kullanımlık stream_token ile
+      parameters:
+        - name: token
+          in: query
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: >
+            SSE. event: partial {"delta"} · event: meta {"tokens","cost_try","processed_in"}
+            (processed_in NORMATİF ZORUNLU, §7 v1.2) · event: done {"finish_reason","final_length"}.
+            15 sn'de bir `: ping`.
+          content:
+            text/event-stream:
+              schema: { type: string }
+        '401': { $ref: '#/components/responses/Err401' }
+        '404': { description: token geçersiz/süresi dolmuş/kullanılmış }
+
+  # --------------------------- 4.7 HEALTH ---------------------------
+  /health:
+    get:
+      tags: [health]
+      summary: Liveness + provider durumu (§4.7)
+      operationId: health
+      security: []
+      responses:
+        '200':
+          description: Sağlık durumu
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/HealthResponse' }
+
+  # --------------------------- 4.8 / 4.9 DATA (KVKK) ---------------------------
+  /data/{session_id}:
+    delete:
+      tags: [data]
+      summary: KVKK erasure — oturum verisini sil (§4.8)
+      operationId: eraseSessionData
+      parameters:
+        - name: session_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '202':
+          description: Silme kuyruğa alındı (≤24 saat)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EraseResponse' }
+        '401': { $ref: '#/components/responses/Err401' }
+        '404': { $ref: '#/components/responses/Err404' }   # session_not_found
+
+  /data/export:
+    get:
+      tags: [data]
+      summary: KVKK erişim — NDJSON export (§4.9)
+      operationId: exportData
+      parameters:
+        - { name: from, in: query, required: true, schema: { type: string, format: date } }
+        - { name: to, in: query, required: true, schema: { type: string, format: date } }
+        - { name: use_case, in: query, required: false, schema: { $ref: '#/components/schemas/UseCase' } }
+        - { name: cursor, in: query, required: false, schema: { type: string } }
+      responses:
+        '200':
+          description: 'NDJSON; X-Imga-Next-Cursor ile sayfalama (≤31 gün pencere)'
+          headers:
+            X-Imga-Next-Cursor: { $ref: '#/components/headers/XImgaNextCursor' }
+          content:
+            application/x-ndjson:
+              schema: { $ref: '#/components/schemas/ExportRecord' }
+        '400': { $ref: '#/components/responses/Err400' }   # export_window_too_large
+        '401': { $ref: '#/components/responses/Err401' }
+
+  # --------------------------- 4A ADMIN (opsBearer) ---------------------------
+  /admin/tenants:
+    post:
+      tags: [admin]
+      summary: Tenant oluştur (§4A.1)
+      operationId: adminCreateTenant
+      security: [{ opsBearer: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/TenantCreate' }
+      responses:
+        '201':
+          description: Oluşturuldu
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TenantCreated' }
+        '400': { $ref: '#/components/responses/Err400' }
+        '401': { $ref: '#/components/responses/Err401' }
+        '403': { $ref: '#/components/responses/Err403' }
+
+  /admin/tenants/{tenant_id}/usage:
+    get:
+      tags: [admin]
+      summary: Kota + faturalama (§4A.2)
+      operationId: adminTenantUsage
+      security: [{ opsBearer: [] }, { bearerAuth: [] }]   # opsBearer VEYA kendi tenant Bearer'ı
+      parameters:
+        - { name: tenant_id, in: path, required: true, schema: { type: string } }
+        - { name: from, in: query, required: true, schema: { type: string, format: date-time } }
+        - { name: to, in: query, required: true, schema: { type: string, format: date-time } }
+        - { name: group_by, in: query, required: false, schema: { type: string, enum: [day, week, month, use_case] } }
+      responses:
+        '200':
+          description: Kullanım
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/UsageResponse' }
+        '401': { $ref: '#/components/responses/Err401' }
+        '403': { $ref: '#/components/responses/Err403' }
+
+  /admin/tokens/rotate:
+    post:
+      tags: [admin]
+      summary: Kesintisiz token rotation (§4A.3)
+      operationId: adminRotateToken
+      security: [{ opsBearer: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [tenant_id]
+              properties:
+                tenant_id: { type: string }
+                overlap_window_hours: { type: integer, default: 24, maximum: 72 }
+      responses:
+        '200':
+          description: Yeni token (açık gösterim YALNIZ burada)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RotateResponse' }
+        '400': { $ref: '#/components/responses/Err400' }
+        '401': { $ref: '#/components/responses/Err401' }
+        '403': { $ref: '#/components/responses/Err403' }
+
+  /admin/tokens/{token_id}/revoke:
+    post:
+      tags: [admin]
+      summary: Token iptal (§4A.4) — ≤60s propagation (§8.5)
+      operationId: adminRevokeToken
+      security: [{ opsBearer: [] }]
+      parameters:
+        - { name: token_id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200':
+          description: Revoke kabul; propagation_deadline = revoked_at + 60s
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RevokeResponse' }
+        '401': { $ref: '#/components/responses/Err401' }
+        '403': { $ref: '#/components/responses/Err403' }
+        '404': { $ref: '#/components/responses/Err404' }
+
+  /admin/tokens:
+    get:
+      tags: [admin]
+      summary: Aktif token listesi (§4A.5) — hash gösterilmez
+      operationId: adminListTokens
+      security: [{ opsBearer: [] }]
+      parameters:
+        - { name: tenant_id, in: query, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: Tokenler
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TokenListResponse' }
+        '401': { $ref: '#/components/responses/Err401' }
+        '403': { $ref: '#/components/responses/Err403' }
+
+# =============================================================================
+components:
+
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      description: 'Kiracı token (§8): `Bearer imga_live_...` (prod) / `imga_stg_...` (staging). Cross-env uyuşmazlık → 401 hint=wrong_environment.'
+    opsBearer:
+      type: http
+      scheme: bearer
+      description: >
+        VDD Ops token (§8.6): `imga_ops_live_` / `imga_ops_stg_`. Ayrı `admin_tokens`
+        tablosu, scope=ops. Tenant Bearer /admin/*'a erişemez (403 hint=
+        tenant_scope_cannot_access_admin); opsBearer tenant analiz ucuna erişemez
+        (403 hint=ops_scope_cannot_impersonate_tenant).
+
+  parameters:
+    AcceptLanguage:
+      name: Accept-Language
+      in: header
+      required: false
+      schema: { type: string, enum: [tr-TR, en-US], default: tr-TR }
+    AcceptResidency:
+      name: Accept-Residency
+      in: header
+      required: false
+      description: 'v1.3 NO-OP — residency düzleşti (tüm use-case outbound). Header tanımlı kalır, etkisizdir; residency_denied dormant (§9).'
+      schema: { type: string, enum: [outbound-ok] }
+    XImgaPiiMode:
+      name: X-Imga-PII-Mode
+      in: header
+      required: false
+      description: '`hash` → İmga PII''yi hash''ler. Default: PII kabul edilmez, 400 (§9).'
+      schema: { type: string, enum: [hash] }
+
+  headers:
+    XImgaRequestId: { description: 'UUIDv4 error correlation (§3)', schema: { type: string } }
+    XRateLimitRemaining: { description: 'Dakika penceresi kalan (§6)', schema: { type: integer } }
+    XRateLimitReset: { description: 'unix ts (§6)', schema: { type: integer } }
+    XQuotaTokensRemaining: { description: 'Günlük token kalanı (§6)', schema: { type: integer } }
+    XQuotaReset: { description: 'unix ts, 00:00 Europe/Istanbul (§6)', schema: { type: integer } }
+    XImgaTokensUsed: { description: 'başarılı 2xx (§6)', schema: { type: integer } }
+    IdempotencyReplayed: { description: 'cache hit → true (§2.1)', schema: { type: string, enum: ['true'] } }
+    XImgaNextCursor: { description: 'opak pagination cursor (§4.9)', schema: { type: string } }
+
+  responses:
+    Err400:
+      description: 'invalid_input | export_window_too_large (§5)'
+      headers: { X-Imga-Request-Id: { $ref: '#/components/headers/XImgaRequestId' } }
+      content: { application/json: { schema: { $ref: '#/components/schemas/AnalyzeError' } } }
+    Err401:
+      description: 'auth_failed (details.hint: wrong_environment olabilir, §8.1)'
+      headers: { X-Imga-Request-Id: { $ref: '#/components/headers/XImgaRequestId' } }
+      content: { application/json: { schema: { $ref: '#/components/schemas/AnalyzeError' } } }
+    Err403:
+      description: 'residency_denied (§9) veya scope ihlali (§8.6). details={requested_zone,required_zone,use_case}'
+      content: { application/json: { schema: { $ref: '#/components/schemas/AnalyzeError' } } }
+    Err404:
+      description: 'session_not_found (§4.8) / token bulunamadı'
+      content: { application/json: { schema: { $ref: '#/components/schemas/AnalyzeError' } } }
+    Err429:
+      description: 'rate_limit | quota_exceeded (§5/§6)'
+      headers:
+        Retry-After: { schema: { type: integer } }
+        X-RateLimit-Reset: { $ref: '#/components/headers/XRateLimitReset' }
+        X-Quota-Reset: { $ref: '#/components/headers/XQuotaReset' }
+      content: { application/json: { schema: { $ref: '#/components/schemas/AnalyzeError' } } }
+    Err502:
+      description: 'provider_error — retry ≤3× (§5)'
+      headers: { Retry-After: { schema: { type: integer } } }
+      content: { application/json: { schema: { $ref: '#/components/schemas/AnalyzeError' } } }
+    Err504:
+      description: 'timeout — retry ≤1× (§5)'
+      content: { application/json: { schema: { $ref: '#/components/schemas/AnalyzeError' } } }
+
+    # typed 200 sonuçları (§3 zarfı) — ortak header seti *rl
+    AnomalyExplainResult:
+      description: OK
+      headers: &rl
+        X-Imga-Request-Id: { $ref: '#/components/headers/XImgaRequestId' }
+        X-RateLimit-Remaining: { $ref: '#/components/headers/XRateLimitRemaining' }
+        X-RateLimit-Reset: { $ref: '#/components/headers/XRateLimitReset' }
+        X-Quota-Tokens-Remaining: { $ref: '#/components/headers/XQuotaTokensRemaining' }
+        X-Quota-Reset: { $ref: '#/components/headers/XQuotaReset' }
+        X-Imga-Tokens-Used: { $ref: '#/components/headers/XImgaTokensUsed' }
+        Idempotency-Replayed: { $ref: '#/components/headers/IdempotencyReplayed' }
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/AnalyzeResponseBase'
+              - type: object
+                properties: { response: { $ref: '#/components/schemas/AnomalyExplainResponse' } }
+    TicketAnalyzeResult:
+      description: OK
+      headers: *rl
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/AnalyzeResponseBase'
+              - type: object
+                properties: { response: { $ref: '#/components/schemas/TicketAnalyzeResponse' } }
+    TicketSuggestReplyResult:
+      description: OK
+      headers: *rl
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/AnalyzeResponseBase'
+              - type: object
+                properties: { response: { $ref: '#/components/schemas/TicketSuggestReplyResponse' } }
+    ReturnAnalyzeResult:
+      description: OK
+      headers: *rl
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/AnalyzeResponseBase'
+              - type: object
+                properties: { response: { $ref: '#/components/schemas/ReturnAnalyzeResponse' } }
+    CargoOptimizeResult:
+      description: OK
+      headers: *rl
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/AnalyzeResponseBase'
+              - type: object
+                properties: { response: { $ref: '#/components/schemas/CargoOptimizeResponse' } }
+    FreeAnalyzeResult:
+      description: OK
+      headers: *rl
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/AnalyzeResponseBase'
+              - type: object
+                properties: { response: { $ref: '#/components/schemas/FreeAnalyzeResponse' } }
+
+  schemas:
+
+    UseCase:
+      type: string
+      enum: [anomaly-explain, ticket-analyze, ticket-suggest-reply, return-analyze, cargo-optimize, free-analyze]
+
+    # §2 ortak request envelope
+    AnalyzeRequestBase:
+      type: object
+      required: [tenant_id, use_case, period, period_start, period_end, language, client_request_id]
+      properties:
+        tenant_id: { type: string, example: asakai-prod }
+        use_case: { $ref: '#/components/schemas/UseCase' }
+        period: { type: string, enum: [day, week, month, custom] }
+        period_start: { type: string, format: date }
+        period_end: { type: string, format: date }
+        language: { type: string, enum: [tr, en] }
+        session_id: { type: string, format: uuid, description: 'çok-turlu grup; DELETE /v1/data/{session_id} (§4.8)' }
+        client_request_id: { type: string, format: uuid, description: 'idempotency key (§2.1)' }
+        user_prompt: { type: string, description: 'free-analyze için ZORUNLU (§4.6)' }
+
+    # §3 ortak response zarfı
+    AnalyzeResponseBase:
+      type: object
+      required: [ok, request_id, response, meta]
+      properties:
+        ok: { const: true }
+        request_id: { type: string }
+        response: { type: object }
+        meta: { $ref: '#/components/schemas/Meta' }
+
+    Meta:
+      type: object
+      required: [model, processed_in, tokens, latency_ms, cost_try, cached]
+      properties:
+        model: { type: string, description: 'PROD opak (prov_a); STAGING açık model adı' }
+        processed_in: { type: string, enum: [tr, outbound], description: '§9 tablosuyla uyuşmalı, yoksa contract violation' }
+        tokens:
+          type: object
+          required: [prompt, completion, total]
+          properties: { prompt: { type: integer }, completion: { type: integer }, total: { type: integer } }
+        latency_ms: { type: integer }
+        cost_try: { type: number, description: 'TRY 4 ondalık' }
+        cached: { type: boolean, description: 'idempotency replay → true (§2.1)' }
+
+    AnalyzeError:
+      type: object
+      required: [ok, request_id, error]
+      properties:
+        ok: { const: false }
+        request_id: { type: string }
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code:
+              type: string
+              # FLAG: §3 TS enum yalnız 6 kod listeliyor; §5 tablosu 9. Union alındı.
+              enum: [invalid_input, auth_failed, rate_limit, provider_error, timeout, quota_exceeded, residency_denied, session_not_found, export_window_too_large]
+            message: { type: string }
+            details: { type: object }
+            retry_after_seconds: { type: integer }
+
+    # §4 context'ler
+    AnomalyExplainContext:
+      type: object
+      required: [kpi_snapshot, delta_vs_previous]
+      properties:
+        kpi_snapshot:
+          type: array
+          items: { type: object, required: [metric, value, unit], properties: { metric: {type: string}, value: {type: number}, unit: {type: string} } }
+        delta_vs_previous:
+          type: array
+          items: { type: object, required: [metric, delta_pct, sign], properties: { metric: {type: string}, delta_pct: {type: number}, sign: {type: string, enum: [up, down]} } }
+        known_events: { type: array, items: { type: string } }
+    TicketAnalyzeContext:
+      type: object
+      required: [ticket_id, ticket_text, channel]
+      properties:
+        ticket_id: { type: string }
+        ticket_text: { type: string }
+        channel: { type: string, enum: [email, whatsapp, phone, web] }
+    TicketSuggestReplyContext:
+      type: object
+      required: [ticket_text, tone]
+      properties:
+        ticket_text: { type: string }
+        customer_profile: { type: object, properties: { name: {type: string}, segment: {type: string} } }
+        policy_snippets: { type: array, items: { type: string } }
+        tone: { type: string, enum: [resmi, samimi, özür] }
+    ReturnAnalyzeContext:
+      type: object
+      required: [returns_list]
+      properties:
+        returns_list:
+          type: array
+          items:
+            type: object
+            required: [order_id, sku, reason_code, return_date, amount_try]
+            properties:
+              order_id: { type: string }
+              sku: { type: string }
+              reason_code: { type: string }
+              reason_text: { type: string }
+              return_date: { type: string, format: date }
+              amount_try: { type: number }
+    CargoOptimizeContext:
+      type: object
+      required: [order, cargo_history]
+      properties:
+        order:
+          type: object
+          required: [order_id, sku, destination_city, weight_kg, volume_dm3]
+          properties:
+            order_id: { type: string }
+            sku: { type: string }
+            destination_city: { type: string }
+            weight_kg: { type: number }
+            volume_dm3: { type: number }
+        cargo_history:
+          type: array
+          items:
+            type: object
+            required: [carrier, city, avg_delivery_days, late_rate_pct]
+            properties:
+              carrier: { type: string }
+              city: { type: string }
+              avg_delivery_days: { type: number }
+              late_rate_pct: { type: number }
+    FreeAnalyzeContext:
+      type: object
+      required: [snapshot]
+      properties:
+        snapshot: { type: object }
+        hints: { type: array, items: { type: string } }
+
+    # §4 response'lar
+    AnomalyExplainResponse:
+      type: object
+      required: [analysis, root_causes, actions]
+      properties:
+        analysis: { type: string }
+        root_causes: { type: array, items: { type: string } }
+        actions:
+          type: array
+          items: { type: object, required: [title, priority, owner_role], properties: { title: {type: string}, priority: {type: string, enum: [high, med, low]}, owner_role: {type: string} } }
+    TicketAnalyzeResponse:
+      type: object
+      required: [sentiment, category, urgency, tags, language_detected]
+      properties:
+        sentiment: { type: string, enum: [positive, neutral, negative] }
+        category: { type: string }
+        urgency: { type: integer, enum: [1, 2, 3, 4, 5] }
+        tags: { type: array, items: { type: string } }
+        language_detected: { type: string, description: 'BCP-47; envelope language kazanır (§4.2)' }
+    TicketSuggestReplyResponse:
+      type: object
+      required: [reply_draft, sources_used, warnings]
+      properties:
+        reply_draft: { type: string }
+        sources_used: { type: array, items: { type: string } }
+        warnings: { type: array, items: { type: string } }
+    ReturnAnalyzeResponse:
+      type: object
+      required: [patterns, causes, recommendations]
+      properties:
+        patterns: { type: array, items: { type: object, required: [label, share_pct], properties: { label: {type: string}, share_pct: {type: number} } } }
+        causes: { type: array, items: { type: object, required: [hypothesis, evidence], properties: { hypothesis: {type: string}, evidence: {type: string} } } }
+        recommendations: { type: array, items: { type: string } }
+    CargoOptimizeResponse:
+      type: object
+      required: [suggestion, delay_forecast]
+      properties:
+        suggestion:
+          type: object
+          required: [carrier, reason, est_cost_try]
+          properties: { carrier: {type: string}, reason: {type: string}, est_cost_try: {type: number} }
+        delay_forecast:
+          type: object
+          required: [p50_days, p90_days, risk_flags]
+          properties: { p50_days: {type: number}, p90_days: {type: number}, risk_flags: {type: array, items: {type: string}} }
+    FreeAnalyzeResponse:
+      type: object
+      required: [answer_markdown, follow_up_prompts]
+      properties:
+        answer_markdown: { type: string }
+        charts_suggested: { type: array, items: { type: object, required: [kind, series], properties: { kind: {type: string, enum: [line, bar, pie]}, series: {type: array, items: {type: string}} } } }
+        follow_up_prompts: { type: array, items: { type: string } }
+
+    # §4.7 health
+    HealthResponse:
+      type: object
+      required: [status, version, region, providers]
+      properties:
+        status: { type: string, enum: [ok, degraded, down] }
+        version: { type: string, example: 1.2.3 }
+        region: { type: string, enum: [tr, outbound] }
+        providers:
+          type: array
+          items:
+            type: object
+            required: [zone, healthy, last_checked_at]
+            properties: { zone: {type: string, enum: [tr, outbound]}, healthy: {type: boolean}, last_checked_at: {type: string, format: date-time} }
+
+    # §4.8/4.9 data
+    EraseResponse:
+      type: object
+      required: [ok, purge_job_id, session_id, eta_seconds]
+      properties:
+        ok: { const: true }
+        purge_job_id: { type: string, format: uuid }
+        session_id: { type: string, format: uuid }
+        eta_seconds: { type: integer, maximum: 86400 }
+    ExportRecord:
+      type: object
+      required: [request_id, tenant_id, use_case, created_at, context_hash, response_summary, processed_in, tokens_total, cost_try]
+      properties:
+        request_id: { type: string }
+        session_id: { type: string, format: uuid }
+        tenant_id: { type: string }
+        use_case: { $ref: '#/components/schemas/UseCase' }
+        created_at: { type: string, format: date-time }
+        context_hash: { type: string, description: SHA-256 }
+        response_summary: { type: string, description: 'max 200 char' }
+        processed_in: { type: string, enum: [tr, outbound] }
+        tokens_total: { type: integer }
+        cost_try: { type: number }
+
+    # §4A admin
+    TenantCreate:
+      type: object
+      required: [name, contact_email]
+      properties:
+        name: { type: string }
+        contact_email: { type: string, format: email }
+        quota_tokens_per_day: { type: integer }
+        residency_locks:
+          type: object
+          additionalProperties: { type: string, enum: [tr, outbound] }
+          description: 'Partial<Record<UseCase, tr|outbound>>'
+    TenantCreated:
+      type: object
+      required: [tenant_id, created_at]
+      properties: { tenant_id: { type: string }, created_at: { type: string, format: date-time } }
+    UsageResponse:
+      type: object
+      required: [tenant_id, window, totals, breakdown]
+      properties:
+        tenant_id: { type: string }
+        window: { type: object, properties: { from: {type: string}, to: {type: string} } }
+        totals: { $ref: '#/components/schemas/UsageBucket' }
+        breakdown:
+          type: array
+          items:
+            allOf:
+              - type: object
+                properties: { bucket: { type: string, description: 'ISO date veya use_case adı' } }
+              - $ref: '#/components/schemas/UsageBucket'
+    UsageBucket:
+      type: object
+      properties:
+        requests: { type: integer }
+        tokens_in: { type: integer }
+        tokens_out: { type: integer }
+        cost_try: { type: number }
+    RotateResponse:
+      type: object
+      required: [new_token, new_token_id, old_token_expires_at]
+      properties:
+        new_token: { type: string, description: 'açık gösterim YALNIZ burada; aynı ortam prefix' }
+        new_token_id: { type: string, format: uuid }
+        old_token_expires_at: { type: string, format: date-time }
+    RevokeResponse:
+      type: object
+      required: [revoked_at, propagation_deadline]
+      properties:
+        revoked_at: { type: string, format: date-time }
+        propagation_deadline: { type: string, format: date-time, description: 'revoked_at + 60s (§8.5)' }
+    TokenListResponse:
+      type: object
+      required: [tokens]
+      properties:
+        tokens:
+          type: array
+          items:
+            type: object
+            required: [token_id, prefix, created_at, expires_at, scope]
+            properties:
+              token_id: { type: string }
+              prefix: { type: string, enum: [imga_live_, imga_stg_] }
+              label: { type: string }
+              created_at: { type: string, format: date-time }
+              expires_at: { type: string, format: date-time, description: '1 yıl max, NULL yok' }
+              last_used_at: { type: string, format: date-time }
+              scope: { type: string, enum: [tenant, service_account] }

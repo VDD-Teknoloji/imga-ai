@@ -10,6 +10,7 @@ from typing import Annotated
 
 from cachetools import TTLCache
 from fastapi import Depends, FastAPI
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from imga_core import (
     AnalysisPipeline,
@@ -74,6 +75,17 @@ from imga_api.routes import (
 from imga_api.routes import tenant_taxonomies as tenant_taxonomies_routes
 from imga_api.routes import tenant_trend_alerts as tenant_trend_alerts_routes
 from imga_api.routes import tickets as tickets_routes
+from imga_api.v1 import admin_tenants as v1_admin_tenants_routes
+from imga_api.v1 import admin_tokens as v1_admin_tokens_routes
+from imga_api.v1 import analyze as v1_analyze_routes
+from imga_api.v1 import data as v1_data_routes
+from imga_api.v1 import health as v1_health_routes
+from imga_api.v1 import stream as v1_stream_routes
+from imga_api.v1.errors import (
+    PartnerApiError,
+    partner_api_exception_handler,
+    v1_validation_exception_handler,
+)
 from imga_api.routes.admin import invitations as admin_invitation_routes
 from imga_api.routes.admin import (
     prompt_templates as admin_prompt_templates_routes,
@@ -146,6 +158,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     from imga_api.workers.scheduler import (
         build_scheduler,
         schedule_cleanup,
+        schedule_data_retention,
+        schedule_provider_healthcheck,
     )
 
     settings.batch.upload_dir.mkdir(parents=True, exist_ok=True)
@@ -183,6 +197,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         upload_root=settings.report.reports_dir,
         retention_hours=settings.report.retention_hours,
     )
+    # §3.5 — Gemini provider liveness probe (60sn). /v1/health bunu okur.
+    schedule_provider_healthcheck(scheduler)
+    # §3.8 — KVKK 30-gün retention purge (günlük). api_request_log hard-delete.
+    schedule_data_retention(scheduler)
     scheduler.start()
     log.info(
         "scheduler started (upload_dir=%s, reports_dir=%s, retention=%sh)",
@@ -332,8 +350,17 @@ app.add_middleware(
 # middleware) so its order relative to others doesn't matter.
 app.add_middleware(RequestIDMiddleware)
 register_error_handlers(app)
+app.add_exception_handler(PartnerApiError, partner_api_exception_handler)
+# /v1 doğrulama (422) → AnalyzeError(400); /v1 dışı yollar varsayılana devreder.
+app.add_exception_handler(RequestValidationError, v1_validation_exception_handler)
 
 app.include_router(auth_routes.router)
+app.include_router(v1_admin_tokens_routes.router)
+app.include_router(v1_admin_tenants_routes.router)
+app.include_router(v1_analyze_routes.router)
+app.include_router(v1_data_routes.router)
+app.include_router(v1_health_routes.router)
+app.include_router(v1_stream_routes.router)
 app.include_router(tenant_config_routes.router)
 app.include_router(tenant_analyze_routes.router)
 app.include_router(tenant_batch_routes.router)

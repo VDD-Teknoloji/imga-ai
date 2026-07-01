@@ -2,6 +2,9 @@
 
 from imga_db.models.action_extraction_log import ActionItemExtractionLog
 from imga_db.models.action_item import ActionItem, ActionItemEvent
+from imga_db.models.api_audit import DataPurgeAudit, TenantDeletionAudit
+from imga_db.models.api_tenant import ApiRequestLog, ApiTenantConfig
+from imga_db.models.api_token import AdminTokenRecord, ApiTokenRecord
 from imga_db.models.assignment_history import TicketAssignmentEvent
 from imga_db.models.audit import AuditLog
 from imga_db.models.batch_job import AnalyzeBatchJob, BatchJobStatus
@@ -58,7 +61,11 @@ __all__ = [
     "ActionItem",
     "ActionItemEvent",
     "ActionItemExtractionLog",
+    "AdminTokenRecord",
     "AnalyzeBatchJob",
+    "ApiRequestLog",
+    "ApiTenantConfig",
+    "ApiTokenRecord",
     "AuditLog",
     "AutomationMode",
     "BatchJobStatus",
@@ -66,6 +73,7 @@ __all__ = [
     "CancellationReason",
     "Category",
     "CategoryTaxonomy",
+    "DataPurgeAudit",
     "DecisionAuditLog",
     "ExecutiveBriefing",
     "ExecutiveSnapshot",
@@ -91,6 +99,7 @@ __all__ = [
     "Tenant",
     "TenantBusinessDimension",
     "TenantCategory",
+    "TenantDeletionAudit",
     "TenantKpiGoal",
     "TenantLlmCredential",
     "TenantOwnedMixin",

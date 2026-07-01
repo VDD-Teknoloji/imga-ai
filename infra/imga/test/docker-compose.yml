@@ -194,6 +194,10 @@ services:
           tests/test_executive_overview.py \
           tests/test_review_corrections.py \
           tests/test_upload_validation.py \
+          tests/test_api_token_security.py \
+          tests/test_api_tokens_service.py \
+          tests/contract/test_error_envelope.py \
+          tests/contract/test_response_envelope.py \
           tests-core/test_key_rotation.py \
           tests-core/test_unified_classifier.py \
           tests-core/test_metrics_pure_formulas.py \
