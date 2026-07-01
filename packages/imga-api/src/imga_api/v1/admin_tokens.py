@@ -96,7 +96,7 @@ async def rotate_token(
     admin_session: Annotated[AsyncSession, Depends(get_admin_session)],
 ) -> RotateResponse:
     service = _service(settings)
-    async with admin_session.begin_nested():
+    async with admin_session.begin():
         tenant_uuid = await _resolve_tenant_uuid(admin_session, body.tenant_id)
         result = await service.rotate(
             admin_session,
@@ -120,7 +120,7 @@ async def revoke_token(
     token_id: Annotated[UUID, Path()],
 ) -> RevokeResponse:
     service = _service(settings)
-    async with admin_session.begin_nested():
+    async with admin_session.begin():
         result = await service.revoke(admin_session, token_id, reason="admin_revoke")
     if result is None:
         raise PartnerApiError(
@@ -142,7 +142,7 @@ async def list_tokens(
     tenant_id: Annotated[str, Query()],
 ) -> TokenListResponse:
     service = _service(settings)
-    async with admin_session.begin_nested():
+    async with admin_session.begin():
         tenant_uuid = await _resolve_tenant_uuid(admin_session, tenant_id)
         rows = await service.list_tenant_tokens(admin_session, tenant_uuid)
     return TokenListResponse(
