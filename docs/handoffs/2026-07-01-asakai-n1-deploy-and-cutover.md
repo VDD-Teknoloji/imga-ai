@@ -99,6 +99,21 @@ VALUES('<PREFIX>', '<HASH>', '<LAST4>', 'ops', 'bootstrap', now() + interval '36
 - `GEMINI_API_KEY` + `IMGA_TOKEN_PEPPER` provizyonu.
 - DPA imzası (VDD hukuk).
 
+## 9. Hazır artifact'lar (deploy sonrası koş — kod hazır)
+
+- **Load test** `infra/imga/loadtest/v1_analyze_load.js` (k6, §2.4). Staging ayakta +
+  tenant token ile: `IMGA_BASE_URL=… IMGA_TENANT_TOKEN=… k6 run …`. Eşikler kırmızıysa
+  k6 non-zero exit. **Uyarı:** 10 req/s×10dk /v1/analyze ≈ 4.8M token > 2M kota → ya
+  kotayı geçici yükselt ya da `IMGA_QUOTA_SAFE=1` (health-only mod).
+- **Canlı contract suite** `packages/imga-api/tests/contract/test_live_contract.py`
+  (§11 kara-kutu). `IMGA_BASE_URL=… IMGA_TENANT_TOKEN=… pytest …/test_live_contract.py`.
+  IMGA_BASE_URL yoksa skip (canonical :5433 listesinde DEĞİL — kasıtlı).
+- **AsakAI nightly CI** `docs/asakai-ci/nightly-contract.yml` → AsakAI reposuna
+  `.github/workflows/imga-nightly-contract.yml` olarak eklenir. Secret: staging tenant
+  token. 7-ardışık-gün yeşil = §2 kriter 3.
+- **DPA taslağı** `docs/legal/2026-07-01-imga-asakai-dpa-draft.md` → hukuk incelemesi +
+  VDD imzası (§2.5 kriter 5). Sistemin gerçek veri akışına dayalı.
+
 ## 8. Kod tarafında durum (2026-07-01 güncel)
 
 **Yazıldı + push edildi** (branch `docs/asakai-v1-n0-contract-freeze`):
