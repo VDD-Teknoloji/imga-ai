@@ -27,9 +27,11 @@ the SDK exposes the HTTP status as a real attribute.
 from __future__ import annotations
 
 import asyncio
+import inspect
 import json
 import logging
 import re
+from collections.abc import AsyncIterator
 from typing import Any, cast
 
 # Sprint 9.1 H — eager module-level import to mirror the bert.py
@@ -392,6 +394,59 @@ class GeminiProvider(LLMProvider):
             self._parse_structured_response(response),
             self._extract_usage_metadata(response),
         )
+
+    async def stream_text(
+        self,
+        *,
+        api_key: str,
+        system_prompt: str,
+        user_prompt: str,
+        model_name: str,
+        temperature: float = 0.5,
+        top_p: float = 0.9,
+        max_output_tokens: int = 4096,
+    ) -> AsyncIterator[tuple[str, dict[str, int] | None]]:
+        """Gemini token-stream (contract §7 SSE). ``response_schema`` YOK → düz
+        markdown delta'ları (JSON parçası değil). Her chunk ``(text_delta, usage)``
+        yield eder; ``usage`` yalnız son chunk'ta dolu (SDK usage_metadata'yı sonda
+        taşır). Hata → Sprint 8.3.6 hiyerarşisi (RateLimit/InvalidKey/LLMProviderError).
+
+        Not: google-genai v1.x async yüzeyi —
+        ``await client.aio.models.generate_content_stream(...)`` bir AsyncIterator
+        döndürür. Bu çağrı şekli yerelde doğrulanamadı (SDK+key yok); ilk canlı
+        SSE isteğinde server-agent doğrulamalı.
+        """
+        if not user_prompt or not user_prompt.strip():
+            raise MalformedResponseError("user_prompt must be non-empty")
+        client = _build_client(api_key, self._timeout)
+        config = _genai_types.GenerateContentConfig(
+            system_instruction=system_prompt,
+            temperature=temperature,
+            top_p=top_p,
+            max_output_tokens=max_output_tokens,
+        )
+        try:
+            # google-genai async yüzeyi sürümlere göre ya bir coroutine (await →
+            # AsyncIterator) ya da doğrudan bir async-generator döndürür. İkisine de
+            # dayanıklı ol (yerelde SDK olmadan doğrulanamıyor): awaitable ise await.
+            maybe_stream = client.aio.models.generate_content_stream(
+                model=model_name,
+                contents=user_prompt,
+                config=config,
+            )
+            stream = (
+                await maybe_stream
+                if inspect.isawaitable(maybe_stream)
+                else maybe_stream
+            )
+            async for chunk in stream:
+                delta = getattr(chunk, "text", None)
+                usage = self._extract_usage_metadata(chunk)
+                yield (delta or ""), usage
+        except (RateLimitError, InvalidKeyError):
+            raise
+        except Exception as exc:
+            self._raise_mapped_sdk_error(exc)
 
     async def _call_with_soft_retry(
         self,

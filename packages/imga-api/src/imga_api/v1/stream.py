@@ -5,16 +5,16 @@
 2. GET /v1/analyze/stream?token=<> → text/event-stream: partial / meta / done,
    15s heartbeat. meta.processed_in NORMATİF (§7 v1.2).
 
-Not: gerçek Gemini token-by-token stream (generate_content_stream) mevcut stack'te
-yok → non-stream engine sonucu partial parçalarına bölünerek yayınlanır (contract
-event ŞEKLİ tam; "ilk token <800ms" gerçek token-stream rafinmanında). Redis down
-→ 503-benzeri (stream başlatılamaz).
+Gerçek Gemini token-stream (``generate_content_stream``): partial event'leri
+model ürettikçe akar (ilk-token TTFT'ye bağlı). SSE olay şekli contract §7 ile
+birebir. Redis down → 503-benzeri (stream başlatılamaz).
 """
 
 from __future__ import annotations
 
 import json
 import secrets
+from collections.abc import AsyncIterator, Awaitable, Callable
 from typing import Annotated
 from uuid import UUID
 
@@ -24,14 +24,13 @@ from pydantic import BaseModel
 
 from imga_api.cache.redis_client import get_redis_client
 from imga_api.v1.auth import ApiPrincipal, require_tenant
-from imga_api.v1.envelope import compute_cost_try
+from imga_api.v1.envelope import TokenUsage, compute_cost_try
 from imga_api.v1.errors import PartnerApiError
-from imga_api.services.partner_analyze import run_use_case
+from imga_api.services.partner_analyze import stream_free_analyze
 
 router = APIRouter(prefix="/v1/analyze", tags=["v1-analyze"])
 
 _STREAM_TTL = 60
-_CHUNK = 48
 
 
 class StreamRequest(BaseModel):
@@ -99,6 +98,43 @@ def _sse(event: str, data: dict) -> str:
     return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
 
 
+async def sse_stream(
+    deltas: AsyncIterator[tuple[str, TokenUsage | None]],
+    *,
+    is_disconnected: Callable[[], Awaitable[bool]],
+) -> AsyncIterator[str]:
+    """``(delta, usage)`` akışını contract §7 SSE event'lerine çevir:
+    ``partial`` (her delta) → ``meta`` (tokens+cost_try+processed_in) → ``done``.
+    PartnerApiError → ``error`` event. Client disconnect → erken dur (o ana kadarki
+    token'lar meta'ya girmez; stream kapanır). Saf/test edilebilir: engine mock'lanır."""
+    yield ": ping\n\n"  # bağlantı ack (ilk-byte)
+    last_usage: TokenUsage | None = None
+    total_len = 0
+    try:
+        async for delta, usage in deltas:
+            if await is_disconnected():
+                return
+            if usage is not None:
+                last_usage = usage
+            if delta:
+                total_len += len(delta)
+                yield _sse("partial", {"delta": delta})
+    except PartnerApiError as exc:
+        yield _sse("error", {"code": exc.code, "message": exc.message})
+        return
+    u = last_usage or TokenUsage(prompt=0, completion=0)
+    cost = compute_cost_try(u.total)
+    yield _sse(
+        "meta",
+        {
+            "tokens": {"prompt": u.prompt, "completion": u.completion},
+            "cost_try": float(cost),
+            "processed_in": "outbound",  # §7 normatif
+        },
+    )
+    yield _sse("done", {"finish_reason": "stop", "final_length": total_len})
+
+
 @router.get("/stream")
 async def stream(
     request: Request,
@@ -122,32 +158,10 @@ async def stream(
     stored = json.loads(raw)
     gemini_prompt = stored["gemini_prompt"]
 
-    async def _gen():
-        # ": ping" heartbeat gönderim öncesi (bağlantı ack).
-        yield ": ping\n\n"
-        try:
-            payload, usage, _model = await run_use_case(
-                use_case="free-analyze", user_prompt=gemini_prompt
-            )
-        except PartnerApiError as exc:
-            yield _sse("error", {"code": exc.code, "message": exc.message})
-            return
-        answer = str(payload.get("answer_markdown", ""))
-        for i in range(0, len(answer), _CHUNK):
-            if await request.is_disconnected():
-                return
-            yield _sse("partial", {"delta": answer[i : i + _CHUNK]})
-        cost = compute_cost_try(usage.total)
-        yield _sse(
-            "meta",
-            {
-                "tokens": {"prompt": usage.prompt, "completion": usage.completion},
-                "cost_try": float(cost),
-                "processed_in": "outbound",  # §7 normatif
-            },
-        )
-        yield _sse(
-            "done", {"finish_reason": "stop", "final_length": len(answer)}
-        )
-
-    return StreamingResponse(_gen(), media_type="text/event-stream")
+    return StreamingResponse(
+        sse_stream(
+            stream_free_analyze(gemini_prompt),
+            is_disconnected=request.is_disconnected,
+        ),
+        media_type="text/event-stream",
+    )

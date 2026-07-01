@@ -197,6 +197,7 @@ services:
           tests/test_api_token_security.py \
           tests/test_api_tokens_service.py \
           tests/test_admin_session_regression.py \
+          tests/test_sse_streaming.py \
           tests/contract/test_error_envelope.py \
           tests/contract/test_response_envelope.py \
           tests-core/test_key_rotation.py \
@@ -210,6 +211,7 @@ services:
           tests-core/test_hybrid_key_telemetry.py \
           tests-core/test_r7_timeout_and_cancel.py \
           tests-core/test_gemini_sdk_timeout_actually_applied.py \
+          tests-core/test_gemini_stream_text.py \
           -v --tb=short
 
   # Sprint 9.0.6 E — frontend TS typecheck guard. Builds the

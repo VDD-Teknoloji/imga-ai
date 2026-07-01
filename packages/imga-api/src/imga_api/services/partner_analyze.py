@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+from collections.abc import AsyncIterator
 
 from imga_core.llm.base import LLMProviderError
 from imga_core.llm.errors import (
@@ -85,4 +86,59 @@ async def run_use_case(
     return data, u, model
 
 
-__all__ = ["run_use_case"]
+# SSE stream free-analyze: düz markdown (JSON şema YOK) → partial delta'ları temiz.
+_STREAM_SYSTEM_PROMPT = (
+    "Sen bir e-ticaret veri analiz asistanısın. Kullanıcının sorusunu verilen "
+    "bağlamla Türkçe, akıcı markdown ile yanıtla. YALNIZCA cevabı yaz; JSON, "
+    "başlık şablonu veya meta açıklama ekleme."
+)
+
+
+async def stream_free_analyze(
+    user_prompt: str,
+) -> AsyncIterator[tuple[str, TokenUsage | None]]:
+    """free-analyze token-stream (contract §7). ``(text_delta, usage|None)`` yield
+    eder; usage yalnız son chunk'ta dolu. Hata → PartnerApiError (§5). Gerçek
+    Gemini ``generate_content_stream`` — SDK çağrı şekli ilk canlı istekte doğrulanır."""
+    api_key = os.environ.get("GEMINI_API_KEY", "").strip()
+    if not api_key:
+        raise _provider_error("llm backend not configured (GEMINI_API_KEY yok)")
+    model = os.environ.get("IMGA_GEMINI_MODEL", _DEFAULT_MODEL)
+    provider = GeminiProvider(
+        api_key=api_key, model_name=model, timeout_seconds=10.0
+    )
+    try:
+        async for delta, usage in provider.stream_text(
+            api_key=api_key,
+            system_prompt=_STREAM_SYSTEM_PROMPT,
+            user_prompt=user_prompt,
+            model_name=model,
+            temperature=0.5,
+        ):
+            tu = (
+                TokenUsage(
+                    prompt=usage.get("input", 0),
+                    completion=usage.get("output", 0),
+                )
+                if usage is not None
+                else None
+            )
+            yield delta, tu
+    except RateLimitError as exc:
+        raise PartnerApiError(
+            status_code=429,
+            code="rate_limit",
+            message="llm rate limit",
+            retry_after_seconds=30,
+        ) from exc
+    except (
+        InvalidKeyError,
+        LLMTokenLimitError,
+        LLMResponseBlockedError,
+        MalformedResponseError,
+        LLMProviderError,
+    ) as exc:
+        raise _provider_error(f"llm error: {type(exc).__name__}") from exc
+
+
+__all__ = ["run_use_case", "stream_free_analyze"]
