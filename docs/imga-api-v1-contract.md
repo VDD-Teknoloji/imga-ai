@@ -1,6 +1,12 @@
 # İmga API v1 — Contract Specification
 
-**Status:** Draft **v1.2** (kontrat-dondurma öncesi son revizyon — 3 İmga flag + 8 completeness bulgusu kapatıldı) · **Owner:** İmga AI · **Consumer:** AsakAI (VDD) · **Effective:** 2026-Q3
+**Status:** Draft **v1.3** (residency Hybrid geri alındı — VDD sahibi kararıyla tüm use-case'ler outbound/Gemini) · **Owner:** İmga AI · **Consumer:** AsakAI (VDD) · **Effective:** 2026-Q3
+
+**v1.3 değişiklikleri** (2026-07-01 son revizyon, VDD sahibi direktifi):
+- **§9 residency tablosu revize.** Hybrid strateji + TR-zorunluluk + Accept-Residency opt-out düştü. VDD tek sahibinin kararı: tüm use-case'ler `outbound` bölgesinde işlenir. Backend model olarak **Gemini** kanonik (İmga router'ı OpenAI/Anthropic'e de anahtarlayabilir — tenant config). AsakAI KVKK aydınlatma metninin kapsadığı şekilde çalışır; kullanıcı akışına ek m.9 açık rıza konmaz.
+- **§4A.1 residency_locks alanı yorumu değişti.** Artık "tr zorunlu use-case'e izin verme" için değil, ileride bir tenant "outbound yasak" derse override için kullanılır. Varsayılan tüm use-case'ler outbound.
+- **§5 residency_denied error code** korunur ama şu an tetiklenmez (future-proof).
+- Brief §5.1 (Hybrid tablosu) ve §5.2 (T3AI/TİDE managed karar) geri alındı — birlikte push edildi.
 
 **v1.2 değişiklikleri** (İmga N+0 turn 3 raporu + AsakAI adversaryal completeness sweep 2026-07-01):
 
@@ -423,18 +429,20 @@ Admin endpoint'leri (§4A) tenant Bearer'ıyla erişilemez. VDD Ops kendi opsBea
 | Alt-işleyen | Use-case bazlı; DPA Ek-B'de her use_case → provider bölgesi eşleşmesi listelenir |
 | Şifreleme | TLS 1.3 in-transit; AES-256 at-rest |
 
-**Residency tablosu (KVKK-kritik):**
+**Residency tablosu (v1.3 — VDD sahibi kararıyla düzleştirildi):**
 
-| Use case | PII sınıfı | Zone (kanonik) | AsakAI'nin opt-out yolu |
+| Use case | PII sınıfı | Zone (kanonik) | Not |
 |---|---|---|---|
-| `anomaly-explain` | Yok (agrega) | `outbound` — yurt dışı LLM OK | — |
+| `anomaly-explain` | Yok (agrega) | `outbound` (Gemini kanonik) | — |
 | `cargo-optimize` | Yok (agrega) | `outbound` | — |
 | `return-analyze` | Yok (agrega + ürün) | `outbound` | — |
-| `ticket-analyze` | **Var** (mesaj gövdesi) | `tr` **zorunlu** | Yok — override edilemez |
-| `ticket-suggest-reply` | **Var** (profil + mesaj) | `tr` **zorunlu** | Yok — override edilemez |
-| `free-analyze` | Kullanıcı-bağımlı | `tr` (varsayılan) | `Accept-Residency: outbound-ok` header (KVKK m.9 açık rıza şart) |
+| `ticket-analyze` | Var (mesaj gövdesi) | `outbound` | AsakAI KVKK aydınlatma metni kapsamında; PII scrubbing best-effort |
+| `ticket-suggest-reply` | Var (profil + mesaj) | `outbound` | Aynı |
+| `free-analyze` | Kullanıcı-bağımlı | `outbound` | — |
 
-`processed_in` alanı (§3 response envelope) her yanıtta gerçekten hangi bölgede işlendiğini bildirir. Yukarıdaki tabloyla uyuşmayan yanıt = **contract violation**; AsakAI CI bunu nightly kontrol edecek.
+`processed_in` alanı (§3 response envelope) enum'u hâlâ `"tr" | "outbound"` — v1.3'te varsayılan tüm use-case'ler `outbound` döner. `tr` değeri gelecekte bir tenant self-host/TR-model isterse (Sprint 15+) reserve edilmiş durumda; şimdi kullanılmıyor. `Accept-Residency` header'ı contract'ta tanımlı kalır ama v1.3'te no-op — İmga tarafı sessizce yok sayar (400 döndürmez).
+
+AsakAI CI nightly contract testi bu tabloyu doğrular: her use-case yanıtında `meta.processed_in == "outbound"`; sapma = contract violation (İmga tarafında router config regresyonu).
 
 ---
 
@@ -545,4 +553,4 @@ AsakAI prod'da `VDD_IMGA_MOCK=0` bayrağını **şu 6 koşul birlikte sağlandı
 
 ---
 
-*End of contract v1.2 (2026-07-01). Change log her revizyonda header'a taşınır; ayrı changelog dosyası açılmayacak (contract-first, tek dosya normatif kaynak).*
+*End of contract v1.3 (2026-07-01). Change log her revizyonda header'a taşınır; ayrı changelog dosyası açılmayacak (contract-first, tek dosya normatif kaynak).*

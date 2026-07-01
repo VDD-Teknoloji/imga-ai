@@ -1,9 +1,10 @@
 openapi: 3.1.0
 
 # =============================================================================
-# İmga v1 Partner API — OpenAPI (contract v1.2'ye HİZALANMIŞ)
+# İmga v1 Partner API — OpenAPI (contract v1.3'e HİZALANMIŞ)
 # -----------------------------------------------------------------------------
-# Normatif kaynak: docs/imga-api-v1-contract.md v1.2 (Owner: İmga AI). İhtilafta
+# Normatif kaynak: docs/imga-api-v1-contract.md v1.3 (Owner: İmga AI). İhtilafta
+# v1.3: residency düzleşti — tüm use-case outbound, Accept-Residency no-op.
 # kontrat kazanır. 2026-07-01'de v1.2'ye göre revize edildi.
 #
 # v1.2 eklemeleri bu dosyada: §2.1 idempotency (Idempotency-Replayed), §3.5 header
@@ -21,14 +22,16 @@ openapi: 3.1.0
 
 info:
   title: İmga v1 Partner API
-  version: 1.2.0
+  version: 1.3.0
   description: >
     E-ticaret dikeyi çok-kiracılı AI analiz yüzeyi. Tüketici: AsakAI (VDD).
-    Residency Hybrid (§9). Auth: kiracı Bearer (imga_live_/imga_stg_); admin: opsBearer.
+    Residency v1.3'te düzleştirildi: tüm use-case outbound (Gemini kanonik);
+    Accept-Residency no-op, residency_denied dormant (§9). Auth: kiracı Bearer
+    (imga_live_/imga_stg_); admin: opsBearer.
     KABUL KRİTERLERİ (§11): envelope/error/header shape + residency zone (non-stream+SSE)
     + idempotency replay + revoke ≤60s + cross-env prefix reddi; contract test suite 7
     ardışık gün %100 yeşil + p95<3s / SSE ilk token<800ms. Bkz. §11.
-  x-contract-source: docs/imga-api-v1-contract.md v1.2
+  x-contract-source: docs/imga-api-v1-contract.md v1.3
 
 servers:
   - url: https://api.imga.ai/v1
@@ -86,7 +89,7 @@ paths:
       tags: [analyze]
       summary: Destek talebi duygu/kategori/aciliyet (§4.2)
       operationId: analyzeTicket
-      x-imga-residency: tr                  # §9 PII → TR zorunlu, override YOK
+      x-imga-residency: outbound            # v1.3: tüm use-case outbound (residency düzleşti)
       parameters: [{ $ref: '#/components/parameters/AcceptLanguage' }, { $ref: '#/components/parameters/XImgaPiiMode' }]
       requestBody:
         required: true
@@ -104,7 +107,6 @@ paths:
         '200': { $ref: '#/components/responses/TicketAnalyzeResult' }
         '400': { $ref: '#/components/responses/Err400' }
         '401': { $ref: '#/components/responses/Err401' }
-        '403': { $ref: '#/components/responses/Err403' }   # Accept-Residency: outbound-ok → residency_denied
         '429': { $ref: '#/components/responses/Err429' }
         '502': { $ref: '#/components/responses/Err502' }
         '504': { $ref: '#/components/responses/Err504' }
@@ -115,7 +117,7 @@ paths:
       tags: [analyze]
       summary: Müşteri yanıt taslağı (§4.3)
       operationId: analyzeSuggestReply
-      x-imga-residency: tr
+      x-imga-residency: outbound
       parameters: [{ $ref: '#/components/parameters/AcceptLanguage' }, { $ref: '#/components/parameters/XImgaPiiMode' }]
       requestBody:
         required: true
@@ -201,7 +203,7 @@ paths:
       summary: Serbest form soru-cevap, non-stream (§4.6)
       operationId: analyzeFree
       description: '`user_prompt` NORMATİF ZORUNLU (§2 not / §4.6); eksikse 400 invalid_input. Accept-Residency: outbound-ok ile outbound (KVKK m.9).'
-      x-imga-residency: tr-default-outbound-optin
+      x-imga-residency: outbound   # v1.3: Accept-Residency no-op
       parameters:
         - { $ref: '#/components/parameters/AcceptLanguage' }
         - { $ref: '#/components/parameters/AcceptResidency' }
@@ -233,7 +235,7 @@ paths:
       summary: SSE handshake — tek-kullanımlık stream token (§7 adım 1)
       operationId: freeAnalyzeStreamToken
       description: 'İdempotent: aynı client_request_id aynı stream_token''ı iade eder (§2.1).'
-      x-imga-residency: tr-default-outbound-optin
+      x-imga-residency: outbound   # v1.3: Accept-Residency no-op
       parameters:
         - { $ref: '#/components/parameters/AcceptLanguage' }
         - { $ref: '#/components/parameters/AcceptResidency' }
@@ -472,7 +474,7 @@ components:
       name: Accept-Residency
       in: header
       required: false
-      description: 'YALNIZ free-analyze (§9). Diğer PII-kilitli uçlarda → 403 residency_denied.'
+      description: 'v1.3 NO-OP — residency düzleşti (tüm use-case outbound). Header tanımlı kalır, etkisizdir; residency_denied dormant (§9).'
       schema: { type: string, enum: [outbound-ok] }
     XImgaPiiMode:
       name: X-Imga-PII-Mode
