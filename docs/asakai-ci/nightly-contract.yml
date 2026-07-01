@@ -1,0 +1,78 @@
+# AsakAI nightly contract CI — İmga v1 partner API (contract §11 / goal §2.3, §3.10)
+#
+# TESLİMAT: bu dosya AsakAI reposuna (github.com/VDD-Teknoloji/asakai) eklenir:
+#   .github/workflows/imga-nightly-contract.yml
+#
+# Ne yapar: her gece staging'e karşı İmga kara-kutu contract suite'ini koşar
+# (packages/imga-api/tests/contract/test_live_contract.py). 7 ARDIŞIK gün yeşil =
+# goal §2 kriter 3. "7 ardışık gün" GitHub Actions çalışma geçmişinden okunur
+# (aşağıdaki badge + run history); ayrıca son sonucu bir özet artifact'ına yazar.
+#
+# Gereken secret'lar (AsakAI repo Settings → Secrets):
+#   IMGA_STAGING_TENANT_TOKEN   — imga_stg_… (asakai-staging tenant Bearer)
+#   IMGA_SLACK_WEBHOOK          — (opsiyonel) kırmızı gecede uyarı
+#
+# Not: test dosyası İmga reposunda; workflow onu pinlenmiş tag'den checkout eder.
+
+name: imga-nightly-contract
+
+on:
+  schedule:
+    - cron: "0 2 * * *" # her gün 02:00 UTC (05:00 Europe/Istanbul)
+  workflow_dispatch: {}
+
+concurrency:
+  group: imga-nightly-contract
+  cancel-in-progress: false
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      IMGA_BASE_URL: https://api-staging.imga.ai
+      IMGA_TENANT_TOKEN: ${{ secrets.IMGA_STAGING_TENANT_TOKEN }}
+      IMGA_TENANT_ID: asakai-staging
+    steps:
+      - name: Checkout İmga contract suite (pinned)
+        uses: actions/checkout@v4
+        with:
+          repository: VDD-Teknoloji/imga-ai
+          ref: contract-v1.3-frozen # kontrat tag'i; yeni sürümde bump et
+          path: imga
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install test deps
+        run: pip install httpx pytest pytest-html
+
+      - name: Run live contract suite
+        id: run
+        working-directory: imga/packages/imga-api
+        run: |
+          pytest tests/contract/test_live_contract.py \
+            -v --html=../../../report.html --self-contained-html \
+            | tee ../../../contract-output.txt
+
+      - name: Upload HTML report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: imga-contract-report-${{ github.run_number }}
+          path: |
+            report.html
+            contract-output.txt
+          retention-days: 30
+
+      - name: Slack alert on failure
+        if: ${{ failure() }}
+        env:
+          SLACK: ${{ secrets.IMGA_SLACK_WEBHOOK }}
+        run: |
+          [ -z "$SLACK" ] && { echo "no slack webhook; skip"; exit 0; }
+          curl -sf -X POST "$SLACK" \
+            -H 'Content-Type: application/json' \
+            -d "{\"text\":\":red_circle: İmga nightly contract KIRMIZI — run ${{ github.run_number }} · ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}\"}" \
+            || true
