@@ -31,8 +31,18 @@ düzeltildi (`47a11b0`). Server-agent isterse tekrar koşar (`up --build
 
 ## 2. Build + migrate + deploy (her ortam)
 
+**Çalıştırılabilir script** (önerilen — secret fail-fast + migration + health smoke):
+
 ```bash
-git pull origin main   # (branch merge sonrası)
+sudo IMGA_ENV=staging    bash infra/imga/deploy-partner-api.sh   # önce staging
+sudo IMGA_ENV=production bash infra/imga/deploy-partner-api.sh   # sonra prod
+```
+
+Script secret ÜRETMEZ/YAZMAZ; `api.env`'de `IMGA_TOKEN_PEPPER`+`GEMINI_API_KEY`
+yoksa deploy etmez. Elle eşdeğeri:
+
+```bash
+git pull origin main
 ENV=staging   # sonra production
 COMPOSE=/opt/imga/infra/imga/$ENV/docker-compose.yml
 sudo docker compose -f $COMPOSE build api
@@ -56,7 +66,15 @@ api.imga.ai {
 
 ## 4. Bootstrap: ilk ops token (tavuk-yumurta)
 
-`/v1/admin/*` opsBearer ister ama ilk ops token yok. Tek seferlik mint + INSERT:
+**Çalıştırılabilir script** (önerilen — mint+INSERT container içinde tek adım,
+hash sızmaz, plaintext bir kez basılır):
+
+```bash
+sudo IMGA_ENV=staging    bash infra/imga/bootstrap-ops-token.sh
+sudo IMGA_ENV=production bash infra/imga/bootstrap-ops-token.sh
+```
+
+Elle eşdeğeri (`/v1/admin/*` opsBearer ister ama ilk ops token yok):
 
 ```bash
 # 1) plaintext + hash üret (api container içinde, IMGA_TOKEN_PEPPER env'li):
