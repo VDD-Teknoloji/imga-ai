@@ -1,0 +1,505 @@
+openapi: 3.1.0
+
+# =============================================================================
+# İmga v1 Partner API — OpenAPI İSKELETİ (N+0 kontrat-dondurma)
+# -----------------------------------------------------------------------------
+# Durum: PROVISIONAL. Bu iskelet AsakAI brief v1.1 ÖZETİNDEN türetildi.
+# `docs/imga-api-v1-contract.md` (v1.1, AsakAI 92cdb1e) İmga reposuna alınınca
+# `TODO(contract §2)` işaretli alanlar (özellikle request envelope + hata şeması)
+# kesinleşecektir. Yön: AsakAI ⇒ İmga (client-server, tek yön).
+# Bu dosya KOD DEĞİLDİR; AsakAI contract testinin çekip Pydantic modellerine
+# karşı doğrulayacağı sözleşme yüzeyidir.
+# =============================================================================
+
+info:
+  title: İmga v1 Partner API
+  version: 1.0.0-draft   # TODO(contract): SemVer freeze; Accept: application/vnd.imga.v2+json ile major geçiş
+  description: >
+    E-ticaret dikeyi için çok-kiracılı AI-as-a-Service analiz yüzeyi.
+    Residency (Hybrid): PII'siz use-case'ler outbound LLM; PII'li use-case'ler
+    (ticket-analyze, ticket-suggest-reply) TR-içi model; free-analyze varsayılan
+    TR, `Accept-Residency: outbound-ok` ile opt-out.
+  x-contract-source: AsakAI docs/imga-api-v1-contract.md @ 92cdb1e (v1.1) — henüz İmga reposunda değil
+  # http-bearer OpenAPI'de per-operation scope ifade edemez; scope enforcement sunucu-tarafı.
+  # Aşağıdaki matris + her admin op'taki opsBearer, contract-test'in yetki yüzeyini görmesi için.
+  x-imga-scope-matrix:
+    'POST /analyze/* (5 senkron + free-analyze)': analyze:write
+    'GET /health/ready': health:read
+    '/admin/* (tenants, tokens)': opsBearer (service_account DEĞİL)
+  x-imga-provider-header: >
+    X-Imga-Provider header'ı kontrattan DÜŞÜRÜLDÜ; sağlayıcı bilgisi yalnız staging'de
+    meta.model ile taşınır, prod'da opak. Karar: n0-response §1.9.
+
+servers:
+  - url: https://staging.api.imga.ai/v1
+    description: Staging
+  - url: https://api.imga.ai/v1
+    description: Production
+
+security:
+  - bearerAuth: []
+
+tags:
+  - name: analyze
+    description: 6 analiz use-case (5 senkron + free-analyze SSE)
+  - name: health
+    description: Liveness / readiness
+  - name: admin
+    description: Kiracı & token yönetimi (VDD ops bearer'ı arkasında)
+
+# =============================================================================
+paths:
+
+  # --------------------------- ANALYZE (senkron) ---------------------------
+  /analyze/anomaly-explain:
+    post:
+      tags: [analyze]
+      summary: KPI düşüş açıklaması / kök neden
+      operationId: analyzeAnomalyExplain
+      x-imga-residency: outbound-ok          # PII'siz
+      requestBody: { $ref: '#/components/requestBodies/AnalyzeRequest' }
+      responses:
+        '200': { $ref: '#/components/responses/AnalyzeResult' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '503': { $ref: '#/components/responses/Degraded' }
+
+  /analyze/ticket-analyze:
+    post:
+      tags: [analyze]
+      summary: Destek talebi duygu/kategori/aciliyet
+      operationId: analyzeTicket
+      x-imga-residency: tr-only              # PII'li → TR-içi model zorunlu
+      requestBody: { $ref: '#/components/requestBodies/AnalyzeRequest' }
+      responses:
+        '200': { $ref: '#/components/responses/AnalyzeResult' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '503': { $ref: '#/components/responses/Degraded' }
+
+  /analyze/ticket-suggest-reply:
+    post:
+      tags: [analyze]
+      summary: Müşteri yanıt taslağı
+      operationId: analyzeSuggestReply
+      x-imga-residency: tr-only              # PII'li → TR-içi model zorunlu
+      requestBody: { $ref: '#/components/requestBodies/AnalyzeRequest' }
+      responses:
+        '200': { $ref: '#/components/responses/AnalyzeResult' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '503': { $ref: '#/components/responses/Degraded' }
+
+  /analyze/return-analyze:
+    post:
+      tags: [analyze]
+      summary: İade örüntüleri + kök neden
+      operationId: analyzeReturn
+      x-imga-residency: outbound-ok
+      requestBody: { $ref: '#/components/requestBodies/AnalyzeRequest' }
+      responses:
+        '200': { $ref: '#/components/responses/AnalyzeResult' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '503': { $ref: '#/components/responses/Degraded' }
+
+  /analyze/cargo-optimize:
+    post:
+      tags: [analyze]
+      summary: Kargo şirketi seçimi + gecikme öngörüsü
+      operationId: analyzeCargoOptimize
+      x-imga-residency: outbound-ok
+      requestBody: { $ref: '#/components/requestBodies/AnalyzeRequest' }
+      responses:
+        '200': { $ref: '#/components/responses/AnalyzeResult' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '503': { $ref: '#/components/responses/Degraded' }
+
+  # --------------------------- ANALYZE (SSE) ---------------------------
+  /analyze/free-analyze:
+    post:
+      tags: [analyze]
+      summary: Serbest form soru-cevap (SSE stream)
+      operationId: analyzeFree
+      description: >
+        Server-Sent Events. Varsayılan residency TR-içi; `Accept-Residency:
+        outbound-ok` ile outbound LLM'e opt-out (AsakAI tarafı KVKK m.9 açık rıza
+        akışını UI'da tetikler). Event tipleri: partial / meta / done.
+        TODO(contract §7): "ilk token" = anında preamble/ack event mi, ilk anlamlı
+        içerik mi — SLA (<800ms) buna göre ölçülür. Token-stream mi satır-stream mi?
+      x-imga-residency: tr-default-outbound-optin
+      parameters:
+        - $ref: '#/components/parameters/AcceptResidency'
+      requestBody: { $ref: '#/components/requestBodies/AnalyzeRequest' }
+      responses:
+        '200':
+          description: SSE akışı
+          headers:
+            X-Imga-Request-Id: { $ref: '#/components/headers/XImgaRequestId' }
+          content:
+            text/event-stream:
+              schema:
+                type: string
+                description: >
+                  event: partial | data: {"delta": "..."}
+                  event: meta    | data: {"residency": "tr"|"outbound", "model": "<opak>", "tokens": {"prompt": int, "completion": int}}   # TODO(contract §3): cost_try mı opak units mi
+                  event: done    | data: {"finish_reason": "stop", "final_length": int}
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+        '503': { $ref: '#/components/responses/Degraded' }
+
+  # --------------------------- HEALTH ---------------------------
+  /health:
+    get:
+      tags: [health]
+      summary: Liveness (sığ)
+      operationId: healthLiveness
+      security: []
+      responses:
+        '200':
+          description: Canlı
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/HealthLiveness' }
+
+  /health/ready:
+    get:
+      tags: [health]
+      summary: Readiness (DB + Redis + LLM + model-yüklü)
+      operationId: healthReadiness
+      description: >
+        DB(SELECT 1) + Redis(PING) + LLM erişilebilirlik + BERT/TR-model warmup durumu.
+        Ayrıntılı bağımlılık dökümü `health:read` scope'lu authenticated çağrı gerektirir —
+        kimliksiz sızıntıyı (TR-model yapılandırıldı mı) önler. Kimliksiz sığ liveness için
+        GET /health kullanın. TODO(contract).
+      security: [{ bearerAuth: [] }]   # health:read — scope server-side (migration-design §4)
+      responses:
+        '200':
+          description: Hazır
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/HealthReadiness' }
+        '503':
+          description: Bağımlılık hazır değil
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/HealthReadiness' }
+
+  # --------------------------- ADMIN ---------------------------
+  /admin/tenants:
+    post:
+      tags: [admin]
+      summary: Kiracı oluştur (VDD ops)
+      operationId: adminCreateTenant
+      security: [{ opsBearer: [] }]   # service_account bearer'ı ASLA admin uçlarını karşılamaz
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/TenantCreate' }   # TODO(contract): alanlar
+      responses:
+        '201':
+          description: Oluşturuldu
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Tenant' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+
+  /admin/tenants/{tenant_id}/usage:
+    get:
+      tags: [admin]
+      summary: Kota / istek sayaçları
+      operationId: adminTenantUsage
+      security: [{ opsBearer: [] }]
+      parameters:
+        - name: tenant_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Kullanım
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TenantUsage' }   # TODO(contract §1.8): birim/pencere
+        '401': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+
+  /admin/tokens/rotate:
+    post:
+      tags: [admin]
+      summary: Token rotate (kesintisiz)
+      operationId: adminRotateToken
+      description: >
+        İki-adet-bağımsız-revoke-edilebilir model önerilir: yeni token üret,
+        AsakAI yeniye geçir, eskiyi açıkça revoke et. Grace window ≤ 24s.
+      security: [{ opsBearer: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/TokenRotateRequest' }
+      responses:
+        '200':
+          description: Yeni token (plaintext YALNIZ burada, tek sefer)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TokenPlaintext' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+
+  /admin/tokens/{token_id}/revoke:
+    post:
+      tags: [admin]
+      summary: Token iptali (aninda)
+      operationId: adminRevokeToken
+      security: [{ opsBearer: [] }]
+      parameters:
+        - name: token_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '204': { description: Revoke edildi (bir sonraki istek reddedilir) }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+
+# =============================================================================
+components:
+
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      description: >
+        Opak, kiracı-başına API token: `Authorization: Bearer imga_sk_live_...`
+        (staging: `imga_sk_test_...`). service_account scope'ları
+        (analyze:read/write, batch:submit, health:read). Tasarım:
+        docs/analysis/2026-07-01-apitokenrecord-migration-design.md
+    opsBearer:
+      type: http
+      scheme: bearer
+      description: >
+        VDD ops/admin token — service_account'tan AYRI kimlik. Yalnız /admin/* uçlarını
+        karşılar. service_account (bearerAuth) token'ı bu uçlara ASLA erişemez.
+
+  parameters:
+    AcceptResidency:
+      name: Accept-Residency
+      in: header
+      required: false
+      description: >
+        `outbound-ok` → yurt dışı LLM'e izin. YALNIZ free-analyze'da onurlandırılır.
+        tr-only uçlarda (ticket-analyze, ticket-suggest-reply) header sessizce yok sayılır
+        ve residency her zaman `tr`; outbound-varsayılan uçlarda her zaman `outbound`. PII'li
+        uçta `outbound-ok` HİÇBİR koşulda bölge sınıfını değiştirmez — bağlayıcı olan,
+        operasyonun `x-imga-residency` değeridir.
+      schema:
+        type: string
+        enum: [outbound-ok]
+
+  requestBodies:
+    AnalyzeRequest:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/AnalyzeRequestEnvelope' }
+
+  responses:
+    AnalyzeResult:
+      description: Analiz sonucu
+      headers:
+        X-Imga-Request-Id: { $ref: '#/components/headers/XImgaRequestId' }
+        X-RateLimit-Limit: { $ref: '#/components/headers/XRateLimitLimit' }
+        X-RateLimit-Remaining: { $ref: '#/components/headers/XRateLimitRemaining' }
+        X-RateLimit-Reset: { $ref: '#/components/headers/XRateLimitReset' }
+        X-Quota-Remaining: { $ref: '#/components/headers/XQuotaRemaining' }
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/AnalyzeResponseEnvelope' }
+    Error:
+      description: Hata
+      headers:
+        X-Imga-Request-Id: { $ref: '#/components/headers/XImgaRequestId' }
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    RateLimited:
+      description: Kota/hız aşımı
+      headers:
+        Retry-After: { schema: { type: integer }, description: 'saniye (TODO: 429 vs 402 §1.8)' }
+        X-RateLimit-Reset: { $ref: '#/components/headers/XRateLimitReset' }
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    Degraded:
+      description: Upstream sağlıksız — AsakAI fallback tetiklemeli
+      headers:
+        Retry-After: { schema: { type: integer } }
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+
+  headers:
+    XImgaRequestId:
+      description: Log korelasyon kimliği
+      schema: { type: string }
+    XRateLimitLimit:
+      description: Pencere limiti
+      schema: { type: integer }
+    XRateLimitRemaining:
+      description: Kalan
+      schema: { type: integer }
+    XRateLimitReset:
+      description: 'TODO(contract §1.7): epoch saniye mi delta mı'
+      schema: { type: integer }
+    XQuotaRemaining:
+      description: 'TODO(contract §1.8): birim (token/çağrı) belirsiz'
+      schema: { type: integer }
+
+  schemas:
+
+    AnalyzeRequestEnvelope:
+      type: object
+      description: >
+        ORTAK request envelope. TODO(contract §2): kesin alan listesi AsakAI
+        kontrat dokümanından alınacak. Aşağısı brief özetinden PROVISIONAL.
+      required: [use_case, input]      # TODO(contract §2) doğrula
+      properties:
+        use_case:
+          type: string
+          enum: [anomaly-explain, ticket-analyze, ticket-suggest-reply, return-analyze, cargo-optimize, free-analyze]
+        input:
+          description: 'TODO(contract §2): girdi yapısı (tek metin / satır listesi / yapılandırılmış)'
+          oneOf:
+            - type: string
+            - type: array
+              items: { type: string }
+            - type: object
+        idempotency_key:
+          type: string
+          description: 'TODO(contract §2): opsiyonel; free/trial dedup için'
+        schema_version:
+          type: string
+          description: 'TODO(contract §2): use-case çıktı şeması versiyonu'
+
+    AnalyzeResponseEnvelope:
+      type: object
+      description: 'TODO(contract §2): use-case bazlı çıktı şeması. Aşağısı ortak zarf.'
+      required: [request_id, meta, result]
+      properties:
+        request_id: { type: string }
+        result:
+          description: 'use_case''e özel yapı (sentiment/kategori/öneri/…) — TODO(contract §2)'
+          type: object
+        meta: { $ref: '#/components/schemas/ResultMeta' }
+
+    ResultMeta:
+      type: object
+      properties:
+        model:
+          type: string
+          description: 'PROD: opak (prov_a / prov_1). Staging: gerçek model adı. §1.9: kod residency sızdırmasın.'
+        residency:
+          type: string
+          enum: [tr, outbound]
+          description: Bu çağrının hangi bölgede işlendiği (KVKK aydınlatma için)
+        tokens:
+          type: object
+          properties:
+            prompt: { type: integer }
+            completion: { type: integer }
+        units:
+          type: integer
+          description: 'ÖNERİ (§1.10): parasal cost_try yerine opak birim. TODO(contract §3)'
+        degraded:
+          type: boolean
+          description: true → keyword/fallback ile üretildi (AsakAI fallback UI sinyali)
+
+    Error:
+      type: object
+      required: [error, request_id]
+      properties:
+        request_id: { type: string }
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code:
+              type: string
+              description: 'TODO(contract §): hata kodu enum'
+            message: { type: string }
+            detail: { type: string }
+
+    HealthLiveness:
+      type: object
+      properties:
+        status: { type: string, example: ok }
+        version: { type: string, example: 1.0.0 }
+
+    HealthReadiness:
+      type: object
+      properties:
+        status: { type: string, enum: [ready, degraded] }
+        version: { type: string }
+        dependencies:
+          type: object
+          properties:
+            postgres: { type: string, enum: [ok, fail] }
+            redis: { type: string, enum: [ok, fail] }
+            llm_outbound: { type: string, enum: [ok, degraded, fail] }
+            llm_tr: { type: string, enum: [ok, degraded, fail, not_configured] }
+            model_loaded: { type: boolean }
+
+    # ---- admin (TODO(contract): alanlar) ----
+    TenantCreate:
+      type: object
+      required: [name, slug]
+      properties:
+        name: { type: string }
+        slug: { type: string, pattern: '^[a-z0-9-]+$' }
+        plan_tier: { type: string, enum: [trial, starter, business, enterprise] }
+    Tenant:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        slug: { type: string }
+        plan_tier: { type: string }
+    TenantUsage:
+      type: object
+      description: 'TODO(contract §1.8): birim (token/çağrı) + pencere (gün/ay)'
+      properties:
+        tenant_id: { type: string, format: uuid }
+        window: { type: string }
+        used: { type: integer }
+        limit: { type: integer }
+        remaining: { type: integer }
+    TokenRotateRequest:
+      type: object
+      properties:
+        token_id: { type: string, format: uuid, description: rotate edilecek mevcut token }
+        name: { type: string }
+    TokenPlaintext:
+      type: object
+      description: Plaintext token YALNIZ create/rotate yanıtında, tek sefer.
+      properties:
+        id: { type: string, format: uuid }
+        token: { type: string, example: imga_sk_live_xxxxxxxx }
+        prefix: { type: string, example: imga_sk_live_ }
+        last4: { type: string }
+        scopes:
+          type: array
+          items: { type: string, enum: [analyze:read, analyze:write, batch:submit, health:read] }
+        expires_at: { type: string, format: date-time }
