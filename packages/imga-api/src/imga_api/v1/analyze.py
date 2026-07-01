@@ -14,7 +14,9 @@ from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Path, Request, Response, status
+from imga_db.models import ApiTenantConfig
 from pydantic import BaseModel
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from imga_api.auth_deps import get_settings
@@ -35,6 +37,9 @@ from imga_api.v1.prompts import PROMPTS
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/v1/analyze", tags=["v1-analyze"])
+
+# §6 varsayılan günlük token kotası — api_tenant_config satırı yoksa geçerli.
+_QUOTA_DEFAULT = 2_000_000
 
 
 class PartnerAnalyzeRequest(BaseModel):
@@ -94,8 +99,9 @@ async def analyze(
         response.headers["X-Imga-Request-Id"] = rid
         return cached
 
-    # §6 rate-limit + kota header (quota default 2M — per-tenant override refinement)
-    await ratelimit.enforce(tenant_key, response, quota_tokens_per_day=2_000_000)
+    # §6 rate-limit + per-tenant kota (§3.2 admin override; satır yoksa 2M).
+    quota = await _tenant_quota(app_session, principal)
+    await ratelimit.enforce(tenant_key, response, quota_tokens_per_day=quota)
 
     gemini_prompt = json.dumps(
         {
@@ -166,6 +172,31 @@ async def analyze(
         cost=cost,
     )
     return envelope
+
+
+async def _tenant_quota(
+    app_session: AsyncSession, principal: ApiPrincipal
+) -> int:
+    """Per-tenant günlük token kotası (§3.2 admin override). api_tenant_config
+    RLS+FORCE → tenant-bind'li kısa transaction ile kendi satırını okur; satır
+    yoksa veya okuma hata verirse güvenli varsayılan (2M). Kota okuması ana
+    isteği asla bozmaz."""
+    if principal.tenant_id is None:
+        return _QUOTA_DEFAULT
+    try:
+        async with app_session.begin():
+            await bind_api_tenant(app_session, principal)
+            quota = (
+                await app_session.execute(
+                    select(ApiTenantConfig.quota_tokens_per_day).where(
+                        ApiTenantConfig.tenant_id == principal.tenant_id
+                    )
+                )
+            ).scalar_one_or_none()
+        return int(quota) if quota is not None else _QUOTA_DEFAULT
+    except Exception:  # noqa: BLE001 — config okunamazsa güvenli varsayılan
+        logger.warning("tenant quota read failed; using default", exc_info=True)
+        return _QUOTA_DEFAULT
 
 
 async def _safe_log(
