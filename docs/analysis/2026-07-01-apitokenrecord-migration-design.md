@@ -9,9 +9,11 @@
 > Bu doküman N+1'de yazılacak Alembic migration'ı + auth katmanını **tanımlar**;
 > kararlar [n0-response §1.4–1.6](2026-07-01-asakai-v1-n0-response.md) ile hizalıdır.
 >
-> **Kontrat hizalaması (2026-07-01, contract v1.1 §8):** önek `imga_live_`, scope
-> **kaba** (`tenant` \| `service_account`), revoke SLA **≤60 sn** (§8.5). Bu üç nokta
-> N+0 taslağını EZER; gövde buna göre güncellendi. Migration head **0031** → yeni **0032**.
+> **Kontrat hizalaması (2026-07-01, contract v1.2 §8):** önek `imga_live_` (prod) /
+> `imga_stg_` (staging) — Stripe-style, edge cross-env enforcement (§8.1); tenant
+> tokenleri `api_tokens` (scope=`tenant`); **admin/ops tokenleri AYRI `admin_tokens`
+> tablosunda** (`imga_ops_live_`/`imga_ops_stg_`, scope=`ops`, tenant-RLS yok — §8.6);
+> revoke SLA **≤60 sn MUST** + ≤5s SHOULD (§8.5). Migration head **0031** → **0032**.
 
 ---
 
@@ -20,9 +22,9 @@
 | Konu | Karar | Gerekçe |
 |---|---|---|
 | Token biçimi | **Opak** rastgele (`secrets.token_urlsafe`), DB'de hash'li | rotate/revoke için otoriter; stateless api-JWT iptal edilemez |
-| Önek | `imga_live_` (contract §8) | staging öneki §8'de tanımsız — ayrı `imga_staging_` öneririm (staging↔prod karışması) |
+| Önek | `imga_live_` (prod) / `imga_stg_` (staging) — §8.1; admin: `imga_ops_*` ayrı tablo (§8.6) | cross-env prefix enforcement §8.1 (yanlış ortam → 401 `hint=wrong_environment`) |
 | At-rest | **HMAC-SHA256(pepper)**, `hmac.compare_digest` | Argon2 auth sıcak-yolu için yavaş; HMAC sabit-zaman + O(1) lookup |
-| Yetki | **kaba scope**: `tenant` (analyze+data) \| `service_account` (admin); `tenant_admin`/`analyst` DEĞİL | least-privilege; kiracı token'ı `/admin/*`'a erişemez |
+| Yetki | `api_tokens`.scope=`tenant` (analyze+data); ops tokenleri **ayrı `admin_tokens`** (scope=`ops`, §8.6); `tenant_admin`/`analyst` DEĞİL | least-privilege; kiracı token'ı `/admin/*`'a erişemez, ops token'ı tenant'ı taklit edemez (§8.6) |
 | Kapsam | tenant-scoped, `is_super_admin=False` invariant | süper-admin token'ı üretilmesi imkânsız |
 | TTL | varsayılan **90 gün** (`expires_at`), zorunlu rotate (≤1 yıl) | süresiz makine anahtarı = sessiz kalıcı erişim |
 | İptal SLA | revoke → **≤60 sn** (contract §8.5); İmga ≤5s cache TTL ile daha sıkı | kontrat ≤60s ister; N+1 promptundaki "≤5s" ifadesi kontrata birebir değil |
@@ -171,12 +173,16 @@ bağlı DEĞİL; yalnız gözlem/anomali içindir. Revoke/expiry kontrolü her i
 
 ## 8. Migration paketi (N+1'de üretilecek — kod DEĞİL, kapsam)
 
-1. Alembic migration `00NN_api_tokens`: tablo + RLS+FORCE policy + indexler (0006 deseni).
-2. `ApiTokenRecord` SQLAlchemy modeli (imga-db).
-3. `ApiTokenService`: mint/verify (HMAC+pepper), lookup, last_used debounce, rotate/revoke.
-4. `get_current_user` çift-yol + `require_scope` dependency + `ApiPrincipal` (scope: tenant|service_account).
-5. Route'lar `/v1/admin/tokens` (list/rotate/revoke) — `service_account` (opsBearer); tenant token erişemez. (Contract §8: token'lar admin console'dan mint edilir, self-service değil.)
-6. Env: `IMGA_TOKEN_PEPPER` (32 byte, secret manager; per-env ayrı; asla repoya commit edilmez).
+1. Alembic migration `0032_api_tokens`: **iki tablo** — `api_tokens` (tenant, RLS+FORCE,
+   0006 deseni) + `admin_tokens` (ops, tenant-RLS YOK ama scope=`ops` enforce — §8.6).
+2. `ApiTokenRecord` + `AdminTokenRecord` SQLAlchemy modelleri (imga-db).
+3. `ApiTokenService`: mint/verify (HMAC+pepper), lookup, last_used debounce, rotate/revoke;
+   ortam-önek doğrulaması (`imga_live_`/`imga_stg_`/`imga_ops_*`) → cross-env 401 (§8.1).
+4. `get_current_user` çift-yol + `require_scope` + `ApiPrincipal` (scope: tenant|ops).
+   opsBearer tenant analiz ucuna → 403 `ops_scope_cannot_impersonate_tenant` (§8.6).
+5. Route'lar `/v1/admin/tokens` (list/rotate/revoke) — **opsBearer** (admin_tokens);
+   tenant token erişemez → 403. (Contract §8: token'lar admin console'dan mint edilir.)
+6. Env: `IMGA_TOKEN_PEPPER` (32 byte, secret manager; prod/staging AYRI; asla repoya commit).
 
 ---
 
