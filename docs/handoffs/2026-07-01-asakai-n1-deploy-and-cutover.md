@@ -9,10 +9,13 @@ Partner API için **yeni bir servis/compose yok** — `/v1/*` route'ları mevcut
 FastAPI `api` servisine eklendi (main.py include_router). Deploy = mevcut api
 image'ını yeniden build + yeni env + migration + Caddy route.
 
-## 0. Ön-koşul: foundation `:5433`'te yeşil olmalı
+## 0. Ön-koşul: foundation `:5433`'te yeşil ✅ (local-agent doğruladı)
 
-Önce `2026-07-01-asakai-n1-auth-migration-0032.md` handoff'undaki doğrulama
-(alembic 0032+0033+0034, canonical pytest, ruff, mypy, boot). Kırmızıysa DEPLOY ETME.
+**KARŞILANDI (2026-07-01):** local-agent test compose'u koştu → **633 passed,
+2 skipped**; migration **0032→0033→0034 gerçek Postgres'e uygulandı**; feature
+**main'e merge+push edildi** (`e23bb5a`). Bir prod-çökmesi import bug'ı bu koşumda
+düzeltildi (`47a11b0`). Server-agent isterse tekrar koşar (`up --build
+--abort-on-container-exit --exit-code-from api-test`) ama gate açık — doğrudan §1'e geç.
 
 ## 1. Env değişkenleri (`/etc/imga/{production,staging}/api.env`)
 

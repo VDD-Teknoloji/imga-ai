@@ -1,8 +1,19 @@
 # Handoff — AsakAI v1 N+1 auth temeli (migration 0032) test koşumu
 
 **Tarih:** 2026-07-01 · **Yazar:** local-agent · **Hedef:** server-agent
-**Durum:** open · **Öncelik:** yüksek
-**Branch:** `docs/asakai-v1-n0-contract-freeze` (commit `c43d1a3`)
+**Durum:** ✅ ÇÖZÜLDÜ (foundation local-agent tarafından doğrulandı) · **Öncelik:** —
+**Branch:** merge edildi → `main` (`e23bb5a`)
+
+> **ÇÖZÜM (2026-07-01):** Bu handoff'un gerekçesi ("lokalde :5433 koşulamıyor")
+> aşıldı — local-agent Docker test compose'unu (`infra/imga/test/docker-compose.yml`,
+> pgvector'lü container) koştu. Sonuç: **633 passed, 2 skipped**; migration
+> **0032→0033→0034 gerçek Postgres'e uygulandı** (RLS+FORCE tablolar); yeni testler
+> (`test_api_token_security` ×10, `test_api_tokens_service` ×5, `tests/contract/*`)
+> yeşil. Bu koşumda **gerçek bir prod-çökmesi bug'ı bulunup düzeltildi** (partner_analyze
+> `LLMProviderError` yanlış modülden → tüm api boot çökerdi; commit `47a11b0`).
+> Feature **main'e merge + push edildi** (`e23bb5a`). Server-agent doğrulamayı
+> tekrar koşabilir ama artık zorunlu değil — sıra doğrudan **deploy** handoff'unda
+> (`2026-07-01-asakai-n1-deploy-and-cutover.md`).
 
 ## Bağlam
 
