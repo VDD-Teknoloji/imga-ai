@@ -69,11 +69,20 @@ VALUES('<PREFIX>', '<HASH>', '<LAST4>', 'ops', 'bootstrap', now() + interval '36
 `TOKEN`'ı VDD Ops'a güvenli kanalla ilet. Bu token ile `POST /v1/admin/tenants`
 (asakai-prod / asakai-staging) + `POST /v1/admin/tokens/rotate` ile tenant token'ları mint.
 
-## 5. Log + uptime
+## 5. Log + uptime + arka plan job'ları
 
 - Log: JSON structured (request_id, tenant_id, use_case, latency_ms, status,
   processed_in). **Prompt/response BODY log'a YAZILMAZ** — kod zaten yalnız hash yazar.
 - Uptime robot: `GET https://api-staging.imga.ai/v1/health` her 60 sn (§11.1, MIN %99.5).
+- **İki yeni APScheduler job'u** (api lifespan'de, boot log'unda görünür):
+  - `provider-healthcheck` (60sn) — Gemini `health_check` (ping). Doğrula:
+    `GET /v1/health` → `status:"ok"` + `providers[0].healthy:true` (GEMINI_API_KEY
+    geçerliyse). Anahtar geçersiz/eksik → `status:"degraded"` beklenir. Boot log:
+    `scheduler: provider healthcheck every 60s`.
+  - `data-retention-purge` (24s) — 30 günü aşmış `api_request_log` hard-delete +
+    `data_purge_audit` satırı. Boot'ta idempotent bir kez koşar (taze DB'de 0 satır).
+    Boot log: `scheduler: data retention purge every 24h`. Doğrula:
+    `SELECT count(*) FROM data_purge_audit;` ≥ 1 (boot koşusu kanıtı).
 
 ## 6. Cutover (§3.12)
 
@@ -90,9 +99,24 @@ VALUES('<PREFIX>', '<HASH>', '<LAST4>', 'ops', 'bootstrap', now() + interval '36
 - `GEMINI_API_KEY` + `IMGA_TOKEN_PEPPER` provizyonu.
 - DPA imzası (VDD hukuk).
 
-## 8. Kod tarafında KALAN (foundation yeşil sonrası yazılacak dilimler)
+## 8. Kod tarafında durum (2026-07-01 güncel)
 
-- §3.4 SSE `free-analyze/stream` (Gemini streaming) — yazılmadı.
-- §3.10 `tests/contract/` 9 dosya — foundation `:5433` yeşili + fixture doğrulanınca yazılmalı.
-- Rafinman: 422→AnalyzeError(400) /v1 mapper · per-tenant kota override okuma ·
-  30-gün retention purge worker (APScheduler) · provider healthcheck job (60sn).
+**Yazıldı + push edildi** (branch `docs/asakai-v1-n0-contract-freeze`):
+
+- §3.4 SSE `free-analyze/stream-token` + `/stream` (iki-adım handshake) — `24858ff`.
+- §3.5 provider healthcheck job (60sn) + canlı `/v1/health` — `abe5594`.
+- §3.8 30-gün KVKK retention purge job (günlük) — `0d00d09`.
+- §3.10 **birim-seviyesi** contract test (`tests/contract/`: envelope + error taxonomy
+  + use-case şema + 422 mapper, ham-gövde sızıntı testi) — `af0fa38` + `3de08e8`.
+  Canonical pytest listesinde; yerelde conftest-baypas ile tüm assertion PASS.
+- Rafinman TAMAM: 422→AnalyzeError(400) /v1 mapper (`3de08e8`) · per-tenant kota
+  override okuma (`67f41b8`).
+
+**Foundation `:5433` yeşili sonrası (fixture bağımlı — server-agent):**
+
+- §3.10 **endpoint-seviyesi** suite: `test_auth_scopes` · `test_headers` (10 header
+  matrisi) · `test_idempotency` (mock Gemini spy) · `test_revocation_sla` (≤60s) ·
+  `test_cross_env_prefix` · `test_sse_meta_residency`. Bunlar canlı app + DB + Redis
+  fixture ister; birim testler zaten şekil değişmezlerini kilitledi.
+- SSE gerçek token-by-token stream: şu an non-stream sonucu parçalanıyor (event
+  ŞEKLİ tam); `generate_content_stream` entegrasyonu ilk-token<800ms için rafinman.
