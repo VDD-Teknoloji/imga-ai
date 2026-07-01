@@ -87,10 +87,13 @@ async def run_use_case(
 
 
 # SSE stream free-analyze: düz markdown (JSON şema YOK) → partial delta'ları temiz.
+# İmga misyonu ile hizalı (v1/prompts.py _MISSION): yönetici odaklı, veri-temelli,
+# olmayan sorunu şişirmeyen.
 _STREAM_SYSTEM_PROMPT = (
-    "Sen bir e-ticaret veri analiz asistanısın. Kullanıcının sorusunu verilen "
-    "bağlamla Türkçe, akıcı markdown ile yanıtla. YALNIZCA cevabı yaz; JSON, "
-    "başlık şablonu veya meta açıklama ekleme."
+    "Sen İmga'nın yönetici veri asistanısın. Kullanıcının sorusunu verilen bağlamla "
+    "Türkçe, akıcı markdown ile yanıtla. Amaç: yöneticinin hızlı+doğru aksiyon alması. "
+    "YALNIZ verinin desteklediğini söyle; veri yetersizse bunu belirt, uydurma. Olmayan "
+    "sorunu sorun gibi gösterme, abartma. YALNIZCA cevabı yaz; JSON/başlık şablonu/meta ekleme."
 )
 
 
