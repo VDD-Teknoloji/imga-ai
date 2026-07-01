@@ -89,13 +89,23 @@ async def get_partner_principal(
     if row is None:
         raise _auth_failed("invalid or revoked token")
 
+    # Principal alanlarını row HÂLÂ yüklüyken çıkar.
     if isinstance(row, ApiTokenRecord):
+        principal = ApiPrincipal(kind="tenant", token_id=row.id, tenant_id=row.tenant_id)
         request.state.api_tenant_id = row.tenant_id
-        return ApiPrincipal(
-            kind="tenant", token_id=row.id, tenant_id=row.tenant_id
-        )
-    request.state.api_tenant_id = None
-    return ApiPrincipal(kind="ops", token_id=row.id, tenant_id=None)
+    else:
+        principal = ApiPrincipal(kind="ops", token_id=row.id, tenant_id=None)
+        request.state.api_tenant_id = None
+
+    # verify() bir SELECT koştu → AsyncSession autobegin ile admin_session'da bir
+    # transaction AÇIK bıraktı. Bu session FastAPI dependency-cache'iyle
+    # /v1/admin/* handler'larıyla PAYLAŞILIR; handler ``async with
+    # admin_session.begin()`` çağırınca "A transaction is already begun on this
+    # Session" 500'ü patlar (prod C1/C2 bug'ı). Read-transaction'ı burada kapat →
+    # paylaşılan session handler'a temiz gider. Read olduğu için rollback kayıpsız;
+    # row artık expire olur ama alanları yukarıda okundu.
+    await admin_session.rollback()
+    return principal
 
 
 async def require_tenant(
