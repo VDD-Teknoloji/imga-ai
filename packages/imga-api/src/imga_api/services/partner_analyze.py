@@ -11,9 +11,9 @@ from __future__ import annotations
 import asyncio
 import os
 
+from imga_core.llm.base import LLMProviderError
 from imga_core.llm.errors import (
     InvalidKeyError,
-    LLMProviderError,
     LLMResponseBlockedError,
     LLMTokenLimitError,
     MalformedResponseError,
