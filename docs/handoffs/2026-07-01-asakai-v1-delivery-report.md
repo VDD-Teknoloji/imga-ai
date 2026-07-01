@@ -90,6 +90,24 @@ KARŞILANMAYACAK; yerine prod'da canlı-izleme + load test ile eşdeğer güvenc
 Bu owner kararıdır; ben yalnız kayda geçiriyorum. Öneri: prod'a çıktıktan sonra ilk
 24 saat yakın izleme + enjekte-502 smoke ile §7 (graceful degradation) doğrulansın.
 
+## 6.1 Bilinen sınır / v1.4 refinement — SSE gerçek token-streaming
+
+**Karar (local-agent mühendislik önerisi, geri alınabilir):** §2.4'ün "SSE ilk-token
+<800ms" alt-kriteri için **gerçek Gemini token-streaming v1.4'e ertelendi.** Gerekçe:
+- SSE endpoint'i **fonksiyonel canlı ve kontrat-uyumlu** — `partial`/`meta`/`done`
+  event ŞEKLİ doğru (cutover E-serisi ile prod'da çalışır durumda). Eksik olan yalnız
+  TTFT (<800ms) performans hedefi; şu an tam yanıt parçalara bölünüyor.
+- Gerçek `generate_content_stream` çağrısı **yerelde doğrulanamaz** (`google-genai`
+  local'de kurulu değil + Gemini anahtarı yok). Doğrulanmamış streaming kodunu CANLI
+  prod entegrasyonuna (gerçek AsakAI trafiği) kör göndermek, bu projede 3 gerçek bug'a
+  yol açan deseni tekrarlar → sorumsuz.
+
+**Şimdi yapılmak istenirse güvenli yol:** `imga_core`'a `stream_text` metodu +
+`stream.py` rewire + **mock-SDK unit testi** (chunk→SSE event mantığı) + test compose
+(mantık yeşil + regresyonsuz) → push; sonra **server-agent prod'da tek canlı SSE isteğiyle**
+(`curl -N .../v1/analyze/stream`) gerçek SDK çağrısını + ilk-token gecikmesini doğrular.
+Owner "yaz" derse bu yol izlenir; aksi halde v1.4 backlog.
+
 ## 7. §6 final rapor — prod canlı olunca doldurulacak (şablon)
 
 ```
