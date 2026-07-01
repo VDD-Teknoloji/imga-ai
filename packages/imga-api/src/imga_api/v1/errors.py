@@ -39,6 +39,8 @@ class PartnerApiError(Exception):
     message: str
     details: dict[str, Any] | None = None
     retry_after_seconds: int | None = None
+    # §6: 429'da rate-limit/quota header'ları yanıtta olmalı — handler uygular.
+    extra_headers: dict[str, str] | None = None
 
     def __post_init__(self) -> None:
         # Kontrat dışı bir kod erken yakalansın (yazım hatası = test-time bug).
@@ -68,6 +70,9 @@ async def partner_api_exception_handler(
     resp.headers["X-Imga-Request-Id"] = rid
     if exc.retry_after_seconds is not None:
         resp.headers["Retry-After"] = str(exc.retry_after_seconds)
+    if exc.extra_headers:
+        for k, v in exc.extra_headers.items():
+            resp.headers[k] = v
     return resp
 
 

@@ -22,6 +22,7 @@ from imga_api.db_deps import get_app_session
 from imga_api.services.api_request_log import record_request
 from imga_api.services.partner_analyze import run_use_case
 from imga_api.settings import Settings
+from imga_api.v1 import idempotency, ratelimit
 from imga_api.v1.auth import ApiPrincipal, bind_api_tenant, require_tenant
 from imga_api.v1.envelope import (
     compute_cost_try,
@@ -82,6 +83,19 @@ async def analyze(
         )
 
     rid = getattr(request.state, "request_id", "") or ""
+    tenant_key = str(principal.tenant_id)
+
+    # §2.1 idempotency replay — aynı client_request_id → byte-identical
+    cached = await idempotency.get_cached(tenant_key, str(body.client_request_id))
+    if cached is not None:
+        if isinstance(cached.get("meta"), dict):
+            cached["meta"]["cached"] = True
+        response.headers["Idempotency-Replayed"] = "true"
+        response.headers["X-Imga-Request-Id"] = rid
+        return cached
+
+    # §6 rate-limit + kota header (quota default 2M — per-tenant override refinement)
+    await ratelimit.enforce(tenant_key, response, quota_tokens_per_day=2_000_000)
 
     gemini_prompt = json.dumps(
         {
@@ -131,6 +145,10 @@ async def analyze(
     # request_id'yi zarftan al (rid boşsa engine sonrası da boş olabilir)
     envelope["request_id"] = rid
     response.headers["X-Imga-Request-Id"] = rid
+
+    # §2.1 cache'e yaz + §6 günlük token sayacı
+    await idempotency.store(tenant_key, str(body.client_request_id), envelope)
+    await ratelimit.add_tokens(tenant_key, usage.total)
 
     resp_json = json.dumps(payload, ensure_ascii=False)
     await _safe_log(
