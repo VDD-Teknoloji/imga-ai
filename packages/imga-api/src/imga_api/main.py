@@ -158,6 +158,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     from imga_api.workers.scheduler import (
         build_scheduler,
         schedule_cleanup,
+        schedule_provider_healthcheck,
     )
 
     settings.batch.upload_dir.mkdir(parents=True, exist_ok=True)
@@ -195,6 +196,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         upload_root=settings.report.reports_dir,
         retention_hours=settings.report.retention_hours,
     )
+    # §3.5 — Gemini provider liveness probe (60sn). /v1/health bunu okur.
+    schedule_provider_healthcheck(scheduler)
     scheduler.start()
     log.info(
         "scheduler started (upload_dir=%s, reports_dir=%s, retention=%sh)",

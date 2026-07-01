@@ -116,6 +116,27 @@ def schedule_cleanup(
     _job()
 
 
+def schedule_provider_healthcheck(
+    scheduler: AsyncIOScheduler, *, interval_seconds: int = 60
+) -> None:
+    """§3.5 — Gemini provider liveness probe'u her ``interval_seconds`` sn.
+
+    Coroutine job (AsyncIOScheduler doğrudan çalıştırır). ``next_run_time`` =
+    şimdi → scheduler.start() sonrası ilk probe hemen koşar; böylece boot'tan
+    saniyeler sonra ``GET /v1/health`` gerçek provider durumunu yansıtır."""
+    from imga_api.services.provider_health import probe_provider
+
+    scheduler.add_job(
+        probe_provider,
+        trigger="interval",
+        seconds=interval_seconds,
+        id="provider-healthcheck",
+        replace_existing=True,
+        next_run_time=datetime.now(UTC),
+    )
+    log.info("scheduler: provider healthcheck every %ss", interval_seconds)
+
+
 async def enqueue_batch_job(
     app: FastAPI,
     *,
@@ -181,6 +202,7 @@ __all__ = [
     "build_scheduler",
     "enqueue_batch_job",
     "schedule_cleanup",
+    "schedule_provider_healthcheck",
     "submit_batch_job",
     "submit_report_job",
 ]
