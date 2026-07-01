@@ -23,6 +23,9 @@ const BASE = __ENV.IMGA_BASE_URL || "https://api-staging.imga.ai";
 const TOKEN = __ENV.IMGA_TENANT_TOKEN || "";
 const TENANT_ID = __ENV.IMGA_TENANT_ID || "asakai-staging";
 const QUOTA_SAFE = __ENV.IMGA_QUOTA_SAFE === "1";
+// §2.4 tam ölçüm 10 req/s × 10dk. Kısa burst için IMGA_DURATION=2m + IMGA_RATE=10.
+const RATE = Number(__ENV.IMGA_RATE || "10");
+const DURATION = __ENV.IMGA_DURATION || "10m";
 
 const analyzeLatency = new Trend("imga_analyze_latency_ms", true);
 const rateLimited = new Counter("imga_429_count");
@@ -30,14 +33,14 @@ const providerErrors = new Counter("imga_502_count");
 
 export const options = {
   scenarios: {
-    // Sabit 10 req/s × 10 dk (constant-arrival-rate → gerçek RPS, VU sayısına bağlı değil).
-    steady_10rps: {
+    // Sabit RATE req/s × DURATION (constant-arrival-rate → gerçek RPS, VU'dan bağımsız).
+    steady: {
       executor: "constant-arrival-rate",
-      rate: 10,
+      rate: RATE,
       timeUnit: "1s",
-      duration: "10m",
-      preAllocatedVUs: 40,
-      maxVUs: 100,
+      duration: DURATION,
+      preAllocatedVUs: Math.max(20, RATE * 4),
+      maxVUs: Math.max(50, RATE * 10),
     },
   },
   thresholds: {
