@@ -109,7 +109,7 @@ async def create_tenant(
     admin_session: Annotated[AsyncSession, Depends(get_admin_session)],
 ) -> TenantCreatedResponse:
     slug = _slugify(body.name)
-    async with admin_session.begin():
+    async with admin_session.begin_nested():
         exists = (
             await admin_session.execute(
                 select(Tenant.id).where(Tenant.slug == slug)
@@ -143,7 +143,7 @@ async def update_quota(
     admin_session: Annotated[AsyncSession, Depends(get_admin_session)],
     tenant_id: Annotated[str, Path()],
 ) -> dict[str, str]:
-    async with admin_session.begin():
+    async with admin_session.begin_nested():
         tenant_uuid = await _tenant_uuid_by_slug(admin_session, tenant_id)
         cfg = (
             await admin_session.execute(
@@ -175,7 +175,7 @@ async def tenant_usage(
             message="group_by must be day|week|month|use_case",
             details={"field": "group_by"},
         )
-    async with admin_session.begin():
+    async with admin_session.begin_nested():
         tenant_uuid = await _tenant_uuid_by_slug(admin_session, tenant_id)
         # opsBearer her tenant'ı görür; tenant Bearer yalnız kendi tenant'ını.
         if principal.kind == "tenant" and principal.tenant_id != tenant_uuid:
