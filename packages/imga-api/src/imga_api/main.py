@@ -10,6 +10,7 @@ from typing import Annotated
 
 from cachetools import TTLCache
 from fastapi import Depends, FastAPI
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from imga_core import (
     AnalysisPipeline,
@@ -83,6 +84,7 @@ from imga_api.v1 import stream as v1_stream_routes
 from imga_api.v1.errors import (
     PartnerApiError,
     partner_api_exception_handler,
+    v1_validation_exception_handler,
 )
 from imga_api.routes.admin import invitations as admin_invitation_routes
 from imga_api.routes.admin import (
@@ -343,6 +345,8 @@ app.add_middleware(
 app.add_middleware(RequestIDMiddleware)
 register_error_handlers(app)
 app.add_exception_handler(PartnerApiError, partner_api_exception_handler)
+# /v1 doğrulama (422) → AnalyzeError(400); /v1 dışı yollar varsayılana devreder.
+app.add_exception_handler(RequestValidationError, v1_validation_exception_handler)
 
 app.include_router(auth_routes.router)
 app.include_router(v1_admin_tokens_routes.router)

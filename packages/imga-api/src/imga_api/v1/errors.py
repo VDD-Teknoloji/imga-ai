@@ -12,6 +12,8 @@ from dataclasses import dataclass
 from typing import Any
 
 from fastapi import Request
+from fastapi.exception_handlers import request_validation_exception_handler
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
 # Contract §5 tam kod listesi.
@@ -76,9 +78,44 @@ async def partner_api_exception_handler(
     return resp
 
 
+async def v1_validation_exception_handler(
+    request: Request, exc: RequestValidationError
+) -> JSONResponse:
+    """Pydantic 422 → AnalyzeError(400, invalid_input) — YALNIZ /v1 için.
+
+    Kontrat değişmezi: tüm /v1 hataları AnalyzeError zarfında. FastAPI'nin
+    varsayılan 422 gövdesi (``{detail:[...]}``) bunu ihlal eder. /v1 dışı
+    yollar varsayılan handler'a devredilir (mevcut API'yi bozmamak için).
+
+    KVKK: pydantic hata girişi ``input`` ham gövde parçası içerebilir →
+    yankılanMAZ. Yalnız ``loc``/``msg``/``type`` sızdırılır.
+    """
+    if not request.url.path.startswith("/v1/"):
+        return await request_validation_exception_handler(request, exc)
+    rid = getattr(request.state, "request_id", "") or ""
+    safe_errors = [
+        {
+            "loc": [str(p) for p in err.get("loc", ())],
+            "msg": err.get("msg", ""),
+            "type": err.get("type", ""),
+        }
+        for err in exc.errors()
+    ]
+    err = PartnerApiError(
+        status_code=400,
+        code="invalid_input",
+        message="request validation failed",
+        details={"errors": safe_errors},
+    )
+    resp = JSONResponse(status_code=400, content=error_body(rid, err))
+    resp.headers["X-Imga-Request-Id"] = rid
+    return resp
+
+
 __all__ = [
     "ERROR_CODES",
     "PartnerApiError",
     "error_body",
     "partner_api_exception_handler",
+    "v1_validation_exception_handler",
 ]
