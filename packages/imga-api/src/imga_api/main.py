@@ -77,6 +77,7 @@ from imga_api.routes import tickets as tickets_routes
 from imga_api.v1 import admin_tenants as v1_admin_tenants_routes
 from imga_api.v1 import admin_tokens as v1_admin_tokens_routes
 from imga_api.v1 import analyze as v1_analyze_routes
+from imga_api.v1 import data as v1_data_routes
 from imga_api.v1 import health as v1_health_routes
 from imga_api.v1.errors import (
     PartnerApiError,
@@ -346,6 +347,7 @@ app.include_router(auth_routes.router)
 app.include_router(v1_admin_tokens_routes.router)
 app.include_router(v1_admin_tenants_routes.router)
 app.include_router(v1_analyze_routes.router)
+app.include_router(v1_data_routes.router)
 app.include_router(v1_health_routes.router)
 app.include_router(tenant_config_routes.router)
 app.include_router(tenant_analyze_routes.router)
