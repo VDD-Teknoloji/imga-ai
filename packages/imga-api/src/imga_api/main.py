@@ -76,6 +76,7 @@ from imga_api.routes import tenant_trend_alerts as tenant_trend_alerts_routes
 from imga_api.routes import tickets as tickets_routes
 from imga_api.v1 import admin_tenants as v1_admin_tenants_routes
 from imga_api.v1 import admin_tokens as v1_admin_tokens_routes
+from imga_api.v1 import health as v1_health_routes
 from imga_api.v1.errors import (
     PartnerApiError,
     partner_api_exception_handler,
@@ -343,6 +344,7 @@ app.add_exception_handler(PartnerApiError, partner_api_exception_handler)
 app.include_router(auth_routes.router)
 app.include_router(v1_admin_tokens_routes.router)
 app.include_router(v1_admin_tenants_routes.router)
+app.include_router(v1_health_routes.router)
 app.include_router(tenant_config_routes.router)
 app.include_router(tenant_analyze_routes.router)
 app.include_router(tenant_batch_routes.router)
