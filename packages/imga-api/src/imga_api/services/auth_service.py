@@ -345,6 +345,7 @@ class AuthService:
                 Tenant.name,
                 Tenant.slug,
                 UserTenantLink.role,
+                Tenant.language,
             )
             .join(UserTenantLink, UserTenantLink.tenant_id == Tenant.id)
             .where(UserTenantLink.user_id == user_id)
@@ -352,6 +353,12 @@ class AuthService:
             .order_by(Tenant.name)
         )
         return [
-            {"id": row[0], "name": row[1], "slug": row[2], "role": row[3]}
+            {
+                "id": row[0],
+                "name": row[1],
+                "slug": row[2],
+                "role": row[3],
+                "language": row[4],
+            }
             for row in result.all()
         ]

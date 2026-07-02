@@ -143,6 +143,7 @@ services:
           tests/test_encryption_smoke.py \
           tests/test_stats_aggregator.py \
           tests/test_swot_service.py \
+          tests/test_i18n_language_directive.py \
           tests/test_okr_service.py \
           tests/test_strategic_reports_routes.py \
           tests/test_llm_credentials_routes.py \

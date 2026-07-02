@@ -63,3 +63,19 @@ def company_size_label(code: str | None) -> str:
     if code is None:
         return "belirsiz"
     return COMPANY_SIZE_LABELS.get(code, code)
+
+
+def language_directive(language: str | None) -> str:
+    """AI çıktı dili yönergesi — system prompt'un SONUNA eklenir (Sprint 12 i18n).
+
+    Kurum dili 'en' ise güçlü bir "yalnız İngilizce" talimatı döndürür; 'tr' veya
+    None ise boş (promptlar zaten Türkçe). System prompt'un içeriğini yeniden
+    yazmadan, dil-üstü bir katman olarak çalışır — DB-override promptlar dahil."""
+    if language == "en":
+        return (
+            "\n\nIMPORTANT — OUTPUT LANGUAGE: Respond ONLY in English. Every "
+            "narrative field, title, summary, analysis, recommendation and label "
+            "in your output MUST be written in fluent, professional English, "
+            "regardless of the language of the input data or these instructions."
+        )
+    return ""

@@ -49,6 +49,8 @@ class StrategicStatsSnapshot:
     industry_other_text: str | None
     company_size: str | None
     business_description: str | None
+    # Kurum dili ('tr' | 'en') — AI çıktı dilini belirler (Sprint 12 i18n).
+    language: str
 
     # Headline counts
     total_reviews: int
@@ -167,6 +169,9 @@ class StatsAggregator:
         business_desc = (
             getattr(tenant, "business_description", None) if tenant else None
         )
+        tenant_language = (
+            getattr(tenant, "language", "tr") if tenant else "tr"
+        )
 
         # Headline metrics: a single round-trip carries 6 of the 8
         # numbers we need (total, crisis, avg_sentiment, nps_score,
@@ -274,6 +279,7 @@ class StatsAggregator:
             industry_other_text=industry_other,
             company_size=company_size,
             business_description=business_desc,
+            language=tenant_language,
             total_reviews=headline.total_reviews,
             crisis_count=headline.crisis_count,
             sensitive_topics_count=headline.sensitive_topics_count,

@@ -26,6 +26,7 @@ def _baseline_snapshot(**overrides: object) -> StrategicStatsSnapshot:
         "industry_other_text": None,
         "company_size": "medium",
         "business_description": "Test company",
+        "language": "tr",
         "total_reviews": 1000,
         "crisis_count": 50,
         "sensitive_topics_count": 80,

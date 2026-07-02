@@ -13,7 +13,7 @@ hits ``audit_logs`` via the underlying services.
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -66,6 +66,8 @@ class TenantCreateRequest(BaseModel):
     slug: str = Field(..., min_length=1, max_length=64, pattern=_SLUG_PATTERN)
     plan_tier: TenantPlanTier = TenantPlanTier.TRIAL
     automation_mode: AutomationMode = AutomationMode.SEMI_AUTO
+    # Kurum arayüz + AI çıktı dili — oluştururken seçilir (Sprint 12 i18n).
+    language: Literal["tr", "en"] = "tr"
     initial_admin: InitialAdminInput | None = None
 
 
@@ -74,6 +76,7 @@ class TenantUpdateRequest(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=255)
     plan_tier: TenantPlanTier | None = None
     automation_mode: AutomationMode | None = None
+    language: Literal["tr", "en"] | None = None
     settings: dict[str, Any] | None = None
 
 
@@ -83,6 +86,7 @@ class TenantSummary(BaseModel):
     slug: str
     plan_tier: str
     automation_mode: str
+    language: str
     created_at: datetime
     deleted_at: datetime | None
 
@@ -106,6 +110,7 @@ def _to_summary(tenant: Any) -> TenantSummary:
         slug=tenant.slug,
         plan_tier=str(tenant.plan_tier),
         automation_mode=str(tenant.automation_mode),
+        language=getattr(tenant, "language", "tr"),
         created_at=tenant.created_at,
         deleted_at=tenant.deleted_at,
     )
@@ -144,6 +149,7 @@ async def create_tenant(
             slug=body.slug,
             plan_tier=body.plan_tier,
             automation_mode=body.automation_mode,
+            language=body.language,
             actor_user_id=current.user_id,
         )
     except TenantSlugTakenError as exc:
@@ -222,6 +228,7 @@ async def update_tenant(
             plan_tier=body.plan_tier,
             automation_mode=body.automation_mode,
             settings=body.settings,
+            language=body.language,
             actor_user_id=current.user_id,
         )
     except TenantNotFoundError as exc:

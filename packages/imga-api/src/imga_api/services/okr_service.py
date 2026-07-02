@@ -47,7 +47,7 @@ from imga_core.llm import (
     LLMError,
 )
 from imga_core.llm.gemini import GeminiProvider
-from imga_db.models import StrategicReport
+from imga_db.models import StrategicReport, Tenant
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -62,6 +62,7 @@ from imga_api.services.llm_credentials import (
     mark_keys_failed,
 )
 from imga_api.services.strategic_constants import (
+    language_directive,
     company_size_label,
     industry_label,
 )
@@ -143,6 +144,11 @@ class OkrService:
             default_user_prompt=lambda: render_okr_user_prompt(_ctx),
         )
         user_prompt = selection.user_prompt
+        # Sprint 12 i18n — kurum dili 'en' ise İngilizce çıktı yönergesi.
+        _tenant = await self._session.get(Tenant, self._tenant_id)
+        system_prompt = selection.system_prompt + language_directive(
+            getattr(_tenant, "language", "tr")
+        )
 
         # 4. LLM call with rotation.
         failed_invalid_key_ids: list[UUID] = []
@@ -151,7 +157,7 @@ class OkrService:
             try:
                 return await self._provider.generate_okr(
                     api_key=api_key,
-                    system_prompt=selection.system_prompt,
+                    system_prompt=system_prompt,
                     user_prompt=user_prompt,
                     response_schema=OKR_RESPONSE_SCHEMA,
                 )

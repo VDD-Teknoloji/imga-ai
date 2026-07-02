@@ -97,6 +97,7 @@ class TenantSummary(BaseModel):
     name: str
     slug: str
     role: str
+    language: str = "tr"
 
 
 class UserSummary(BaseModel):
@@ -111,6 +112,8 @@ class ActiveContext(BaseModel):
     tenant_name: str | None
     tenant_slug: str | None
     role: str | None
+    # Aktif kurumun arayüz + AI çıktı dili — frontend locale'i bununla ayarlar.
+    language: str = "tr"
 
 
 class MeResponse(BaseModel):
@@ -482,6 +485,7 @@ async def me(
             tenant_name=str(active_tenant_summary["name"]) if active_tenant_summary else None,
             tenant_slug=str(active_tenant_summary["slug"]) if active_tenant_summary else None,
             role=current.active_role,
+            language=str(active_tenant_summary["language"]) if active_tenant_summary else "tr",
         ),
         available_tenants=[
             TenantSummary(
@@ -489,6 +493,7 @@ async def me(
                 name=str(t["name"]),
                 slug=str(t["slug"]),
                 role=str(t["role"]),
+                language=str(t.get("language", "tr")),
             )
             for t in tenants
         ],

@@ -76,6 +76,7 @@ from imga_api.services.stats_aggregator import (
     StrategicStatsSnapshot,
 )
 from imga_api.services.strategic_constants import (
+    language_directive,
     company_size_label,
     industry_label,
 )
@@ -179,6 +180,9 @@ class SwotService:
             default_user_prompt=lambda: render_swot_user_prompt(_ctx),
         )
         user_prompt = selection.user_prompt
+        # Sprint 12 i18n — kurum dili 'en' ise İngilizce çıktı yönergesini ekle
+        # (DB-override promptlar dahil, dil-üstü katman).
+        system_prompt = selection.system_prompt + language_directive(stats.language)
 
         # 6. LLM call with rotation. ``failed_key_ids`` accumulates the
         # ids of any InvalidKey-flagged keys; we mark them
@@ -191,7 +195,7 @@ class SwotService:
             try:
                 return await self._provider.generate_swot(
                     api_key=api_key,
-                    system_prompt=selection.system_prompt,
+                    system_prompt=system_prompt,
                     user_prompt=user_prompt,
                     response_schema=SWOT_RESPONSE_SCHEMA,
                 )

@@ -64,6 +64,14 @@ class Tenant(Base, TimestampMixin, SoftDeleteMixin):
         nullable=False,
     )
 
+    # --- Sprint 12 — tenant arayüz + AI çıktı dili --------------------
+    # Kurum oluşturulurken seçilir; tenant değişince UI + AI çıktı dili
+    # buna göre değişir. 'tr' | 'en'. Varsayılan 'tr' (mevcut kurumlar
+    # migration 0035 ile 'tr' backfill edilir). CHECK constraint DB'de.
+    language: Mapped[str] = mapped_column(
+        String(5), default="tr", server_default="tr", nullable=False
+    )
+
     # Free-form misc settings (notification prefs, branding, etc).
     settings: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict, nullable=False)
 

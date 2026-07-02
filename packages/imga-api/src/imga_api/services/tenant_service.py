@@ -52,6 +52,7 @@ class TenantService:
         slug: str,
         plan_tier: TenantPlanTier = TenantPlanTier.TRIAL,
         automation_mode: AutomationMode = AutomationMode.SEMI_AUTO,
+        language: str = "tr",
         actor_user_id: UUID | None = None,
     ) -> Tenant:
         tenant = Tenant(
@@ -59,6 +60,7 @@ class TenantService:
             slug=slug,
             plan_tier=plan_tier,
             automation_mode=automation_mode,
+            language=language if language in ("tr", "en") else "tr",
         )
         self._session.add(tenant)
         try:
@@ -142,6 +144,7 @@ class TenantService:
         plan_tier: TenantPlanTier | None = None,
         settings: dict[str, Any] | None = None,
         automation_mode: AutomationMode | None = None,
+        language: str | None = None,
         actor_user_id: UUID | None = None,
     ) -> Tenant:
         """Patch any subset of tenant metadata. ``slug`` is intentionally
@@ -164,6 +167,9 @@ class TenantService:
         if automation_mode is not None:
             tenant.automation_mode = automation_mode
             changes["automation_mode"] = str(automation_mode)
+        if language is not None and language in ("tr", "en") and language != tenant.language:
+            tenant.language = language
+            changes["language"] = language
 
         if changes:
             await self._audit.log(

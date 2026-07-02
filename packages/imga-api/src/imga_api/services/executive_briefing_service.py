@@ -44,6 +44,7 @@ from imga_api.services.llm_credentials import (
     mark_keys_failed,
 )
 from imga_api.services.strategic_constants import (
+    language_directive,
     company_size_label,
     industry_label,
 )
@@ -231,13 +232,17 @@ class ExecutiveBriefingService:
             ),
         )
         user_prompt = selection.user_prompt
+        # Sprint 12 i18n — kurum dili 'en' ise İngilizce çıktı yönergesi.
+        system_prompt = selection.system_prompt + language_directive(
+            getattr(tenant, "language", "tr")
+        )
         failed_invalid_key_ids: list[UUID] = []
 
         async def _call(api_key: str) -> tuple[dict[str, Any], dict[str, int] | None]:
             try:
                 return await self._provider.generate_executive_briefing(
                     api_key=api_key,
-                    system_prompt=selection.system_prompt,
+                    system_prompt=system_prompt,
                     user_prompt=user_prompt,
                     response_schema=EXECUTIVE_BRIEFING_RESPONSE_SCHEMA,
                 )
