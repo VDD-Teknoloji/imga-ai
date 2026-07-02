@@ -68,6 +68,7 @@ import {
   useUpdateTaxonomy,
 } from "@/hooks/use-taxonomies";
 import { ApiError } from "@/lib/api-client";
+import { useTranslation } from "@/lib/i18n/use-translation";
 import type { TaxonomyEntry } from "@/lib/types";
 
 const KEYWORD_PREVIEW_LIMIT = 5;
@@ -82,13 +83,16 @@ export default function TaxonomiesPage() {
 }
 
 function HeaderSkeleton() {
+  const { t } = useTranslation();
   return (
     <main className="mx-auto w-full max-w-4xl space-y-6 p-6 md:p-8">
       <header className="flex items-center gap-2">
         <Tags className="text-primary size-6" aria-hidden />
         <div>
-          <h1 className="text-2xl font-semibold">Şikayet Kategorileri</h1>
-          <p className="text-muted-foreground text-sm">Yükleniyor…</p>
+          <h1 className="text-2xl font-semibold">
+            {t("settings.taxonomies.title")}
+          </h1>
+          <p className="text-muted-foreground text-sm">{t("common.loading")}</p>
         </div>
       </header>
     </main>
@@ -99,6 +103,7 @@ function TaxonomiesContent() {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
+  const { t } = useTranslation();
 
   // URL-state Path B mirror: useSearchParams stops notifying inside
   // Suspense after first hydration; controlled primitives need a
@@ -155,17 +160,15 @@ function TaxonomiesContent() {
           <Tags className="text-primary mt-1 size-6" aria-hidden />
           <div>
             <h1 className="text-2xl font-semibold tracking-tight md:text-3xl">
-              Şikayet Kategorileri
+              {t("settings.taxonomies.title")}
             </h1>
             <p className="text-muted-foreground text-sm">
-              Tenant&apos;a özgü şirket-perspektifi taksonomisi. Sistem
-              kategorileri kalıcıdır; etiket ve anahtar kelimeleri
-              düzenlenebilir, ama silmek yerine devre dışı bırakılır.
+              {t("settings.taxonomies.subtitle")}
             </p>
           </div>
         </div>
         <Button onClick={() => setCreateOpen(true)} className="gap-2">
-          <Plus className="size-4" aria-hidden /> Kategori ekle
+          <Plus className="size-4" aria-hidden /> {t("settings.taxonomies.addCategory")}
         </Button>
       </header>
 
@@ -176,7 +179,7 @@ function TaxonomiesContent() {
             setSearchState(e.target.value);
             pushParam({ search: e.target.value || null });
           }}
-          placeholder="Etiket veya kod ara…"
+          placeholder={t("settings.taxonomies.searchPlaceholder")}
           className="h-8 max-w-xs"
         />
         <label className="flex items-center gap-2 text-sm">
@@ -191,25 +194,27 @@ function TaxonomiesContent() {
             }}
             className="size-4"
           />
-          Devre dışı kategorileri göster
+          {t("settings.taxonomies.showInactive")}
         </label>
         <span className="text-muted-foreground ml-auto text-xs">
-          {filtered.length} kayıt
+          {t("settings.taxonomies.recordCount", { n: filtered.length })}
         </span>
       </div>
 
       {list.isLoading ? (
         <div className="flex items-center gap-2 p-6 text-sm">
-          <Loader2 className="size-4 animate-spin" /> Yükleniyor…
+          <Loader2 className="size-4 animate-spin" /> {t("common.loading")}
         </div>
       ) : list.isError ? (
         <p className="text-destructive p-6 text-sm">
-          Taksonomi yüklenemedi.
+          {t("settings.taxonomies.loadError")}
         </p>
       ) : filtered.length === 0 ? (
         <div className="bg-card rounded-lg border border-dashed p-8 text-center">
           <p className="text-muted-foreground text-sm">
-            {search.trim() ? "Eşleşen kategori yok." : "Kategori yok."}
+            {search.trim()
+              ? t("settings.taxonomies.noMatch")
+              : t("settings.taxonomies.empty")}
           </p>
         </div>
       ) : (
@@ -254,6 +259,7 @@ function TaxonomyList({
   onEdit: (entry: TaxonomyEntry) => void;
 }) {
   const reorder = useReorderTaxonomies();
+  const { t } = useTranslation();
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
     useSensor(KeyboardSensor, {
@@ -274,7 +280,7 @@ function TaxonomyList({
     reorder.mutate(
       { ordered_ids: next.map((t) => t.id) },
       {
-        onError: () => toast.error("Sıralama kaydedilemedi."),
+        onError: () => toast.error(t("settings.common.reorderFailed")),
       },
     );
   }
@@ -313,6 +319,7 @@ function SortableRow({
   dragDisabled: boolean;
   onEdit: () => void;
 }) {
+  const { t } = useTranslation();
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
     useSortable({ id: entry.id, disabled: dragDisabled });
   const style: React.CSSProperties = {
@@ -334,7 +341,7 @@ function SortableRow({
         {...listeners}
         disabled={dragDisabled}
         className="text-muted-foreground hover:text-foreground mt-1 cursor-grab disabled:cursor-not-allowed disabled:opacity-30"
-        aria-label="Sıralama tutamağı"
+        aria-label={t("settings.common.dragHandle")}
       >
         <GripVertical className="size-5" aria-hidden />
       </button>
@@ -352,6 +359,7 @@ function TaxonomyRow({
 }) {
   const del = useDeleteTaxonomy();
   const restore = useRestoreTaxonomy();
+  const { t } = useTranslation();
   return (
     <div className="flex flex-1 flex-col gap-2">
       <div className="flex flex-wrap items-center gap-2">
@@ -368,7 +376,8 @@ function TaxonomyRow({
             variant="outline"
             className="border-blue-300 bg-blue-50 text-xs text-blue-800"
           >
-            <ShieldCheck className="mr-1 size-3" aria-hidden /> Sistem
+            <ShieldCheck className="mr-1 size-3" aria-hidden />{" "}
+            {t("settings.taxonomies.system")}
           </Badge>
         )}
         {!entry.is_active && (
@@ -376,12 +385,13 @@ function TaxonomyRow({
             variant="outline"
             className="border-zinc-300 bg-zinc-50 text-xs text-zinc-700"
           >
-            Devre dışı
+            {t("settings.common.disabled")}
           </Badge>
         )}
         {entry.parent_code && (
           <span className="text-muted-foreground text-xs">
-            ↳ üst: <code>{entry.parent_code}</code>
+            ↳ {t("settings.taxonomies.parentLabel")}{" "}
+            <code>{entry.parent_code}</code>
           </span>
         )}
       </div>
@@ -397,14 +407,16 @@ function TaxonomyRow({
           ))}
           {entry.keywords.length > KEYWORD_PREVIEW_LIMIT && (
             <span className="text-muted-foreground text-xs">
-              +{entry.keywords.length - KEYWORD_PREVIEW_LIMIT} daha…
+              {t("settings.taxonomies.moreKeywords", {
+                n: entry.keywords.length - KEYWORD_PREVIEW_LIMIT,
+              })}
             </span>
           )}
         </div>
       )}
       <div className="flex flex-wrap items-center gap-2 text-xs">
         <Button variant="ghost" size="sm" onClick={onEdit}>
-          Düzenle
+          {t("settings.common.edit")}
         </Button>
         {entry.is_active ? (
           <Button
@@ -413,13 +425,15 @@ function TaxonomyRow({
             disabled={del.isPending}
             onClick={() =>
               del.mutate(entry.id, {
-                onSuccess: () => toast.success("Kategori devre dışı bırakıldı."),
-                onError: () => toast.error("İşlem başarısız."),
+                onSuccess: () =>
+                  toast.success(t("settings.taxonomies.deactivated")),
+                onError: () => toast.error(t("settings.common.actionFailed")),
               })
             }
             className="gap-1 text-red-700 hover:text-red-900"
           >
-            <Trash2 className="size-3.5" aria-hidden /> Devre dışı bırak
+            <Trash2 className="size-3.5" aria-hidden />{" "}
+            {t("settings.taxonomies.deactivate")}
           </Button>
         ) : (
           <Button
@@ -428,13 +442,16 @@ function TaxonomyRow({
             disabled={restore.isPending}
             onClick={() =>
               restore.mutate(entry.id, {
-                onSuccess: () => toast.success("Kategori geri yüklendi."),
-                onError: () => toast.error("Geri yükleme başarısız."),
+                onSuccess: () =>
+                  toast.success(t("settings.taxonomies.restored")),
+                onError: () =>
+                  toast.error(t("settings.taxonomies.restoreFailed")),
               })
             }
             className="gap-1 text-emerald-700 hover:text-emerald-900"
           >
-            <RotateCcw className="size-3.5" aria-hidden /> Geri yükle
+            <RotateCcw className="size-3.5" aria-hidden />{" "}
+            {t("settings.taxonomies.restore")}
           </Button>
         )}
       </div>
@@ -454,6 +471,7 @@ function CreateModal({
   existing: TaxonomyEntry[];
 }) {
   const create = useCreateTaxonomy();
+  const { t } = useTranslation();
   const [code, setCode] = useState("");
   const [label, setLabel] = useState("");
   const [keywords, setKeywords] = useState<string[]>([]);
@@ -493,7 +511,7 @@ function CreateModal({
       },
       {
         onSuccess: () => {
-          toast.success("Kategori eklendi.");
+          toast.success(t("settings.taxonomies.added"));
           onClose();
         },
         onError: (err) => {
@@ -501,7 +519,7 @@ function CreateModal({
             toast.error(err.detail);
             return;
           }
-          toast.error("Kategori eklenemedi.");
+          toast.error(t("settings.taxonomies.addFailed"));
         },
       },
     );
@@ -511,15 +529,15 @@ function CreateModal({
     <Dialog open={open} onOpenChange={(v) => (v ? null : onClose())}>
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>Yeni Kategori</DialogTitle>
+          <DialogTitle>{t("settings.taxonomies.createTitle")}</DialogTitle>
           <DialogDescription>
-            Kod snake_case (a-z, 0-9, alt çizgi); etiket Türkçe.
+            {t("settings.taxonomies.createDesc")}
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4">
           <div className="space-y-2">
-            <Label htmlFor="new-code">Kod</Label>
+            <Label htmlFor="new-code">{t("settings.taxonomies.code")}</Label>
             <Input
               id="new-code"
               value={code}
@@ -530,40 +548,42 @@ function CreateModal({
             />
             {!codeValid && (
               <p className="text-destructive text-xs">
-                Kod snake_case olmalı (lowercase + rakam + alt çizgi).
+                {t("settings.taxonomies.codeInvalid")}
               </p>
             )}
             {!codeUnique && (
               <p className="text-destructive text-xs">
-                Bu kod zaten kullanılıyor.
+                {t("settings.taxonomies.codeInUse")}
               </p>
             )}
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="new-label">Etiket</Label>
+            <Label htmlFor="new-label">{t("settings.taxonomies.label")}</Label>
             <Input
               id="new-label"
               value={label}
               onChange={(e) => setLabel(e.target.value)}
               maxLength={128}
-              placeholder="Örn. Beklenmeyen Konu"
+              placeholder={t("settings.taxonomies.labelPlaceholder")}
             />
           </div>
 
           <KeywordsEditor value={keywords} onChange={setKeywords} />
 
           <div className="space-y-2">
-            <Label htmlFor="new-parent">Üst kategori (opsiyonel)</Label>
+            <Label htmlFor="new-parent">
+              {t("settings.taxonomies.parentCategory")}
+            </Label>
             <Select
               value={parentCode || undefined}
               onValueChange={(v) => setParentCode(v ?? "")}
             >
               <SelectTrigger id="new-parent">
-                <SelectValue placeholder="(yok)" />
+                <SelectValue placeholder={t("settings.taxonomies.none")} />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="">(yok)</SelectItem>
+                <SelectItem value="">{t("settings.taxonomies.none")}</SelectItem>
                 {existing
                   .filter((t) => t.is_active && t.code !== code)
                   .map((t) => (
@@ -579,11 +599,11 @@ function CreateModal({
 
         <DialogFooter>
           <Button variant="outline" onClick={onClose} disabled={create.isPending}>
-            İptal
+            {t("common.cancel")}
           </Button>
           <Button onClick={onSubmit} disabled={!canSubmit} className="gap-2">
             {create.isPending && <Loader2 className="size-4 animate-spin" />}
-            Ekle
+            {t("settings.common.add")}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -603,6 +623,7 @@ function EditModal({
   existing: TaxonomyEntry[];
 }) {
   const update = useUpdateTaxonomy();
+  const { t } = useTranslation();
   const [label, setLabel] = useState(target.label_tr);
   const [keywords, setKeywords] = useState<string[]>(target.keywords);
   const [parentCode, setParentCode] = useState<string>(target.parent_code ?? "");
@@ -630,7 +651,7 @@ function EditModal({
       },
       {
         onSuccess: () => {
-          toast.success("Kategori güncellendi.");
+          toast.success(t("settings.taxonomies.updated"));
           onClose();
         },
         onError: (err) => {
@@ -638,7 +659,7 @@ function EditModal({
             toast.error(err.detail);
             return;
           }
-          toast.error("Güncelleme başarısız.");
+          toast.error(t("settings.common.updateFailed"));
         },
       },
     );
@@ -652,14 +673,16 @@ function EditModal({
           <DialogDescription>
             <code>{target.code}</code>
             {target.is_default_seed && (
-              <span className="ml-2 text-blue-700">(Sistem kategorisi)</span>
+              <span className="ml-2 text-blue-700">
+                {t("settings.taxonomies.systemCategory")}
+              </span>
             )}
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4">
           <div className="space-y-2">
-            <Label htmlFor="edit-label">Etiket</Label>
+            <Label htmlFor="edit-label">{t("settings.taxonomies.label")}</Label>
             <Input
               id="edit-label"
               value={label}
@@ -671,16 +694,18 @@ function EditModal({
           <KeywordsEditor value={keywords} onChange={setKeywords} />
 
           <div className="space-y-2">
-            <Label htmlFor="edit-parent">Üst kategori (opsiyonel)</Label>
+            <Label htmlFor="edit-parent">
+              {t("settings.taxonomies.parentCategory")}
+            </Label>
             <Select
               value={parentCode || undefined}
               onValueChange={(v) => setParentCode(v ?? "")}
             >
               <SelectTrigger id="edit-parent">
-                <SelectValue placeholder="(yok)" />
+                <SelectValue placeholder={t("settings.taxonomies.none")} />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="">(yok)</SelectItem>
+                <SelectItem value="">{t("settings.taxonomies.none")}</SelectItem>
                 {existing
                   .filter(
                     (t) =>
@@ -701,11 +726,11 @@ function EditModal({
 
         <DialogFooter>
           <Button variant="outline" onClick={onClose} disabled={update.isPending}>
-            İptal
+            {t("common.cancel")}
           </Button>
           <Button onClick={onSubmit} disabled={!canSubmit} className="gap-2">
             {update.isPending && <Loader2 className="size-4 animate-spin" />}
-            Kaydet
+            {t("common.save")}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -722,18 +747,19 @@ function KeywordsEditor({
   value: string[];
   onChange: (next: string[]) => void;
 }) {
+  const { t } = useTranslation();
   const [draft, setDraft] = useState("");
 
   function addOne(raw: string) {
     const cleaned = raw.trim().toLowerCase();
     if (!cleaned) return;
     if (cleaned.length > 64) {
-      toast.error("Anahtar kelime 64 karakteri aşamaz.");
+      toast.error(t("settings.taxonomies.keywordTooLong"));
       return;
     }
     if (value.includes(cleaned)) return;
     if (value.length >= 50) {
-      toast.error("En fazla 50 anahtar kelime.");
+      toast.error(t("settings.taxonomies.keywordMax"));
       return;
     }
     onChange([...value, cleaned]);
@@ -760,7 +786,7 @@ function KeywordsEditor({
 
   return (
     <div className="space-y-2">
-      <Label>Anahtar kelimeler</Label>
+      <Label>{t("settings.taxonomies.keywords")}</Label>
       <div className="flex flex-wrap items-start gap-2 rounded-md border p-2">
         {value.map((kw) => (
           <span
@@ -772,7 +798,7 @@ function KeywordsEditor({
               type="button"
               onClick={() => onChange(value.filter((x) => x !== kw))}
               className="text-muted-foreground hover:text-destructive"
-              aria-label={`${kw} sil`}
+              aria-label={t("settings.taxonomies.keywordDeleteAria", { kw })}
             >
               <X className="size-3" />
             </button>
@@ -807,12 +833,16 @@ function KeywordsEditor({
               setDraft("");
             }
           }}
-          placeholder={value.length === 0 ? "kelime, virgülle ayır…" : ""}
+          placeholder={
+            value.length === 0
+              ? t("settings.taxonomies.keywordPlaceholder")
+              : ""
+          }
           className="min-w-[120px] flex-1 bg-transparent text-xs outline-none"
         />
       </div>
       <p className="text-muted-foreground text-xs">
-        Enter veya virgülle ekle; otomatik küçük harfe çevrilir. {value.length}/50
+        {t("settings.taxonomies.keywordHelp", { n: value.length })}
       </p>
     </div>
   );

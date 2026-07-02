@@ -9,23 +9,21 @@ import { Suspense, useCallback, useEffect, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
 import { Badge } from "@/components/ui/badge";
-import {
-  type DecisionAuditRow,
-  useDecisionAuditList,
-} from "@/hooks/use-decision-audit";
+import { type DecisionAuditRow, useDecisionAuditList } from "@/hooks/use-decision-audit";
+import { useTranslation } from "@/lib/i18n/use-translation";
 
-const DECISION_LABELS: Record<string, string> = {
-  briefing_acknowledged: "Yönetici özeti onaylandı",
-  briefing_dismissed: "Yönetici özeti reddedildi",
-  strategic_report_approved: "Stratejik rapor onaylandı",
-  strategic_report_rejected: "Stratejik rapor reddedildi",
-  action_item_assigned: "Aksiyon atandı",
-  action_item_priority_changed: "Aksiyon önceliği değişti",
-  sla_rule_changed: "SLA kuralı değişti",
-  kpi_goal_set: "KPI hedefi konuldu",
-  webhook_dispatched_manually: "Bildirim manuel gönderildi",
-  tenant_setting_changed: "Kurum ayarı değişti",
-  prompt_template_overridden: "İstem şablonu özelleştirildi",
+const DECISION_LABEL_KEYS: Record<string, string> = {
+  briefing_acknowledged: "admin.decisionAudit.type.briefingAcknowledged",
+  briefing_dismissed: "admin.decisionAudit.type.briefingDismissed",
+  strategic_report_approved: "admin.decisionAudit.type.strategicReportApproved",
+  strategic_report_rejected: "admin.decisionAudit.type.strategicReportRejected",
+  action_item_assigned: "admin.decisionAudit.type.actionItemAssigned",
+  action_item_priority_changed: "admin.decisionAudit.type.actionItemPriorityChanged",
+  sla_rule_changed: "admin.decisionAudit.type.slaRuleChanged",
+  kpi_goal_set: "admin.decisionAudit.type.kpiGoalSet",
+  webhook_dispatched_manually: "admin.decisionAudit.type.webhookDispatchedManually",
+  tenant_setting_changed: "admin.decisionAudit.type.tenantSettingChanged",
+  prompt_template_overridden: "admin.decisionAudit.type.promptTemplateOverridden",
 };
 
 export default function DecisionAuditPage() {
@@ -37,14 +35,16 @@ export default function DecisionAuditPage() {
 }
 
 function PageSkeleton() {
+  const { t } = useTranslation();
   return (
     <main className="mx-auto w-full max-w-5xl space-y-6 px-4 py-6 md:p-8">
-      <p className="text-muted-foreground text-sm">Yükleniyor…</p>
+      <p className="text-muted-foreground text-sm">{t("common.loading")}</p>
     </main>
   );
 }
 
 function DecisionAuditPageInner() {
+  const { t } = useTranslation();
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -88,12 +88,9 @@ function DecisionAuditPageInner() {
         <History className="text-primary mt-1 size-6" aria-hidden />
         <div>
           <h1 className="text-2xl font-semibold tracking-tight md:text-3xl">
-            Karar Geçmişi
+            {t("admin.decisionAudit.title")}
           </h1>
-          <p className="text-muted-foreground text-sm">
-            Yöneticilerin onay / red / atama / hedef gibi kararları
-            zaman damgalı kayıt.
-          </p>
+          <p className="text-muted-foreground text-sm">{t("admin.decisionAudit.subtitle")}</p>
         </div>
       </header>
 
@@ -103,27 +100,27 @@ function DecisionAuditPageInner() {
           onChange={(e) => updateFilter(e.target.value)}
           className="border-input bg-background rounded-md border px-2 py-1 text-sm"
         >
-          <option value="">Tüm karar tipleri</option>
-          {Object.entries(DECISION_LABELS).map(([k, v]) => (
+          <option value="">{t("admin.decisionAudit.allTypes")}</option>
+          {Object.entries(DECISION_LABEL_KEYS).map(([k, keyName]) => (
             <option key={k} value={k}>
-              {v}
+              {t(keyName)}
             </option>
           ))}
         </select>
         <span className="text-muted-foreground ml-auto text-xs">
-          {list.data?.total ?? 0} kayıt
+          {t("admin.common.recordCount", { n: list.data?.total ?? 0 })}
         </span>
       </div>
 
       {list.isLoading ? (
         <div className="flex items-center gap-2 p-6 text-sm">
-          <Loader2 className="size-4 animate-spin" /> Yükleniyor…
+          <Loader2 className="size-4 animate-spin" /> {t("common.loading")}
         </div>
       ) : list.isError ? (
-        <p className="text-destructive text-sm">Liste alınamadı.</p>
+        <p className="text-destructive text-sm">{t("admin.common.listError")}</p>
       ) : !list.data || list.data.items.length === 0 ? (
         <p className="text-muted-foreground p-6 text-center text-sm">
-          Kayıt yok.
+          {t("admin.common.noRecords")}
         </p>
       ) : (
         <ol className="space-y-2">
@@ -137,8 +134,10 @@ function DecisionAuditPageInner() {
 }
 
 function DecisionRow({ row }: { row: DecisionAuditRow }) {
+  const { t } = useTranslation();
   const [expanded, setExpanded] = useState(false);
-  const label = DECISION_LABELS[row.decision_type] ?? row.decision_type;
+  const labelKey = DECISION_LABEL_KEYS[row.decision_type];
+  const label = labelKey ? t(labelKey) : row.decision_type;
   return (
     <li className="bg-card rounded-lg border p-3">
       <button
@@ -163,7 +162,7 @@ function DecisionRow({ row }: { row: DecisionAuditRow }) {
         <div className="mt-3 space-y-2 border-t pt-3 text-xs">
           {row.rationale && (
             <p className="bg-muted rounded p-2">
-              <strong>Gerekçe:</strong> {row.rationale}
+              <strong>{t("admin.decisionAudit.rationale")}</strong> {row.rationale}
             </p>
           )}
           {Object.keys(row.payload).length > 0 && (
@@ -171,11 +170,7 @@ function DecisionRow({ row }: { row: DecisionAuditRow }) {
               {JSON.stringify(row.payload, null, 2)}
             </pre>
           )}
-          {row.request_id && (
-            <p className="text-muted-foreground">
-              req={row.request_id}
-            </p>
-          )}
+          {row.request_id && <p className="text-muted-foreground">req={row.request_id}</p>}
         </div>
       )}
     </li>

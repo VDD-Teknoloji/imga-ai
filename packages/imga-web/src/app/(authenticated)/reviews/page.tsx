@@ -28,22 +28,23 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { useInfiniteReviews } from "@/hooks/use-reviews";
 import { useCompanyTaxonomies } from "@/hooks/use-taxonomies";
+import { useTranslation } from "@/lib/i18n/use-translation";
 import type {
   ReviewListFilters,
   ReviewListItem,
   ReviewSourceType,
 } from "@/lib/types";
 
-const SOURCE_LABELS: Record<ReviewSourceType, string> = {
-  manual: "Manuel",
-  batch: "Toplu",
-  api: "API",
+const SOURCE_LABEL_KEYS: Record<ReviewSourceType, string> = {
+  manual: "reviews.source.manual",
+  batch: "reviews.source.batch",
+  api: "reviews.source.api",
 };
 
-const SENTIMENT_TR: Record<string, string> = {
-  NEGATIF: "Olumsuz",
-  POZITIF: "Olumlu",
-  "NÖTR": "Nötr",
+const SENTIMENT_LABEL_KEYS: Record<string, string> = {
+  NEGATIF: "reviews.sentiment.negatif",
+  POZITIF: "reviews.sentiment.pozitif",
+  "NÖTR": "reviews.sentiment.notr",
 };
 
 const SENTIMENT_ACCENT: Record<string, string> = {
@@ -85,13 +86,14 @@ export default function ReviewsPage() {
 }
 
 function ReviewsPageSkeleton() {
+  const { t } = useTranslation();
   return (
     <main className="mx-auto w-full max-w-5xl space-y-6 px-4 py-6 md:px-8 md:py-10">
       <header className="space-y-2">
         <h1 className="text-2xl font-semibold tracking-tight md:text-3xl">
-          Analiz Arşivi
+          {t("reviews.list.title")}
         </h1>
-        <p className="text-muted-foreground text-sm">Yükleniyor…</p>
+        <p className="text-muted-foreground text-sm">{t("common.loading")}</p>
       </header>
     </main>
   );
@@ -165,6 +167,7 @@ function filtersEq(a: ReviewListFilters, b: ReviewListFilters): boolean {
 }
 
 function ReviewsPageInner() {
+  const { t } = useTranslation();
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -233,15 +236,17 @@ function ReviewsPageInner() {
     <main className="mx-auto w-full max-w-5xl space-y-6 px-4 py-6 md:px-8 md:py-10">
       <header className="space-y-1.5">
         <h1 className="text-2xl font-semibold tracking-tight md:text-3xl">
-          Analiz Arşivi
+          {t("reviews.list.title")}
         </h1>
         <p className="text-muted-foreground text-sm">
           {filters.batch_job_id
-            ? "Belirli bir yüklemenin analizleri gösteriliyor."
-            : "Tüm analizler — manuel ve toplu giriş bir arada."}{" "}
+            ? t("reviews.list.subtitleBatch")
+            : t("reviews.list.subtitleAll")}{" "}
           {total > 0 && (
             <span className="text-foreground/70 font-medium tabular-nums">
-              {total.toLocaleString("tr-TR")} kayıt
+              {t("reviews.list.recordCount", {
+                count: total.toLocaleString("tr-TR"),
+              })}
             </span>
           )}
         </p>
@@ -269,13 +274,13 @@ function ReviewsPageInner() {
 
       {reviews.isLoading ? (
         <div className="text-muted-foreground flex items-center gap-2 p-6 text-sm">
-          <Loader2 className="size-4 animate-spin" /> Yükleniyor…
+          <Loader2 className="size-4 animate-spin" /> {t("common.loading")}
         </div>
       ) : items.length === 0 ? (
         <div className="bg-card ring-foreground/5 rounded-3xl p-10 text-center ring-1">
-          <p className="text-base font-medium">Bu filtrelerle eşleşen analiz yok</p>
+          <p className="text-base font-medium">{t("reviews.list.emptyTitle")}</p>
           <p className="text-muted-foreground mt-1 text-sm">
-            Filtreleri temizleyin ya da yeni bir dosya yükleyin.
+            {t("reviews.list.emptyHint")}
           </p>
         </div>
       ) : (
@@ -295,7 +300,9 @@ function ReviewsPageInner() {
             onClick={() => reviews.fetchNextPage()}
             disabled={reviews.isFetchingNextPage}
           >
-            {reviews.isFetchingNextPage ? "Yükleniyor…" : "Daha fazla göster"}
+            {reviews.isFetchingNextPage
+              ? t("common.loading")
+              : t("reviews.list.loadMore")}
           </Button>
         </div>
       )}
@@ -306,9 +313,10 @@ function ReviewsPageInner() {
 /** Tek analiz satırı — okunur, sakin kart. Metin önde; duygu sol
  *  renk şeridinde; kategori/tarih/kaynak ikincil. Tıklama → detay. */
 function ReviewRow({ review: r }: { review: ReviewListItem }) {
+  const { t } = useTranslation();
   const perspective =
     r.company_perspective_label_tr ??
-    (r.company_perspective_code ? "kaldırılmış" : null);
+    (r.company_perspective_code ? t("reviews.review.removed") : null);
   return (
     <Link
       href={`/reviews/${r.id}`}
@@ -322,19 +330,25 @@ function ReviewRow({ review: r }: { review: ReviewListItem }) {
           <span
             className={`inline-flex items-center rounded-full px-2 py-0.5 font-semibold ${SENTIMENT_CHIP[r.sentiment_label] ?? ""}`}
           >
-            {SENTIMENT_TR[r.sentiment_label] ?? r.sentiment_label}
+            {SENTIMENT_LABEL_KEYS[r.sentiment_label]
+              ? t(SENTIMENT_LABEL_KEYS[r.sentiment_label]!)
+              : r.sentiment_label}
           </span>
           <span className="font-medium">{r.primary_category}</span>
           {perspective && <span>{perspective}</span>}
           <span className="tabular-nums">
             {DATE_FORMATTER.format(new Date(r.analyzed_at))}
           </span>
-          <span>{SOURCE_LABELS[r.source_type]}</span>
+          <span>{t(SOURCE_LABEL_KEYS[r.source_type])}</span>
           {r.ticket_id && (
-            <span className="text-primary font-medium">Ticket var</span>
+            <span className="text-primary font-medium">
+              {t("reviews.review.hasTicket")}
+            </span>
           )}
           {r.override_count > 0 && (
-            <span className="text-amber-700 dark:text-amber-400">düzeltildi</span>
+            <span className="text-amber-700 dark:text-amber-400">
+              {t("reviews.review.corrected")}
+            </span>
           )}
         </div>
       </div>
@@ -348,62 +362,82 @@ function ReviewRow({ review: r }: { review: ReviewListItem }) {
 
 // Sprint 9.5.1 B1.1 — labels for heatmap drilldown time-bucket pills.
 // Postgres DOW convention: 0=Sunday ... 6=Saturday.
-const DOW_LABELS_TR: Record<number, string> = {
-  0: "Pazar",
-  1: "Pazartesi",
-  2: "Salı",
-  3: "Çarşamba",
-  4: "Perşembe",
-  5: "Cuma",
-  6: "Cumartesi",
+const DOW_LABEL_KEYS: Record<number, string> = {
+  0: "reviews.dow.0",
+  1: "reviews.dow.1",
+  2: "reviews.dow.2",
+  3: "reviews.dow.3",
+  4: "reviews.dow.4",
+  5: "reviews.dow.5",
+  6: "reviews.dow.6",
 };
-const MONTH_LABELS_TR: Record<number, string> = {
-  1: "Ocak", 2: "Şubat", 3: "Mart", 4: "Nisan", 5: "Mayıs", 6: "Haziran",
-  7: "Temmuz", 8: "Ağustos", 9: "Eylül", 10: "Ekim", 11: "Kasım", 12: "Aralık",
+const MONTH_LABEL_KEYS: Record<number, string> = {
+  1: "reviews.month.1", 2: "reviews.month.2", 3: "reviews.month.3",
+  4: "reviews.month.4", 5: "reviews.month.5", 6: "reviews.month.6",
+  7: "reviews.month.7", 8: "reviews.month.8", 9: "reviews.month.9",
+  10: "reviews.month.10", 11: "reviews.month.11", 12: "reviews.month.12",
 };
 
 function FilterPills({ filters }: { filters: ReviewListFilters }) {
+  const { t } = useTranslation();
   const pills: { label: string; href: string }[] = [];
   if (filters.batch_job_id) {
     pills.push({
-      label: `Yükleme: ${filters.batch_job_id.slice(0, 8)}…`,
+      label: t("reviews.pill.upload", { id: filters.batch_job_id.slice(0, 8) }),
       href: "/reviews",
     });
   }
   if (filters.sentiment_labels?.length) {
     pills.push({
-      label: `Duygu: ${filters.sentiment_labels
-        .map((s) => SENTIMENT_TR[s] ?? s)
-        .join(", ")}`,
+      label: t("reviews.pill.sentiment", {
+        value: filters.sentiment_labels
+          .map((s) => (SENTIMENT_LABEL_KEYS[s] ? t(SENTIMENT_LABEL_KEYS[s]!) : s))
+          .join(", "),
+      }),
       href: "/reviews",
     });
   }
   if (filters.source_types?.length) {
     pills.push({
-      label: `Kaynak: ${filters.source_types
-        .map((t) => SOURCE_LABELS[t])
-        .join(", ")}`,
+      label: t("reviews.pill.source", {
+        value: filters.source_types
+          .map((s) => t(SOURCE_LABEL_KEYS[s]))
+          .join(", "),
+      }),
       href: "/reviews",
     });
   }
   if (filters.hour_of_day !== undefined) {
     pills.push({
-      label: `Saat: ${String(filters.hour_of_day).padStart(2, "0")}:00`,
+      label: t("reviews.pill.hour", {
+        value: String(filters.hour_of_day).padStart(2, "0"),
+      }),
       href: "/reviews",
     });
   }
   if (filters.day_of_week !== undefined) {
     pills.push({
-      label: `Gün: ${DOW_LABELS_TR[filters.day_of_week] ?? filters.day_of_week}`,
+      label: t("reviews.pill.day", {
+        value: DOW_LABEL_KEYS[filters.day_of_week]
+          ? t(DOW_LABEL_KEYS[filters.day_of_week]!)
+          : filters.day_of_week,
+      }),
       href: "/reviews",
     });
   }
   if (filters.week_of_year !== undefined) {
-    pills.push({ label: `Hafta: ${filters.week_of_year}`, href: "/reviews" });
+    pills.push({
+      label: t("reviews.pill.week", { value: filters.week_of_year }),
+      href: "/reviews",
+    });
   }
   if (filters.month !== undefined) {
     pills.push({
-      label: `Ay: ${MONTH_LABELS_TR[filters.month] ?? filters.month}`,
+      label: t("reviews.pill.month", {
+        value: MONTH_LABEL_KEYS[filters.month]
+          ? t(MONTH_LABEL_KEYS[filters.month]!)
+          : filters.month,
+      }),
       href: "/reviews",
     });
   }
@@ -434,6 +468,7 @@ function PerspectiveFilterDropdown({
   selected: string[];
   onApply: (next: string[]) => void;
 }) {
+  const { t } = useTranslation();
   const taxonomies = useCompanyTaxonomies();
 
   const toggle = useCallback(
@@ -449,8 +484,8 @@ function PerspectiveFilterDropdown({
   const items = taxonomies.data ?? [];
   const triggerLabel =
     selected.length === 0
-      ? "Şirket perspektifi"
-      : `Perspektif: ${selected.length} seçili`;
+      ? t("reviews.perspFilter.trigger")
+      : t("reviews.perspFilter.selected", { count: selected.length });
 
   return (
     <DropdownMenu>
@@ -472,25 +507,27 @@ function PerspectiveFilterDropdown({
           checked={selected.includes(UNMATCHED_SENTINEL)}
           onCheckedChange={() => toggle(UNMATCHED_SENTINEL)}
         >
-          <span className="text-muted-foreground italic">Eşleşme yok</span>
+          <span className="text-muted-foreground italic">
+            {t("reviews.perspFilter.unmatched")}
+          </span>
         </DropdownMenuCheckboxItem>
         <DropdownMenuSeparator />
         {taxonomies.isLoading ? (
           <div className="text-muted-foreground px-2 py-1.5 text-xs">
-            Yükleniyor…
+            {t("common.loading")}
           </div>
         ) : items.length === 0 ? (
           <div className="text-muted-foreground px-2 py-1.5 text-xs">
-            Taksonomi yok.
+            {t("reviews.perspFilter.noTaxonomy")}
           </div>
         ) : (
-          items.map((t) => (
+          items.map((tax) => (
             <DropdownMenuCheckboxItem
-              key={t.code}
-              checked={selected.includes(t.code)}
-              onCheckedChange={() => toggle(t.code)}
+              key={tax.code}
+              checked={selected.includes(tax.code)}
+              onCheckedChange={() => toggle(tax.code)}
             >
-              {t.label_tr}
+              {tax.label_tr}
             </DropdownMenuCheckboxItem>
           ))
         )}
@@ -501,7 +538,7 @@ function PerspectiveFilterDropdown({
               onClick={() => onApply([])}
               className="text-muted-foreground text-xs"
             >
-              Tümünü temizle
+              {t("reviews.perspFilter.clearAll")}
             </DropdownMenuItem>
           </>
         ) : null}

@@ -15,6 +15,7 @@ import { useRouter } from "next/navigation";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
+import { useTranslation } from "@/lib/i18n/use-translation";
 import { useInsightsHeatmap } from "@/hooks/use-insights-heatmap";
 import type {
   HeatmapMetric,
@@ -52,22 +53,22 @@ function _drilldownParam(
   }
 }
 
-const X_AXIS_LABELS: Record<HeatmapXAxis, string> = {
-  hour_of_day: "Günün Saati",
-  day_of_week: "Haftanın Günü",
-  week_of_year: "Yılın Haftası",
+const X_AXIS_LABEL_KEYS: Record<HeatmapXAxis, string> = {
+  hour_of_day: "insights.heatmap.xHourOfDay",
+  day_of_week: "insights.heatmap.dayOfWeek",
+  week_of_year: "insights.heatmap.weekOfYear",
 };
 
-const Y_AXIS_LABELS: Record<HeatmapYAxis, string> = {
-  day_of_week: "Haftanın Günü",
-  month: "Ay",
-  taxonomy_code: "Kategori",
+const Y_AXIS_LABEL_KEYS: Record<HeatmapYAxis, string> = {
+  day_of_week: "insights.heatmap.dayOfWeek",
+  month: "insights.heatmap.month",
+  taxonomy_code: "insights.heatmap.category",
 };
 
-const METRIC_LABELS: Record<HeatmapMetric, string> = {
-  count: "Yorum Sayısı",
-  avg_sentiment: "Ortalama Duygu",
-  avg_nps: "Ortalama NPS",
+const METRIC_LABEL_KEYS: Record<HeatmapMetric, string> = {
+  count: "insights.heatmap.metricCount",
+  avg_sentiment: "insights.heatmap.metricAvgSentiment",
+  avg_nps: "insights.heatmap.metricAvgNps",
 };
 
 interface Props {
@@ -91,6 +92,7 @@ export function HeatmapTab({
   onYAxisChange,
   onMetricChange,
 }: Props) {
+  const { t } = useTranslation();
   const router = useRouter();
   const sameAxisError =
     (xAxis as string) === (yAxis as string);
@@ -137,43 +139,43 @@ export function HeatmapTab({
       <Card>
         <CardContent className="grid grid-cols-1 gap-3 p-4 md:grid-cols-3">
           <div>
-            <Label className="text-xs">X ekseni</Label>
+            <Label className="text-xs">{t("insights.heatmap.xAxis")}</Label>
             <select
               value={xAxis}
               onChange={(e) => onXAxisChange(e.target.value as HeatmapXAxis)}
               className="border-input bg-background mt-1 w-full rounded-md border px-3 py-2 text-sm"
             >
-              {(Object.keys(X_AXIS_LABELS) as HeatmapXAxis[]).map((a) => (
+              {(Object.keys(X_AXIS_LABEL_KEYS) as HeatmapXAxis[]).map((a) => (
                 <option key={a} value={a}>
-                  {X_AXIS_LABELS[a]}
+                  {t(X_AXIS_LABEL_KEYS[a])}
                 </option>
               ))}
             </select>
           </div>
           <div>
-            <Label className="text-xs">Y ekseni</Label>
+            <Label className="text-xs">{t("insights.heatmap.yAxis")}</Label>
             <select
               value={yAxis}
               onChange={(e) => onYAxisChange(e.target.value as HeatmapYAxis)}
               className="border-input bg-background mt-1 w-full rounded-md border px-3 py-2 text-sm"
             >
-              {(Object.keys(Y_AXIS_LABELS) as HeatmapYAxis[]).map((a) => (
+              {(Object.keys(Y_AXIS_LABEL_KEYS) as HeatmapYAxis[]).map((a) => (
                 <option key={a} value={a}>
-                  {Y_AXIS_LABELS[a]}
+                  {t(Y_AXIS_LABEL_KEYS[a])}
                 </option>
               ))}
             </select>
           </div>
           <div>
-            <Label className="text-xs">Metrik</Label>
+            <Label className="text-xs">{t("insights.heatmap.metric")}</Label>
             <select
               value={metric}
               onChange={(e) => onMetricChange(e.target.value as HeatmapMetric)}
               className="border-input bg-background mt-1 w-full rounded-md border px-3 py-2 text-sm"
             >
-              {(Object.keys(METRIC_LABELS) as HeatmapMetric[]).map((m) => (
+              {(Object.keys(METRIC_LABEL_KEYS) as HeatmapMetric[]).map((m) => (
                 <option key={m} value={m}>
-                  {METRIC_LABELS[m]}
+                  {t(METRIC_LABEL_KEYS[m])}
                 </option>
               ))}
             </select>
@@ -183,28 +185,28 @@ export function HeatmapTab({
 
       {sameAxisError && (
         <p className="text-destructive text-sm">
-          X ve Y eksenleri farklı olmalı.
+          {t("insights.heatmap.sameAxisError")}
         </p>
       )}
 
       <Card>
         <CardHeader>
           <CardTitle className="text-base">
-            {query.data?.metric_label ?? METRIC_LABELS[metric]}
+            {query.data?.metric_label ?? t(METRIC_LABEL_KEYS[metric])}
           </CardTitle>
         </CardHeader>
         <CardContent>
           {sameAxisError ? null : query.isLoading || query.isPending ? (
             <p className="text-muted-foreground py-12 text-center text-sm">
-              Yükleniyor…
+              {t("common.loading")}
             </p>
           ) : query.isError ? (
             <p className="text-destructive py-12 text-center text-sm">
-              Veri yüklenemedi.
+              {t("insights.state.loadErrorShort")}
             </p>
           ) : !query.data || query.data.values.length === 0 ? (
             <p className="text-muted-foreground py-12 text-center text-sm">
-              Bu filtrelerle veri bulunamadı.
+              {t("insights.state.noData")}
             </p>
           ) : (
             <HeatmapGrid
@@ -231,6 +233,7 @@ interface GridProps {
 }
 
 function HeatmapGrid({ data, colorFor, maxCell, onCellClick }: GridProps) {
+  const { t } = useTranslation();
   const cellSize = 36;
   return (
     <div className="overflow-x-auto">
@@ -278,12 +281,14 @@ function HeatmapGrid({ data, colorFor, maxCell, onCellClick }: GridProps) {
           ettiğini metric label ile birleştirdik. */}
       <div className="mt-4 space-y-2">
         <div className="text-foreground/80 text-xs font-medium">
-          {data.metric_label} skalası
+          {t("insights.heatmap.metricScale", { metric: data.metric_label })}
         </div>
         <div className="flex items-center gap-3 text-xs">
           <span className="text-muted-foreground tabular-nums shrink-0 min-w-[3rem] text-right">
             {data.metric_min}
-            <span className="text-muted-foreground/60 ml-1">düşük</span>
+            <span className="text-muted-foreground/60 ml-1">
+              {t("insights.heatmap.low")}
+            </span>
           </span>
           <div className="h-4 flex-1 overflow-hidden rounded-md ring-1 ring-border">
             {Array.from({ length: 24 }).map((_, i) => (
@@ -298,13 +303,16 @@ function HeatmapGrid({ data, colorFor, maxCell, onCellClick }: GridProps) {
             ))}
           </div>
           <span className="text-muted-foreground tabular-nums shrink-0 min-w-[3rem]">
-            <span className="text-muted-foreground/60 mr-1">yüksek</span>
+            <span className="text-muted-foreground/60 mr-1">
+              {t("insights.heatmap.high")}
+            </span>
             {data.metric_max}
           </span>
         </div>
         <p className="text-muted-foreground text-[11px]">
-          Her hücre o saat × gün kesişimindeki <strong>{data.metric_label.toLocaleLowerCase("tr-TR")}</strong> değerini gösterir.
-          Renk koyulaştıkça değer yükselir. Boş hücre = veri yok.
+          {t("insights.heatmap.legendNotePre")}
+          <strong>{data.metric_label.toLocaleLowerCase("tr-TR")}</strong>
+          {t("insights.heatmap.legendNotePost")}
         </p>
       </div>
     </div>
@@ -332,6 +340,7 @@ function Row({
   cellSize: number;
   onCellClick: (colIdx: number) => void;
 }) {
+  const { t } = useTranslation();
   return (
     <>
       <div
@@ -369,13 +378,27 @@ function Row({
             }}
             title={
               isEmpty
-                ? `${yLabel} × ${xLabels[colIdx]} — veri yok`
-                : `${yLabel} × ${xLabels[colIdx]}: ${value} (${metricLabel}) — yorumları gör`
+                ? t("insights.heatmap.cellEmptyTitle", {
+                    y: yLabel,
+                    x: xLabels[colIdx] ?? "",
+                  })
+                : t("insights.heatmap.cellTitle", {
+                    y: yLabel,
+                    x: xLabels[colIdx] ?? "",
+                    value: value ?? "",
+                    metric: metricLabel,
+                  })
             }
             aria-label={
               isEmpty
-                ? `${yLabel} × ${xLabels[colIdx]} boş hücre`
-                : `${yLabel} × ${xLabels[colIdx]} hücresinin yorumlarını aç`
+                ? t("insights.heatmap.cellEmptyAria", {
+                    y: yLabel,
+                    x: xLabels[colIdx] ?? "",
+                  })
+                : t("insights.heatmap.cellAria", {
+                    y: yLabel,
+                    x: xLabels[colIdx] ?? "",
+                  })
             }
           >
             {isMax && (

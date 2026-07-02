@@ -29,6 +29,8 @@ import type { LucideIcon } from "lucide-react";
  * one group at a time instead of one long flat list.
  */
 export interface NavItem {
+  /** i18n anahtarı (ör. "shell.nav.tickets"); sidebar-nav.tsx render
+   *  sırasında t() ile çözer — bu dosya client bileşeni değil. */
   label: string;
   href: string;
   icon: LucideIcon;
@@ -42,8 +44,9 @@ export interface NavItem {
 }
 
 export interface NavSection {
-  /** Section heading shown above the items. Empty string for the
-   *  first (no-header) group — primary executive surfaces. */
+  /** Section heading i18n anahtarı (sidebar-nav.tsx t() ile çözer).
+   *  Empty string for the first (no-header) group — primary
+   *  executive surfaces; boş string başlıksız kalır. */
   heading: string;
   items: ReadonlyArray<NavItem>;
 }
@@ -61,16 +64,16 @@ export const NAV_SECTIONS: ReadonlyArray<NavSection> = [
   {
     heading: "",
     items: [
-      { label: "Panel", href: "/", icon: LayoutDashboard },
+      { label: "shell.nav.dashboard", href: "/", icon: LayoutDashboard },
       // Madde 6 — "Brifing" → "Yönetici Özeti"
       {
-        label: "Yönetici Özeti",
+        label: "shell.nav.executiveSummary",
         href: "/executive-briefing",
         icon: ClipboardList,
       },
-      { label: "Aksiyonlar", href: "/action-items", icon: ListChecks },
-      { label: "Uyarılar", href: "/trend-alerts", icon: Bell },
-      { label: "Strateji", href: "/strategy", icon: Compass },
+      { label: "shell.nav.actionItems", href: "/action-items", icon: ListChecks },
+      { label: "shell.nav.trendAlerts", href: "/trend-alerts", icon: Bell },
+      { label: "shell.nav.strategy", href: "/strategy", icon: Compass },
     ],
   },
   // Analitik — analyst persona's daily surfaces. Madde 3 not'u:
@@ -78,12 +81,12 @@ export const NAV_SECTIONS: ReadonlyArray<NavSection> = [
   // Arşivi (eski "Analizler") burada kalıyor çünkü ana iş "arşiv
   // gezme" — analyst persona.
   {
-    heading: "Analitik",
+    heading: "shell.nav.section.analytics",
     items: [
-      { label: "İçgörüler", href: "/insights", icon: TrendingUp },
+      { label: "shell.nav.insights", href: "/insights", icon: TrendingUp },
       // Madde 4 — "Analizler" → "Analiz Arşivi"
-      { label: "Analiz Arşivi", href: "/reviews", icon: FileSearch },
-      { label: "Raporlar", href: "/reports", icon: FileBarChart },
+      { label: "shell.nav.reviewArchive", href: "/reviews", icon: FileSearch },
+      { label: "shell.nav.reports", href: "/reports", icon: FileBarChart },
     ],
   },
   // Operasyon — ticket queue + manual/batch ingestion. Madde 13:
@@ -96,20 +99,20 @@ export const NAV_SECTIONS: ReadonlyArray<NavSection> = [
   // Operasyon altında "data ingestion"ın bir alt-konu olduğunu
   // sezgisel veriyor.
   {
-    heading: "Operasyon",
+    heading: "shell.nav.section.operations",
     items: [
-      { label: "Ticket'lar", href: "/tickets", icon: Ticket },
+      { label: "shell.nav.tickets", href: "/tickets", icon: Ticket },
       {
-        label: "Manuel Analiz",
+        label: "shell.nav.manualAnalysis",
         href: "/analyze",
         icon: Sparkles,
-        subgroup: "Veri Yükle",
+        subgroup: "shell.nav.subgroup.dataUpload",
       },
       {
-        label: "Toplu Yükleme",
+        label: "shell.nav.batchUpload",
         href: "/analyze/upload",
         icon: Upload,
-        subgroup: "Veri Yükle",
+        subgroup: "shell.nav.subgroup.dataUpload",
       },
     ],
   },
@@ -118,7 +121,7 @@ export const NAV_SECTIONS: ReadonlyArray<NavSection> = [
   // labeled "Yönetim" that crowds the rail.
   {
     heading: "",
-    items: [{ label: "Ayarlar", href: "/settings", icon: Settings }],
+    items: [{ label: "shell.nav.settings", href: "/settings", icon: Settings }],
   },
 ];
 
@@ -134,11 +137,11 @@ export const NAV_SECTIONS: ReadonlyArray<NavSection> = [
  * humans decided, what prompts shaped both.
  */
 export const ADMIN_NAV_ITEMS: ReadonlyArray<NavItem> = [
-  { label: "Kurumlar", href: "/admin/tenants", icon: Building2 },
-  { label: "LLM Denetimi", href: "/admin/llm-audit", icon: Cpu },
-  { label: "Karar Geçmişi", href: "/admin/decision-audit", icon: History },
+  { label: "shell.nav.tenants", href: "/admin/tenants", icon: Building2 },
+  { label: "shell.nav.llmAudit", href: "/admin/llm-audit", icon: Cpu },
+  { label: "shell.nav.decisionAudit", href: "/admin/decision-audit", icon: History },
   {
-    label: "Prompt Şablonları",
+    label: "shell.nav.promptTemplates",
     href: "/admin/prompt-templates",
     icon: Code2,
   },
@@ -147,7 +150,7 @@ export const ADMIN_NAV_ITEMS: ReadonlyArray<NavItem> = [
   // admin-only oldu. Normal kullanıcı görmez; super_admin trend
   // ihlali yöneten kişi zaten gerekiyorsa erişir.
   {
-    label: "Bekleyen Bildirimler",
+    label: "shell.nav.pendingWebhooks",
     href: "/pending-webhooks",
     icon: Send,
   },

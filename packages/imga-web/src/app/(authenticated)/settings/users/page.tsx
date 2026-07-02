@@ -33,18 +33,28 @@ import {
 } from "@/hooks/use-tenant-users";
 import { ApiError, formatApiErrorMessage } from "@/lib/api-client";
 import { useAuthStore } from "@/lib/auth-store";
+import { useTranslation } from "@/lib/i18n/use-translation";
 import type { UserTenantRole } from "@/lib/types";
 
-const ROLE_LABEL: Record<string, string> = {
-  tenant_admin: "Yönetici",
-  analyst: "Analist",
-  viewer: "İzleyici",
+const ROLE_KEY: Record<string, string> = {
+  tenant_admin: "settings.users.role.admin",
+  analyst: "settings.users.role.analyst",
+  viewer: "settings.users.role.viewer",
 };
+
+function roleLabel(
+  role: string,
+  t: (key: string, vars?: Record<string, string | number>) => string,
+): string {
+  const key = ROLE_KEY[role];
+  return key ? t(key) : role;
+}
 
 export default function SettingsUsersPage() {
   const role = useAuthStore((s) => s.activeContext?.role);
   const tenantId = useAuthStore((s) => s.activeContext?.tenant_id ?? null);
   const isSuperAdmin = useAuthStore((s) => s.user?.is_super_admin ?? false);
+  const { t } = useTranslation();
 
   const isAdmin = role === "tenant_admin" || isSuperAdmin;
   if (!isAdmin) return <ForbiddenNotice />;
@@ -55,10 +65,10 @@ export default function SettingsUsersPage() {
         <Users className="text-primary mt-1 size-6" aria-hidden />
         <div>
           <h1 className="text-2xl font-semibold tracking-tight md:text-3xl">
-            Kullanıcılar
+            {t("settings.users.title")}
           </h1>
           <p className="text-muted-foreground text-sm">
-            Tenant&apos;a kayıtlı kullanıcılar ve bekleyen davetler.
+            {t("settings.users.subtitle")}
           </p>
         </div>
       </header>
@@ -73,18 +83,23 @@ export default function SettingsUsersPage() {
 function MembersSection() {
   const { data, isLoading, isError } = useTenantMembers();
   const members = data?.members ?? [];
+  const { t } = useTranslation();
 
   return (
     <section className="space-y-2">
-      <h2 className="text-sm font-semibold">Mevcut üyeler</h2>
+      <h2 className="text-sm font-semibold">
+        {t("settings.users.currentMembers")}
+      </h2>
       {isLoading ? (
         <Skeleton className="h-24" />
       ) : isError ? (
-        <p className="text-destructive text-sm">Üye listesi alınamadı.</p>
+        <p className="text-destructive text-sm">
+          {t("settings.users.membersError")}
+        </p>
       ) : members.length === 0 ? (
         <Card>
           <CardContent className="text-muted-foreground p-6 text-center text-sm">
-            Henüz üye yok.
+            {t("settings.users.noMembers")}
           </CardContent>
         </Card>
       ) : (
@@ -99,7 +114,7 @@ function MembersSection() {
                 <p className="text-muted-foreground text-xs">{m.email}</p>
               </div>
               <Badge variant="outline" className="text-xs">
-                {ROLE_LABEL[m.role] ?? m.role}
+                {roleLabel(m.role, t)}
               </Badge>
             </li>
           ))}
@@ -111,6 +126,7 @@ function MembersSection() {
 
 function InviteForm({ tenantId }: { tenantId: string | null }) {
   const create = useCreateInvitation(tenantId);
+  const { t } = useTranslation();
   const [email, setEmail] = useState("");
   const [inviteRole, setInviteRole] = useState<UserTenantRole>("analyst");
   // Sprint 9.5 A1 — the plaintext token is returned exactly once.
@@ -125,11 +141,11 @@ function InviteForm({ tenantId }: { tenantId: string | null }) {
   function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!email.trim()) {
-      toast.error("E-posta zorunlu.");
+      toast.error(t("settings.users.emailRequired"));
       return;
     }
     if (!tenantId) {
-      toast.error("Aktif kurum bulunamadı.");
+      toast.error(t("settings.users.noActiveOrg"));
       return;
     }
     create.mutate(
@@ -139,11 +155,11 @@ function InviteForm({ tenantId }: { tenantId: string | null }) {
           const url = `${window.location.origin}/invitations/${resp.token}`;
           setLastToken({ email: resp.email, url });
           setEmail("");
-          toast.success("Davet oluşturuldu.");
+          toast.success(t("settings.users.inviteCreated"));
         },
         onError: (err) => {
           if (err instanceof ApiError && err.status === 409) {
-            toast.error("Bu e-posta için açık davet zaten var.");
+            toast.error(t("settings.users.inviteExists"));
           } else {
             toast.error(formatApiErrorMessage(err));
           }
@@ -154,34 +170,34 @@ function InviteForm({ tenantId }: { tenantId: string | null }) {
 
   return (
     <section className="space-y-2">
-      <h2 className="text-sm font-semibold">Yeni davet gönder</h2>
+      <h2 className="text-sm font-semibold">{t("settings.users.newInvite")}</h2>
       <Card>
         <CardContent className="space-y-3 p-4">
           <form onSubmit={onSubmit} className="grid gap-3 md:grid-cols-[1fr_auto_auto]">
             <div className="space-y-1">
-              <Label className="text-xs">E-posta</Label>
+              <Label className="text-xs">{t("settings.users.email")}</Label>
               <Input
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 required
-                placeholder="kullanici@sirket.com"
+                placeholder={t("settings.users.emailPlaceholder")}
               />
             </div>
             <div className="space-y-1">
-              <Label className="text-xs">Rol</Label>
+              <Label className="text-xs">{t("settings.users.role")}</Label>
               <select
                 value={inviteRole}
                 onChange={(e) => setInviteRole(e.target.value as UserTenantRole)}
                 className="border-input bg-background w-full rounded-md border px-2 py-1.5 text-sm"
               >
-                <option value="tenant_admin">Yönetici</option>
-                <option value="analyst">Analist</option>
-                <option value="viewer">İzleyici</option>
+                <option value="tenant_admin">{t("settings.users.role.admin")}</option>
+                <option value="analyst">{t("settings.users.role.analyst")}</option>
+                <option value="viewer">{t("settings.users.role.viewer")}</option>
               </select>
             </div>
             <div className="space-y-1">
-              <Label className="text-xs invisible">Gönder</Label>
+              <Label className="text-xs invisible">{t("settings.users.send")}</Label>
               <Button
                 type="submit"
                 disabled={create.isPending}
@@ -192,7 +208,7 @@ function InviteForm({ tenantId }: { tenantId: string | null }) {
                 ) : (
                   <UserPlus className="size-4" aria-hidden />
                 )}
-                Davet et
+                {t("settings.users.invite")}
               </Button>
             </div>
           </form>
@@ -200,7 +216,7 @@ function InviteForm({ tenantId }: { tenantId: string | null }) {
           {lastToken && (
             <div className="rounded-md border border-emerald-300 bg-emerald-50 p-3 text-xs dark:border-emerald-900 dark:bg-emerald-950/30">
               <p className="mb-1 font-medium">
-                {lastToken.email} için davet bağlantısı (tek seferlik):
+                {t("settings.users.inviteLinkLabel", { email: lastToken.email })}
               </p>
               <div className="flex items-center gap-2">
                 <code className="flex-1 truncate font-mono text-[11px]">
@@ -212,16 +228,15 @@ function InviteForm({ tenantId }: { tenantId: string | null }) {
                   variant="outline"
                   onClick={() => {
                     navigator.clipboard.writeText(lastToken.url);
-                    toast.success("Kopyalandı.");
+                    toast.success(t("settings.users.copied"));
                   }}
                   className="gap-1"
                 >
-                  <Copy className="size-3.5" aria-hidden /> Kopyala
+                  <Copy className="size-3.5" aria-hidden /> {t("settings.users.copy")}
                 </Button>
               </div>
               <p className="text-muted-foreground mt-1">
-                Bu bağlantıyı şimdi davet ettiğiniz kişiye iletin —
-                kapatınca bir daha gösterilmez.
+                {t("settings.users.inviteLinkHelp")}
               </p>
             </div>
           )}
@@ -233,6 +248,7 @@ function InviteForm({ tenantId }: { tenantId: string | null }) {
 
 function PendingInvitationsSection({ tenantId }: { tenantId: string | null }) {
   const { data, isLoading, isError } = useTenantInvitations(tenantId, false);
+  const { t } = useTranslation();
   const pending = useMemo(
     () => (data?.invitations ?? []).filter((i) => !i.accepted_at),
     [data],
@@ -240,15 +256,19 @@ function PendingInvitationsSection({ tenantId }: { tenantId: string | null }) {
 
   return (
     <section className="space-y-2">
-      <h2 className="text-sm font-semibold">Bekleyen davetler</h2>
+      <h2 className="text-sm font-semibold">
+        {t("settings.users.pendingInvites")}
+      </h2>
       {isLoading ? (
         <Skeleton className="h-24" />
       ) : isError ? (
-        <p className="text-destructive text-sm">Davet listesi alınamadı.</p>
+        <p className="text-destructive text-sm">
+          {t("settings.users.invitesError")}
+        </p>
       ) : pending.length === 0 ? (
         <Card>
           <CardContent className="text-muted-foreground p-6 text-center text-sm">
-            Bekleyen davet yok.
+            {t("settings.users.noPending")}
           </CardContent>
         </Card>
       ) : (
@@ -270,12 +290,13 @@ function PendingInvitationRow({
   tenantId: string | null;
 }) {
   const revoke = useRevokeInvitation(tenantId);
+  const { t } = useTranslation();
   return (
     <li className="bg-card flex items-center gap-3 rounded-lg border p-3">
       <div className="flex-1 space-y-0.5">
         <p className="text-sm font-medium">{inv.email}</p>
         <p className="text-muted-foreground text-xs">
-          {ROLE_LABEL[inv.role] ?? inv.role} · Son geçerlilik:{" "}
+          {roleLabel(inv.role, t)} · {t("settings.users.expiresLabel")}{" "}
           {new Date(inv.expires_at).toLocaleDateString("tr-TR")}
         </p>
       </div>
@@ -283,17 +304,16 @@ function PendingInvitationRow({
         variant="ghost"
         size="sm"
         onClick={() => {
-          if (!confirm("Daveti iptal etmek istediğinizden emin misiniz?"))
-            return;
+          if (!confirm(t("settings.users.revokeConfirm"))) return;
           revoke.mutate(inv.id, {
-            onSuccess: () => toast.success("Davet iptal edildi."),
+            onSuccess: () => toast.success(t("settings.users.revoked")),
             onError: (err) => toast.error(formatApiErrorMessage(err)),
           });
         }}
         disabled={revoke.isPending}
         className="gap-1 text-red-700 hover:text-red-900"
       >
-        <Trash2 className="size-3.5" aria-hidden /> İptal
+        <Trash2 className="size-3.5" aria-hidden /> {t("common.cancel")}
       </Button>
     </li>
   );

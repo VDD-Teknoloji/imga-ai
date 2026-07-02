@@ -32,6 +32,7 @@ import {
   useReports,
 } from "@/hooks/use-reports";
 import { ApiError } from "@/lib/api-client";
+import { useTranslation } from "@/lib/i18n/use-translation";
 import type {
   GenerateReportRequest,
   ReportEstimateResponse,
@@ -42,22 +43,27 @@ import type {
 } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
-const TYPE_LABELS: Record<ReportType, string> = {
-  comprehensive: "Kapsamlı",
-  reviews_only: "Sadece Yorumlar",
-  tickets_only: "Sadece Ticket'lar",
+/** Live translate function type (t) so non-component helpers can render
+ *  localised strings without pulling in a hook. */
+type TFunc = ReturnType<typeof useTranslation>["t"];
+
+const TYPE_LABEL_KEYS: Record<ReportType, string> = {
+  comprehensive: "reports.type.comprehensive",
+  reviews_only: "reports.type.reviewsOnly",
+  tickets_only: "reports.type.ticketsOnly",
 };
 
-const STATUS_LABELS: Record<ReportStatus, string> = {
-  queued: "Sırada",
-  generating: "Üretiliyor",
-  completed: "Tamamlandı",
-  failed: "Başarısız",
+const STATUS_LABEL_KEYS: Record<ReportStatus, string> = {
+  queued: "reports.status.queued",
+  generating: "reports.status.generating",
+  completed: "reports.status.completed",
+  failed: "reports.status.failed",
 };
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8003";
 
 export default function ReportsPage() {
+  const { t } = useTranslation();
   const [modalOpen, setModalOpen] = useState(false);
   const [pollingId, setPollingId] = useState<string | null>(null);
 
@@ -85,15 +91,14 @@ export default function ReportsPage() {
       <header className="flex flex-wrap items-start justify-between gap-3">
         <div className="space-y-1.5">
           <h1 className="text-2xl font-semibold tracking-tight md:text-3xl">
-            Raporlar
+            {t("reports.page.title")}
           </h1>
           <p className="text-muted-foreground text-sm">
-            Excel veya CSV olarak çok-sayfalı analiz + Ticket raporları üretip
-            24 saat boyunca indirin.
+            {t("reports.page.subtitle")}
           </p>
         </div>
         <Button onClick={() => setModalOpen(true)}>
-          <Plus className="size-4" /> Yeni Rapor
+          <Plus className="size-4" /> {t("reports.newReport")}
         </Button>
       </header>
 
@@ -102,8 +107,10 @@ export default function ReportsPage() {
           <CardContent className="flex items-center gap-3 p-4">
             <Loader2 className="size-4 animate-spin" />
             <span className="text-sm">
-              <span className="font-medium">{TYPE_LABELS[polled.data.report_type]}</span>{" "}
-              raporu üretiliyor… durum: {STATUS_LABELS[polled.data.status]}
+              <span className="font-medium">
+                {t(TYPE_LABEL_KEYS[polled.data.report_type])}
+              </span>{" "}
+              {t("reports.generatingMid")} {t(STATUS_LABEL_KEYS[polled.data.status])}
             </span>
           </CardContent>
         </Card>
@@ -111,12 +118,13 @@ export default function ReportsPage() {
 
       {list.isLoading ? (
         <div className="flex items-center gap-2 p-6 text-sm">
-          <Loader2 className="size-4 animate-spin" /> Yükleniyor…
+          <Loader2 className="size-4 animate-spin" /> {t("common.loading")}
         </div>
       ) : reports.length === 0 ? (
         <p className="text-muted-foreground p-6 text-sm">
-          Henüz rapor yok. Üstteki <strong>Yeni Rapor</strong> butonu ile
-          ilk raporunuzu üretebilirsiniz.
+          {t("reports.emptyPre")}
+          <strong>{t("reports.newReport")}</strong>
+          {t("reports.emptyPost")}
         </p>
       ) : (
         <ReportsTable reports={reports} />
@@ -141,17 +149,18 @@ export default function ReportsPage() {
 // --------------------------------------------------------------------------
 
 function ReportsTable({ reports }: { reports: ReportJobView[] }) {
+  const { t } = useTranslation();
   const del = useDeleteReport();
   return (
     <Table>
       <TableHeader>
         <TableRow>
-          <TableHead>Tarih</TableHead>
-          <TableHead>Tip</TableHead>
-          <TableHead>Format</TableHead>
-          <TableHead className="text-right">Satır</TableHead>
-          <TableHead className="text-right">Boyut</TableHead>
-          <TableHead>Durum</TableHead>
+          <TableHead>{t("reports.table.date")}</TableHead>
+          <TableHead>{t("reports.table.type")}</TableHead>
+          <TableHead>{t("reports.table.format")}</TableHead>
+          <TableHead className="text-right">{t("reports.table.rows")}</TableHead>
+          <TableHead className="text-right">{t("reports.table.size")}</TableHead>
+          <TableHead>{t("reports.table.status")}</TableHead>
           <TableHead className="text-right" />
         </TableRow>
       </TableHeader>
@@ -162,7 +171,7 @@ function ReportsTable({ reports }: { reports: ReportJobView[] }) {
               {new Date(r.created_at).toLocaleString("tr-TR")}
             </TableCell>
             <TableCell className="font-medium">
-              {TYPE_LABELS[r.report_type]}
+              {t(TYPE_LABEL_KEYS[r.report_type])}
             </TableCell>
             <TableCell className="text-xs uppercase">{r.format}</TableCell>
             <TableCell className="text-right tabular-nums">
@@ -179,21 +188,21 @@ function ReportsTable({ reports }: { reports: ReportJobView[] }) {
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={() => downloadReport(r.report_id)}
+                  onClick={() => downloadReport(r.report_id, t)}
                 >
-                  <Download className="size-3.5" /> İndir
+                  <Download className="size-3.5" /> {t("reports.download")}
                 </Button>
               )}
               <Button
                 variant="ghost"
                 size="sm"
                 onClick={() => {
-                  if (!confirm("Raporu silmek istediğinizden emin misiniz?")) {
+                  if (!confirm(t("reports.deleteConfirm"))) {
                     return;
                   }
                   del.mutate(r.report_id, {
-                    onError: () => toast.error("Silinemedi."),
-                    onSuccess: () => toast.success("Rapor silindi."),
+                    onError: () => toast.error(t("reports.deleteError")),
+                    onSuccess: () => toast.success(t("reports.deleteSuccess")),
                   });
                 }}
                 disabled={del.isPending}
@@ -215,6 +224,7 @@ function StatusBadge({
   status: ReportStatus;
   message: string | null;
 }) {
+  const { t } = useTranslation();
   const Icon =
     status === "completed"
       ? CheckCircle2
@@ -236,12 +246,12 @@ function StatusBadge({
         className={cn("size-3", status !== "completed" && status !== "failed" && "animate-spin")}
         aria-hidden
       />
-      {STATUS_LABELS[status]}
+      {t(STATUS_LABEL_KEYS[status])}
     </span>
   );
 }
 
-function downloadReport(reportId: string): void {
+function downloadReport(reportId: string, t: TFunc): void {
   // Browser-native <a download> can't ride credentials:'include', so
   // we fetch the bytes ourselves (the cookie does flow on fetch with
   // credentials), then trigger a synthetic anchor-click against an
@@ -254,7 +264,12 @@ function downloadReport(reportId: string): void {
     .then(async (res) => {
       if (!res.ok) {
         const detail = await res.text().catch(() => "");
-        toast.error(`İndirilemedi: ${res.status} ${detail.slice(0, 80)}`);
+        toast.error(
+          t("reports.downloadError", {
+            status: res.status,
+            detail: detail.slice(0, 80),
+          }),
+        );
         return;
       }
       const blob = await res.blob();
@@ -270,7 +285,7 @@ function downloadReport(reportId: string): void {
       a.remove();
       URL.revokeObjectURL(url);
     })
-    .catch(() => toast.error("İndirme başlatılamadı."));
+    .catch(() => toast.error(t("reports.downloadStartError")));
 }
 
 function formatBytes(n: number): string {
@@ -292,6 +307,7 @@ function NewReportModal({
   onClose: () => void;
   onQueued: (id: string) => void;
 }) {
+  const { t } = useTranslation();
   const [step, setStep] = useState<ModalStep>(1);
   const [reportType, setReportType] = useState<ReportType>("comprehensive");
   const [format, setFormat] = useState<ReportFormat>("xlsx");
@@ -354,7 +370,7 @@ function NewReportModal({
         if (err instanceof ApiError) {
           setEstimateError(err.detail);
         } else {
-          setEstimateError("Tahmin alınamadı.");
+          setEstimateError(t("reports.estimateError"));
         }
       },
     });
@@ -363,14 +379,14 @@ function NewReportModal({
   function handleSubmit() {
     generate.mutate(buildBody(), {
       onSuccess: (data) => {
-        toast.success("Rapor sıraya alındı.");
+        toast.success(t("reports.queuedSuccess"));
         onQueued(data.report_id);
       },
       onError: (err) => {
         if (err instanceof ApiError) {
           toast.error(err.detail);
         } else {
-          toast.error("Rapor üretilemedi.");
+          toast.error(t("reports.generateError"));
         }
       },
     });
@@ -380,12 +396,12 @@ function NewReportModal({
     <div className="bg-foreground/40 fixed inset-0 z-50 flex items-center justify-center p-4">
       <Card className="w-full max-w-lg">
         <CardHeader className="flex items-center justify-between">
-          <CardTitle>Yeni Rapor — Adım {step}/3</CardTitle>
+          <CardTitle>{t("reports.modalTitle", { step })}</CardTitle>
           <button
             type="button"
             onClick={onClose}
             className="text-muted-foreground hover:text-foreground"
-            aria-label="Kapat"
+            aria-label={t("reports.close")}
           >
             <XCircle className="size-5" />
           </button>
@@ -428,11 +444,11 @@ function NewReportModal({
               onClick={step === 1 ? onClose : () => setStep((step - 1) as ModalStep)}
               disabled={generate.isPending}
             >
-              {step === 1 ? "İptal" : "Geri"}
+              {step === 1 ? t("common.cancel") : t("reports.back")}
             </Button>
             {step === 1 && (
               <Button type="button" onClick={() => setStep(2)}>
-                Devam <ArrowRight className="size-4" aria-hidden />
+                {t("reports.continue")} <ArrowRight className="size-4" aria-hidden />
               </Button>
             )}
             {step === 2 && (
@@ -446,7 +462,7 @@ function NewReportModal({
                 ) : (
                   <ArrowRight className="size-4" />
                 )}
-                Önizleme
+                {t("reports.preview")}
               </Button>
             )}
             {step === 3 && estimate && (
@@ -460,13 +476,13 @@ function NewReportModal({
                 ) : (
                   <Plus className="size-4" />
                 )}
-                Üret
+                {t("reports.generate")}
               </Button>
             )}
           </div>
 
           <Badge variant="outline" className="text-xs font-normal">
-            ⓘ Hard limit: 90 gün, 50.000 satır.
+            ⓘ {t("reports.hardLimit")}
           </Badge>
         </CardContent>
       </Card>
@@ -487,24 +503,25 @@ function Step1Type({
   setReportType: (t: ReportType) => void;
   setFormat: (f: ReportFormat) => void;
 }) {
+  const { t } = useTranslation();
   return (
     <div className="space-y-5">
       <div>
-        <Label className="text-xs">Rapor Tipi</Label>
+        <Label className="text-xs">{t("reports.reportType")}</Label>
         <div className="mt-2 space-y-2">
           {(["comprehensive", "reviews_only", "tickets_only"] as ReportType[]).map(
-            (t) => (
+            (rt) => (
               <label
-                key={t}
+                key={rt}
                 className="flex cursor-pointer items-center gap-2 text-sm"
               >
                 <input
                   type="radio"
                   name="report-type"
-                  checked={reportType === t}
-                  onChange={() => setReportType(t)}
+                  checked={reportType === rt}
+                  onChange={() => setReportType(rt)}
                 />
-                {TYPE_LABELS[t]}
+                {t(TYPE_LABEL_KEYS[rt])}
               </label>
             ),
           )}
@@ -556,9 +573,10 @@ function Step2Filters({
   overLimit: boolean;
   estimateError: string | null;
 }) {
+  const { t } = useTranslation();
   return (
     <div>
-      <Label className="text-xs">Tarih Aralığı</Label>
+      <Label className="text-xs">{t("reports.dateRange")}</Label>
       <div className="mt-2 flex flex-wrap gap-2">
         <Button
           type="button"
@@ -566,7 +584,7 @@ function Step2Filters({
           size="sm"
           onClick={() => quickRange("this-month")}
         >
-          Bu ay
+          {t("reports.thisMonth")}
         </Button>
         <Button
           type="button"
@@ -574,7 +592,7 @@ function Step2Filters({
           size="sm"
           onClick={() => quickRange("last-month")}
         >
-          Geçen ay
+          {t("reports.lastMonth")}
         </Button>
         <Button
           type="button"
@@ -582,7 +600,7 @@ function Step2Filters({
           size="sm"
           onClick={() => quickRange("this-quarter")}
         >
-          Bu çeyrek
+          {t("reports.thisQuarter")}
         </Button>
       </div>
       <div className="mt-2 grid grid-cols-2 gap-2">
@@ -608,8 +626,8 @@ function Step2Filters({
             overLimit ? "text-red-600" : "text-muted-foreground",
           )}
         >
-          Aralık: {dayDiff} gün
-          {overLimit && " — 90 gün limitini aşıyor."}
+          {t("reports.rangeDays", { days: dayDiff })}
+          {overLimit && t("reports.rangeOverLimit")}
         </p>
       )}
       {estimateError && (
@@ -632,21 +650,22 @@ function Step3Preview({
   dateFrom: string;
   dateTo: string;
 }) {
+  const { t } = useTranslation();
   return (
     <div className="bg-muted/30 space-y-3 rounded-xl border p-4 text-sm">
-      <p className="font-medium">Önizleme</p>
+      <p className="font-medium">{t("reports.preview")}</p>
       <dl className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
-        <dt className="text-muted-foreground">Tahmini satır:</dt>
+        <dt className="text-muted-foreground">{t("reports.est.rows")}</dt>
         <dd className="tabular-nums">{estimate.row_count_estimate.toLocaleString("tr-TR")}</dd>
-        <dt className="text-muted-foreground">Tahmini süre:</dt>
-        <dd>~{estimate.estimated_seconds} saniye</dd>
-        <dt className="text-muted-foreground">Tip:</dt>
-        <dd>{TYPE_LABELS[reportType]}</dd>
-        <dt className="text-muted-foreground">Format:</dt>
+        <dt className="text-muted-foreground">{t("reports.est.time")}</dt>
+        <dd>{t("reports.est.seconds", { n: estimate.estimated_seconds })}</dd>
+        <dt className="text-muted-foreground">{t("reports.est.type")}</dt>
+        <dd>{t(TYPE_LABEL_KEYS[reportType])}</dd>
+        <dt className="text-muted-foreground">{t("reports.est.format")}</dt>
         <dd>{format === "xlsx" ? "Excel (.xlsx)" : "CSV (.zip)"}</dd>
         {dateFrom && dateTo && (
           <>
-            <dt className="text-muted-foreground">Tarih aralığı:</dt>
+            <dt className="text-muted-foreground">{t("reports.est.dateRange")}</dt>
             <dd>
               {dateFrom} – {dateTo}
             </dd>
@@ -654,13 +673,13 @@ function Step3Preview({
         )}
         {estimate.review_rows > 0 && (
           <>
-            <dt className="text-muted-foreground">Analiz satırı:</dt>
+            <dt className="text-muted-foreground">{t("reports.est.reviewRows")}</dt>
             <dd className="tabular-nums">{estimate.review_rows.toLocaleString("tr-TR")}</dd>
           </>
         )}
         {estimate.ticket_rows > 0 && (
           <>
-            <dt className="text-muted-foreground">Ticket satırı:</dt>
+            <dt className="text-muted-foreground">{t("reports.est.ticketRows")}</dt>
             <dd className="tabular-nums">{estimate.ticket_rows.toLocaleString("tr-TR")}</dd>
           </>
         )}

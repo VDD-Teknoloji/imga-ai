@@ -63,6 +63,7 @@ import {
   useUpdateLlmCredential,
 } from "@/hooks/use-llm-credentials";
 import { ApiError } from "@/lib/api-client";
+import { useTranslation } from "@/lib/i18n/use-translation";
 import type { LlmCredential } from "@/lib/types";
 
 const GEMINI_KEY_PREFIX = "AIza";
@@ -70,28 +71,26 @@ const GEMINI_KEY_PREFIX = "AIza";
 export default function IntegrationsPage() {
   const list = useLlmCredentials();
   const credentials = list.data ?? [];
+  const { t } = useTranslation();
 
   return (
     <main className="mx-auto w-full max-w-3xl space-y-6 p-6 md:p-8">
       <header className="space-y-1">
         <h1 className="text-2xl font-semibold tracking-tight md:text-3xl">
-          Gemini API Anahtarları
+          {t("settings.integrations.title")}
         </h1>
         <p className="text-muted-foreground text-sm">
-          Strateji raporları için Gemini API anahtarlarınızı buradan
-          yönetirsiniz. İlk anahtar birincil; sonrakiler birincil
-          başarısız olduğunda sırayla denenir. Anahtarın tamamı asla
-          ekranda gösterilmez — yalnızca son 4 karakter önizlemesi.
+          {t("settings.integrations.subtitle")}
         </p>
       </header>
 
       {list.isLoading ? (
         <div className="flex items-center gap-2 p-6 text-sm">
-          <Loader2 className="size-4 animate-spin" /> Yükleniyor…
+          <Loader2 className="size-4 animate-spin" /> {t("common.loading")}
         </div>
       ) : list.isError ? (
         <p className="text-destructive p-6 text-sm">
-          Anahtarlar yüklenemedi.
+          {t("settings.integrations.loadError")}
         </p>
       ) : credentials.length === 0 ? (
         <EmptyState />
@@ -105,11 +104,11 @@ export default function IntegrationsPage() {
 }
 
 function EmptyState() {
+  const { t } = useTranslation();
   return (
     <div className="bg-card rounded-lg border border-dashed p-8 text-center">
       <p className="text-muted-foreground text-sm">
-        Henüz API anahtarı eklenmemiş. Aşağıdaki formdan ilk
-        anahtarınızı ekleyin.
+        {t("settings.integrations.empty")}
       </p>
     </div>
   );
@@ -117,6 +116,7 @@ function EmptyState() {
 
 function KeyList({ credentials }: { credentials: LlmCredential[] }) {
   const reorder = useReorderLlmCredentials();
+  const { t } = useTranslation();
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
     useSensor(KeyboardSensor, {
@@ -135,7 +135,7 @@ function KeyList({ credentials }: { credentials: LlmCredential[] }) {
       { ordered_ids: next.map((c) => c.id) },
       {
         onError: () => {
-          toast.error("Sıralama kaydedilemedi.");
+          toast.error(t("settings.common.reorderFailed"));
         },
       },
     );
@@ -161,10 +161,6 @@ function KeyList({ credentials }: { credentials: LlmCredential[] }) {
   );
 }
 
-function priorityLabel(index: number): string {
-  return index === 0 ? "Birincil" : `Yedek ${index}`;
-}
-
 function SortableKeyRow({
   credential,
   index,
@@ -172,6 +168,7 @@ function SortableKeyRow({
   credential: LlmCredential;
   index: number;
 }) {
+  const { t } = useTranslation();
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
     useSortable({ id: credential.id });
   const style: React.CSSProperties = {
@@ -190,7 +187,7 @@ function SortableKeyRow({
         {...attributes}
         {...listeners}
         className="text-muted-foreground hover:text-foreground cursor-grab"
-        aria-label="Sıralama tutamağı"
+        aria-label={t("settings.common.dragHandle")}
       >
         <GripVertical className="size-5" aria-hidden />
       </button>
@@ -208,6 +205,7 @@ function KeyRow({
 }) {
   const update = useUpdateLlmCredential();
   const del = useDeleteLlmCredential();
+  const { t } = useTranslation();
   const [label, setLabel] = useState(credential.label);
   const [editing, setEditing] = useState(false);
 
@@ -227,7 +225,7 @@ function KeyRow({
         { id: credential.id, body: { label: label.trim() } },
         {
           onError: () => {
-            toast.error("Etiket güncellenemedi.");
+            toast.error(t("settings.integrations.labelUpdateFailed"));
             setLabel(credential.label);
           },
         },
@@ -261,24 +259,26 @@ function KeyRow({
               type="button"
               className="text-sm font-medium hover:underline"
               onClick={() => setEditing(true)}
-              title="Etiketi düzenle"
+              title={t("settings.integrations.editLabel")}
             >
               {credential.label}
             </button>
           )}
           <Badge variant="outline" className="text-xs">
-            {priorityLabel(index)}
+            {index === 0
+              ? t("settings.integrations.primary")
+              : t("settings.integrations.backup", { n: index })}
           </Badge>
           {credential.last_failed_at && (
             <Badge
               variant="outline"
               className="border-amber-400 bg-amber-50 text-xs text-amber-700"
-              title={`Son başarısız: ${new Date(
-                credential.last_failed_at,
-              ).toLocaleString("tr-TR")}`}
+              title={t("settings.integrations.lastFailed", {
+                date: new Date(credential.last_failed_at).toLocaleString("tr-TR"),
+              })}
             >
               <AlertTriangle className="mr-1 size-3" aria-hidden />
-              dikkat
+              {t("settings.integrations.warning")}
             </Badge>
           )}
         </div>
@@ -292,19 +292,19 @@ function KeyRow({
           update.mutate(
             { id: credential.id, body: { is_active: checked } },
             {
-              onError: () => toast.error("Durum güncellenemedi."),
+              onError: () => toast.error(t("settings.integrations.statusUpdateFailed")),
             },
           )
         }
-        aria-label="Etkinleştir/Devre dışı"
+        aria-label={t("settings.integrations.toggleActive")}
       />
       <DeleteKeyButton
         label={credential.label}
         pending={del.isPending}
         onConfirm={() =>
           del.mutate(credential.id, {
-            onSuccess: () => toast.success("Anahtar silindi."),
-            onError: () => toast.error("Silme başarısız."),
+            onSuccess: () => toast.success(t("settings.integrations.keyDeleted")),
+            onError: () => toast.error(t("settings.integrations.deleteFailed")),
           })
         }
       />
@@ -321,6 +321,7 @@ function DeleteKeyButton({
   pending: boolean;
   onConfirm: () => void;
 }) {
+  const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   return (
     <AlertDialog open={open} onOpenChange={setOpen}>
@@ -330,7 +331,7 @@ function DeleteKeyButton({
             variant="ghost"
             size="icon"
             disabled={pending}
-            aria-label={`${label} sil`}
+            aria-label={t("settings.integrations.deleteAria", { label })}
           >
             <Trash2 className="size-4" />
           </Button>
@@ -338,23 +339,23 @@ function DeleteKeyButton({
       />
       <AlertDialogContent>
         <AlertDialogHeader>
-          <AlertDialogTitle>API anahtarı silinsin mi?</AlertDialogTitle>
+          <AlertDialogTitle>
+            {t("settings.integrations.deleteConfirmTitle")}
+          </AlertDialogTitle>
           <AlertDialogDescription>
-            <span className="font-medium">{label}</span> anahtarı kalıcı
-            olarak silinecek. Bu işlem geri alınamaz; anahtar Gemini
-            tarafında geçerli kalmaya devam eder, isterseniz tekrar
-            ekleyebilirsiniz.
+            <span className="font-medium">{label}</span>{" "}
+            {t("settings.integrations.deleteConfirmDesc")}
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
-          <AlertDialogCancel>İptal</AlertDialogCancel>
+          <AlertDialogCancel>{t("common.cancel")}</AlertDialogCancel>
           <AlertDialogAction
             onClick={() => {
               onConfirm();
               setOpen(false);
             }}
           >
-            Sil
+            {t("settings.common.delete")}
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>
@@ -364,6 +365,7 @@ function DeleteKeyButton({
 
 function AddKeyForm() {
   const create = useCreateLlmCredential();
+  const { t } = useTranslation();
   const [label, setLabel] = useState("");
   const [apiKey, setApiKey] = useState("");
   const [reveal, setReveal] = useState(false);
@@ -389,14 +391,14 @@ function AddKeyForm() {
           setLabel("");
           setApiKey("");
           setReveal(false);
-          toast.success("Anahtar eklendi.");
+          toast.success(t("settings.integrations.keyAdded"));
         },
         onError: (err) => {
           if (err instanceof ApiError && err.status === 400) {
             toast.error(err.detail);
             return;
           }
-          toast.error("Anahtar eklenemedi.");
+          toast.error(t("settings.integrations.addFailed"));
         },
       },
     );
@@ -404,20 +406,22 @@ function AddKeyForm() {
 
   return (
     <form onSubmit={onSubmit} className="bg-card space-y-3 rounded-lg border p-4">
-      <h2 className="text-base font-semibold">Yeni anahtar ekle</h2>
+      <h2 className="text-base font-semibold">
+        {t("settings.integrations.addTitle")}
+      </h2>
       <div className="space-y-2">
-        <Label htmlFor="key-label">Etiket</Label>
+        <Label htmlFor="key-label">{t("settings.integrations.labelField")}</Label>
         <Input
           id="key-label"
           value={label}
           onChange={(e) => setLabel(e.target.value)}
-          placeholder="Örn. Birincil Hesap"
+          placeholder={t("settings.integrations.labelPlaceholder")}
           maxLength={64}
           disabled={create.isPending}
         />
       </div>
       <div className="space-y-2">
-        <Label htmlFor="key-value">API anahtarı</Label>
+        <Label htmlFor="key-value">{t("settings.integrations.apiKeyField")}</Label>
         <div className="flex gap-2">
           <Input
             id="key-value"
@@ -435,7 +439,11 @@ function AddKeyForm() {
             variant="outline"
             size="icon"
             onClick={() => setReveal((v) => !v)}
-            aria-label={reveal ? "Anahtarı gizle" : "Anahtarı göster"}
+            aria-label={
+              reveal
+                ? t("settings.integrations.hideKey")
+                : t("settings.integrations.showKey")
+            }
             disabled={create.isPending}
           >
             {reveal ? (
@@ -447,7 +455,7 @@ function AddKeyForm() {
         </div>
         {!looksLikeGeminiKey && (
           <p className="text-destructive text-xs">
-            Gemini anahtarları &quot;AIza&quot; ile başlar.
+            {t("settings.integrations.keyPrefixWarning")}
           </p>
         )}
       </div>
@@ -458,7 +466,7 @@ function AddKeyForm() {
           ) : (
             <Plus className="size-4" aria-hidden />
           )}
-          Ekle
+          {t("settings.common.add")}
         </Button>
       </div>
     </form>

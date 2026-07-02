@@ -23,6 +23,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { useTranslation } from "@/lib/i18n/use-translation";
 import {
   SMART_FIELD_LABELS,
   type DetectedColumn,
@@ -69,6 +70,7 @@ export function ColumnMappingPreview({
   overrides,
   onOverrideChange,
 }: Props) {
+  const { t } = useTranslation();
   const sampleTable = useMemo(() => buildSampleTable(preview), [preview]);
 
   return (
@@ -87,8 +89,7 @@ export function ColumnMappingPreview({
         />
       </div>
       <p className="text-muted-foreground text-xs">
-        Sütun açıklamasına tıklayarak elle değiştirebilirsiniz. &quot;Yoksay&quot;
-        seçilen sütunlar yüklemeye dahil edilmez.
+        {t("analyze.mapping.hint")}
       </p>
     </div>
   );
@@ -124,6 +125,7 @@ function ColumnRow({
   override: SmartFieldName | undefined;
   onChange: (next: SmartFieldName | undefined) => void;
 }) {
+  const { t } = useTranslation();
   const effective = override ?? col.field_name ?? "ignore";
   return (
     <li className="bg-card space-y-2 rounded-lg border p-3">
@@ -134,7 +136,7 @@ function ColumnRow({
         )}
         {override !== undefined && override !== col.field_name && (
           <Badge variant="outline" className="text-xs">
-            elle değiştirildi
+            {t("analyze.mapping.manuallyChanged")}
           </Badge>
         )}
       </div>
@@ -158,7 +160,7 @@ function ColumnRow({
               {SMART_FIELD_LABELS[opt]}
               {col.field_name === opt && (
                 <span className="text-muted-foreground ml-2">
-                  (otomatik tespit)
+                  {t("analyze.mapping.autoDetectedInline")}
                 </span>
               )}
             </SelectItem>
@@ -168,13 +170,14 @@ function ColumnRow({
 
       {col.sample_values.length > 0 && (
         <p className="text-muted-foreground text-xs">
-          Örnek: {col.sample_values.map((s) => `"${s}"`).join(", ")}
+          {t("analyze.mapping.sampleLabel")}
+          {col.sample_values.map((s) => `"${s}"`).join(", ")}
         </p>
       )}
 
       {col.alternatives.length > 0 && override === undefined && (
         <p className="text-muted-foreground text-xs">
-          Alternatif tespit:{" "}
+          {t("analyze.mapping.alternativeLabel")}
           {col.alternatives
             .slice(0, 2)
             .map(
@@ -225,10 +228,11 @@ function SampleTable({
   overrides: Record<string, SmartFieldName | undefined>;
   detectedByColumn: Record<string, DetectedColumn>;
 }) {
+  const { t } = useTranslation();
   if (rows.length === 0) {
     return (
       <div className="bg-card flex items-center rounded-lg border p-6 text-sm text-muted-foreground">
-        Önizleme için satır yok.
+        {t("analyze.mapping.noRows")}
       </div>
     );
   }

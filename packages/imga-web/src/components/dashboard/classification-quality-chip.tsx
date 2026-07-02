@@ -17,6 +17,9 @@ import Link from "next/link";
 
 import { Skeleton } from "@/components/ui/skeleton";
 import { useCategoryDistribution } from "@/hooks/use-analytics";
+import { useTranslation } from "@/lib/i18n/use-translation";
+
+type Translate = (key: string, vars?: Record<string, string | number>) => string;
 
 type QualityBand = "good" | "watch" | "low";
 
@@ -27,13 +30,13 @@ interface BandVisual {
   label: string;
 }
 
-function bandFor(ratio: number): BandVisual {
+function bandFor(ratio: number, t: Translate): BandVisual {
   if (ratio <= 0.15) {
     return {
       band: "good",
       dotClass: "bg-emerald-500",
       labelClass: "text-emerald-700 dark:text-emerald-400",
-      label: "İyi",
+      label: t("dashboard.classificationQuality.band.good"),
     };
   }
   if (ratio <= 0.3) {
@@ -41,14 +44,14 @@ function bandFor(ratio: number): BandVisual {
       band: "watch",
       dotClass: "bg-amber-500",
       labelClass: "text-amber-700 dark:text-amber-400",
-      label: "İyileştirilebilir",
+      label: t("dashboard.classificationQuality.band.watch"),
     };
   }
   return {
     band: "low",
     dotClass: "bg-red-500",
     labelClass: "text-red-700 dark:text-red-400",
-    label: "Düşük",
+    label: t("dashboard.classificationQuality.band.low"),
   };
 }
 
@@ -56,31 +59,39 @@ function copyFor(
   ratio: number,
   belirsizCount: number,
   totalCount: number,
+  t: Translate,
 ): { headline: string; hint: string } {
   const pct = Math.round(ratio * 100);
   if (ratio <= 0.15) {
     return {
-      headline: `Sınıflandırma kalitesi: %${100 - pct} eşleşme`,
-      hint: "Yorumların çoğu doğru kategoriye düştü.",
+      headline: t("dashboard.classificationQuality.good.headline", {
+        pct: 100 - pct,
+      }),
+      hint: t("dashboard.classificationQuality.good.hint"),
     };
   }
   if (ratio <= 0.3) {
     return {
-      headline: `${belirsizCount.toLocaleString("tr-TR")} yorum 'belirsiz' (%${pct})`,
-      hint:
-        "Çok kısa veya bağlamsız yorumlar genellikle 'belirsiz'e düşer. " +
-        "Özel kategori eklemek oranı iyileştirir.",
+      headline: t("dashboard.classificationQuality.uncertain.headline", {
+        count: belirsizCount.toLocaleString("tr-TR"),
+        pct,
+      }),
+      hint: t("dashboard.classificationQuality.watch.hint"),
     };
   }
   return {
-    headline: `${belirsizCount.toLocaleString("tr-TR")} yorum 'belirsiz' (%${pct})`,
-    hint:
-      "Belirsiz oranı yüksek. Ayarlar / Kategoriler menüsünden özel " +
-      `kategoriler ekleyerek ${totalCount.toLocaleString("tr-TR")} yorumun daha büyük kısmını doğru sınıflandırabilirsiniz.`,
+    headline: t("dashboard.classificationQuality.uncertain.headline", {
+      count: belirsizCount.toLocaleString("tr-TR"),
+      pct,
+    }),
+    hint: t("dashboard.classificationQuality.low.hint", {
+      total: totalCount.toLocaleString("tr-TR"),
+    }),
   };
 }
 
 export function ClassificationQualityChip() {
+  const { t } = useTranslation();
   const dist = useCategoryDistribution({}, 50);
 
   if (dist.isLoading) {
@@ -100,14 +111,14 @@ export function ClassificationQualityChip() {
     return null;
   }
 
-  const visual = bandFor(ratio);
-  const text = copyFor(ratio, belirsizCount, total);
+  const visual = bandFor(ratio, t);
+  const text = copyFor(ratio, belirsizCount, total, t);
 
   return (
     <Link
       href="/insights?tab=category"
       className="rise-in hover-lift shadow-soft group bg-card ring-foreground/5 flex items-start gap-3.5 rounded-3xl p-5 ring-1"
-      aria-label="Sınıflandırma kalite uyarısı"
+      aria-label={t("dashboard.classificationQuality.aria")}
     >
       <span
         className={`mt-1.5 size-2.5 shrink-0 rounded-full ${visual.dotClass}`}

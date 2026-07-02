@@ -22,38 +22,41 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 
+import { useTranslation } from "@/lib/i18n/use-translation";
 import { cn } from "@/lib/utils";
 
 interface QuickActionRow {
   href: string;
-  label: string;
-  hint: string;
+  /** i18n anahtarı — render sırasında t() ile çözülür. */
+  labelKey: string;
+  /** i18n anahtarı — render sırasında t() ile çözülür. */
+  hintKey: string;
   Icon: typeof Upload;
 }
 
 const ROWS: ReadonlyArray<QuickActionRow> = [
   {
     href: "/analyze/upload",
-    label: "Yeni yükleme",
-    hint: "CSV / Excel toplu analiz",
+    labelKey: "shell.fab.newUpload.label",
+    hintKey: "shell.fab.newUpload.hint",
     Icon: Upload,
   },
   {
     href: "/executive-briefing",
-    label: "Yönetici Özeti",
-    hint: "Aylık yönetici özeti",
+    labelKey: "shell.fab.executiveSummary.label",
+    hintKey: "shell.fab.executiveSummary.hint",
     Icon: ClipboardList,
   },
   {
     href: "/action-items",
-    label: "Aksiyonlar",
-    hint: "Bekleyen aksiyonlar",
+    labelKey: "shell.fab.actionItems.label",
+    hintKey: "shell.fab.actionItems.hint",
     Icon: ListChecks,
   },
   {
     href: "/strategy",
-    label: "Strateji raporu",
-    hint: "SWOT / OKR",
+    labelKey: "shell.fab.strategy.label",
+    hintKey: "shell.fab.strategy.hint",
     Icon: Compass,
   },
 ];
@@ -62,6 +65,7 @@ export function QuickActionFab() {
   const [open, setOpen] = useState(false);
   const pathname = usePathname();
   const panelRef = useRef<HTMLDivElement | null>(null);
+  const { t } = useTranslation();
 
   // Close on route change so a click-through doesn't leave the
   // panel open over the new page.
@@ -99,10 +103,10 @@ export function QuickActionFab() {
         <div
           className="glass ring-foreground/10 shadow-pop rise-in w-80 origin-bottom-right rounded-2xl p-2 ring-1"
           role="menu"
-          aria-label="Hızlı işlemler"
+          aria-label={t("shell.fab.title")}
         >
           <p className="text-muted-foreground px-3 pb-2 pt-2 text-[10px] font-semibold uppercase tracking-[0.14em]">
-            Hızlı işlemler
+            {t("shell.fab.title")}
           </p>
           {ROWS.map((row) => (
             <Link
@@ -115,9 +119,9 @@ export function QuickActionFab() {
                 <row.Icon className="size-4" aria-hidden />
               </div>
               <div className="flex-1 min-w-0">
-                <p className="text-sm font-semibold truncate">{row.label}</p>
+                <p className="text-sm font-semibold truncate">{t(row.labelKey)}</p>
                 <p className="text-muted-foreground text-xs truncate">
-                  {row.hint}
+                  {t(row.hintKey)}
                 </p>
               </div>
             </Link>
@@ -128,7 +132,7 @@ export function QuickActionFab() {
         type="button"
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
-        aria-label={open ? "Hızlı işlemleri kapat" : "Hızlı işlemleri aç"}
+        aria-label={open ? t("shell.fab.close") : t("shell.fab.open")}
         className={cn(
           "text-primary-foreground focus-visible:ring-ring inline-flex size-14 items-center justify-center rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2",
           "shadow-pop hover:shadow-glow transition-[transform,box-shadow] duration-[var(--motion-duration)] [transition-timing-function:var(--motion-ease)]",

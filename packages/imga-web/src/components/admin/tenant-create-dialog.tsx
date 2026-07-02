@@ -25,6 +25,8 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { useCreateAdminTenant } from "@/hooks/use-admin-tenants";
 import { ApiError } from "@/lib/api-client";
+import { LOCALES, LOCALE_LABELS, type Locale } from "@/lib/i18n/config";
+import { useTranslation } from "@/lib/i18n/use-translation";
 import { autoSlug, isValidSlug } from "@/lib/slug";
 import type { AutomationMode, TenantPlanTier } from "@/lib/types";
 import { AUTOMATION_MODE_LABELS, PLAN_TIER_LABELS } from "@/lib/user-helpers";
@@ -34,18 +36,9 @@ interface TenantCreateDialogProps {
   onOpenChange: (open: boolean) => void;
 }
 
-const PLAN_OPTIONS: ReadonlyArray<TenantPlanTier> = [
-  "trial",
-  "starter",
-  "business",
-  "enterprise",
-];
+const PLAN_OPTIONS: ReadonlyArray<TenantPlanTier> = ["trial", "starter", "business", "enterprise"];
 
-const AUTOMATION_OPTIONS: ReadonlyArray<AutomationMode> = [
-  "manual",
-  "semi_auto",
-  "full_auto",
-];
+const AUTOMATION_OPTIONS: ReadonlyArray<AutomationMode> = ["manual", "semi_auto", "full_auto"];
 
 /**
  * Two-mode dialog: form view collects tenant fields and (optionally)
@@ -54,24 +47,20 @@ const AUTOMATION_OPTIONS: ReadonlyArray<AutomationMode> = [
  * (the token is server-side returned only once — must surface
  * clearly to the operator before they close).
  */
-export function TenantCreateDialog({
-  open,
-  onOpenChange,
-}: TenantCreateDialogProps) {
+export function TenantCreateDialog({ open, onOpenChange }: TenantCreateDialogProps) {
   const [name, setName] = useState("");
   const [slug, setSlug] = useState("");
   const [slugTouched, setSlugTouched] = useState(false);
   const [planTier, setPlanTier] = useState<TenantPlanTier>("trial");
-  const [automationMode, setAutomationMode] =
-    useState<AutomationMode>("semi_auto");
+  const [automationMode, setAutomationMode] = useState<AutomationMode>("semi_auto");
+  const [language, setLanguage] = useState<Locale>("tr");
   const [seedAdmin, setSeedAdmin] = useState(false);
+  const { t } = useTranslation();
   const [adminEmail, setAdminEmail] = useState("");
   const [adminFullName, setAdminFullName] = useState("");
 
   const [successToken, setSuccessToken] = useState<string | null>(null);
-  const [createdTenantName, setCreatedTenantName] = useState<string | null>(
-    null,
-  );
+  const [createdTenantName, setCreatedTenantName] = useState<string | null>(null);
 
   const create = useCreateAdminTenant();
 
@@ -87,6 +76,7 @@ export function TenantCreateDialog({
       setSlugTouched(false);
       setPlanTier("trial");
       setAutomationMode("semi_auto");
+      setLanguage("tr");
       setSeedAdmin(false);
       setAdminEmail("");
       setAdminFullName("");
@@ -103,8 +93,7 @@ export function TenantCreateDialog({
   const formValid =
     name.trim().length > 0 &&
     slugIsValid &&
-    (!seedAdmin ||
-      (adminEmail.trim().length > 0 && adminFullName.trim().length > 0));
+    (!seedAdmin || (adminEmail.trim().length > 0 && adminFullName.trim().length > 0));
 
   async function handleSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -115,6 +104,7 @@ export function TenantCreateDialog({
         slug: effectiveSlug,
         plan_tier: planTier,
         automation_mode: automationMode,
+        language,
         initial_admin: seedAdmin
           ? {
               email: adminEmail.trim(),
@@ -125,16 +115,16 @@ export function TenantCreateDialog({
       setCreatedTenantName(result.tenant.name);
       if (result.initial_invitation_token) {
         setSuccessToken(result.initial_invitation_token);
-        toast.success("Kurum oluşturuldu", {
-          description: "İlk admin daveti hazır — linki paylaşın.",
+        toast.success(t("admin.tenantCreate.toast.createdTitle"), {
+          description: t("admin.tenantCreate.toast.createdInvite"),
         });
       } else {
-        toast.success("Kurum oluşturuldu");
+        toast.success(t("admin.tenantCreate.toast.createdTitle"));
         onOpenChange(false);
       }
     } catch (err) {
-      toast.error("Kurum oluşturulamadı", {
-        description: describeError(err),
+      toast.error(t("admin.tenantCreate.toast.createError"), {
+        description: t(describeError(err)),
       });
     }
   }
@@ -151,15 +141,12 @@ export function TenantCreateDialog({
         ) : (
           <form onSubmit={handleSubmit} className="space-y-4">
             <DialogHeader>
-              <DialogTitle>Yeni kurum</DialogTitle>
-              <DialogDescription>
-                İsim ve slug zorunlu. Opsiyonel olarak ilk admin daveti
-                aynı işlemde oluşturulabilir.
-              </DialogDescription>
+              <DialogTitle>{t("admin.tenantCreate.title")}</DialogTitle>
+              <DialogDescription>{t("admin.tenantCreate.desc")}</DialogDescription>
             </DialogHeader>
 
             <div className="space-y-2">
-              <Label htmlFor="tenant-name">İsim</Label>
+              <Label htmlFor="tenant-name">{t("admin.field.name")}</Label>
               <Input
                 id="tenant-name"
                 value={name}
@@ -172,7 +159,7 @@ export function TenantCreateDialog({
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="tenant-slug">Slug</Label>
+              <Label htmlFor="tenant-slug">{t("admin.field.slug")}</Label>
               <Input
                 id="tenant-slug"
                 value={effectiveSlug}
@@ -182,25 +169,15 @@ export function TenantCreateDialog({
                 }}
                 placeholder="acme-inc"
                 maxLength={64}
-                aria-invalid={
-                  effectiveSlug.length > 0 && !slugIsValid
-                    ? "true"
-                    : undefined
-                }
+                aria-invalid={effectiveSlug.length > 0 && !slugIsValid ? "true" : undefined}
               />
-              <p className="text-muted-foreground text-xs">
-                URL&apos;de görünür. Sadece lowercase harf, rakam ve tire.
-                Sonradan değiştirilemez.
-              </p>
+              <p className="text-muted-foreground text-xs">{t("admin.tenantCreate.slugHelp")}</p>
             </div>
 
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <div className="space-y-2">
-                <Label htmlFor="plan-tier">Plan</Label>
-                <Select
-                  value={planTier}
-                  onValueChange={(v) => setPlanTier(v as TenantPlanTier)}
-                >
+                <Label htmlFor="plan-tier">{t("admin.field.plan")}</Label>
+                <Select value={planTier} onValueChange={(v) => setPlanTier(v as TenantPlanTier)}>
                   <SelectTrigger id="plan-tier">
                     <SelectValue />
                   </SelectTrigger>
@@ -214,12 +191,10 @@ export function TenantCreateDialog({
                 </Select>
               </div>
               <div className="space-y-2">
-                <Label htmlFor="automation-mode">Otomasyon</Label>
+                <Label htmlFor="automation-mode">{t("admin.field.automation")}</Label>
                 <Select
                   value={automationMode}
-                  onValueChange={(v) =>
-                    setAutomationMode(v as AutomationMode)
-                  }
+                  onValueChange={(v) => setAutomationMode(v as AutomationMode)}
                 >
                   <SelectTrigger id="automation-mode">
                     <SelectValue />
@@ -235,24 +210,37 @@ export function TenantCreateDialog({
               </div>
             </div>
 
+            <div className="space-y-2">
+              <Label htmlFor="tenant-language">{t("tenant.language.label")}</Label>
+              <Select value={language} onValueChange={(v) => setLanguage(v as Locale)}>
+                <SelectTrigger id="tenant-language">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {LOCALES.map((l) => (
+                    <SelectItem key={l} value={l}>
+                      {LOCALE_LABELS[l]}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-muted-foreground text-xs">{t("tenant.language.help")}</p>
+            </div>
+
             <div className="space-y-3 rounded-md border p-3">
               <div className="flex items-center justify-between gap-3">
                 <div className="space-y-0.5">
-                  <Label htmlFor="seed-admin">İlk admin daveti gönder</Label>
+                  <Label htmlFor="seed-admin">{t("admin.tenantCreate.seedAdminLabel")}</Label>
                   <p className="text-muted-foreground text-xs">
-                    Kurum oluşturulurken davet token&apos;ı üretilir.
+                    {t("admin.tenantCreate.seedAdminHelp")}
                   </p>
                 </div>
-                <Switch
-                  id="seed-admin"
-                  checked={seedAdmin}
-                  onCheckedChange={setSeedAdmin}
-                />
+                <Switch id="seed-admin" checked={seedAdmin} onCheckedChange={setSeedAdmin} />
               </div>
               {seedAdmin ? (
                 <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                   <div className="space-y-1.5">
-                    <Label htmlFor="admin-email">E-posta</Label>
+                    <Label htmlFor="admin-email">{t("admin.field.email")}</Label>
                     <Input
                       id="admin-email"
                       type="email"
@@ -263,7 +251,7 @@ export function TenantCreateDialog({
                     />
                   </div>
                   <div className="space-y-1.5">
-                    <Label htmlFor="admin-name">Tam ad</Label>
+                    <Label htmlFor="admin-name">{t("admin.tenantCreate.fullName")}</Label>
                     <Input
                       id="admin-name"
                       value={adminFullName}
@@ -284,14 +272,12 @@ export function TenantCreateDialog({
                 onClick={() => onOpenChange(false)}
                 disabled={create.isPending}
               >
-                Vazgeç
+                {t("admin.action.cancel")}
               </Button>
-              <Button
-                type="submit"
-                disabled={!formValid || create.isPending}
-                className="gap-2"
-              >
-                {create.isPending ? "Oluşturuluyor..." : "Oluştur"}
+              <Button type="submit" disabled={!formValid || create.isPending} className="gap-2">
+                {create.isPending
+                  ? t("admin.tenantCreate.creating")
+                  : t("admin.tenantCreate.create")}
                 <Plus className="size-4" aria-hidden />
               </Button>
             </DialogFooter>
@@ -313,23 +299,25 @@ function SuccessView({
   token: string;
   onClose: () => void;
 }) {
+  const { t } = useTranslation();
   return (
     <div className="space-y-4">
       <DialogHeader>
         <DialogTitle className="flex items-center gap-2">
           <CheckCircle2 className="size-5 text-emerald-600" aria-hidden />
-          {tenantName} oluşturuldu
+          {t("admin.tenantCreate.success.title", { name: tenantName })}
         </DialogTitle>
         <DialogDescription>
-          İlk admin için davet linki hazır. Bu link sadece <strong>tek
-          sefer</strong> gösterilir — modal&apos;ı kapatmadan paylaş.
+          {t("admin.tenantCreate.success.desc1")}
+          <strong>{t("admin.invite.onlyOnce")}</strong>
+          {t("admin.tenantCreate.success.desc2")}
         </DialogDescription>
       </DialogHeader>
 
       <InviteLinkBlock token={token} />
 
       <DialogFooter>
-        <Button onClick={onClose}>Tamam, paylaştım</Button>
+        <Button onClick={onClose}>{t("admin.tenantCreate.success.done")}</Button>
       </DialogFooter>
     </div>
   );
@@ -340,14 +328,13 @@ interface InviteLinkBlockProps {
 }
 
 export function InviteLinkBlock({ token }: InviteLinkBlockProps) {
+  const { t } = useTranslation();
   const url = inviteUrl(token);
   return (
     <div className="space-y-2">
-      <Label className="text-xs">Davet linki</Label>
+      <Label className="text-xs">{t("admin.invite.linkLabel")}</Label>
       <div className="bg-muted/40 flex items-stretch gap-2 rounded-md border p-1">
-        <code className="flex-1 truncate self-center px-2 font-mono text-xs">
-          {url}
-        </code>
+        <code className="flex-1 self-center truncate px-2 font-mono text-xs">{url}</code>
         <Button
           type="button"
           variant="outline"
@@ -356,19 +343,17 @@ export function InviteLinkBlock({ token }: InviteLinkBlockProps) {
           onClick={async () => {
             try {
               await navigator.clipboard.writeText(url);
-              toast.success("Link kopyalandı");
+              toast.success(t("admin.invite.copied"));
             } catch {
-              toast.error("Kopyalanamadı; manuel seç ve kopyala.");
+              toast.error(t("admin.invite.copyFailed"));
             }
           }}
         >
           <Copy className="size-3.5" aria-hidden />
-          Kopyala
+          {t("admin.invite.copy")}
         </Button>
       </div>
-      <p className="text-muted-foreground text-xs">
-        Bu linki davet edilenle paylaşın. 7 gün geçerli.
-      </p>
+      <p className="text-muted-foreground text-xs">{t("admin.invite.linkHelp")}</p>
     </div>
   );
 }
@@ -383,11 +368,13 @@ function inviteUrl(token: string): string {
   return `/invite/${token}`;
 }
 
+/** i18n anahtarı döndürür; çağıran `t(...)` ile çevirir (describeError
+ *  modül seviyesinde, hook erişimi yok). */
 function describeError(err: unknown): string {
   if (err instanceof ApiError) {
-    if (err.status === 409) return "Bu slug zaten kullanılıyor.";
-    if (err.status === 403) return "Bu işlem için süper-yönetici yetkisi gerekli.";
-    if (err.status === 422) return "Form alanları geçersiz.";
+    if (err.status === 409) return "admin.tenantCreate.error.slugTaken";
+    if (err.status === 403) return "admin.error.superAdminRequired";
+    if (err.status === 422) return "admin.error.invalidForm";
   }
-  return "Beklenmeyen bir hata oluştu.";
+  return "admin.error.unexpected";
 }

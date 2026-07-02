@@ -17,6 +17,7 @@ import {
 } from "@/components/ui/command";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { useAuthStore } from "@/lib/auth-store";
+import { useTranslation } from "@/lib/i18n/use-translation";
 import { cn } from "@/lib/utils";
 
 interface TenantSwitcherProps {
@@ -29,12 +30,13 @@ export function TenantSwitcher({ collapsed }: TenantSwitcherProps) {
   const activeContext = useAuthStore((s) => s.activeContext);
   const availableTenants = useAuthStore((s) => s.availableTenants);
   const switchTenant = useAuthStore((s) => s.switchTenant);
+  const { t } = useTranslation();
 
   const [open, setOpen] = useState(false);
   const [isSwitching, setIsSwitching] = useState(false);
   const [inviteDialogOpen, setInviteDialogOpen] = useState(false);
 
-  const activeTenantName = activeContext?.tenant_name ?? "Kurum seçilmedi";
+  const activeTenantName = activeContext?.tenant_name ?? t("shell.tenant.none");
   const activeTenantId = activeContext?.tenant_id ?? null;
 
   // Sprint 7.7.3: even single-tenant users see the popover so
@@ -50,9 +52,9 @@ export function TenantSwitcher({ collapsed }: TenantSwitcherProps) {
     setIsSwitching(true);
     try {
       await switchTenant(tenantId);
-      toast.success("Kurum değiştirildi");
+      toast.success(t("shell.tenant.switched"));
     } catch {
-      toast.error("Kurum değiştirilemedi");
+      toast.error(t("shell.tenant.switchFailed"));
     } finally {
       setIsSwitching(false);
       setOpen(false);
@@ -63,7 +65,7 @@ export function TenantSwitcher({ collapsed }: TenantSwitcherProps) {
     <Button
       variant="outline"
       aria-expanded={open}
-      aria-label={`Aktif kurum: ${activeTenantName}. Değiştirmek için açın.`}
+      aria-label={t("shell.tenant.triggerAria", { name: activeTenantName })}
       disabled={isSwitching}
       className={cn(
         "h-10 w-full justify-between gap-2 px-3 font-medium",
@@ -89,11 +91,11 @@ export function TenantSwitcher({ collapsed }: TenantSwitcherProps) {
         <PopoverContent align="start" className="w-[260px] p-0">
           <Command>
             {availableTenants.length > 1 ? (
-              <CommandInput placeholder="Kurum ara..." />
+              <CommandInput placeholder={t("shell.tenant.searchPlaceholder")} />
             ) : null}
             <CommandList>
-              <CommandEmpty>Eşleşen kurum yok.</CommandEmpty>
-              <CommandGroup heading="Mevcut kurumlar">
+              <CommandEmpty>{t("shell.tenant.empty")}</CommandEmpty>
+              <CommandGroup heading={t("shell.tenant.available")}>
                 {availableTenants.map((tenant) => (
                   <CommandItem
                     key={tenant.id}
@@ -128,7 +130,7 @@ export function TenantSwitcher({ collapsed }: TenantSwitcherProps) {
                     className="text-muted-foreground size-4"
                     aria-hidden
                   />
-                  <span>Yeni davet kabul et</span>
+                  <span>{t("shell.tenant.acceptInvite")}</span>
                 </CommandItem>
               </CommandGroup>
             </CommandList>

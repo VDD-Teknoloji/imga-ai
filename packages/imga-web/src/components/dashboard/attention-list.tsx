@@ -21,6 +21,7 @@ import Link from "next/link";
 
 import { Skeleton } from "@/components/ui/skeleton";
 import { useSentimentByCategory } from "@/hooks/use-analytics";
+import { useTranslation } from "@/lib/i18n/use-translation";
 
 interface AttentionRow {
   code: string;
@@ -57,6 +58,7 @@ function compute(
 }
 
 export function AttentionList() {
+  const { t } = useTranslation();
   const query = useSentimentByCategory({}, 10);
 
   if (query.isLoading) {
@@ -85,8 +87,7 @@ export function AttentionList() {
       <SectionHeader />
       {rows.length === 0 ? (
         <p className="text-muted-foreground mt-4 text-sm leading-relaxed">
-          Negatif sinyal yok — son dönemde dikkat çeken bir kategori
-          bulunmadı.
+          {t("dashboard.attentionList.empty")}
         </p>
       ) : (
         <ul className="mt-4 space-y-1">
@@ -106,8 +107,12 @@ export function AttentionList() {
                   <p className="text-sm font-semibold truncate">{r.label}</p>
                   <p className="text-muted-foreground text-xs truncate">
                     {r.totalCount > 0
-                      ? `toplam ${r.totalCount} yorum içinde`
-                      : `${r.negativeCount} negatif yorum`}
+                      ? t("dashboard.attentionList.rowTotal", {
+                          n: r.totalCount,
+                        })
+                      : t("dashboard.attentionList.rowNegative", {
+                          n: r.negativeCount,
+                        })}
                   </p>
                 </div>
                 <ArrowRight
@@ -124,15 +129,18 @@ export function AttentionList() {
 }
 
 function SectionHeader() {
+  const { t } = useTranslation();
   return (
     <header className="flex items-start gap-2.5">
       <span className="from-primary/20 to-primary/5 text-primary ring-primary/15 inline-flex size-7 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br ring-1">
         <Flame className="size-3.5" aria-hidden />
       </span>
       <div className="flex-1 min-w-0">
-        <h2 className="text-sm font-semibold">Bugün dikkat</h2>
+        <h2 className="text-sm font-semibold">
+          {t("dashboard.attentionList.title")}
+        </h2>
         <p className="text-muted-foreground text-xs">
-          en çok negatif yorum alan kategoriler
+          {t("dashboard.attentionList.subtitle")}
         </p>
       </div>
     </header>

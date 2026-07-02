@@ -29,6 +29,7 @@ import { Heatmap } from "@/components/charts/heatmap";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { useTranslation } from "@/lib/i18n/use-translation";
 import {
   useCategoryDistribution,
   useCompanyPerspectiveDistribution,
@@ -59,17 +60,25 @@ import type {
 // tab is selected; ssr: false skips the server render (these are
 // interactive-only — no SEO value) and the loading fallback keeps the
 // Tabs container from collapsing during fetch.
+// i18n — dynamic() loading fallback is rendered as a React element, so a
+// tiny component lets it call useTranslation (a module-scope arrow fn
+// can't use hooks).
+function TabLoading() {
+  const { t } = useTranslation();
+  return <p className="text-muted-foreground text-sm">{t("common.loading")}</p>;
+}
+
 const CohortTab = dynamic(
   () => import("./_components/cohort-tab").then((m) => ({ default: m.CohortTab })),
-  { loading: () => <p className="text-muted-foreground text-sm">Yükleniyor…</p>, ssr: false },
+  { loading: () => <TabLoading />, ssr: false },
 );
 const HeatmapTab = dynamic(
   () => import("./_components/heatmap-tab").then((m) => ({ default: m.HeatmapTab })),
-  { loading: () => <p className="text-muted-foreground text-sm">Yükleniyor…</p>, ssr: false },
+  { loading: () => <TabLoading />, ssr: false },
 );
 const WordCloudTab = dynamic(
   () => import("./_components/word-cloud-tab").then((m) => ({ default: m.WordCloudTab })),
-  { loading: () => <p className="text-muted-foreground text-sm">Yükleniyor…</p>, ssr: false },
+  { loading: () => <TabLoading />, ssr: false },
 );
 
 const SENTIMENT_COLOURS: Record<string, string> = {
@@ -97,20 +106,20 @@ type TabKey =
 // (Duygu) + "Kategori" + "NPS" are the daily-look tabs; advanced
 // surfaces (override / cohort / heatmap) live to the right of the
 // strip and stay one click away.
-const TAB_LABELS: Record<TabKey, string> = {
-  sentiment: "Duygu",
-  category: "Kategori",
-  nps: "NPS",
-  cross: "Çapraz",
-  perspective: "Perspektif",
-  tickets: "Ticket",
-  heatmap: "Isı haritası",
-  cohort: "Kohort",
-  wordcloud: "Kelimeler",
+const TAB_LABEL_KEYS: Record<TabKey, string> = {
+  sentiment: "insights.tabs.sentiment",
+  category: "insights.tabs.category",
+  nps: "insights.tabs.nps",
+  cross: "insights.tabs.cross",
+  perspective: "insights.tabs.perspective",
+  tickets: "insights.tabs.tickets",
+  heatmap: "insights.tabs.heatmap",
+  cohort: "insights.tabs.cohort",
+  wordcloud: "insights.tabs.wordcloud",
   // Madde 11 (UML) — "Override" yabancı kelime; Türkçe karşılığı
   // "Kural Katmanları" daha anlaşılır (tier1/tier2/critical yorum-
   // tabanlı kural override katmanları için).
-  overrides: "Kural Katmanları",
+  overrides: "insights.tabs.overrides",
 };
 
 // Sprint 8.3.4 round-2 — wrap the search-params-reading subtree in
@@ -130,13 +139,14 @@ export default function InsightsPage() {
 }
 
 function InsightsHeaderSkeleton() {
+  const { t } = useTranslation();
   return (
     <main className="mx-auto w-full max-w-6xl space-y-6 px-4 py-6 md:px-8 md:py-10">
       <header className="space-y-1.5">
         <h1 className="text-2xl font-semibold tracking-tight md:text-3xl">
-          İçgörüler
+          {t("insights.page.title")}
         </h1>
-        <p className="text-muted-foreground text-sm">Yükleniyor…</p>
+        <p className="text-muted-foreground text-sm">{t("common.loading")}</p>
       </header>
     </main>
   );
@@ -154,6 +164,7 @@ function InsightsHeaderSkeleton() {
 // a sync useEffect catches external nav (back/forward, deep links).
 
 function InsightsContent() {
+  const { t } = useTranslation();
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -300,10 +311,10 @@ function InsightsContent() {
     <main className="mx-auto w-full max-w-6xl space-y-6 px-4 py-6 md:px-8 md:py-10">
       <header className="space-y-1.5">
         <h1 className="text-2xl font-semibold tracking-tight md:text-3xl">
-          İçgörüler
+          {t("insights.page.title")}
         </h1>
         <p className="text-muted-foreground text-sm">
-          Duygu, kategori ve Ticket metriklerinin ayrıntılı görünümü.
+          {t("insights.page.subtitle")}
         </p>
       </header>
 
@@ -322,10 +333,10 @@ function InsightsContent() {
       {!dateFrom && !dateTo && (
         <div className="bg-muted/40 border-border flex items-center gap-2 rounded-2xl border px-4 py-2.5 text-xs">
           <span className="bg-primary/15 text-primary inline-flex items-center rounded-full px-2 py-0.5 font-medium">
-            Tüm zamanlar
+            {t("insights.filter.allTime")}
           </span>
           <span className="text-muted-foreground">
-            Filtre uygulanmadı — başlangıç ve bitiş seçerek daraltın.
+            {t("insights.filter.noFilterHint")}
           </span>
         </div>
       )}
@@ -342,13 +353,13 @@ function InsightsContent() {
             artıyor ama tab'lar overlap etmiyor. min-w-fit each
             trigger için yer açarken text-xs scroll'a düşmüyor. */}
         <TabsList className="flex flex-wrap items-center justify-start gap-1 p-1 h-auto">
-          {(Object.keys(TAB_LABELS) as TabKey[]).map((k) => (
+          {(Object.keys(TAB_LABEL_KEYS) as TabKey[]).map((k) => (
             <TabsTrigger
               key={k}
               value={k}
               className="px-3 whitespace-nowrap min-w-fit shrink-0"
             >
-              {TAB_LABELS[k]}
+              {t(TAB_LABEL_KEYS[k])}
             </TabsTrigger>
           ))}
         </TabsList>
@@ -470,6 +481,7 @@ function FilterBar({
   onDateToChange: (value: string) => void;
   onSourceTypesChange: (value: string) => void;
 }) {
+  const { t } = useTranslation();
   // Native min/max on the date inputs prevents the picker from offering
   // an invalid (from > to) range; the API would still cap at 90 days,
   // but stopping it at the input level is friendlier than a 400 round-
@@ -478,7 +490,7 @@ function FilterBar({
     <Card>
       <CardContent className="grid grid-cols-1 gap-3 p-4 md:grid-cols-3">
         <div>
-          <Label className="text-xs">Başlangıç</Label>
+          <Label className="text-xs">{t("insights.filter.startDate")}</Label>
           <input
             type="date"
             value={dateFrom}
@@ -488,7 +500,7 @@ function FilterBar({
           />
         </div>
         <div>
-          <Label className="text-xs">Bitiş</Label>
+          <Label className="text-xs">{t("insights.filter.endDate")}</Label>
           <input
             type="date"
             value={dateTo}
@@ -498,15 +510,15 @@ function FilterBar({
           />
         </div>
         <div>
-          <Label className="text-xs">Kaynak</Label>
+          <Label className="text-xs">{t("insights.filter.source")}</Label>
           <select
             value={sourceTypes}
             onChange={(e) => onSourceTypesChange(e.target.value)}
             className="border-input bg-background mt-1 w-full rounded-md border px-3 py-2 text-sm"
           >
-            <option value="">Tümü</option>
-            <option value="manual">Sadece Manuel</option>
-            <option value="batch">Sadece Toplu</option>
+            <option value="">{t("insights.filter.sourceAll")}</option>
+            <option value="manual">{t("insights.filter.sourceManualOnly")}</option>
+            <option value="batch">{t("insights.filter.sourceBatchOnly")}</option>
           </select>
         </div>
       </CardContent>
@@ -539,25 +551,30 @@ function ChartFrame<T>({
   height?: number;
   children: (data: T) => React.ReactNode;
 }) {
+  const { t } = useTranslation();
   const minH = `min-h-[${height}px]`;
   if (state.error) {
     return (
       <div className={`${minH} flex items-center justify-center`}>
-        <p className="text-destructive text-sm">Veri yüklenemedi: {state.error.message}</p>
+        <p className="text-destructive text-sm">
+          {t("insights.state.loadError", { message: state.error.message })}
+        </p>
       </div>
     );
   }
   if (state.isLoading || state.isPending || !state.data) {
     return (
       <div className={`${minH} flex items-center justify-center`}>
-        <p className="text-muted-foreground text-sm">Yükleniyor…</p>
+        <p className="text-muted-foreground text-sm">{t("common.loading")}</p>
       </div>
     );
   }
   if (isEmpty(state.data)) {
     return (
       <div className={`${minH} flex items-center justify-center`}>
-        <p className="text-muted-foreground text-sm">Bu filtrelerle veri bulunamadı.</p>
+        <p className="text-muted-foreground text-sm">
+          {t("insights.state.noData")}
+        </p>
       </div>
     );
   }
@@ -567,6 +584,7 @@ function ChartFrame<T>({
 // --- tab components -------------------------------------------------------
 
 function SentimentTab({ filters }: { filters: AnalyticsFilters }) {
+  const { t } = useTranslation();
   const dist = useSentimentDistribution(filters);
   const sens = useSensitivityDistribution(filters);
   const tl = useSentimentTimeline(filters, "day");
@@ -575,7 +593,9 @@ function SentimentTab({ filters }: { filters: AnalyticsFilters }) {
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">Duygu Dağılımı</CardTitle>
+            <CardTitle className="text-base">
+              {t("insights.chart.sentimentDistribution")}
+            </CardTitle>
           </CardHeader>
           <CardContent>
             <ChartFrame state={dist} isEmpty={(d) => d.total === 0}>
@@ -603,7 +623,9 @@ function SentimentTab({ filters }: { filters: AnalyticsFilters }) {
         </Card>
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">Skor Histogramı</CardTitle>
+            <CardTitle className="text-base">
+              {t("insights.chart.scoreHistogram")}
+            </CardTitle>
           </CardHeader>
           <CardContent>
             <ChartFrame state={sens} isEmpty={(d) => d.total === 0}>
@@ -628,7 +650,9 @@ function SentimentTab({ filters }: { filters: AnalyticsFilters }) {
       </div>
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Duygu Trendi (gün)</CardTitle>
+          <CardTitle className="text-base">
+            {t("insights.chart.sentimentTrendDaily")}
+          </CardTitle>
         </CardHeader>
         <CardContent>
           <ChartFrame state={tl} isEmpty={(d) => d.data.length === 0} height={260}>
@@ -653,11 +677,14 @@ function SentimentTab({ filters }: { filters: AnalyticsFilters }) {
 }
 
 function CategoryTab({ filters }: { filters: AnalyticsFilters }) {
+  const { t } = useTranslation();
   const cats = useCategoryDistribution(filters, 10);
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="text-base">Kategori Top 10</CardTitle>
+        <CardTitle className="text-base">
+          {t("insights.chart.categoryTop10")}
+        </CardTitle>
       </CardHeader>
       <CardContent>
         <ChartFrame state={cats} isEmpty={(d) => d.total === 0}>
@@ -685,11 +712,14 @@ function CrossAnalysisTab({
   filters: AnalyticsFilters;
   router: ReturnType<typeof useRouter>;
 }) {
+  const { t } = useTranslation();
   const matrix = useSentimentByCategory(filters, 10);
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="text-base">Kategori × Duygu Matrisi</CardTitle>
+        <CardTitle className="text-base">
+          {t("insights.chart.categorySentimentMatrix")}
+        </CardTitle>
       </CardHeader>
       <CardContent>
         <ChartFrame state={matrix} isEmpty={(d) => d.categories.length === 0} height={300}>
@@ -717,7 +747,11 @@ function CrossAnalysisTab({
                 colTotals={d.totals_by_sentiment}
                 colorScale="blue"
                 tooltip={(value, rowLabel, colLabel) =>
-                  `${rowLabel} × ${colLabel}: ${value} analiz`
+                  t("insights.chart.matrixTooltip", {
+                    row: rowLabel,
+                    col: colLabel,
+                    value,
+                  })
                 }
                 onCellClick={(i, j) => {
                   const cat = reordered.codes[i];
@@ -736,10 +770,7 @@ function CrossAnalysisTab({
           }}
         </ChartFrame>
         <p className="text-muted-foreground mt-3 text-xs leading-relaxed">
-          &quot;Belirsiz&quot; kategori sınıflandırılamayan yorumları
-          kapsar — büyük rakam genelde aşırı geniş veya çok kısa
-          yorumlardan kaynaklanır. Tablonun sonuna alındı ki
-          sinyalleri görmek kolaylaşsın.
+          {t("insights.chart.belirsizNote")}
         </p>
       </CardContent>
     </Card>
@@ -782,11 +813,14 @@ function reorderBelirsizLast(
 }
 
 function OverridesTab({ filters }: { filters: AnalyticsFilters }) {
+  const { t } = useTranslation();
   const stats = useOverrideStats(filters);
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="text-base">Kural Katmanları</CardTitle>
+        <CardTitle className="text-base">
+          {t("insights.chart.ruleLayers")}
+        </CardTitle>
       </CardHeader>
       <CardContent>
         <ChartFrame state={stats} isEmpty={(d) => d.data.length === 0} height={260}>
@@ -803,8 +837,9 @@ function OverridesTab({ filters }: { filters: AnalyticsFilters }) {
           )}
         </ChartFrame>
         <p className="text-muted-foreground mt-2 text-xs">
-          Kural katman sayımı Sprint 8.3.4&apos;te doldurulacak (<code>overrides_applied</code>{" "}
-          JSONB kolonu); şimdilik 5 katman sıfır sayımla gösteriliyor.
+          {t("insights.chart.ruleLayersNotePre")}
+          <code>overrides_applied</code>{" "}
+          {t("insights.chart.ruleLayersNotePost")}
         </p>
       </CardContent>
     </Card>
@@ -820,6 +855,7 @@ const NPS_BUCKET_COLOURS: Record<string, string> = {
 };
 
 function NpsTab({ dateFrom, dateTo }: { dateFrom: string; dateTo: string }) {
+  const { t } = useTranslation();
   const filters = useMemo(
     () => ({
       date_from: dateFrom || undefined,
@@ -848,7 +884,9 @@ function NpsTab({ dateFrom, dateTo }: { dateFrom: string; dateTo: string }) {
       <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">NPS Skoru</CardTitle>
+            <CardTitle className="text-base">
+              {t("insights.chart.npsScore")}
+            </CardTitle>
           </CardHeader>
           <CardContent>
             <ChartFrame state={summary} isEmpty={(d) => d.total_count === 0} height={160}>
@@ -858,7 +896,10 @@ function NpsTab({ dateFrom, dateTo }: { dateFrom: string; dateTo: string }) {
                     {d.score === null ? "—" : (d.score > 0 ? "+" : "") + Math.round(d.score)}
                   </span>
                   <span className="text-muted-foreground text-xs">
-                    {d.total_count} yanıt · kapsama %{d.coverage_percent.toFixed(1)}
+                    {t("insights.chart.npsResponsesCoverage", {
+                      count: d.total_count,
+                      coverage: d.coverage_percent.toFixed(1),
+                    })}
                   </span>
                 </div>
               )}
@@ -867,7 +908,9 @@ function NpsTab({ dateFrom, dateTo }: { dateFrom: string; dateTo: string }) {
         </Card>
         <Card className="md:col-span-2">
           <CardHeader>
-            <CardTitle className="text-base">Bucket Dağılımı</CardTitle>
+            <CardTitle className="text-base">
+              {t("insights.chart.bucketDistribution")}
+            </CardTitle>
           </CardHeader>
           <CardContent>
             <ChartFrame state={summary} isEmpty={(d) => d.total_count === 0} height={220}>
@@ -897,7 +940,9 @@ function NpsTab({ dateFrom, dateTo }: { dateFrom: string; dateTo: string }) {
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Aylık Trend (son 12 ay)</CardTitle>
+          <CardTitle className="text-base">
+            {t("insights.chart.monthlyTrend12")}
+          </CardTitle>
         </CardHeader>
         <CardContent>
           <ChartFrame state={trend} isEmpty={(d) => d.length === 0} height={260}>
@@ -909,7 +954,9 @@ function NpsTab({ dateFrom, dateTo }: { dateFrom: string; dateTo: string }) {
                   <YAxis domain={[-100, 100]} ticks={[-100, -50, 0, 50, 100]} fontSize={10} />
                   <Tooltip
                     formatter={(value) =>
-                      value === null || value === undefined ? "veri yok" : String(value)
+                      value === null || value === undefined
+                        ? t("insights.state.noValue")
+                        : String(value)
                     }
                   />
                   <Line
@@ -938,12 +985,15 @@ function PerspectiveTab({
   filters: AnalyticsFilters;
   router: ReturnType<typeof useRouter>;
 }) {
+  const { t } = useTranslation();
   const dist = useCompanyPerspectiveDistribution(filters, 10);
   return (
     <div className="space-y-4">
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Şirket Perspektifi Top 10</CardTitle>
+          <CardTitle className="text-base">
+            {t("insights.chart.companyPerspectiveTop10")}
+          </CardTitle>
         </CardHeader>
         <CardContent>
           <ChartFrame state={dist} isEmpty={(d) => d.total === 0}>
@@ -970,15 +1020,17 @@ function PerspectiveTab({
                 </ResponsiveContainer>
                 {d.unmatched_count > 0 && (
                   <p className="text-muted-foreground mt-3 text-xs">
-                    Eşleşme yok:{" "}
+                    {t("insights.chart.unmatchedLabel")}{" "}
                     <button
                       type="button"
                       className="hover:text-foreground underline"
                       onClick={() => router.push("/reviews?perspective_codes=__unmatched__")}
                     >
-                      {d.unmatched_count} analiz
+                      {t("insights.chart.analysesCount", {
+                        count: d.unmatched_count,
+                      })}
                     </button>{" "}
-                    (heuristik bir taksonomi girdisiyle eşleşmedi).
+                    {t("insights.chart.unmatchedHint")}
                   </p>
                 )}
               </>
@@ -991,12 +1043,15 @@ function PerspectiveTab({
 }
 
 function TicketsTab({ filters }: { filters: AnalyticsFilters }) {
+  const { t } = useTranslation();
   const res = useTicketResolutionTime(filters);
   return (
     <div className="space-y-4">
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Çözüm Süresi Dağılımı</CardTitle>
+          <CardTitle className="text-base">
+            {t("insights.chart.resolutionTimeDistribution")}
+          </CardTitle>
         </CardHeader>
         <CardContent>
           <ChartFrame state={res} isEmpty={(d) => d.total_resolved_tickets === 0} height={220}>
@@ -1013,21 +1068,27 @@ function TicketsTab({ filters }: { filters: AnalyticsFilters }) {
                 </ResponsiveContainer>
                 <dl className="text-muted-foreground mt-3 grid grid-cols-3 gap-3 text-xs">
                   <div>
-                    <dt>Ortalama</dt>
+                    <dt>{t("insights.chart.avg")}</dt>
                     <dd className="text-foreground text-base font-semibold">
-                      {d.avg_resolution_hours.toFixed(1)} saat
+                      {t("insights.chart.hours", {
+                        value: d.avg_resolution_hours.toFixed(1),
+                      })}
                     </dd>
                   </div>
                   <div>
-                    <dt>Ortanca</dt>
+                    <dt>{t("insights.chart.median")}</dt>
                     <dd className="text-foreground text-base font-semibold">
-                      {d.median_resolution_hours.toFixed(1)} saat
+                      {t("insights.chart.hours", {
+                        value: d.median_resolution_hours.toFixed(1),
+                      })}
                     </dd>
                   </div>
                   <div>
                     <dt>p95</dt>
                     <dd className="text-foreground text-base font-semibold">
-                      {d.p95_resolution_hours.toFixed(1)} saat
+                      {t("insights.chart.hours", {
+                        value: d.p95_resolution_hours.toFixed(1),
+                      })}
                     </dd>
                   </div>
                 </dl>

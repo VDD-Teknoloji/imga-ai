@@ -16,6 +16,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useAuthStore } from "@/lib/auth-store";
+import { useTranslation } from "@/lib/i18n/use-translation";
 import { cn } from "@/lib/utils";
 
 interface UserMenuProps {
@@ -31,6 +32,7 @@ export function UserMenu({ collapsed }: UserMenuProps) {
   const router = useRouter();
   const user = useAuthStore((s) => s.user);
   const logout = useAuthStore((s) => s.logout);
+  const { t } = useTranslation();
 
   if (!user) return null;
 
@@ -40,7 +42,7 @@ export function UserMenu({ collapsed }: UserMenuProps) {
     try {
       await logout();
     } catch {
-      toast.error("Çıkış sırasında hata oluştu");
+      toast.error(t("shell.user.logoutError"));
       return;
     }
     router.replace("/login");
@@ -49,7 +51,7 @@ export function UserMenu({ collapsed }: UserMenuProps) {
   const triggerElement = (
     <Button
       variant="ghost"
-      aria-label={`Kullanıcı menüsü: ${user.full_name}`}
+      aria-label={t("shell.user.menuAria", { name: user.full_name })}
       className={cn(
         "hover:bg-sidebar-accent h-12 w-full justify-start gap-3 px-2",
         collapsed && "justify-center px-0",
@@ -86,7 +88,7 @@ export function UserMenu({ collapsed }: UserMenuProps) {
         <DropdownMenuSeparator />
         <DropdownMenuItem onClick={handleLogout}>
           <LogOut className="size-4" aria-hidden />
-          Çıkış yap
+          {t("shell.user.signOut")}
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>

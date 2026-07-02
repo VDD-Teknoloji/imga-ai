@@ -9,6 +9,7 @@ import { TenantSwitcher } from "@/components/layout/tenant-switcher";
 import { UserMenu } from "@/components/layout/user-menu";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
+import { useTranslation } from "@/lib/i18n/use-translation";
 import { useUiStore } from "@/lib/ui-store";
 import { cn } from "@/lib/utils";
 
@@ -36,6 +37,7 @@ interface SidebarProps {
 export function Sidebar({ variant, onNavigate }: SidebarProps) {
   const collapsed = useUiStore((s) => s.sidebarCollapsed);
   const toggleSidebar = useUiStore((s) => s.toggleSidebar);
+  const { t } = useTranslation();
 
   // Store her zaman "kapalı" başlar (SSR ile birebir — hydration
   // mismatch yok); kullanıcının kayıtlı "açık" tercihi mount
@@ -49,7 +51,7 @@ export function Sidebar({ variant, onNavigate }: SidebarProps) {
 
   return (
     <aside
-      aria-label="Kenar çubuğu"
+      aria-label={t("shell.sidebar.label")}
       className={cn(
         "bg-sidebar text-sidebar-foreground flex h-full flex-col",
         variant === "desktop" && "border-r transition-[width] duration-200",
@@ -85,7 +87,7 @@ export function Sidebar({ variant, onNavigate }: SidebarProps) {
                   variant="ghost"
                   size="icon"
                   onClick={toggleSidebar}
-                  aria-label="Kenar çubuğunu daralt"
+                  aria-label={t("shell.sidebar.collapse")}
                   className="hover:bg-sidebar-accent size-8 shrink-0 text-sidebar-foreground/70 hover:text-sidebar-foreground"
                 >
                   <PanelLeft className="size-4" aria-hidden />
@@ -100,7 +102,7 @@ export function Sidebar({ variant, onNavigate }: SidebarProps) {
             variant="ghost"
             size="icon"
             onClick={toggleSidebar}
-            aria-label="Kenar çubuğunu genişlet"
+            aria-label={t("shell.sidebar.expand")}
             className="hover:bg-sidebar-accent mx-auto size-8 shrink-0 text-sidebar-foreground/70 hover:text-sidebar-foreground"
           >
             <PanelLeft className="size-4 rotate-180" aria-hidden />

@@ -25,6 +25,7 @@ import {
   useUpdateActionItem,
 } from "@/hooks/use-action-items";
 import { ApiError, formatApiErrorMessage } from "@/lib/api-client";
+import { useTranslation } from "@/lib/i18n/use-translation";
 import {
   ACTION_ITEM_PRIORITY_LABELS,
   ACTION_ITEM_STATUS_LABELS,
@@ -57,19 +58,23 @@ export default function ActionItemsPage() {
 }
 
 function HeaderSkeleton() {
+  const { t } = useTranslation();
   return (
     <main className="mx-auto w-full max-w-5xl space-y-6 px-4 py-6 md:px-8 md:py-10">
       <header className="space-y-1.5">
         <h1 className="text-2xl font-semibold tracking-tight md:text-3xl">
-          Aksiyonlar
+          {t("dashboard.actionItems.title")}
         </h1>
-        <p className="text-muted-foreground text-sm">Yükleniyor…</p>
+        <p className="text-muted-foreground text-sm">
+          {t("dashboard.common.loading")}
+        </p>
       </header>
     </main>
   );
 }
 
 function Content() {
+  const { t } = useTranslation();
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -130,15 +135,14 @@ function Content() {
       <header className="flex flex-wrap items-start justify-between gap-3">
         <div className="space-y-1.5">
           <h1 className="text-2xl font-semibold tracking-tight md:text-3xl">
-            Aksiyonlar
+            {t("dashboard.actionItems.title")}
           </h1>
           <p className="text-muted-foreground text-sm">
-            Yönetici özeti ve SWOT raporlarından çıkarılan veya manuel eklenen
-            takip görevleri.
+            {t("dashboard.actionItems.subtitle")}
           </p>
         </div>
         <Button onClick={() => setShowCreate(true)} className="gap-2">
-          <Plus className="size-4" aria-hidden /> Yeni aksiyon
+          <Plus className="size-4" aria-hidden /> {t("dashboard.actionItems.new")}
         </Button>
       </header>
 
@@ -151,15 +155,17 @@ function Content() {
       {focusItems.length > 0 && (
         <section
           className="rise-in shadow-soft bg-card ring-1 ring-red-200/70 dark:ring-red-900/50 rounded-2xl p-5 md:p-6"
-          aria-label="Yüksek öncelikli açık aksiyonlar"
+          aria-label={t("dashboard.actionItems.focus.aria")}
         >
           <header className="flex items-center justify-between gap-3">
             <div>
               <p className="text-red-700 dark:text-red-400 text-xs font-semibold">
-                Bugün dikkat
+                {t("dashboard.actionItems.focus.today")}
               </p>
               <p className="mt-0.5 text-sm font-semibold">
-                {focus.data!.length} yüksek öncelikli açık aksiyon
+                {t("dashboard.actionItems.focus.count", {
+                  n: focus.data!.length,
+                })}
               </p>
             </div>
             {focus.data!.length > 3 && (
@@ -174,7 +180,7 @@ function Content() {
                 }}
                 className="gap-1"
               >
-                Tümünü gör
+                {t("dashboard.actionItems.focus.seeAll")}
               </Button>
             )}
           </header>
@@ -202,7 +208,9 @@ function Content() {
 
       <div className="bg-card ring-foreground/5 shadow-soft flex flex-wrap items-center gap-3 rounded-2xl p-4 ring-1">
         <div>
-          <Label className="text-xs">Durum</Label>
+          <Label className="text-xs">
+            {t("dashboard.actionItems.filter.status")}
+          </Label>
           <select
             value={statusFilter}
             onChange={(e) => {
@@ -212,7 +220,7 @@ function Content() {
             }}
             className="border-input bg-background mt-1 rounded-md border px-2 py-1 text-sm"
           >
-            <option value="">Tümü</option>
+            <option value="">{t("dashboard.common.all")}</option>
             {(Object.keys(ACTION_ITEM_STATUS_LABELS) as ActionItemStatus[]).map(
               (s) => (
                 <option key={s} value={s}>
@@ -223,7 +231,9 @@ function Content() {
           </select>
         </div>
         <div>
-          <Label className="text-xs">Öncelik</Label>
+          <Label className="text-xs">
+            {t("dashboard.actionItems.filter.priority")}
+          </Label>
           <select
             value={priorityFilter}
             onChange={(e) => {
@@ -233,7 +243,7 @@ function Content() {
             }}
             className="border-input bg-background mt-1 rounded-md border px-2 py-1 text-sm"
           >
-            <option value="">Tümü</option>
+            <option value="">{t("dashboard.common.all")}</option>
             {(
               Object.keys(ACTION_ITEM_PRIORITY_LABELS) as ActionItemPriority[]
             ).map((p) => (
@@ -254,22 +264,26 @@ function Content() {
             }}
             className="size-3.5"
           />
-          Arşivi göster
+          {t("dashboard.actionItems.filter.showArchived")}
         </label>
         <span className="text-muted-foreground text-xs">
-          {list.data?.length ?? 0} kayıt
+          {t("dashboard.actionItems.recordsCount", {
+            n: list.data?.length ?? 0,
+          })}
         </span>
       </div>
 
       {showCreate && <CreateForm onClose={() => setShowCreate(false)} />}
 
       {list.isLoading ? (
-        <p className="text-sm">Yükleniyor…</p>
+        <p className="text-sm">{t("dashboard.common.loading")}</p>
       ) : list.isError ? (
-        <p className="text-destructive text-sm">Liste yüklenemedi.</p>
+        <p className="text-destructive text-sm">
+          {t("dashboard.actionItems.listFailed")}
+        </p>
       ) : !list.data || list.data.length === 0 ? (
         <p className="text-muted-foreground p-6 text-center text-sm">
-          Aksiyon yok.
+          {t("dashboard.actionItems.empty")}
         </p>
       ) : (
         <ul className="space-y-2">
@@ -283,6 +297,7 @@ function Content() {
 }
 
 function ActionItemRow({ item }: { item: ActionItem }) {
+  const { t } = useTranslation();
   const update = useUpdateActionItem();
   const archive = useDeleteActionItem();
   const restore = useRestoreActionItem();
@@ -317,17 +332,17 @@ function ActionItemRow({ item }: { item: ActionItem }) {
             variant="outline"
             className="border-zinc-400 bg-zinc-100 text-xs text-zinc-700"
           >
-            Arşivde
+            {t("dashboard.actionItems.archived")}
           </Badge>
         )}
         {item.source_report_id && (
           <span className="text-muted-foreground text-xs">
-            kaynak: SWOT
+            {t("dashboard.actionItems.sourceSwot")}
           </span>
         )}
         {item.source_briefing_id && (
           <span className="text-muted-foreground text-xs">
-            kaynak: Yönetici Özeti
+            {t("dashboard.actionItems.sourceBriefing")}
           </span>
         )}
       </div>
@@ -360,7 +375,9 @@ function ActionItemRow({ item }: { item: ActionItem }) {
           className="gap-1"
         >
           <History className="size-3.5" aria-hidden />
-          {showHistory ? "Geçmişi gizle" : "Geçmiş"}
+          {showHistory
+            ? t("dashboard.actionItems.hideHistory")
+            : t("dashboard.actionItems.history")}
         </Button>
         {item.is_archived ? (
           <Button
@@ -369,13 +386,15 @@ function ActionItemRow({ item }: { item: ActionItem }) {
             disabled={restore.isPending}
             onClick={() =>
               restore.mutate(item.id, {
-                onSuccess: () => toast.success("Geri alındı."),
+                onSuccess: () =>
+                  toast.success(t("dashboard.actionItems.restored")),
                 onError: (err) => toast.error(formatApiErrorMessage(err)),
               })
             }
             className="gap-1 text-emerald-700 hover:text-emerald-900"
           >
-            <ArchiveRestore className="size-3.5" aria-hidden /> Geri al
+            <ArchiveRestore className="size-3.5" aria-hidden />{" "}
+            {t("dashboard.actionItems.restore")}
           </Button>
         ) : (
           <Button
@@ -383,16 +402,18 @@ function ActionItemRow({ item }: { item: ActionItem }) {
             size="sm"
             disabled={archive.isPending}
             onClick={() => {
-              if (confirm("Aksiyon arşivlensin mi? (Geri alınabilir)")) {
+              if (confirm(t("dashboard.actionItems.archiveConfirm"))) {
                 archive.mutate(item.id, {
-                  onSuccess: () => toast.success("Arşivlendi."),
+                  onSuccess: () =>
+                    toast.success(t("dashboard.actionItems.archivedToast")),
                   onError: (err) => toast.error(formatApiErrorMessage(err)),
                 });
               }
             }}
             className="gap-1 text-red-700 hover:text-red-900"
           >
-            <Trash2 className="size-3.5" aria-hidden /> Arşivle
+            <Trash2 className="size-3.5" aria-hidden />{" "}
+            {t("dashboard.actionItems.archive")}
           </Button>
         )}
       </div>
@@ -401,31 +422,33 @@ function ActionItemRow({ item }: { item: ActionItem }) {
   );
 }
 
-const EVENT_LABELS: Record<ActionItemEventType, string> = {
-  created: "Oluşturuldu",
-  updated: "Güncellendi",
-  archived: "Arşivlendi",
-  unarchived: "Geri alındı",
-  status_changed: "Durum değişti",
-  priority_changed: "Öncelik değişti",
-  assigned: "Atandı",
-  unassigned: "Atama kaldırıldı",
-  commented: "Yorum eklendi",
+const EVENT_LABEL_KEYS: Record<ActionItemEventType, string> = {
+  created: "dashboard.actionItems.event.created",
+  updated: "dashboard.actionItems.event.updated",
+  archived: "dashboard.actionItems.event.archived",
+  unarchived: "dashboard.actionItems.event.unarchived",
+  status_changed: "dashboard.actionItems.event.statusChanged",
+  priority_changed: "dashboard.actionItems.event.priorityChanged",
+  assigned: "dashboard.actionItems.event.assigned",
+  unassigned: "dashboard.actionItems.event.unassigned",
+  commented: "dashboard.actionItems.event.commented",
 };
 
 function AuditTimeline({ itemId }: { itemId: string }) {
+  const { t } = useTranslation();
   const events = useActionItemEvents(itemId);
   if (events.isLoading) {
     return (
       <div className="text-muted-foreground mt-3 flex items-center gap-2 border-t pt-3 text-xs">
-        <Loader2 className="size-3 animate-spin" /> Geçmiş yükleniyor…
+        <Loader2 className="size-3 animate-spin" />{" "}
+        {t("dashboard.actionItems.audit.loading")}
       </div>
     );
   }
   if (events.isError) {
     return (
       <p className="text-destructive mt-3 border-t pt-3 text-xs">
-        Geçmiş yüklenemedi.
+        {t("dashboard.actionItems.audit.failed")}
       </p>
     );
   }
@@ -433,7 +456,7 @@ function AuditTimeline({ itemId }: { itemId: string }) {
   if (list.length === 0) {
     return (
       <p className="text-muted-foreground mt-3 border-t pt-3 text-xs">
-        Olay yok.
+        {t("dashboard.actionItems.audit.empty")}
       </p>
     );
   }
@@ -444,7 +467,9 @@ function AuditTimeline({ itemId }: { itemId: string }) {
           <span className="text-muted-foreground tabular-nums">
             {new Date(evt.created_at).toLocaleString("tr-TR")}
           </span>
-          <span className="font-medium">{EVENT_LABELS[evt.event_type]}</span>
+          <span className="font-medium">
+            {t(EVENT_LABEL_KEYS[evt.event_type])}
+          </span>
           <AuditPayloadSummary event={evt} />
         </li>
       ))}
@@ -481,6 +506,7 @@ function formatPayloadSummary(
 }
 
 function CreateForm({ onClose }: { onClose: () => void }) {
+  const { t } = useTranslation();
   const create = useCreateActionItem();
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
@@ -488,7 +514,7 @@ function CreateForm({ onClose }: { onClose: () => void }) {
 
   function onSubmit() {
     if (!title.trim() || !description.trim()) {
-      toast.error("Başlık ve açıklama zorunlu.");
+      toast.error(t("dashboard.actionItems.create.required"));
       return;
     }
     create.mutate(
@@ -499,12 +525,12 @@ function CreateForm({ onClose }: { onClose: () => void }) {
       },
       {
         onSuccess: () => {
-          toast.success("Aksiyon eklendi.");
+          toast.success(t("dashboard.actionItems.create.added"));
           onClose();
         },
         onError: (err) => {
           if (err instanceof ApiError) toast.error(err.detail);
-          else toast.error("Eklenemedi.");
+          else toast.error(t("dashboard.actionItems.create.failed"));
         },
       },
     );
@@ -513,11 +539,15 @@ function CreateForm({ onClose }: { onClose: () => void }) {
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="text-base">Yeni Aksiyon</CardTitle>
+        <CardTitle className="text-base">
+          {t("dashboard.actionItems.create.title")}
+        </CardTitle>
       </CardHeader>
       <CardContent className="space-y-3">
         <div>
-          <Label className="text-xs">Başlık</Label>
+          <Label className="text-xs">
+            {t("dashboard.actionItems.create.fieldTitle")}
+          </Label>
           <Input
             value={title}
             onChange={(e) => setTitle(e.target.value)}
@@ -525,7 +555,9 @@ function CreateForm({ onClose }: { onClose: () => void }) {
           />
         </div>
         <div>
-          <Label className="text-xs">Açıklama</Label>
+          <Label className="text-xs">
+            {t("dashboard.actionItems.create.fieldDescription")}
+          </Label>
           <Textarea
             value={description}
             onChange={(e) => setDescription(e.target.value)}
@@ -533,7 +565,9 @@ function CreateForm({ onClose }: { onClose: () => void }) {
           />
         </div>
         <div>
-          <Label className="text-xs">Öncelik</Label>
+          <Label className="text-xs">
+            {t("dashboard.actionItems.create.fieldPriority")}
+          </Label>
           <select
             value={priority}
             onChange={(e) =>
@@ -556,7 +590,7 @@ function CreateForm({ onClose }: { onClose: () => void }) {
             onClick={onClose}
             disabled={create.isPending}
           >
-            İptal
+            {t("dashboard.actionItems.create.cancel")}
           </Button>
           <Button
             onClick={onSubmit}
@@ -564,7 +598,7 @@ function CreateForm({ onClose }: { onClose: () => void }) {
             className="gap-2"
           >
             {create.isPending && <Loader2 className="size-4 animate-spin" />}
-            Ekle
+            {t("dashboard.actionItems.create.submit")}
           </Button>
         </div>
       </CardContent>

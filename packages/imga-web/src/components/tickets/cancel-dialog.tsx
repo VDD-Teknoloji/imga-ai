@@ -19,6 +19,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { useTranslation } from "@/lib/i18n/use-translation";
 import { CANCELLATION_REASON_LABELS } from "@/lib/ticket-actions";
 import type { CancellationReason } from "@/lib/types";
 
@@ -38,6 +39,7 @@ const REASON_OPTIONS: ReadonlyArray<CancellationReason> = [
 ];
 
 export function CancelDialog({ open, onOpenChange, onConfirm, isPending }: CancelDialogProps) {
+  const { t } = useTranslation();
   const [reason, setReason] = useState<CancellationReason | "">("");
 
   function handleConfirm() {
@@ -49,17 +51,14 @@ export function CancelDialog({ open, onOpenChange, onConfirm, isPending }: Cance
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Ticket&apos;ı iptal et</DialogTitle>
-          <DialogDescription>
-            İptal sebebini seç. Bu kayıt timeline&apos;da görünür ve metriklerde
-            &quot;geçersiz&quot; olarak sayılır.
-          </DialogDescription>
+          <DialogTitle>{t("tickets.cancel.title")}</DialogTitle>
+          <DialogDescription>{t("tickets.cancel.description")}</DialogDescription>
         </DialogHeader>
         <div className="space-y-2">
-          <Label htmlFor="cancel-reason">Sebep</Label>
+          <Label htmlFor="cancel-reason">{t("tickets.cancel.reasonLabel")}</Label>
           <Select value={reason} onValueChange={(v) => setReason(v as CancellationReason)}>
             <SelectTrigger id="cancel-reason">
-              <SelectValue placeholder="Sebep seç..." />
+              <SelectValue placeholder={t("tickets.cancel.reasonPlaceholder")} />
             </SelectTrigger>
             <SelectContent>
               {REASON_OPTIONS.map((r) => (
@@ -72,14 +71,14 @@ export function CancelDialog({ open, onOpenChange, onConfirm, isPending }: Cance
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={isPending}>
-            Vazgeç
+            {t("tickets.common.dismiss")}
           </Button>
           <Button
             variant="destructive"
             onClick={handleConfirm}
             disabled={reason === "" || isPending}
           >
-            {isPending ? "İptal ediliyor..." : "İptal et"}
+            {isPending ? t("tickets.cancel.submitting") : t("tickets.cancel.submit")}
           </Button>
         </DialogFooter>
       </DialogContent>

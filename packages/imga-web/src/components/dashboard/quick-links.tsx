@@ -15,42 +15,45 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 
+import { useTranslation } from "@/lib/i18n/use-translation";
+
 const LINKS = [
   {
     href: "/executive-briefing",
-    label: "Yönetici Özeti oluştur",
-    description: "Dönem raporu",
+    labelKey: "dashboard.quickLinks.briefing.label",
+    descKey: "dashboard.quickLinks.briefing.desc",
     icon: FileText,
   },
   {
     href: "/strategy",
-    label: "SWOT / OKR oluştur",
-    description: "Stratejik analiz",
+    labelKey: "dashboard.quickLinks.strategy.label",
+    descKey: "dashboard.quickLinks.strategy.desc",
     icon: Compass,
   },
   {
     href: "/tickets",
-    label: "Ticket'lar",
-    description: "Açık müşteri Ticket'ları",
+    labelKey: "dashboard.quickLinks.tickets.label",
+    descKey: "dashboard.quickLinks.tickets.desc",
     icon: Ticket,
   },
   {
     href: "/reports",
-    label: "Rapor indir",
-    description: "PDF / Excel dışa aktarım",
+    labelKey: "dashboard.quickLinks.reports.label",
+    descKey: "dashboard.quickLinks.reports.desc",
     icon: FileBarChart,
   },
 ] as const;
 
 export function QuickLinks() {
+  const { t } = useTranslation();
   return (
     <nav
-      aria-label="Hızlı işlemler"
+      aria-label={t("dashboard.common.quickActions")}
       className="rise-in shadow-soft bg-card ring-foreground/5 overflow-hidden rounded-3xl ring-1"
       style={{ animationDelay: "120ms" }}
     >
       <h2 className="text-muted-foreground px-5 pt-4 pb-1 text-xs font-semibold">
-        Hızlı işlemler
+        {t("dashboard.common.quickActions")}
       </h2>
       <ul className="pb-2">
         {LINKS.map((link) => {
@@ -66,10 +69,10 @@ export function QuickLinks() {
                 </span>
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-sm font-semibold">
-                    {link.label}
+                    {t(link.labelKey)}
                   </span>
                   <span className="text-muted-foreground block truncate text-xs">
-                    {link.description}
+                    {t(link.descKey)}
                   </span>
                 </span>
                 <ArrowUpRight

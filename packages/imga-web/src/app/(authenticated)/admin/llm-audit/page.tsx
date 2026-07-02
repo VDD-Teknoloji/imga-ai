@@ -10,31 +10,23 @@
 // Sprint 9.4 H — Suspense wrapper + Path B URL-state mirror so the
 // call_type + success filters survive F5 + back/forward + share-link.
 
-import {
-  AlertTriangle,
-  CheckCircle2,
-  Cpu,
-  Loader2,
-} from "lucide-react";
+import { AlertTriangle, CheckCircle2, Cpu, Loader2 } from "lucide-react";
 import { Suspense, useCallback, useEffect, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
-import {
-  type LlmCallAuditRow,
-  useLlmAuditList,
-  useLlmAuditSummary,
-} from "@/hooks/use-llm-audit";
+import { type LlmCallAuditRow, useLlmAuditList, useLlmAuditSummary } from "@/hooks/use-llm-audit";
+import { useTranslation } from "@/lib/i18n/use-translation";
 import { cn } from "@/lib/utils";
 
 const CALL_TYPES = [
-  { value: "", label: "Tümü" },
-  { value: "classification", label: "Sınıflandırma" },
-  { value: "briefing", label: "Brifing" },
-  { value: "strategic_report", label: "Stratejik rapor" },
-  { value: "action_extraction", label: "Eylem çıkarımı" },
-  { value: "okr", label: "OKR" },
+  { value: "", labelKey: "admin.llmAudit.callType.all" },
+  { value: "classification", labelKey: "admin.llmAudit.callType.classification" },
+  { value: "briefing", labelKey: "admin.llmAudit.callType.briefing" },
+  { value: "strategic_report", labelKey: "admin.llmAudit.callType.strategicReport" },
+  { value: "action_extraction", labelKey: "admin.llmAudit.callType.actionExtraction" },
+  { value: "okr", labelKey: "admin.llmAudit.callType.okr" },
 ];
 
 export default function LlmAuditPage() {
@@ -46,14 +38,16 @@ export default function LlmAuditPage() {
 }
 
 function PageSkeleton() {
+  const { t } = useTranslation();
   return (
     <main className="mx-auto w-full max-w-6xl space-y-6 px-4 py-6 md:p-8">
-      <p className="text-muted-foreground text-sm">Yükleniyor…</p>
+      <p className="text-muted-foreground text-sm">{t("common.loading")}</p>
     </main>
   );
 }
 
 function LlmAuditPageInner() {
+  const { t } = useTranslation();
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -62,9 +56,7 @@ function LlmAuditPageInner() {
   // change (back/forward, deep-link). Empty string means "no filter"
   // for both axes; success encodes ``ok`` / ``fail`` so the URL stays
   // human-readable instead of ``success=true``.
-  const [callType, setCallType] = useState<string>(
-    () => searchParams.get("call_type") ?? "",
-  );
+  const [callType, setCallType] = useState<string>(() => searchParams.get("call_type") ?? "");
   const [successFilter, setSuccessFilter] = useState<string>(
     () => searchParams.get("success") ?? "",
   );
@@ -96,12 +88,7 @@ function LlmAuditPageInner() {
   const summary = useLlmAuditSummary();
   const list = useLlmAuditList({
     call_type: callType || undefined,
-    success:
-      successFilter === "ok"
-        ? true
-        : successFilter === "fail"
-        ? false
-        : undefined,
+    success: successFilter === "ok" ? true : successFilter === "fail" ? false : undefined,
     limit: 200,
   });
 
@@ -111,28 +98,25 @@ function LlmAuditPageInner() {
         <Cpu className="text-primary mt-1 size-6" aria-hidden />
         <div>
           <h1 className="text-2xl font-semibold tracking-tight md:text-3xl">
-            LLM Çağrı Denetimi
+            {t("admin.llmAudit.title")}
           </h1>
-          <p className="text-muted-foreground text-sm">
-            Her LLM çağrısı için prompt hash + model meta + token + hata
-            kaydı. AI kararlarımızın izlenebilirliği.
-          </p>
+          <p className="text-muted-foreground text-sm">{t("admin.llmAudit.subtitle")}</p>
         </div>
       </header>
 
       {summary.data && (
         <div className="grid gap-3 md:grid-cols-3">
           <SummaryCard
-            label="Son 30 gün — toplam çağrı"
+            label={t("admin.llmAudit.summary.totalCalls")}
             value={summary.data.total_calls.toLocaleString("tr-TR")}
           />
           <SummaryCard
-            label="Hata sayısı"
+            label={t("admin.llmAudit.summary.failures")}
             value={summary.data.total_failures.toLocaleString("tr-TR")}
             tone={summary.data.total_failures > 0 ? "warn" : "ok"}
           />
           <SummaryCard
-            label="Toplam token"
+            label={t("admin.llmAudit.summary.totalTokens")}
             value={summary.data.total_tokens.toLocaleString("tr-TR")}
           />
         </div>
@@ -141,23 +125,18 @@ function LlmAuditPageInner() {
       {summary.data && summary.data.days.length > 0 && (
         <Card>
           <CardContent className="space-y-2 p-4">
-            <h2 className="text-sm font-semibold">Günlük token + çağrı</h2>
+            <h2 className="text-sm font-semibold">{t("admin.llmAudit.dailyChart")}</h2>
             <div className="space-y-1 font-mono text-xs">
               {summary.data.days.slice(-30).map((d) => (
                 <div key={d.day} className="flex items-center gap-3">
-                  <span className="text-muted-foreground w-24 tabular-nums">
-                    {d.day}
-                  </span>
+                  <span className="text-muted-foreground w-24 tabular-nums">{d.day}</span>
                   <div className="bg-muted h-2 flex-1 overflow-hidden rounded">
                     <div
                       className="h-full bg-emerald-500"
                       style={{
                         width: `${
                           summary.data &&
-                          summary.data.days.reduce(
-                            (m, x) => Math.max(m, x.total_tokens),
-                            1,
-                          )
+                          summary.data.days.reduce((m, x) => Math.max(m, x.total_tokens), 1)
                             ? (d.total_tokens /
                                 summary.data.days.reduce(
                                   (m, x) => Math.max(m, x.total_tokens),
@@ -176,9 +155,7 @@ function LlmAuditPageInner() {
                     {d.call_count}
                   </span>
                   {d.failure_count > 0 && (
-                    <span className="text-red-600 tabular-nums">
-                      ↯{d.failure_count}
-                    </span>
+                    <span className="text-red-600 tabular-nums">↯{d.failure_count}</span>
                   )}
                 </div>
               ))}
@@ -195,7 +172,7 @@ function LlmAuditPageInner() {
         >
           {CALL_TYPES.map((o) => (
             <option key={o.value || "all"} value={o.value}>
-              {o.label}
+              {t(o.labelKey)}
             </option>
           ))}
         </select>
@@ -204,24 +181,24 @@ function LlmAuditPageInner() {
           onChange={(e) => updateFilter("success", e.target.value)}
           className="border-input bg-background rounded-md border px-2 py-1 text-sm"
         >
-          <option value="">Tüm sonuçlar</option>
-          <option value="ok">Yalnızca başarılı</option>
-          <option value="fail">Yalnızca hata</option>
+          <option value="">{t("admin.llmAudit.result.all")}</option>
+          <option value="ok">{t("admin.llmAudit.result.ok")}</option>
+          <option value="fail">{t("admin.llmAudit.result.fail")}</option>
         </select>
         <span className="text-muted-foreground ml-auto text-xs">
-          {list.data?.total ?? 0} kayıt
+          {t("admin.common.recordCount", { n: list.data?.total ?? 0 })}
         </span>
       </div>
 
       {list.isLoading ? (
         <div className="flex items-center gap-2 p-6 text-sm">
-          <Loader2 className="size-4 animate-spin" /> Yükleniyor…
+          <Loader2 className="size-4 animate-spin" /> {t("common.loading")}
         </div>
       ) : list.isError ? (
-        <p className="text-destructive text-sm">Liste alınamadı.</p>
+        <p className="text-destructive text-sm">{t("admin.common.listError")}</p>
       ) : !list.data || list.data.items.length === 0 ? (
         <p className="text-muted-foreground p-6 text-center text-sm">
-          Kayıt yok.
+          {t("admin.common.noRecords")}
         </p>
       ) : (
         <ul className="space-y-2">
@@ -250,8 +227,8 @@ function SummaryCard({
         tone === "warn"
           ? "border-amber-300"
           : tone === "ok"
-          ? "border-emerald-300"
-          : "border-zinc-200",
+            ? "border-emerald-300"
+            : "border-zinc-200",
       )}
     >
       <CardContent className="space-y-1 p-3">
@@ -263,6 +240,7 @@ function SummaryCard({
 }
 
 function AuditRow({ row }: { row: LlmCallAuditRow }) {
+  const { t } = useTranslation();
   const [expanded, setExpanded] = useState(false);
   return (
     <li className="bg-card rounded-lg border p-3">
@@ -281,12 +259,12 @@ function AuditRow({ row }: { row: LlmCallAuditRow }) {
           {row.model_name}
         </Badge>
         {row.fallback_used && (
-          <Badge className="bg-amber-100 text-amber-900 text-xs hover:bg-amber-100">
+          <Badge className="bg-amber-100 text-xs text-amber-900 hover:bg-amber-100">
             keyword fallback
           </Badge>
         )}
         {row.error_type && (
-          <Badge className="bg-red-100 text-red-900 text-xs hover:bg-red-100">
+          <Badge className="bg-red-100 text-xs text-red-900 hover:bg-red-100">
             {row.error_type}
           </Badge>
         )}
@@ -301,24 +279,27 @@ function AuditRow({ row }: { row: LlmCallAuditRow }) {
         <dl className="mt-3 grid gap-1 border-t pt-3 text-xs md:grid-cols-2">
           {row.prompt_template_key && (
             <DetailLine
-              label="Prompt"
+              label={t("admin.llmAudit.detail.prompt")}
               value={`${row.prompt_template_key}@${row.prompt_template_version}`}
             />
           )}
-          <DetailLine label="Prompt hash" value={row.prompt_hash.slice(0, 16) + "…"} />
-          <DetailLine label="Provider" value={row.model_provider} />
+          <DetailLine
+            label={t("admin.llmAudit.detail.promptHash")}
+            value={row.prompt_hash.slice(0, 16) + "…"}
+          />
+          <DetailLine label={t("admin.llmAudit.detail.provider")} value={row.model_provider} />
           {row.input_tokens !== null && (
             <DetailLine
-              label="Token (giriş/çıkış)"
+              label={t("admin.llmAudit.detail.tokensInOut")}
               value={`${row.input_tokens} / ${row.output_tokens ?? 0}`}
             />
           )}
           {row.request_id && (
-            <DetailLine label="Request id" value={row.request_id} />
+            <DetailLine label={t("admin.llmAudit.detail.requestId")} value={row.request_id} />
           )}
           {row.error_message && (
             <DetailLine
-              label="Hata"
+              label={t("admin.llmAudit.detail.error")}
               value={row.error_message.slice(0, 200)}
               tone="warn"
             />
@@ -329,26 +310,11 @@ function AuditRow({ row }: { row: LlmCallAuditRow }) {
   );
 }
 
-function DetailLine({
-  label,
-  value,
-  tone,
-}: {
-  label: string;
-  value: string;
-  tone?: "warn";
-}) {
+function DetailLine({ label, value, tone }: { label: string; value: string; tone?: "warn" }) {
   return (
     <div className="flex gap-2">
       <dt className="text-muted-foreground w-32 shrink-0">{label}</dt>
-      <dd
-        className={cn(
-          "min-w-0 break-all",
-          tone === "warn" && "text-red-700",
-        )}
-      >
-        {value}
-      </dd>
+      <dd className={cn("min-w-0 break-all", tone === "warn" && "text-red-700")}>{value}</dd>
     </div>
   );
 }

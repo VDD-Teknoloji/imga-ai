@@ -26,8 +26,14 @@ import {
 import { MetricCard } from "@/components/dashboard/metric-card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useHeadlineMetrics } from "@/hooks/use-analytics";
+import { useTranslation } from "@/lib/i18n/use-translation";
 
-function npsBandClasses(score: number | null): {
+type Translate = (key: string, vars?: Record<string, string | number>) => string;
+
+function npsBandClasses(
+  score: number | null,
+  t: Translate,
+): {
   containerClass: string;
   labelClass: string;
   badge: string;
@@ -36,41 +42,41 @@ function npsBandClasses(score: number | null): {
     return {
       containerClass: "border-border bg-card",
       labelClass: "text-muted-foreground",
-      badge: "Yeterli veri yok",
+      badge: t("dashboard.headlineMetrics.band.noData"),
     };
   }
   if (score >= 50) {
     return {
       containerClass: "border-emerald-500/50 bg-emerald-50 dark:bg-emerald-950/20",
       labelClass: "text-emerald-700 dark:text-emerald-400",
-      badge: "Mükemmel",
+      badge: t("dashboard.headlineMetrics.band.excellent"),
     };
   }
   if (score >= 30) {
     return {
       containerClass: "border-emerald-300/60 bg-emerald-50/50 dark:bg-emerald-950/10",
       labelClass: "text-emerald-600 dark:text-emerald-300",
-      badge: "İyi",
+      badge: t("dashboard.headlineMetrics.band.good"),
     };
   }
   if (score >= 0) {
     return {
       containerClass: "border-amber-400/60 bg-amber-50 dark:bg-amber-950/20",
       labelClass: "text-amber-700 dark:text-amber-400",
-      badge: "Geliştirilebilir",
+      badge: t("dashboard.headlineMetrics.band.improvable"),
     };
   }
   if (score >= -50) {
     return {
       containerClass: "border-orange-400/60 bg-orange-50 dark:bg-orange-950/20",
       labelClass: "text-orange-700 dark:text-orange-400",
-      badge: "Riskli",
+      badge: t("dashboard.headlineMetrics.band.risky"),
     };
   }
   return {
     containerClass: "border-red-500/60 bg-red-50 dark:bg-red-950/20",
     labelClass: "text-red-700 dark:text-red-400",
-    badge: "Kritik",
+    badge: t("dashboard.headlineMetrics.band.critical"),
   };
 }
 
@@ -96,19 +102,20 @@ interface HeadlineMetricsCardsProps {
 }
 
 export function HeadlineMetricsCards({ batchJobId }: HeadlineMetricsCardsProps = {}) {
+  const { t } = useTranslation();
   // No date filter at the dashboard level — last-30-days style
   // narrowing happens on the /insights page. The dashboard reflects
   // tenant-wide state.
   const { data, isLoading, isError } = useHeadlineMetrics({ batch_job_id: batchJobId });
   const npsScore = data?.nps_score ?? null;
-  const band = npsBandClasses(npsScore);
+  const band = npsBandClasses(npsScore, t);
 
   return (
     <div className="space-y-4">
       {/* Large NPS hero card */}
       <section
         className={`rounded-lg border p-6 transition-colors ${band.containerClass}`}
-        aria-label="NPS skoru"
+        aria-label={t("dashboard.headlineMetrics.npsAria")}
       >
         <header className="flex items-start justify-between">
           <div>
@@ -128,25 +135,31 @@ export function HeadlineMetricsCards({ batchJobId }: HeadlineMetricsCardsProps =
             </span>
           )}
           <span className="text-muted-foreground text-sm">
-            kapsama %{(data?.nps_coverage_percent ?? 0).toFixed(1)}
+            {t("dashboard.headlineMetrics.coverage", {
+              pct: (data?.nps_coverage_percent ?? 0).toFixed(1),
+            })}
           </span>
         </div>
-        {isError ? <p className="text-destructive mt-2 text-xs">Veri yüklenemedi.</p> : null}
+        {isError ? (
+          <p className="text-destructive mt-2 text-xs">
+            {t("dashboard.common.loadFailed")}
+          </p>
+        ) : null}
       </section>
 
       {/* Six support cards */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
         <MetricCard
-          title="Toplam yorum"
-          hint="Aktif kayıt"
+          title={t("dashboard.headlineMetrics.totalReviews")}
+          hint={t("dashboard.headlineMetrics.totalReviewsHint")}
           value={data?.total_reviews}
           isLoading={isLoading}
           isError={isError}
           icon={MessageSquareText}
         />
         <MetricCard
-          title="Açık ticket"
-          hint="Açık + ilerlemekte + bekleyen"
+          title={t("dashboard.headlineMetrics.openTickets")}
+          hint={t("dashboard.headlineMetrics.openTicketsHint")}
           value={data?.open_tickets}
           isLoading={isLoading}
           isError={isError}
@@ -154,16 +167,16 @@ export function HeadlineMetricsCards({ batchJobId }: HeadlineMetricsCardsProps =
           iconClassName="text-primary size-4"
         />
         <MetricCard
-          title="Bugün açılan"
-          hint="Bugünün başından beri"
+          title={t("dashboard.headlineMetrics.openedToday")}
+          hint={t("dashboard.headlineMetrics.openedTodayHint")}
           value={data?.today_new_tickets}
           isLoading={isLoading}
           isError={isError}
           icon={CalendarPlus}
         />
         <MetricCard
-          title="Kriz adedi"
-          hint="Çok negatif (≤ −0,80)"
+          title={t("dashboard.headlineMetrics.crisisCount")}
+          hint={t("dashboard.headlineMetrics.crisisCountHint")}
           value={data?.crisis_count}
           isLoading={isLoading}
           isError={isError}
@@ -176,8 +189,8 @@ export function HeadlineMetricsCards({ batchJobId }: HeadlineMetricsCardsProps =
           isError={isError}
         />
         <MetricCard
-          title="Hassas konular"
-          hint="Tier-1 / Tier-2 tetikleyici"
+          title={t("dashboard.headlineMetrics.sensitiveTopics")}
+          hint={t("dashboard.headlineMetrics.sensitiveTopicsHint")}
           value={data?.sensitive_topics_count}
           isLoading={isLoading}
           isError={isError}
@@ -200,10 +213,13 @@ function AvgSentimentCard({
   isLoading: boolean;
   isError: boolean;
 }) {
+  const { t } = useTranslation();
   return (
     <div className="bg-card flex flex-col gap-2 rounded-lg border p-5">
       <div className="flex items-center justify-between">
-        <span className="text-muted-foreground text-sm font-medium">Ort. duygu</span>
+        <span className="text-muted-foreground text-sm font-medium">
+          {t("dashboard.headlineMetrics.avgSentiment")}
+        </span>
         <AlertOctagon className="text-muted-foreground size-4" aria-hidden />
       </div>
       <div>
@@ -215,7 +231,9 @@ function AvgSentimentCard({
           <span className="text-3xl font-semibold tracking-tight">{formatAvgSentiment(value)}</span>
         )}
       </div>
-      <p className="text-muted-foreground text-xs">−1,0 ile +1,0 arası</p>
+      <p className="text-muted-foreground text-xs">
+        {t("dashboard.headlineMetrics.avgSentimentRange")}
+      </p>
     </div>
   );
 }

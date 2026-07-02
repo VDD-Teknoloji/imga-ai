@@ -16,6 +16,7 @@ import {
 
 import { Skeleton } from "@/components/ui/skeleton";
 import { useSentimentTimeline } from "@/hooks/use-analytics";
+import { useTranslation } from "@/lib/i18n/use-translation";
 
 function formatYmd(d: Date): string {
   const y = d.getFullYear();
@@ -25,6 +26,7 @@ function formatYmd(d: Date): string {
 }
 
 export function SentimentTrend() {
+  const { t } = useTranslation();
   // Last 30 days, anchored on local midnight so the API call lines
   // up with the user's timezone (use-analytics expands YYYY-MM-DD →
   // local midnight ISO before hitting the backend).
@@ -40,16 +42,22 @@ export function SentimentTrend() {
     <section className="bg-card rounded-lg border p-5">
       <header className="mb-4 flex items-baseline justify-between">
         <h2 className="text-base font-semibold tracking-tight">
-          Son 30 gün duygu trendi
+          {t("dashboard.sentimentTrend.title")}
         </h2>
-        <p className="text-muted-foreground text-xs">Günlük bazda</p>
+        <p className="text-muted-foreground text-xs">
+          {t("dashboard.sentimentTrend.daily")}
+        </p>
       </header>
       {tl.isLoading ? (
         <Skeleton className="h-[260px]" />
       ) : tl.isError ? (
-        <p className="text-destructive py-12 text-center text-sm">Veri yüklenemedi.</p>
+        <p className="text-destructive py-12 text-center text-sm">
+          {t("dashboard.common.loadFailed")}
+        </p>
       ) : !tl.data || tl.data.data.length === 0 ? (
-        <p className="text-muted-foreground py-12 text-center text-sm">Veri yok.</p>
+        <p className="text-muted-foreground py-12 text-center text-sm">
+          {t("dashboard.common.noData")}
+        </p>
       ) : (
         <div className="h-[260px] w-full">
           <ResponsiveContainer width="100%" height="100%">
@@ -79,7 +87,7 @@ export function SentimentTrend() {
                 stroke="#dc2626"
                 strokeWidth={2}
                 dot={false}
-                name="Negatif"
+                name={t("dashboard.sentimentTrend.negative")}
               />
               <Line
                 type="monotone"
@@ -87,7 +95,7 @@ export function SentimentTrend() {
                 stroke="#737373"
                 strokeWidth={2}
                 dot={false}
-                name="Nötr"
+                name={t("dashboard.sentimentTrend.neutral")}
               />
               <Line
                 type="monotone"
@@ -95,7 +103,7 @@ export function SentimentTrend() {
                 stroke="#16a34a"
                 strokeWidth={2}
                 dot={false}
-                name="Pozitif"
+                name={t("dashboard.sentimentTrend.positive")}
               />
             </LineChart>
           </ResponsiveContainer>

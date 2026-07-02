@@ -5,6 +5,7 @@ import { AssigneeDropdown } from "@/components/tickets/assignee-dropdown";
 import { TicketPriorityBadge } from "@/components/tickets/ticket-priority-badge";
 import { useAuthStore } from "@/lib/auth-store";
 import { formatFullDate } from "@/lib/date-format";
+import { useTranslation } from "@/lib/i18n/use-translation";
 import { CANCELLATION_REASON_LABELS } from "@/lib/ticket-actions";
 import type { Ticket } from "@/lib/types";
 
@@ -20,6 +21,7 @@ interface TicketSidePanelProps {
  * can reassign to any tenant member by name.
  */
 export function TicketSidePanel({ ticket, categoryLabel }: TicketSidePanelProps) {
+  const { t } = useTranslation();
   const user = useAuthStore((s) => s.user);
   const role = useAuthStore((s) => s.activeContext?.role);
 
@@ -31,19 +33,19 @@ export function TicketSidePanel({ ticket, categoryLabel }: TicketSidePanelProps)
 
   return (
     <aside className="bg-card flex w-full flex-col gap-5 rounded-lg border p-5">
-      <Section label="Durum">
+      <Section label={t("tickets.detail.state")}>
         <TicketStateBadge state={ticket.state} className="text-sm" />
       </Section>
 
-      <Section label="Öncelik">
+      <Section label={t("tickets.detail.priority")}>
         <TicketPriorityBadge priority={ticket.priority} className="text-sm" />
       </Section>
 
-      <Section label="Kategori">
+      <Section label={t("tickets.detail.category")}>
         <span className="text-sm">{categoryLabel ?? "—"}</span>
       </Section>
 
-      <Section label="Atanan">
+      <Section label={t("tickets.detail.assignee")}>
         <AssigneeDropdown
           ticketId={ticket.id}
           currentAssigneeId={ticket.assigned_to_user_id}
@@ -53,7 +55,7 @@ export function TicketSidePanel({ ticket, categoryLabel }: TicketSidePanelProps)
       </Section>
 
       {ticket.state === "cancelled" && ticket.cancellation_reason ? (
-        <Section label="İptal sebebi">
+        <Section label={t("tickets.detail.cancellationReason")}>
           <span className="text-sm">
             {CANCELLATION_REASON_LABELS[ticket.cancellation_reason] ??
               ticket.cancellation_reason}
@@ -61,14 +63,14 @@ export function TicketSidePanel({ ticket, categoryLabel }: TicketSidePanelProps)
         </Section>
       ) : null}
 
-      <Section label="Açılış">
+      <Section label={t("tickets.detail.openedAt")}>
         <span className="text-muted-foreground text-sm">
           {formatFullDate(ticket.opened_at)}
         </span>
       </Section>
 
       {ticket.resolved_at ? (
-        <Section label="Çözüm">
+        <Section label={t("tickets.detail.resolvedAt")}>
           <span className="text-muted-foreground text-sm">
             {formatFullDate(ticket.resolved_at)}
           </span>
@@ -76,7 +78,7 @@ export function TicketSidePanel({ ticket, categoryLabel }: TicketSidePanelProps)
       ) : null}
 
       {ticket.closed_at ? (
-        <Section label="Kapanış">
+        <Section label={t("tickets.detail.closedAt")}>
           <span className="text-muted-foreground text-sm">
             {formatFullDate(ticket.closed_at)}
           </span>
@@ -84,7 +86,7 @@ export function TicketSidePanel({ ticket, categoryLabel }: TicketSidePanelProps)
       ) : null}
 
       {ticket.customer_inbound_received_at ? (
-        <Section label="Müşteri yanıtı">
+        <Section label={t("tickets.detail.customerReplyAt")}>
           <span className="text-muted-foreground text-sm">
             {formatFullDate(ticket.customer_inbound_received_at)}
           </span>

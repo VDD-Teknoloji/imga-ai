@@ -22,16 +22,21 @@ import {
   useUpsertBusinessDimension,
 } from "@/hooks/use-business-dimensions";
 import { formatApiErrorMessage } from "@/lib/api-client";
+import { useTranslation } from "@/lib/i18n/use-translation";
 
-const DIMENSIONS: ReadonlyArray<{ key: DimensionKey; default_label: string }> = [
-  { key: "business_segment", default_label: "Müşteri Segmenti" },
-  { key: "product_line", default_label: "Ürün Grubu" },
-  { key: "channel", default_label: "Kanal" },
-  { key: "customer_tier", default_label: "Müşteri Kademesi" },
+const DIMENSIONS: ReadonlyArray<{
+  key: DimensionKey;
+  default_label_key: string;
+}> = [
+  { key: "business_segment", default_label_key: "settings.dimensions.default.segment" },
+  { key: "product_line", default_label_key: "settings.dimensions.default.productLine" },
+  { key: "channel", default_label_key: "settings.dimensions.default.channel" },
+  { key: "customer_tier", default_label_key: "settings.dimensions.default.customerTier" },
 ];
 
 export default function BusinessDimensionsPage() {
   const list = useBusinessDimensions();
+  const { t } = useTranslation();
 
   return (
     <main className="mx-auto w-full max-w-4xl space-y-6 px-4 py-6 md:p-8">
@@ -39,18 +44,17 @@ export default function BusinessDimensionsPage() {
         <Layers3 className="text-primary mt-1 size-6" aria-hidden />
         <div>
           <h1 className="text-2xl font-semibold tracking-tight md:text-3xl">
-            İş Boyutları
+            {t("settings.dimensions.title")}
           </h1>
           <p className="text-muted-foreground text-sm">
-            Review&apos;ları segment, ürün, kanal, müşteri kademesi gibi
-            boyutlar üzerinden kırın. Her boyut bağımsız aç/kapat.
+            {t("settings.dimensions.subtitle")}
           </p>
         </div>
       </header>
 
       {list.isLoading ? (
         <div className="flex items-center gap-2 p-6 text-sm">
-          <Loader2 className="size-4 animate-spin" /> Yükleniyor…
+          <Loader2 className="size-4 animate-spin" /> {t("common.loading")}
         </div>
       ) : (
         <div className="space-y-3">
@@ -60,7 +64,7 @@ export default function BusinessDimensionsPage() {
               <DimensionCard
                 key={d.key}
                 dimensionKey={d.key}
-                defaultLabel={d.default_label}
+                defaultLabel={t(d.default_label_key)}
                 existing={config}
               />
             );
@@ -82,6 +86,7 @@ function DimensionCard({
 }) {
   const upsert = useUpsertBusinessDimension();
   const remove = useDeleteBusinessDimension();
+  const { t } = useTranslation();
   const [label, setLabel] = useState<string>(
     existing?.display_label ?? defaultLabel,
   );
@@ -121,7 +126,7 @@ function DimensionCard({
         },
       },
       {
-        onSuccess: () => toast.success("Boyut kaydedildi."),
+        onSuccess: () => toast.success(t("settings.dimensions.saved")),
         onError: (err) => toast.error(formatApiErrorMessage(err)),
       },
     );
@@ -139,31 +144,31 @@ function DimensionCard({
               onChange={(e) => setEnabled(e.target.checked)}
               className="size-3.5"
             />
-            Aktif
+            {t("settings.dimensions.active")}
           </label>
         </div>
         <div className="grid gap-3 md:grid-cols-2">
           <div className="space-y-1">
-            <Label className="text-xs">Görünen ad</Label>
+            <Label className="text-xs">{t("settings.dimensions.displayName")}</Label>
             <Input value={label} onChange={(e) => setLabel(e.target.value)} />
           </div>
           <div className="space-y-1">
-            <Label className="text-xs">CSV kolon eşleşmesi (opsiyonel)</Label>
+            <Label className="text-xs">{t("settings.dimensions.csvMapping")}</Label>
             <Input
               value={csvCol}
               onChange={(e) => setCsvCol(e.target.value)}
-              placeholder="örn: musteri_segmenti"
+              placeholder={t("settings.dimensions.csvPlaceholder")}
             />
           </div>
           <div className="space-y-1 md:col-span-2">
-            <Label className="text-xs">İzin verilen değerler (virgülle)</Label>
+            <Label className="text-xs">{t("settings.dimensions.allowedValues")}</Label>
             <Input
               value={allowedRaw}
               onChange={(e) => setAllowedRaw(e.target.value)}
               placeholder="premium, basic, enterprise"
             />
             <p className="text-muted-foreground text-[10px]">
-              Boş bırakılırsa serbest metin kabul edilir.
+              {t("settings.dimensions.allowedHelp")}
             </p>
           </div>
         </div>
@@ -173,7 +178,9 @@ function DimensionCard({
             onClick={onSave}
             disabled={upsert.isPending}
           >
-            {upsert.isPending ? "Kaydediliyor…" : "Kaydet"}
+            {upsert.isPending
+              ? t("settings.common.saving")
+              : t("common.save")}
           </Button>
           {existing && (
             <Button
@@ -181,15 +188,15 @@ function DimensionCard({
               variant="ghost"
               disabled={remove.isPending}
               onClick={() => {
-                if (!confirm("Boyut konfigürasyonunu sil?")) return;
+                if (!confirm(t("settings.dimensions.deleteConfirm"))) return;
                 remove.mutate(dimensionKey, {
-                  onSuccess: () => toast.success("Silindi."),
+                  onSuccess: () => toast.success(t("settings.dimensions.deleted")),
                   onError: (err) => toast.error(formatApiErrorMessage(err)),
                 });
               }}
               className="text-red-700 hover:text-red-900"
             >
-              Sil
+              {t("settings.common.delete")}
             </Button>
           )}
         </div>

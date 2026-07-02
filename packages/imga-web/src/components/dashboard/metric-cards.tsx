@@ -9,6 +9,7 @@ import {
   useRecentlyResolvedTicketsCount,
   useTodayOpenedTicketsCount,
 } from "@/hooks/use-tickets";
+import { useTranslation } from "@/lib/i18n/use-translation";
 
 /**
  * Four card grid. Each card subscribes to its own selector hook so
@@ -25,6 +26,7 @@ import {
  *   4. Son 7 Gün Çözülen   — resolved|closed in the last 7 days
  */
 export function MetricCards() {
+  const { t } = useTranslation();
   const open = useOpenTicketsCount();
   const today = useTodayOpenedTicketsCount();
   const highPriority = useHighPriorityTicketsCount();
@@ -33,8 +35,8 @@ export function MetricCards() {
   return (
     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
       <MetricCard
-        title="Açık ticket"
-        hint="Açık, ilerlemekte veya müşteri bekleyen"
+        title={t("dashboard.metricCards.openTickets")}
+        hint={t("dashboard.metricCards.openTicketsHint")}
         value={open.data}
         isLoading={open.isLoading}
         isError={open.isError}
@@ -42,16 +44,16 @@ export function MetricCards() {
         iconClassName="text-primary size-4"
       />
       <MetricCard
-        title="Bugün açılan"
-        hint="Bugünün başından beri yeni ticket"
+        title={t("dashboard.metricCards.openedToday")}
+        hint={t("dashboard.metricCards.openedTodayHint")}
         value={today.data}
         isLoading={today.isLoading}
         isError={today.isError}
         icon={CalendarPlus}
       />
       <MetricCard
-        title="Yüksek öncelik"
-        hint="Acil ya da yüksek, henüz kapatılmamış"
+        title={t("dashboard.metricCards.highPriority")}
+        hint={t("dashboard.metricCards.highPriorityHint")}
         value={highPriority.data}
         isLoading={highPriority.isLoading}
         isError={highPriority.isError}
@@ -59,8 +61,8 @@ export function MetricCards() {
         iconClassName="text-destructive size-4"
       />
       <MetricCard
-        title="Son 7 günde çözülen"
-        hint="Çözüldü veya kapatıldı"
+        title={t("dashboard.metricCards.resolved7d")}
+        hint={t("dashboard.metricCards.resolved7dHint")}
         value={resolved.data}
         isLoading={resolved.isLoading}
         isError={resolved.isError}

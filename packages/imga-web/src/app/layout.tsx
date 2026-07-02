@@ -2,6 +2,7 @@ import { GeistMono } from "geist/font/mono";
 import { GeistSans } from "geist/font/sans";
 import type { Metadata } from "next";
 
+import { LocaleHtmlLang } from "@/components/i18n/locale-html-lang";
 import { Providers } from "@/components/providers";
 
 import "./globals.css";
@@ -26,7 +27,10 @@ export default function RootLayout({
   return (
     <html lang="tr" className={`${GeistSans.variable} ${GeistMono.variable} h-full antialiased`}>
       <body className="bg-background text-foreground flex min-h-full flex-col">
-        <Providers>{children}</Providers>
+        <Providers>
+          <LocaleHtmlLang />
+          {children}
+        </Providers>
       </body>
     </html>
   );

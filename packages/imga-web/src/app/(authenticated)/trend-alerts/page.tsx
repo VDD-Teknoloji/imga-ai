@@ -14,6 +14,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
+import { useTranslation } from "@/lib/i18n/use-translation";
 import {
   useEvaluateTrendAlerts,
   useTrendAlerts,
@@ -41,19 +42,23 @@ export default function TrendAlertsPage() {
 }
 
 function HeaderSkeleton() {
+  const { t } = useTranslation();
   return (
     <main className="mx-auto w-full max-w-4xl space-y-6 px-4 py-6 md:px-8 md:py-10">
       <header className="space-y-1.5">
         <h1 className="text-2xl font-semibold tracking-tight md:text-3xl">
-          Trend Uyarıları
+          {t("dashboard.trendAlerts.title")}
         </h1>
-        <p className="text-muted-foreground text-sm">Yükleniyor…</p>
+        <p className="text-muted-foreground text-sm">
+          {t("dashboard.common.loading")}
+        </p>
       </header>
     </main>
   );
 }
 
 function Content() {
+  const { t } = useTranslation();
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -91,31 +96,35 @@ function Content() {
       <header className="flex flex-wrap items-start justify-between gap-3">
         <div className="space-y-1.5">
           <h1 className="text-2xl font-semibold tracking-tight md:text-3xl">
-            Trend Uyarıları
+            {t("dashboard.trendAlerts.title")}
           </h1>
           <p className="text-muted-foreground text-sm">
-            KPI sapması eşiklerini geçen değişimler. Manuel evaluate ile yeni
-            uyarıları yenileyebilirsiniz.
+            {t("dashboard.trendAlerts.subtitle")}
           </p>
         </div>
         <Button
           onClick={() =>
             evaluate.mutate(undefined, {
               onSuccess: (rows) =>
-                toast.success(`${rows.length} yeni uyarı.`),
-              onError: () => toast.error("Değerlendirme başarısız."),
+                toast.success(
+                  t("dashboard.trendAlerts.newAlerts", { n: rows.length }),
+                ),
+              onError: () =>
+                toast.error(t("dashboard.trendAlerts.evalFailed")),
             })
           }
           disabled={evaluate.isPending}
           className="gap-2"
         >
           {evaluate.isPending && <Loader2 className="size-4 animate-spin" />}
-          Şimdi Değerlendir
+          {t("dashboard.trendAlerts.evaluateNow")}
         </Button>
       </header>
 
       <div className="bg-card ring-foreground/5 shadow-soft flex flex-wrap items-center gap-3 rounded-2xl p-4 ring-1">
-        <Label className="text-xs">Durum</Label>
+        <Label className="text-xs">
+          {t("dashboard.trendAlerts.filter.status")}
+        </Label>
         <select
           value={statusFilter}
           onChange={(e) => {
@@ -125,20 +134,28 @@ function Content() {
           }}
           className="border-input bg-background rounded-md border px-2 py-1 text-sm"
         >
-          <option value="active">Aktif</option>
-          <option value="acknowledged">Onaylanmış</option>
-          <option value="dismissed">Atılmış</option>
-          <option value="all">Tümü</option>
+          <option value="active">
+            {t("dashboard.trendAlerts.status.active")}
+          </option>
+          <option value="acknowledged">
+            {t("dashboard.trendAlerts.status.acknowledged")}
+          </option>
+          <option value="dismissed">
+            {t("dashboard.trendAlerts.status.dismissed")}
+          </option>
+          <option value="all">{t("dashboard.trendAlerts.status.all")}</option>
         </select>
       </div>
 
       {list.isLoading ? (
-        <p className="text-sm">Yükleniyor…</p>
+        <p className="text-sm">{t("dashboard.common.loading")}</p>
       ) : list.isError ? (
-        <p className="text-destructive text-sm">Liste yüklenemedi.</p>
+        <p className="text-destructive text-sm">
+          {t("dashboard.trendAlerts.listFailed")}
+        </p>
       ) : !list.data || list.data.length === 0 ? (
         <p className="text-muted-foreground p-6 text-center text-sm">
-          Bu filtrelerle uyarı yok.
+          {t("dashboard.trendAlerts.empty")}
         </p>
       ) : (
         <ul className="space-y-2">
@@ -152,6 +169,7 @@ function Content() {
 }
 
 function AlertRow({ alert }: { alert: TrendAlert }) {
+  const { t } = useTranslation();
   const update = useUpdateTrendAlert();
   return (
     <Card>
@@ -183,7 +201,8 @@ function AlertRow({ alert }: { alert: TrendAlert }) {
               disabled={update.isPending}
               className="gap-1"
             >
-              <Check className="size-3.5" /> Onayla
+              <Check className="size-3.5" />{" "}
+              {t("dashboard.trendAlerts.acknowledge")}
             </Button>
             <Button
               variant="ghost"
@@ -194,15 +213,15 @@ function AlertRow({ alert }: { alert: TrendAlert }) {
               disabled={update.isPending}
               className="gap-1"
             >
-              <X className="size-3.5" /> At
+              <X className="size-3.5" /> {t("dashboard.trendAlerts.dismiss")}
             </Button>
           </div>
         )}
         {alert.status !== "active" && (
           <p className="text-muted-foreground mt-2 text-xs">
             {alert.status === "acknowledged"
-              ? "Onaylandı"
-              : "Atıldı"}{" "}
+              ? t("dashboard.trendAlerts.acknowledged")
+              : t("dashboard.trendAlerts.dismissed")}{" "}
             {alert.acknowledged_at &&
               new Date(alert.acknowledged_at).toLocaleString("tr-TR")}
           </p>

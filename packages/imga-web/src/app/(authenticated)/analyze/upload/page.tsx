@@ -29,6 +29,7 @@ import {
 } from "@/hooks/use-batch-uploads";
 import { useSmartPreview } from "@/hooks/use-smart-preview";
 import { ApiError } from "@/lib/api-client";
+import { useTranslation } from "@/lib/i18n/use-translation";
 import type {
   BatchJob,
   SmartFieldName,
@@ -51,6 +52,7 @@ const MAX_FILE_BYTES = 50 * 1024 * 1024;
  *   4. Completion summary + CTA to /reviews?batch_job_id=X
  */
 export default function BatchUploadPage() {
+  const { t } = useTranslation();
   const [step, setStep] = useState<Step>(1);
   const [file, setFile] = useState<File | null>(null);
   // Sprint 9.8 — default "text" → "yorum" (şablonla uyumlu).
@@ -110,10 +112,10 @@ export default function BatchUploadPage() {
       setActiveJobId(running.job_id);
       setStep(3);
       toast.info(
-        `Devam eden yükleme bulundu (${running.file_name}) — ilerlemeye yeniden bağlanıldı.`,
+        t("analyze.upload.reconnected", { file: running.file_name }),
       );
     }
-  }, [activeJob.data, step, activeJobId]);
+  }, [activeJob.data, step, activeJobId, t]);
 
   function reset() {
     setFile(null);
@@ -152,9 +154,9 @@ export default function BatchUploadPage() {
       },
       onError: (err) => {
         if (err instanceof ApiError) {
-          toast.error("Önizleme alınamadı: " + err.detail);
+          toast.error(t("analyze.upload.previewFailedDetail", { detail: err.detail }));
         } else {
-          toast.error("Önizleme alınamadı.");
+          toast.error(t("analyze.upload.previewFailed"));
         }
       },
     });
@@ -167,12 +169,11 @@ export default function BatchUploadPage() {
           href="/analyze"
           className="text-muted-foreground hover:text-foreground inline-flex items-center gap-1 text-sm"
         >
-          <ChevronLeft className="size-4" /> Manuel Analiz
+          <ChevronLeft className="size-4" /> {t("analyze.upload.backManual")}
         </Link>
-        <h1 className="text-2xl font-semibold">Toplu Yükleme</h1>
+        <h1 className="text-2xl font-semibold">{t("analyze.upload.title")}</h1>
         <p className="text-muted-foreground text-sm">
-          CSV ya da XLSX yükleyin; metinler arka planda analiz edilir, sonuç
-          Analiz Arşivi&apos;nde görünür.
+          {t("analyze.upload.subtitle")}
         </p>
       </header>
 
@@ -220,7 +221,7 @@ export default function BatchUploadPage() {
                   if (err instanceof ApiError) {
                     toast.error(err.detail);
                   } else {
-                    toast.error("Yükleme sırasında hata oluştu.");
+                    toast.error(t("analyze.upload.uploadError"));
                   }
                 },
               },
@@ -238,7 +239,7 @@ export default function BatchUploadPage() {
             cancel.mutate(activeJobId, {
               onError: (err) =>
                 toast.error(
-                  err instanceof ApiError ? err.detail : "İptal başarısız.",
+                  err instanceof ApiError ? err.detail : t("analyze.upload.cancelFailed"),
                 ),
             });
           }}
@@ -257,7 +258,13 @@ export default function BatchUploadPage() {
 // --------------------------------------------------------------------------
 
 function StepIndicator({ step }: { step: Step }) {
-  const labels = ["Dosya", "Sütunlar", "İlerleme", "Tamamlandı"];
+  const { t } = useTranslation();
+  const labels = [
+    t("analyze.upload.step.file"),
+    t("analyze.upload.step.columns"),
+    t("analyze.upload.step.progress"),
+    t("analyze.upload.step.done"),
+  ];
   return (
     <ol className="flex items-center gap-2 text-sm">
       {labels.map((label, idx) => {
@@ -294,6 +301,7 @@ function TemplateBanner() {
   // bytes alıp blob → <a download> ile dosyayı kullanıcıya
   // veriyor (cookie credentials:'include' lazım, bu yüzden plain
   // <a href> yerine fetch).
+  const { t } = useTranslation();
   const [downloading, setDownloading] = useState(false);
   const apiBase =
     process.env.NEXT_PUBLIC_API_URL || "http://localhost:8003";
@@ -305,7 +313,7 @@ function TemplateBanner() {
         credentials: "include",
       });
       if (!res.ok) {
-        toast.error("Şablon indirilemedi. Lütfen daha sonra tekrar deneyin.");
+        toast.error(t("analyze.upload.template.downloadFailedRetry"));
         return;
       }
       const blob = await res.blob();
@@ -318,7 +326,7 @@ function TemplateBanner() {
       a.remove();
       URL.revokeObjectURL(url);
     } catch {
-      toast.error("Şablon indirilemedi.");
+      toast.error(t("analyze.upload.template.downloadFailed"));
     } finally {
       setDownloading(false);
     }
@@ -332,11 +340,10 @@ function TemplateBanner() {
         </div>
         <div className="flex-1 min-w-0">
           <p className="text-sm font-semibold">
-            İlk defa mı yüklüyorsunuz? Önce şablonu indirin.
+            {t("analyze.upload.template.heading")}
           </p>
           <p className="text-muted-foreground text-xs leading-relaxed">
-            Yorumlarınızı şablondaki <strong>yorum</strong> kolonuna
-            yapıştırın. Şablona uymayan dosyalar reddedilir.
+            {t("analyze.upload.template.bodyBefore")}<strong>yorum</strong>{t("analyze.upload.template.bodyAfter")}
           </p>
         </div>
         <Button
@@ -350,7 +357,7 @@ function TemplateBanner() {
           ) : (
             <Download className="size-4" aria-hidden />
           )}
-          Şablonu İndir
+          {t("analyze.upload.template.download")}
         </Button>
       </CardContent>
     </Card>
@@ -364,17 +371,18 @@ function Step1FilePick({
   file: File | null;
   setFile: (f: File | null) => void;
 }) {
+  const { t } = useTranslation();
   const [dragOver, setDragOver] = useState(false);
 
   function handle(f: File | null) {
     if (!f) return;
     const ext = "." + f.name.split(".").pop()?.toLowerCase();
     if (!ACCEPTED_EXTENSIONS.includes(ext)) {
-      toast.error("Sadece .csv veya .xlsx dosyaları kabul edilir.");
+      toast.error(t("analyze.upload.onlyCsvXlsx"));
       return;
     }
     if (f.size > MAX_FILE_BYTES) {
-      toast.error("Dosya 50 MB sınırını aşıyor.");
+      toast.error(t("analyze.upload.fileTooLarge"));
       return;
     }
     setFile(f);
@@ -393,7 +401,7 @@ function Step1FilePick({
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Adım 1 — Dosya Seç</CardTitle>
+        <CardTitle>{t("analyze.upload.step1Title")}</CardTitle>
       </CardHeader>
       <CardContent>
         <label
@@ -412,10 +420,10 @@ function Step1FilePick({
           <FileSpreadsheet className="text-muted-foreground size-12" />
           <div>
             <p className="text-sm font-medium">
-              Dosyayı buraya bırakın veya tıklayarak seçin
+              {t("analyze.upload.dropzone")}
             </p>
             <p className="text-muted-foreground text-xs">
-              CSV, XLSX — en fazla 50 MB, en fazla 10.000 satır
+              {t("analyze.upload.dropzoneHint")}
             </p>
           </div>
           {file && (
@@ -469,6 +477,7 @@ function Step2ColumnMapping({
   onSubmit: () => void;
   submitting: boolean;
 }) {
+  const { t } = useTranslation();
   // Sprint 8.3.8 — derive the canonical text column from the
   // detector verdict + the user's overrides. The textColumn local
   // state stays the source of truth for the upload mutation; the
@@ -501,7 +510,7 @@ function Step2ColumnMapping({
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Adım 2 — Sütun Eşleştirme</CardTitle>
+        <CardTitle>{t("analyze.upload.step2Title")}</CardTitle>
       </CardHeader>
       <CardContent className="space-y-6">
         <p className="text-muted-foreground text-sm">
@@ -510,14 +519,14 @@ function Step2ColumnMapping({
           {preview && (
             <>
               <span className="text-muted-foreground"> · </span>
-              {preview.row_count} satır
+              {t("analyze.upload.rowCount", { n: preview.row_count })}
             </>
           )}
         </p>
 
         {previewLoading ? (
           <div className="bg-muted/30 flex items-center gap-2 rounded-md border p-4 text-sm">
-            <Loader2 className="size-4 animate-spin" /> Sütunlar analiz ediliyor…
+            <Loader2 className="size-4 animate-spin" /> {t("analyze.upload.analyzingColumns")}
           </div>
         ) : preview ? (
           <>
@@ -535,12 +544,12 @@ function Step2ColumnMapping({
           </>
         ) : (
           <div className="bg-muted/30 rounded-md border p-3 text-xs text-muted-foreground">
-            Otomatik tespit alınamadı; sütunları aşağıdan elle girebilirsiniz.
+            {t("analyze.upload.noAutoDetect")}
           </div>
         )}
 
         <div className="space-y-3">
-          <Label htmlFor="text-column">Metin sütunu</Label>
+          <Label htmlFor="text-column">{t("analyze.upload.textColumn")}</Label>
           <input
             id="text-column"
             value={textColumn}
@@ -549,10 +558,10 @@ function Step2ColumnMapping({
             className="border-input bg-background w-full rounded-md border px-3 py-2 text-sm"
           />
           <p className="text-muted-foreground text-xs">
-            Analiz edilecek metni içeren sütunun başlığı.
+            {t("analyze.upload.textColumnHelp")}
             {derivedTextColumn && (
               <>
-                {" "}Otomatik tespit:{" "}
+                {" "}{t("analyze.upload.autoDetectLabel")}{" "}
                 <code className="font-mono">{derivedTextColumn}</code>
               </>
             )}
@@ -560,7 +569,7 @@ function Step2ColumnMapping({
         </div>
 
         <div className="space-y-3">
-          <Label htmlFor="source-column">Kaynak sütunu (opsiyonel)</Label>
+          <Label htmlFor="source-column">{t("analyze.upload.sourceColumn")}</Label>
           <input
             id="source-column"
             value={sourceColumn}
@@ -578,18 +587,16 @@ function Step2ColumnMapping({
             className="mt-1"
           />
           <span className="text-sm">
-            <span className="font-medium">Otomatik Ticket aç</span>
+            <span className="font-medium">{t("analyze.upload.autoCreateTitle")}</span>
             <span className="text-muted-foreground mt-1 block text-xs">
-              Kurumunuzun otomasyon modu ayarına göre eşiği geçen satırlar
-              için otomatik Ticket açılır. Kapalıysa hiçbir satır Ticket
-              açmaz; tüm analizler Analiz Arşivi&apos;nde listelenir.
+              {t("analyze.upload.autoCreateHelp")}
             </span>
           </span>
         </label>
 
         <div className="flex justify-between gap-2">
           <Button variant="outline" type="button" onClick={onBack}>
-            Geri
+            {t("analyze.upload.back")}
           </Button>
           <Button
             type="button"
@@ -597,19 +604,19 @@ function Step2ColumnMapping({
             disabled={submitting || piiBlocked || validationBlocked}
             title={
               validationBlocked
-                ? "Dosyadaki engelleyici hataları düzeltip yeniden yükleyin"
+                ? t("analyze.upload.fixErrorsTitle")
                 : piiBlocked
-                  ? "Önce PII onayı verin"
+                  ? t("analyze.upload.piiConsentFirst")
                   : undefined
             }
           >
             {submitting ? (
               <>
-                <Loader2 className="size-4 animate-spin" /> Yükleniyor…
+                <Loader2 className="size-4 animate-spin" /> {t("analyze.upload.uploading")}
               </>
             ) : (
               <>
-                <Upload className="size-4" /> Yüklemeyi Başlat
+                <Upload className="size-4" /> {t("analyze.upload.startUpload")}
               </>
             )}
           </Button>
@@ -626,6 +633,7 @@ function Step3Progress({
   job: BatchJob | null;
   onCancel: () => void;
 }) {
+  const { t } = useTranslation();
   const percent = useMemo(() => {
     if (!job) return 0;
     return Math.min(
@@ -638,7 +646,7 @@ function Step3Progress({
     return (
       <Card>
         <CardContent className="flex items-center gap-3 p-6">
-          <Loader2 className="size-5 animate-spin" /> Yükleme bilgisi yükleniyor…
+          <Loader2 className="size-5 animate-spin" /> {t("analyze.upload.loadingJob")}
         </CardContent>
       </Card>
     );
@@ -647,12 +655,12 @@ function Step3Progress({
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Adım 3 — İlerleme</CardTitle>
+        <CardTitle>{t("analyze.upload.step3Title")}</CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
         <p className="text-sm">
           <span className="font-medium">{job.file_name}</span>
-          <span className="text-muted-foreground"> · {job.total_rows} satır</span>
+          <span className="text-muted-foreground"> · {t("analyze.upload.rowCount", { n: job.total_rows })}</span>
         </p>
 
         <div className="bg-muted h-2 w-full overflow-hidden rounded">
@@ -666,21 +674,21 @@ function Step3Progress({
         </p>
 
         <dl className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
-          <Stat label="Başarılı" value={job.succeeded_rows} />
-          <Stat label="Hatalı" value={job.failed_rows} tone="danger" />
-          <Stat label="Tekrar" value={job.duplicates_skipped} />
-          <Stat label="Ticket" value={job.tickets_created} tone="success" />
+          <Stat label={t("analyze.upload.stat.succeeded")} value={job.succeeded_rows} />
+          <Stat label={t("analyze.upload.stat.failed")} value={job.failed_rows} tone="danger" />
+          <Stat label={t("analyze.upload.stat.duplicates")} value={job.duplicates_skipped} />
+          <Stat label={t("analyze.upload.stat.tickets")} value={job.tickets_created} tone="success" />
         </dl>
 
         {job.estimated_seconds !== null && job.estimated_seconds > 0 && (
           <p className="text-muted-foreground text-xs">
-            Kalan tahmini süre: ~{Math.ceil(job.estimated_seconds / 60)} dakika
+            {t("analyze.upload.estimatedTime", { n: Math.ceil(job.estimated_seconds / 60) })}
           </p>
         )}
 
         {(job.status === "queued" || job.status === "processing") && (
           <Button variant="outline" type="button" onClick={onCancel}>
-            <XCircle className="size-4" /> İptal Et
+            <XCircle className="size-4" /> {t("analyze.upload.cancel")}
           </Button>
         )}
       </CardContent>
@@ -689,6 +697,7 @@ function Step3Progress({
 }
 
 function Step4Summary({ job, onReset }: { job: BatchJob; onReset: () => void }) {
+  const { t } = useTranslation();
   const ok = job.status === "completed";
   return (
     <Card>
@@ -699,25 +708,31 @@ function Step4Summary({ job, onReset }: { job: BatchJob; onReset: () => void }) 
           ) : (
             <AlertCircle className="size-5 text-amber-600" />
           )}
-          Adım 4 — {ok ? "Tamamlandı" : statusLabel(job.status)}
+          {t("analyze.upload.step4Prefix")}
+          {ok
+            ? t("analyze.upload.status.completed")
+            : t(statusLabelKey(job.status))}
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
         <dl className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
-          <Stat label="İşlenen" value={job.processed_rows} />
-          <Stat label="Başarılı" value={job.succeeded_rows} tone="success" />
-          <Stat label="Hatalı" value={job.failed_rows} tone="danger" />
-          <Stat label="Ticket" value={job.tickets_created} />
+          <Stat label={t("analyze.upload.stat.processed")} value={job.processed_rows} />
+          <Stat label={t("analyze.upload.stat.succeeded")} value={job.succeeded_rows} tone="success" />
+          <Stat label={t("analyze.upload.stat.failed")} value={job.failed_rows} tone="danger" />
+          <Stat label={t("analyze.upload.stat.tickets")} value={job.tickets_created} />
         </dl>
         {job.error_summary.length > 0 && (
           <details className="rounded border p-3 text-sm">
             <summary className="cursor-pointer">
-              Hata özeti ({job.error_summary.length})
+              {t("analyze.upload.errorSummary", { n: job.error_summary.length })}
             </summary>
             <ul className="mt-2 max-h-48 space-y-1 overflow-y-auto text-xs">
               {job.error_summary.map((entry, idx) => (
                 <li key={idx} className="text-muted-foreground">
-                  {entry.row !== null ? `Satır ${entry.row}:` : "Genel:"} {entry.error}
+                  {entry.row !== null
+                    ? t("analyze.upload.rowPrefix", { n: entry.row })
+                    : t("analyze.upload.general")}{" "}
+                  {entry.error}
                 </li>
               ))}
             </ul>
@@ -725,10 +740,10 @@ function Step4Summary({ job, onReset }: { job: BatchJob; onReset: () => void }) 
         )}
         <div className="flex flex-wrap gap-2">
           <Button render={<Link href={`/reviews?batch_job_id=${job.job_id}`} />}>
-            Bu Yüklemenin Analizlerini Gör <ArrowRight className="size-4" />
+            {t("analyze.upload.viewAnalyses")} <ArrowRight className="size-4" />
           </Button>
           <Button variant="outline" type="button" onClick={onReset}>
-            Yeni Yükleme
+            {t("analyze.upload.newUpload")}
           </Button>
         </div>
       </CardContent>
@@ -746,6 +761,7 @@ function Step4Summary({ job, onReset }: { job: BatchJob; onReset: () => void }) 
  *   * Temiz: yeşil onay + analiz edilecek satır sayısı.
  */
 function ValidationReportPanel({ report }: { report: ValidationReport }) {
+  const { t } = useTranslation();
   const errors = report.issues.filter((i) => i.severity === "error");
   const warnings = report.issues.filter((i) => i.severity === "warning");
 
@@ -759,7 +775,7 @@ function ValidationReportPanel({ report }: { report: ValidationReport }) {
           />
           <div className="min-w-0 flex-1">
             <p className="text-sm font-semibold text-red-800 dark:text-red-300">
-              Bu dosya yüklenemez
+              {t("analyze.upload.validation.cannotUpload")}
             </p>
             <ul className="mt-2 space-y-2.5">
               {errors.map((iss, idx) => (
@@ -790,11 +806,11 @@ function ValidationReportPanel({ report }: { report: ValidationReport }) {
           aria-hidden
         />
         <p className="text-sm text-emerald-800 dark:text-emerald-300">
-          Dosya şablona uygun —{" "}
+          {t("analyze.upload.validation.okBefore")}
           <strong className="font-semibold tabular-nums">
             {report.valid_rows.toLocaleString("tr-TR")}
-          </strong>{" "}
-          satır analiz edilecek.
+          </strong>
+          {t("analyze.upload.validation.okAfter")}
         </p>
       </div>
     );
@@ -809,8 +825,10 @@ function ValidationReportPanel({ report }: { report: ValidationReport }) {
         />
         <div className="min-w-0 flex-1">
           <p className="text-sm font-semibold text-amber-800 dark:text-amber-300">
-            {report.valid_rows.toLocaleString("tr-TR")} satır analiz edilecek ·{" "}
-            {report.warning_count.toLocaleString("tr-TR")} satır atlanacak
+            {t("analyze.upload.validation.warnSummary", {
+              valid: report.valid_rows.toLocaleString("tr-TR"),
+              warn: report.warning_count.toLocaleString("tr-TR"),
+            })}
           </p>
           <ul className="mt-2 max-h-44 space-y-1.5 overflow-y-auto pr-1">
             {warnings.map((iss, idx) => (
@@ -823,8 +841,7 @@ function ValidationReportPanel({ report }: { report: ValidationReport }) {
             ))}
           </ul>
           <p className="mt-2 text-xs text-amber-700/70 dark:text-amber-300/70">
-            Bu satırları yine de yükleyebilirsiniz; atlanan satırlar analiz
-            edilmez.
+            {t("analyze.upload.validation.warnFooter")}
           </p>
         </div>
       </div>
@@ -857,17 +874,17 @@ function Stat({
   );
 }
 
-function statusLabel(s: BatchJob["status"]): string {
+function statusLabelKey(s: BatchJob["status"]): string {
   switch (s) {
     case "completed":
-      return "Tamamlandı";
+      return "analyze.upload.status.completed";
     case "failed":
-      return "Başarısız";
+      return "analyze.upload.status.failed";
     case "cancelled":
-      return "İptal edildi";
+      return "analyze.upload.status.cancelled";
     case "processing":
-      return "İşleniyor";
+      return "analyze.upload.status.processing";
     case "queued":
-      return "Sıraya alındı";
+      return "analyze.upload.status.queued";
   }
 }

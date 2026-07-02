@@ -15,6 +15,8 @@
 
 import { useMemo, useState } from "react";
 
+import { useTranslation } from "@/lib/i18n/use-translation";
+
 interface HeatmapProps {
   rows: string[];
   cols: string[];
@@ -71,6 +73,7 @@ export function Heatmap({
   tooltip,
   height,
 }: HeatmapProps) {
+  const { t } = useTranslation();
   const [hover, setHover] = useState<{ r: number; c: number } | null>(null);
 
   const max = useMemo(
@@ -98,7 +101,7 @@ export function Heatmap({
         width={width}
         height={height ?? totalH}
         role="img"
-        aria-label="Isı haritası"
+        aria-label={t("charts.heatmapAria")}
         style={{ display: "block" }}
       >
         {/* Column labels */}

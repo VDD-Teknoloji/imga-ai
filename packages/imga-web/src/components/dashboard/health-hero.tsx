@@ -24,6 +24,9 @@ import { Activity, AlertTriangle, ArrowDown, ArrowUp, Minus } from "lucide-react
 
 import { Skeleton } from "@/components/ui/skeleton";
 import { useHeadlineMetrics, useNpsMonthlyTrend } from "@/hooks/use-analytics";
+import { useTranslation } from "@/lib/i18n/use-translation";
+
+type Translate = (key: string, vars?: Record<string, string | number>) => string;
 
 type HealthBand = "excellent" | "good" | "watch" | "risk" | "critical" | "no-data";
 
@@ -34,7 +37,7 @@ interface HealthVisual {
   scoreColor: string;
 }
 
-function healthFromNps(score: number | null): HealthVisual {
+function healthFromNps(score: number | null, t: Translate): HealthVisual {
   // Sprint 9.6.1 — band visuals refined for the new design system.
   // The container layers a tinted band wash (very subtle) over the
   // card surface so the hero reads as ONE surface with a colour
@@ -45,7 +48,7 @@ function healthFromNps(score: number | null): HealthVisual {
   if (score === null) {
     return {
       band: "no-data",
-      badge: "Yeterli veri yok",
+      badge: t("dashboard.healthHero.band.noData"),
       container: "border-border/60 bg-card shadow-soft",
       scoreColor: "text-muted-foreground",
     };
@@ -53,7 +56,7 @@ function healthFromNps(score: number | null): HealthVisual {
   if (score >= 50) {
     return {
       band: "excellent",
-      badge: "Mükemmel",
+      badge: t("dashboard.healthHero.band.excellent"),
       container:
         "border-emerald-200/60 bg-gradient-to-br from-emerald-50/80 via-card to-card dark:border-emerald-900/50 dark:from-emerald-950/30 dark:via-card dark:to-card shadow-elevated",
       scoreColor: "gradient-text",
@@ -62,7 +65,7 @@ function healthFromNps(score: number | null): HealthVisual {
   if (score >= 30) {
     return {
       band: "good",
-      badge: "İyi",
+      badge: t("dashboard.healthHero.band.good"),
       container:
         "border-emerald-200/40 bg-gradient-to-br from-emerald-50/40 via-card to-card dark:border-emerald-900/30 dark:from-emerald-950/20 dark:via-card dark:to-card shadow-elevated",
       scoreColor: "gradient-text",
@@ -71,7 +74,7 @@ function healthFromNps(score: number | null): HealthVisual {
   if (score >= 0) {
     return {
       band: "watch",
-      badge: "Dikkat",
+      badge: t("dashboard.healthHero.band.watch"),
       container:
         "border-amber-200/60 bg-gradient-to-br from-amber-50/80 via-card to-card dark:border-amber-900/40 dark:from-amber-950/25 dark:via-card dark:to-card shadow-elevated",
       scoreColor: "text-amber-700 dark:text-amber-300",
@@ -80,7 +83,7 @@ function healthFromNps(score: number | null): HealthVisual {
   if (score >= -50) {
     return {
       band: "risk",
-      badge: "Riskli",
+      badge: t("dashboard.healthHero.band.risk"),
       container:
         "border-orange-200/70 bg-gradient-to-br from-orange-50/80 via-card to-card dark:border-orange-900/40 dark:from-orange-950/25 dark:via-card dark:to-card shadow-elevated",
       scoreColor: "text-orange-700 dark:text-orange-300",
@@ -88,7 +91,7 @@ function healthFromNps(score: number | null): HealthVisual {
   }
   return {
     band: "critical",
-    badge: "Kritik",
+    badge: t("dashboard.healthHero.band.critical"),
     container:
       "border-red-300/70 bg-gradient-to-br from-red-50/90 via-card to-card dark:border-red-900/50 dark:from-red-950/30 dark:via-card dark:to-card shadow-elevated",
     scoreColor: "text-red-700 dark:text-red-300",
@@ -110,26 +113,27 @@ function narrative(
   crisis: number,
   total: number,
   avgSentiment: number | null,
+  t: Translate,
 ): string {
   if (nps === null && total === 0) {
-    return "Henüz analiz edilmiş yorum yok. Toplu yükleme ile başlayın.";
+    return t("dashboard.healthHero.narrative.empty");
   }
   if (total > 0 && crisis / total > 0.1) {
-    return "Kriz hacmi yüksek — son dönemde negatif sinyaller yoğunlaşıyor, dikkat gerekli.";
+    return t("dashboard.healthHero.narrative.crisis");
   }
   if (nps !== null && nps < -30) {
-    return "Genel his belirgin biçimde negatif — yönetim aksiyonu değerlendirin.";
+    return t("dashboard.healthHero.narrative.veryNegative");
   }
   if (nps !== null && nps < 0) {
-    return "Genel his hafif negatif — eğilim tersine dönmeden ele alın.";
+    return t("dashboard.healthHero.narrative.negative");
   }
   if (avgSentiment !== null && avgSentiment < -0.3) {
-    return "Ortalama duygu negatif tarafa eğilimli.";
+    return t("dashboard.healthHero.narrative.avgNegative");
   }
   if (nps !== null && nps >= 30) {
-    return "Genel seyir iyi — kritik bir sinyal yok.";
+    return t("dashboard.healthHero.narrative.good");
   }
-  return "Genel seyir dengeli — periyodik takip yeterli.";
+  return t("dashboard.healthHero.narrative.balanced");
 }
 
 interface DeltaInfo {
@@ -139,6 +143,7 @@ interface DeltaInfo {
 
 function computeNpsDelta(
   monthlyTrend: ReadonlyArray<{ score: number | null }> | undefined,
+  t: Translate,
 ): DeltaInfo {
   if (!monthlyTrend || monthlyTrend.length < 2) {
     return { delta: null, label: "" };
@@ -162,10 +167,16 @@ function computeNpsDelta(
     return { delta: null, label: "" };
   }
   const delta = latest - previous;
-  return { delta, label: `önceki aya göre ${delta > 0 ? "+" : ""}${delta.toFixed(0)}` };
+  return {
+    delta,
+    label: t("dashboard.healthHero.deltaLabel", {
+      delta: `${delta > 0 ? "+" : ""}${delta.toFixed(0)}`,
+    }),
+  };
 }
 
 export function HealthHero() {
+  const { t } = useTranslation();
   const headline = useHeadlineMetrics({});
   const trend = useNpsMonthlyTrend(12);
 
@@ -175,9 +186,9 @@ export function HealthHero() {
       <div className="border-destructive/30 bg-destructive/5 flex items-center gap-3 rounded-xl border p-6">
         <AlertTriangle className="text-destructive size-5" aria-hidden />
         <div className="text-sm">
-          <p className="font-medium">CX Sağlık verisi alınamadı.</p>
+          <p className="font-medium">{t("dashboard.healthHero.error.title")}</p>
           <p className="text-muted-foreground">
-            API erişimi yeniden kurulduğunda otomatik yenilenir.
+            {t("dashboard.healthHero.error.desc")}
           </p>
         </div>
       </div>
@@ -186,24 +197,25 @@ export function HealthHero() {
 
   const data = headline.data;
   const score = data?.nps_score ?? null;
-  const visual = healthFromNps(score);
+  const visual = healthFromNps(score, t);
   const text = narrative(
     score,
     data?.crisis_count ?? 0,
     data?.total_reviews ?? 0,
     data?.avg_sentiment_score ?? null,
+    t,
   );
-  const delta = computeNpsDelta(trend.data);
+  const delta = computeNpsDelta(trend.data, t);
 
   return (
     <section
       className={`rise-in rounded-2xl border p-6 md:p-10 transition-shadow ${visual.container}`}
-      aria-label="CX Sağlık"
+      aria-label={t("dashboard.healthHero.aria")}
     >
       <div className="flex flex-wrap items-start gap-x-10 gap-y-6">
         <div className="flex-1 min-w-[14rem]">
           <p className="text-muted-foreground text-[11px] font-semibold uppercase tracking-[0.14em]">
-            CX Sağlık · Son 30 gün
+            {t("dashboard.healthHero.headerLabel")}
           </p>
           <div className="mt-3 flex items-baseline gap-4 flex-wrap">
             <span
@@ -230,19 +242,19 @@ export function HealthHero() {
 
         <div className="bg-card/60 ring-foreground/5 flex flex-col gap-2.5 rounded-xl px-4 py-3 text-xs ring-1 min-w-[11rem] backdrop-blur-sm">
           <CoverageRow
-            label="Toplam yorum"
+            label={t("dashboard.healthHero.coverage.totalReviews")}
             value={(data?.total_reviews ?? 0).toLocaleString("tr-TR")}
           />
           <CoverageRow
-            label="NPS kapsama"
+            label={t("dashboard.healthHero.coverage.npsCoverage")}
             value={`%${(data?.nps_coverage_percent ?? 0).toFixed(0)}`}
           />
           <CoverageRow
-            label="Kriz adedi"
+            label={t("dashboard.healthHero.coverage.crisisCount")}
             value={(data?.crisis_count ?? 0).toLocaleString("tr-TR")}
           />
           <CoverageRow
-            label="Açık ticket"
+            label={t("dashboard.healthHero.coverage.openTickets")}
             value={(data?.open_tickets ?? 0).toLocaleString("tr-TR")}
           />
         </div>

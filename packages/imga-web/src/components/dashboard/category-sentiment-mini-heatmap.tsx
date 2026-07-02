@@ -10,8 +10,10 @@ import { useRouter } from "next/navigation";
 import { Heatmap } from "@/components/charts/heatmap";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useSentimentByCategory } from "@/hooks/use-analytics";
+import { useTranslation } from "@/lib/i18n/use-translation";
 
 export function CategorySentimentMiniHeatmap() {
+  const { t } = useTranslation();
   const router = useRouter();
   const matrix = useSentimentByCategory({}, 5);
 
@@ -19,19 +21,21 @@ export function CategorySentimentMiniHeatmap() {
     <section className="bg-card rounded-lg border p-5">
       <header className="mb-4 flex items-baseline justify-between">
         <h2 className="text-base font-semibold tracking-tight">
-          Kategori × Duygu
+          {t("dashboard.categoryHeatmap.title")}
         </h2>
-        <p className="text-muted-foreground text-xs">İlk 5 kategori</p>
+        <p className="text-muted-foreground text-xs">
+          {t("dashboard.common.top5Categories")}
+        </p>
       </header>
       {matrix.isLoading ? (
         <Skeleton className="h-[220px]" />
       ) : matrix.isError ? (
         <p className="text-destructive py-12 text-center text-sm">
-          Veri yüklenemedi.
+          {t("dashboard.common.loadFailed")}
         </p>
       ) : !matrix.data || matrix.data.categories.length === 0 ? (
         <p className="text-muted-foreground py-12 text-center text-sm">
-          Veri yok.
+          {t("dashboard.common.noData")}
         </p>
       ) : (
         <Heatmap
@@ -43,7 +47,11 @@ export function CategorySentimentMiniHeatmap() {
           colorScale="blue"
           height={220}
           tooltip={(value, rowLabel, colLabel) =>
-            `${rowLabel} × ${colLabel}: ${value} analiz`
+            t("dashboard.categoryHeatmap.tooltip", {
+              row: rowLabel,
+              col: colLabel,
+              value,
+            })
           }
           onCellClick={(i, j) => {
             const cat = matrix.data?.categories[i];

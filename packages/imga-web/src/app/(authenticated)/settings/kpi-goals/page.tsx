@@ -24,17 +24,19 @@ import {
 } from "@/hooks/use-kpi-goals";
 import { useMetricDefinitions } from "@/hooks/use-metric-definitions";
 import { ApiError, formatApiErrorMessage } from "@/lib/api-client";
+import { useTranslation } from "@/lib/i18n/use-translation";
 
-const PERIODS: ReadonlyArray<{ value: GoalPeriod; label: string }> = [
-  { value: "weekly", label: "Haftalık" },
-  { value: "monthly", label: "Aylık" },
-  { value: "quarterly", label: "Üç Aylık" },
-  { value: "yearly", label: "Yıllık" },
+const PERIODS: ReadonlyArray<GoalPeriod> = [
+  "weekly",
+  "monthly",
+  "quarterly",
+  "yearly",
 ];
 
 export default function KpiGoalsPage() {
   const goals = useKpiGoals(false); // history + active
   const metrics = useMetricDefinitions();
+  const { t } = useTranslation();
 
   return (
     <main className="mx-auto w-full max-w-4xl space-y-6 px-4 py-6 md:p-8">
@@ -42,12 +44,10 @@ export default function KpiGoalsPage() {
         <Target className="text-primary mt-1 size-6" aria-hidden />
         <div>
           <h1 className="text-2xl font-semibold tracking-tight md:text-3xl">
-            KPI Hedefleri
+            {t("settings.kpi.title")}
           </h1>
           <p className="text-muted-foreground text-sm">
-            Tenant&apos;a metrik bazlı dönem hedefi koyun. Dashboard
-            kartlarında ve executive briefing&apos;lerde achievement
-            yüzdesi olarak görünür.
+            {t("settings.kpi.subtitle")}
           </p>
         </div>
       </header>
@@ -56,15 +56,14 @@ export default function KpiGoalsPage() {
 
       {goals.isLoading ? (
         <div className="flex items-center gap-2 p-6 text-sm">
-          <Loader2 className="size-4 animate-spin" /> Yükleniyor…
+          <Loader2 className="size-4 animate-spin" /> {t("common.loading")}
         </div>
       ) : goals.isError ? (
-        <p className="text-destructive text-sm">Hedef listesi alınamadı.</p>
+        <p className="text-destructive text-sm">{t("settings.kpi.loadError")}</p>
       ) : !goals.data || goals.data.length === 0 ? (
         <Card>
           <CardContent className="p-6 text-center text-sm text-muted-foreground">
-            Henüz hedef yok. Yukarıdaki form ile ilk KPI hedefinizi
-            ekleyin.
+            {t("settings.kpi.empty")}
           </CardContent>
         </Card>
       ) : (
@@ -81,7 +80,8 @@ export default function KpiGoalsPage() {
                     {meta?.display_name ?? g.metric_key}
                   </p>
                   <p className="text-muted-foreground text-xs">
-                    Hedef: <strong>{g.target_value}</strong>
+                    {t("settings.kpi.targetLabel")}{" "}
+                    <strong>{g.target_value}</strong>
                     {meta?.unit === "percentage" ? "%" : ""} · {g.target_period}{" "}
                     · {g.period_start} → {g.period_end}
                   </p>
@@ -106,21 +106,22 @@ export default function KpiGoalsPage() {
 
 function DeleteButton({ id }: { id: string }) {
   const del = useDeleteKpiGoal();
+  const { t } = useTranslation();
   return (
     <Button
       variant="ghost"
       size="sm"
       onClick={() => {
-        if (!confirm("Hedefi silmek istediğinizden emin misiniz?")) return;
+        if (!confirm(t("settings.kpi.deleteConfirm"))) return;
         del.mutate(id, {
-          onSuccess: () => toast.success("Hedef silindi."),
+          onSuccess: () => toast.success(t("settings.kpi.deleted")),
           onError: (err) => toast.error(formatApiErrorMessage(err)),
         });
       }}
       disabled={del.isPending}
       className="gap-1 text-red-700 hover:text-red-900"
     >
-      <Trash2 className="size-3.5" aria-hidden /> Sil
+      <Trash2 className="size-3.5" aria-hidden /> {t("settings.common.delete")}
     </Button>
   );
 }
@@ -128,6 +129,7 @@ function DeleteButton({ id }: { id: string }) {
 function CreateForm() {
   const create = useCreateKpiGoal();
   const metrics = useMetricDefinitions();
+  const { t } = useTranslation();
   const [metricKey, setMetricKey] = useState<string>("");
   const [targetValue, setTargetValue] = useState<string>("");
   const [period, setPeriod] = useState<GoalPeriod>("monthly");
@@ -138,12 +140,12 @@ function CreateForm() {
   function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!metricKey) {
-      toast.error("Metric seçin.");
+      toast.error(t("settings.kpi.selectMetric"));
       return;
     }
     const numericTarget = Number(targetValue);
     if (!Number.isFinite(numericTarget)) {
-      toast.error("Hedef sayı olmalı.");
+      toast.error(t("settings.kpi.targetMustBeNumber"));
       return;
     }
     create.mutate(
@@ -157,14 +159,14 @@ function CreateForm() {
       },
       {
         onSuccess: () => {
-          toast.success("Hedef eklendi.");
+          toast.success(t("settings.kpi.added"));
           setMetricKey("");
           setTargetValue("");
           setNotes("");
         },
         onError: (err) => {
           if (err instanceof ApiError && err.status === 409) {
-            toast.error("Aynı metrik + dönem için hedef zaten var.");
+            toast.error(t("settings.kpi.duplicate"));
           } else {
             toast.error(formatApiErrorMessage(err));
           }
@@ -176,16 +178,16 @@ function CreateForm() {
   return (
     <Card>
       <CardContent className="space-y-3 p-4">
-        <h2 className="text-sm font-semibold">Yeni hedef</h2>
+        <h2 className="text-sm font-semibold">{t("settings.kpi.newGoal")}</h2>
         <form onSubmit={onSubmit} className="grid gap-3 md:grid-cols-2">
           <div className="space-y-1">
-            <Label className="text-xs">Metric</Label>
+            <Label className="text-xs">{t("settings.kpi.metric")}</Label>
             <select
               value={metricKey}
               onChange={(e) => setMetricKey(e.target.value)}
               className="border-input bg-background w-full rounded-md border px-2 py-1.5 text-sm"
             >
-              <option value="">Metric seçin…</option>
+              <option value="">{t("settings.kpi.metricPlaceholder")}</option>
               {metrics.data?.map((m) => (
                 <option key={m.metric_key} value={m.metric_key}>
                   {m.display_name}
@@ -194,7 +196,7 @@ function CreateForm() {
             </select>
           </div>
           <div className="space-y-1">
-            <Label className="text-xs">Hedef değer</Label>
+            <Label className="text-xs">{t("settings.kpi.targetValue")}</Label>
             <Input
               type="number"
               step="0.1"
@@ -204,22 +206,22 @@ function CreateForm() {
             />
           </div>
           <div className="space-y-1">
-            <Label className="text-xs">Dönem</Label>
+            <Label className="text-xs">{t("settings.kpi.period")}</Label>
             <select
               value={period}
               onChange={(e) => setPeriod(e.target.value as GoalPeriod)}
               className="border-input bg-background w-full rounded-md border px-2 py-1.5 text-sm"
             >
               {PERIODS.map((p) => (
-                <option key={p.value} value={p.value}>
-                  {p.label}
+                <option key={p} value={p}>
+                  {t(`settings.kpi.period.${p}`)}
                 </option>
               ))}
             </select>
           </div>
           <div className="grid gap-2 md:col-span-1 md:grid-cols-2">
             <div className="space-y-1">
-              <Label className="text-xs">Başlangıç</Label>
+              <Label className="text-xs">{t("settings.kpi.startDate")}</Label>
               <Input
                 type="date"
                 value={periodStart}
@@ -228,7 +230,7 @@ function CreateForm() {
               />
             </div>
             <div className="space-y-1">
-              <Label className="text-xs">Bitiş</Label>
+              <Label className="text-xs">{t("settings.kpi.endDate")}</Label>
               <Input
                 type="date"
                 value={periodEnd}
@@ -238,12 +240,12 @@ function CreateForm() {
             </div>
           </div>
           <div className="space-y-1 md:col-span-2">
-            <Label className="text-xs">Not (opsiyonel)</Label>
+            <Label className="text-xs">{t("settings.kpi.notes")}</Label>
             <Input
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
               maxLength={1024}
-              placeholder="Bu hedefin arkasındaki bağlam…"
+              placeholder={t("settings.kpi.notesPlaceholder")}
             />
           </div>
           <Button
@@ -251,7 +253,9 @@ function CreateForm() {
             disabled={create.isPending}
             className="md:col-span-2"
           >
-            {create.isPending ? "Kaydediliyor…" : "Hedef ekle"}
+            {create.isPending
+              ? t("settings.common.saving")
+              : t("settings.kpi.addGoal")}
           </Button>
         </form>
       </CardContent>

@@ -13,14 +13,15 @@ import { useMemo } from "react";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
+import { useTranslation } from "@/lib/i18n/use-translation";
 import { useInsightsWordCloud } from "@/hooks/use-insights-word-cloud";
 import type { WordCloudSentiment, WordCloudWord } from "@/lib/types";
 
-const SENTIMENT_LABELS: Record<WordCloudSentiment, string> = {
-  all: "Tümü",
-  positive: "Pozitif",
-  negative: "Negatif",
-  neutral: "Nötr",
+const SENTIMENT_LABEL_KEYS: Record<WordCloudSentiment, string> = {
+  all: "insights.wordcloud.sentAll",
+  positive: "insights.wordcloud.sentPositive",
+  negative: "insights.wordcloud.sentNegative",
+  neutral: "insights.wordcloud.sentNeutral",
 };
 
 interface Props {
@@ -44,6 +45,7 @@ export function WordCloudTab({
   onTaxonomyChange,
   onBigramsChange,
 }: Props) {
+  const { t } = useTranslation();
   const query = useInsightsWordCloud({
     sentiment,
     taxonomy_code: taxonomyCode || undefined,
@@ -62,7 +64,7 @@ export function WordCloudTab({
       <Card>
         <CardContent className="grid grid-cols-1 gap-3 p-4 md:grid-cols-4">
           <div>
-            <Label className="text-xs">Duygu</Label>
+            <Label className="text-xs">{t("insights.wordcloud.sentiment")}</Label>
             <select
               value={sentiment}
               onChange={(e) =>
@@ -70,21 +72,23 @@ export function WordCloudTab({
               }
               className="border-input bg-background mt-1 w-full rounded-md border px-3 py-2 text-sm"
             >
-              {(Object.keys(SENTIMENT_LABELS) as WordCloudSentiment[]).map(
+              {(Object.keys(SENTIMENT_LABEL_KEYS) as WordCloudSentiment[]).map(
                 (s) => (
                   <option key={s} value={s}>
-                    {SENTIMENT_LABELS[s]}
+                    {t(SENTIMENT_LABEL_KEYS[s])}
                   </option>
                 ),
               )}
             </select>
           </div>
           <div className="md:col-span-2">
-            <Label className="text-xs">Kategori filtresi (opsiyonel)</Label>
+            <Label className="text-xs">
+              {t("insights.wordcloud.categoryFilter")}
+            </Label>
             <input
               value={taxonomyCode}
               onChange={(e) => onTaxonomyChange(e.target.value)}
-              placeholder="kategori_kodu"
+              placeholder={t("insights.wordcloud.categoryPlaceholder")}
               className="border-input bg-background mt-1 w-full rounded-md border px-3 py-2 text-sm"
             />
           </div>
@@ -96,7 +100,7 @@ export function WordCloudTab({
                 onChange={(e) => onBigramsChange(e.target.checked)}
                 className="size-4"
               />
-              İkili kelimeler
+              {t("insights.wordcloud.bigrams")}
             </label>
           </div>
         </CardContent>
@@ -105,20 +109,22 @@ export function WordCloudTab({
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
         <Card className="lg:col-span-2">
           <CardHeader>
-            <CardTitle className="text-base">Kelime Bulutu</CardTitle>
+            <CardTitle className="text-base">
+              {t("insights.wordcloud.title")}
+            </CardTitle>
           </CardHeader>
           <CardContent className="min-h-[360px]">
             {query.isLoading || query.isPending ? (
               <p className="text-muted-foreground py-12 text-center text-sm">
-                Yükleniyor…
+                {t("common.loading")}
               </p>
             ) : query.isError ? (
               <p className="text-destructive py-12 text-center text-sm">
-                Veri yüklenemedi.
+                {t("insights.state.loadErrorShort")}
               </p>
             ) : !query.data || query.data.words.length === 0 ? (
               <p className="text-muted-foreground py-12 text-center text-sm">
-                Bu filtrelerle gösterilecek kelime yok.
+                {t("insights.wordcloud.noWords")}
               </p>
             ) : (
               <div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-2 p-4">
@@ -135,7 +141,11 @@ export function WordCloudTab({
                         ? "font-medium italic"
                         : "font-medium"
                     }
-                    title={`${w.text} · ${w.weight} yorum · skew ${w.sentiment_skew.toFixed(2)}`}
+                    title={t("insights.wordcloud.wordTitle", {
+                      text: w.text,
+                      weight: w.weight,
+                      skew: w.sentiment_skew.toFixed(2),
+                    })}
                   >
                     {w.text}
                   </span>
@@ -147,7 +157,9 @@ export function WordCloudTab({
 
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">İlk 20 Kelime</CardTitle>
+            <CardTitle className="text-base">
+              {t("insights.wordcloud.top20")}
+            </CardTitle>
           </CardHeader>
           <CardContent>
             {!query.data || query.data.words.length === 0 ? (
@@ -174,7 +186,9 @@ export function WordCloudTab({
             )}
             {query.data && (
               <p className="text-muted-foreground mt-3 text-xs">
-                {query.data.total_reviews_analyzed} yorum analiz edildi.
+                {t("insights.wordcloud.analyzedCount", {
+                  count: query.data.total_reviews_analyzed,
+                })}
               </p>
             )}
           </CardContent>

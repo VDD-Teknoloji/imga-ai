@@ -14,14 +14,15 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { useBatchHistory } from "@/hooks/use-batch-uploads";
+import { useTranslation } from "@/lib/i18n/use-translation";
 import type { BatchJobStatus } from "@/lib/types";
 
-const STATUS_LABELS: Record<BatchJobStatus, string> = {
-  queued: "Sırada",
-  processing: "İşleniyor",
-  completed: "Tamamlandı",
-  failed: "Başarısız",
-  cancelled: "İptal",
+const STATUS_LABEL_KEYS: Record<BatchJobStatus, string> = {
+  queued: "analyze.history.status.queued",
+  processing: "analyze.history.status.processing",
+  completed: "analyze.history.status.completed",
+  failed: "analyze.history.status.failed",
+  cancelled: "analyze.history.status.cancelled",
 };
 
 const STATUS_TONES: Record<BatchJobStatus, "default" | "success" | "danger" | "warning"> = {
@@ -33,6 +34,7 @@ const STATUS_TONES: Record<BatchJobStatus, "default" | "success" | "danger" | "w
 };
 
 export default function BatchHistoryPage() {
+  const { t } = useTranslation();
   const history = useBatchHistory(50);
   const jobs = history.data?.pages.flatMap((p) => p.jobs) ?? [];
 
@@ -44,38 +46,38 @@ export default function BatchHistoryPage() {
             href="/analyze/upload"
             className="text-muted-foreground hover:text-foreground inline-flex items-center gap-1 text-sm"
           >
-            <ChevronLeft className="size-4" /> Toplu Yükleme
+            <ChevronLeft className="size-4" /> {t("analyze.history.backUpload")}
           </Link>
-          <h1 className="text-2xl font-semibold">Geçmiş Yüklemeler</h1>
+          <h1 className="text-2xl font-semibold">{t("analyze.history.title")}</h1>
         </div>
         <Button render={<Link href="/analyze/upload" />}>
-          <Upload className="size-4" /> Yeni Yükleme
+          <Upload className="size-4" /> {t("analyze.history.newUpload")}
         </Button>
       </header>
 
       {history.isLoading ? (
         <div className="flex items-center gap-2 p-6 text-sm">
-          <Loader2 className="size-4 animate-spin" /> Yükleniyor…
+          <Loader2 className="size-4 animate-spin" /> {t("analyze.history.loading")}
         </div>
       ) : jobs.length === 0 ? (
         <p className="text-muted-foreground p-6 text-sm">
-          Henüz toplu yükleme yok. İlk dosyanızı{" "}
+          {t("analyze.history.emptyBefore")}
           <Link href="/analyze/upload" className="underline">
-            buradan
-          </Link>{" "}
-          yükleyebilirsiniz.
+            {t("analyze.history.emptyLink")}
+          </Link>
+          {t("analyze.history.emptyAfter")}
         </p>
       ) : (
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Tarih</TableHead>
-              <TableHead>Dosya</TableHead>
-              <TableHead className="hidden text-right md:table-cell">Satır</TableHead>
-              <TableHead>Durum</TableHead>
-              <TableHead className="hidden text-right md:table-cell">Başarılı</TableHead>
-              <TableHead className="hidden text-right md:table-cell">Hata</TableHead>
-              <TableHead className="hidden text-right md:table-cell">Ticket</TableHead>
+              <TableHead>{t("analyze.history.col.date")}</TableHead>
+              <TableHead>{t("analyze.history.col.file")}</TableHead>
+              <TableHead className="hidden text-right md:table-cell">{t("analyze.history.col.rows")}</TableHead>
+              <TableHead>{t("analyze.history.col.status")}</TableHead>
+              <TableHead className="hidden text-right md:table-cell">{t("analyze.history.col.succeeded")}</TableHead>
+              <TableHead className="hidden text-right md:table-cell">{t("analyze.history.col.failed")}</TableHead>
+              <TableHead className="hidden text-right md:table-cell">{t("analyze.history.col.tickets")}</TableHead>
               <TableHead />
             </TableRow>
           </TableHeader>
@@ -95,7 +97,7 @@ export default function BatchHistoryPage() {
                   </TableCell>
                   <TableCell>
                     <Badge variant={tone === "default" ? "outline" : undefined}>
-                      {STATUS_LABELS[job.status]}
+                      {t(STATUS_LABEL_KEYS[job.status])}
                     </Badge>
                   </TableCell>
                   <TableCell className="hidden text-right md:table-cell">
@@ -113,7 +115,7 @@ export default function BatchHistoryPage() {
                       className="h-auto p-0"
                       render={<Link href={`/reviews?batch_job_id=${job.job_id}`} />}
                     >
-                      Analizleri gör →
+                      {t("analyze.history.viewAnalyses")}
                     </Button>
                   </TableCell>
                 </TableRow>
@@ -130,7 +132,7 @@ export default function BatchHistoryPage() {
             onClick={() => history.fetchNextPage()}
             disabled={history.isFetchingNextPage}
           >
-            {history.isFetchingNextPage ? "Yükleniyor…" : "Daha fazla göster"}
+            {history.isFetchingNextPage ? t("analyze.history.loading") : t("analyze.history.loadMore")}
           </Button>
         </div>
       )}

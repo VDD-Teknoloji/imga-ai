@@ -27,6 +27,7 @@ import {
   useTestRender,
 } from "@/hooks/use-prompt-templates";
 import { formatApiErrorMessage } from "@/lib/api-client";
+import { useTranslation } from "@/lib/i18n/use-translation";
 
 // Sprint 11.3 — koda gömülü varsayılanlar listede "sanal satır"
 // olarak görünür: DB boşken bile dört üretim şablonu (SWOT, OKR,
@@ -34,14 +35,15 @@ import { formatApiErrorMessage } from "@/lib/api-client";
 // kaydedince gerçek tenant override'ına dönüşür.
 const CODE_ROW_PREFIX = "code:";
 
-const KEY_TITLES: Record<string, string> = {
-  swot: "SWOT Analizi",
-  okr: "OKR Hedefleri",
-  briefing: "Yönetici Özeti",
-  unified_classifier: "Yorum Sınıflandırma",
+const KEY_TITLE_KEYS: Record<string, string> = {
+  swot: "admin.promptTemplates.name.swot",
+  okr: "admin.promptTemplates.name.okr",
+  briefing: "admin.promptTemplates.name.briefing",
+  unified_classifier: "admin.promptTemplates.name.unifiedClassifier",
 };
 
 export default function PromptTemplatesPage() {
+  const { t } = useTranslation();
   const list = usePromptTemplates();
   const codeDefaults = usePromptCodeDefaults();
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -49,7 +51,7 @@ export default function PromptTemplatesPage() {
   // DB satırları + (DB'de hiç görünmeyen anahtarlar için) kod
   // varsayılanlarından türetilen sanal satırlar.
   const dbRows = list.data ?? [];
-  const dbKeys = new Set(dbRows.map((t) => t.template_key));
+  const dbKeys = new Set(dbRows.map((row) => row.template_key));
   const virtualRows: PromptTemplateRow[] = (codeDefaults.data ?? [])
     .filter((d) => !dbKeys.has(d.template_key))
     .map((d) => ({
@@ -73,13 +75,10 @@ export default function PromptTemplatesPage() {
     }));
   const allRows = [...dbRows, ...virtualRows];
   const editableUserPrompt = new Map(
-    (codeDefaults.data ?? []).map((d) => [
-      d.template_key,
-      d.user_prompt_editable,
-    ]),
+    (codeDefaults.data ?? []).map((d) => [d.template_key, d.user_prompt_editable]),
   );
 
-  const selected = allRows.find((t) => t.id === selectedId);
+  const selected = allRows.find((row) => row.id === selectedId);
 
   return (
     <main className="mx-auto w-full max-w-6xl space-y-6 px-4 py-6 md:p-8">
@@ -87,13 +86,9 @@ export default function PromptTemplatesPage() {
         <Code2 className="text-primary mt-1 size-6" aria-hidden />
         <div>
           <h1 className="text-2xl font-semibold tracking-tight md:text-3xl">
-            Prompt Şablonları
+            {t("admin.promptTemplates.title")}
           </h1>
-          <p className="text-muted-foreground text-sm">
-            LLM çağrıları için sistem + kullanıcı istemleri.
-            Varsayılanları kopyalayıp kuruma özel şablon
-            oluşturun. Test butonu sunucuda Jinja2 çalıştırır.
-          </p>
+          <p className="text-muted-foreground text-sm">{t("admin.promptTemplates.subtitle")}</p>
         </div>
       </header>
 
@@ -101,10 +96,10 @@ export default function PromptTemplatesPage() {
         <aside className="bg-card space-y-2 rounded-lg border p-3">
           {list.isLoading ? (
             <div className="flex items-center gap-2 p-3 text-sm">
-              <Loader2 className="size-4 animate-spin" /> Yükleniyor…
+              <Loader2 className="size-4 animate-spin" /> {t("common.loading")}
             </div>
           ) : list.isError ? (
-            <p className="text-destructive text-sm">Liste alınamadı.</p>
+            <p className="text-destructive text-sm">{t("admin.common.listError")}</p>
           ) : (
             <>
               {codeDefaults.isError && (
@@ -112,38 +107,42 @@ export default function PromptTemplatesPage() {
                 // sessizce boşalıyordu — hatayı görünür kıl, kayıtlı
                 // override'lar listelenmeye devam etsin.
                 <p className="text-destructive p-2 text-xs">
-                  Varsayılan şablonlar alınamadı; yalnızca kayıtlı
-                  özelleştirmeler listeleniyor.
+                  {t("admin.promptTemplates.defaultsError")}
                 </p>
               )}
-            {allRows.map((t) => (
-              <button
-                key={t.id}
-                type="button"
-                onClick={() => setSelectedId(t.id)}
-                className={`block w-full rounded-md p-2 text-left text-sm ${
-                  selectedId === t.id
-                    ? "bg-primary text-primary-foreground"
-                    : "hover:bg-muted"
-                }`}
-              >
-                <div className="flex items-center gap-2">
-                  <span className="truncate font-medium">
-                    {KEY_TITLES[t.template_key] ?? t.template_key}
-                  </span>
-                  {t.is_tenant_override ? (
-                    <Badge className="text-[10px]">özel</Badge>
-                  ) : (
-                    <Badge variant="outline" className="text-[10px]">
-                      varsayılan
-                    </Badge>
-                  )}
-                </div>
-                <p className="text-xs opacity-70">
-                  {t.template_key} · {t.version}
-                </p>
-              </button>
-            ))}
+              {allRows.map((row) => {
+                const titleKey = KEY_TITLE_KEYS[row.template_key];
+                return (
+                  <button
+                    key={row.id}
+                    type="button"
+                    onClick={() => setSelectedId(row.id)}
+                    className={`block w-full rounded-md p-2 text-left text-sm ${
+                      selectedId === row.id
+                        ? "bg-primary text-primary-foreground"
+                        : "hover:bg-muted"
+                    }`}
+                  >
+                    <div className="flex items-center gap-2">
+                      <span className="truncate font-medium">
+                        {titleKey ? t(titleKey) : row.template_key}
+                      </span>
+                      {row.is_tenant_override ? (
+                        <Badge className="text-[10px]">
+                          {t("admin.promptTemplates.badge.custom")}
+                        </Badge>
+                      ) : (
+                        <Badge variant="outline" className="text-[10px]">
+                          {t("admin.promptTemplates.badge.default")}
+                        </Badge>
+                      )}
+                    </div>
+                    <p className="text-xs opacity-70">
+                      {row.template_key} · {row.version}
+                    </p>
+                  </button>
+                );
+              })}
             </>
           )}
         </aside>
@@ -159,14 +158,12 @@ export default function PromptTemplatesPage() {
               key={selected.id}
               template={selected}
               isVirtual={selected.id.startsWith(CODE_ROW_PREFIX)}
-              userPromptEditable={
-                editableUserPrompt.get(selected.template_key) ?? true
-              }
+              userPromptEditable={editableUserPrompt.get(selected.template_key) ?? true}
             />
           ) : (
             <Card>
-              <CardContent className="p-6 text-center text-sm text-muted-foreground">
-                Soldan bir şablon seçin.
+              <CardContent className="text-muted-foreground p-6 text-center text-sm">
+                {t("admin.promptTemplates.selectPrompt")}
               </CardContent>
             </Card>
           )}
@@ -189,6 +186,7 @@ function TemplateEditor({
    *  system prompt düzenlenebilir. */
   userPromptEditable?: boolean;
 }) {
+  const { t } = useTranslation();
   const create = useCreatePromptOverride();
   const patch = usePatchPromptOverride();
   const remove = useDeletePromptOverride();
@@ -211,7 +209,7 @@ function TemplateEditor({
           },
         },
         {
-          onSuccess: () => toast.success("Özelleştirme güncellendi."),
+          onSuccess: () => toast.success(t("admin.promptTemplates.toast.updated")),
           onError: (err) => toast.error(formatApiErrorMessage(err)),
         },
       );
@@ -232,7 +230,7 @@ function TemplateEditor({
           make_default: true,
         },
         {
-          onSuccess: () => toast.success("Kuruma özel şablon oluşturuldu."),
+          onSuccess: () => toast.success(t("admin.promptTemplates.toast.created")),
           onError: (err) => toast.error(formatApiErrorMessage(err)),
         },
       );
@@ -244,7 +242,7 @@ function TemplateEditor({
     try {
       parsedVars = JSON.parse(varsRaw);
     } catch {
-      toast.error("Variables JSON parse edilemedi.");
+      toast.error(t("admin.promptTemplates.toast.varsParseError"));
       return;
     }
     testRender.mutate(
@@ -252,7 +250,7 @@ function TemplateEditor({
       {
         onSuccess: (resp) => {
           setRenderResult(resp.rendered_prompt);
-          toast.success(`Test başarılı (${resp.source}).`);
+          toast.success(t("admin.promptTemplates.toast.testOk", { source: resp.source }));
         },
         onError: (err) => toast.error(formatApiErrorMessage(err)),
       },
@@ -269,14 +267,16 @@ function TemplateEditor({
               {template.version}
             </Badge>
             <Badge variant={isOverride ? "default" : "outline"} className="text-xs">
-              {isOverride ? "Kuruma özel" : "Varsayılan"}
+              {isOverride
+                ? t("admin.promptTemplates.override")
+                : t("admin.promptTemplates.defaultLabel")}
             </Badge>
             <span className="text-muted-foreground ml-auto text-xs">
               {template.model_name} · t={template.temperature}
             </span>
           </div>
           <div className="space-y-1">
-            <Label className="text-xs">Sistem istemi</Label>
+            <Label className="text-xs">{t("admin.promptTemplates.systemPrompt")}</Label>
             <Textarea
               rows={4}
               value={systemPrompt}
@@ -285,9 +285,7 @@ function TemplateEditor({
             />
           </div>
           <div className="space-y-1">
-            <Label className="text-xs">
-              Kullanıcı istem şablonu (Jinja2 — {"{{"} variable {"}}"} kullanın)
-            </Label>
+            <Label className="text-xs">{t("admin.promptTemplates.userPromptLabel")}</Label>
             <Textarea
               rows={10}
               value={userPrompt}
@@ -295,15 +293,13 @@ function TemplateEditor({
               className="font-mono text-xs"
               disabled={!userPromptEditable}
               title={
-                userPromptEditable
-                  ? undefined
-                  : "Bu şablonda yorum listesi sistem tarafından kurulur — yalnız sistem talimatı düzenlenebilir."
+                userPromptEditable ? undefined : t("admin.promptTemplates.userPromptLockedHint")
               }
             />
           </div>
           {template.required_variables.length > 0 && (
             <p className="text-muted-foreground text-xs">
-              Beklenen değişkenler:{" "}
+              {t("admin.promptTemplates.expectedVars")}{" "}
               {template.required_variables.map((v) => (
                 <code key={v} className="bg-muted ml-1 rounded px-1">
                   {v}
@@ -312,12 +308,10 @@ function TemplateEditor({
             </p>
           )}
           <div className="flex gap-2">
-            <Button
-              size="sm"
-              onClick={onSave}
-              disabled={create.isPending || patch.isPending}
-            >
-              {isOverride ? "Özelleştirmeyi güncelle" : "Kuruma özel oluştur"}
+            <Button size="sm" onClick={onSave} disabled={create.isPending || patch.isPending}>
+              {isOverride
+                ? t("admin.promptTemplates.updateOverride")
+                : t("admin.promptTemplates.createOverride")}
             </Button>
             {isOverride && (
               <Button
@@ -325,16 +319,15 @@ function TemplateEditor({
                 variant="ghost"
                 disabled={remove.isPending}
                 onClick={() => {
-                  if (!confirm("Özelleştirme silinsin? Kurum varsayılana döner."))
-                    return;
+                  if (!confirm(t("admin.promptTemplates.deleteConfirm"))) return;
                   remove.mutate(template.id, {
-                    onSuccess: () => toast.success("Özelleştirme silindi."),
+                    onSuccess: () => toast.success(t("admin.promptTemplates.toast.deleted")),
                     onError: (err) => toast.error(formatApiErrorMessage(err)),
                   });
                 }}
                 className="text-red-700 hover:text-red-900"
               >
-                Özelleştirmeyi sil
+                {t("admin.promptTemplates.deleteOverride")}
               </Button>
             )}
           </div>
@@ -343,27 +336,25 @@ function TemplateEditor({
 
       <Card>
         <CardContent className="space-y-3 p-4">
-          <h3 className="text-sm font-semibold">Test çalıştırması</h3>
+          <h3 className="text-sm font-semibold">{t("admin.promptTemplates.testRun")}</h3>
           <div className="space-y-1">
-            <Label className="text-xs">Variables (JSON)</Label>
+            <Label className="text-xs">{t("admin.promptTemplates.variablesJson")}</Label>
             <Input
               value={varsRaw}
               onChange={(e) => setVarsRaw(e.target.value)}
               className="font-mono text-xs"
-              placeholder='{"text": "örnek", "categories": ["a", "b"]}'
+              placeholder={t("admin.promptTemplates.varsPlaceholder")}
             />
           </div>
           <Button
             size="sm"
             onClick={onTestRender}
             disabled={isVirtual || testRender.isPending}
-            title={
-              isVirtual
-                ? "Test çalıştırması kayıtlı şablonlarda çalışır — önce özelleştirme oluşturun."
-                : undefined
-            }
+            title={isVirtual ? t("admin.promptTemplates.virtualTestHint") : undefined}
           >
-            {testRender.isPending ? "Çalıştırılıyor…" : "Test et"}
+            {testRender.isPending
+              ? t("admin.promptTemplates.running")
+              : t("admin.promptTemplates.testButton")}
           </Button>
           {renderResult !== null && (
             <pre className="bg-muted overflow-x-auto rounded p-3 font-mono text-xs">

@@ -10,6 +10,7 @@
 // would reject. Any change in the backend matrix MUST land here too
 // or the dashboard will surface dead buttons.
 
+import { localeLabels } from "@/lib/i18n/locale-labels";
 import type { TicketPriority, TicketState, UserTenantRole } from "@/lib/types";
 
 export type TicketActionId =
@@ -142,22 +143,29 @@ export const TICKET_ACTIONS: Record<TicketActionId, TicketActionDef> = {
   },
 };
 
-// --- Turkish labels -----------------------------------------------------
+// --- Locale-aware labels (Sprint 12 i18n) -------------------------------
 
-export const TICKET_PRIORITY_LABELS: Record<TicketPriority, string> = {
-  low: "Düşük",
-  normal: "Normal",
-  high: "Yüksek",
-  urgent: "Acil",
-};
+export const TICKET_PRIORITY_LABELS: Record<TicketPriority, string> = localeLabels({
+  tr: { low: "Düşük", normal: "Normal", high: "Yüksek", urgent: "Acil" },
+  en: { low: "Low", normal: "Normal", high: "High", urgent: "Urgent" },
+});
 
-export const CANCELLATION_REASON_LABELS: Record<string, string> = {
-  false_positive: "Yanlış pozitif",
-  duplicate: "Mükerrer",
-  spam: "Spam",
-  off_topic: "Konu dışı",
-  other: "Diğer",
-};
+export const CANCELLATION_REASON_LABELS: Record<string, string> = localeLabels({
+  tr: {
+    false_positive: "Yanlış pozitif",
+    duplicate: "Mükerrer",
+    spam: "Spam",
+    off_topic: "Konu dışı",
+    other: "Diğer",
+  },
+  en: {
+    false_positive: "False positive",
+    duplicate: "Duplicate",
+    spam: "Spam",
+    off_topic: "Off topic",
+    other: "Other",
+  },
+});
 
 // --- Role / state resolver ---------------------------------------------
 

@@ -9,8 +9,10 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { LanguageToggle } from "@/components/i18n/language-toggle";
 import { ApiError } from "@/lib/api-client";
 import { useAuthStore } from "@/lib/auth-store";
+import { useTranslation } from "@/lib/i18n/use-translation";
 
 export default function LoginPage() {
   // Sprint 9.1 hotfix — useSearchParams forces a Suspense boundary
@@ -42,6 +44,7 @@ function LoginForm() {
   const searchParams = useSearchParams();
   const login = useAuthStore((s) => s.login);
   const isLoading = useAuthStore((s) => s.isLoading);
+  const { t } = useTranslation();
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -60,9 +63,9 @@ function LoginForm() {
     } catch (err) {
       const message =
         err instanceof ApiError && err.status === 401
-          ? "E-posta veya şifre hatalı."
-          : "Giriş yapılamadı, lütfen daha sonra tekrar deneyin.";
-      toast.error("Giriş başarısız", { description: message });
+          ? t("login.failed.desc")
+          : t("login.failed.generic");
+      toast.error(t("login.failed.title"), { description: message });
     }
   }
 
@@ -70,8 +73,13 @@ function LoginForm() {
     <div className="bg-muted flex min-h-screen items-center justify-center px-4">
       <Card className="w-full max-w-sm">
         <CardHeader>
-          <CardTitle className="text-2xl">imga.ai</CardTitle>
-          <CardDescription>Hesabınıza giriş yapın</CardDescription>
+          <div className="flex items-start justify-between gap-2">
+            <div>
+              <CardTitle className="text-2xl">{t("login.brand")}</CardTitle>
+              <CardDescription>{t("login.title")}</CardDescription>
+            </div>
+            <LanguageToggle />
+          </div>
         </CardHeader>
         <CardContent>
           {sessionExpired && (
@@ -80,12 +88,12 @@ function LoginForm() {
               className="mb-4 flex items-start gap-2 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900"
             >
               <AlertCircle className="mt-0.5 size-4 shrink-0" aria-hidden />
-              <p>Oturumunuz sona erdi. Lütfen tekrar giriş yapın.</p>
+              <p>{t("login.expired")}</p>
             </div>
           )}
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="email">E-posta</Label>
+              <Label htmlFor="email">{t("login.email")}</Label>
               <Input
                 id="email"
                 type="email"
@@ -97,7 +105,7 @@ function LoginForm() {
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="password">Şifre</Label>
+              <Label htmlFor="password">{t("login.password")}</Label>
               <Input
                 id="password"
                 type="password"
@@ -109,7 +117,7 @@ function LoginForm() {
               />
             </div>
             <Button type="submit" className="w-full" disabled={isLoading}>
-              {isLoading ? "Giriş yapılıyor..." : "Giriş yap"}
+              {isLoading ? t("login.submitting") : t("login.submit")}
             </Button>
           </form>
         </CardContent>

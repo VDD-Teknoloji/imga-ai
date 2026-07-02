@@ -16,6 +16,7 @@ import type {
   ExecutiveOkrSnapshot,
   ExecutiveSwotSnapshot,
 } from "@/hooks/use-executive-overview";
+import { useTranslation } from "@/lib/i18n/use-translation";
 import { formatDateTr, relativeTimeTr } from "@/lib/relative-time";
 
 // --- SWOT ---------------------------------------------------------------
@@ -27,14 +28,15 @@ export function SwotSnapshotCard({
   swot: ExecutiveSwotSnapshot | null | undefined;
   isLoading: boolean;
 }) {
+  const { t } = useTranslation();
   if (isLoading) return <Skeleton className="h-64 rounded-3xl" />;
 
   if (!swot) {
     return (
       <EmptyStrategyCard
-        title="SWOT analizinizi oluşturun"
-        description="Tüm yorumlarınız okunur; güçlü ve zayıf yönleriniz kanıtlarıyla çıkar."
-        cta="SWOT oluştur"
+        title={t("dashboard.strategySnapshots.swot.emptyTitle")}
+        description={t("dashboard.strategySnapshots.swot.emptyDesc")}
+        cta={t("dashboard.strategySnapshots.swot.emptyCta")}
       />
     );
   }
@@ -42,7 +44,9 @@ export function SwotSnapshotCard({
   return (
     <section className="rise-in shadow-soft bg-card ring-foreground/5 flex flex-col rounded-3xl p-6 ring-1 md:p-7">
       <header className="flex items-baseline justify-between gap-3">
-        <h3 className="text-lg font-semibold tracking-tight">Son SWOT Analizi</h3>
+        <h3 className="text-lg font-semibold tracking-tight">
+          {t("dashboard.strategySnapshots.swot.title")}
+        </h3>
         <span
           className="text-muted-foreground/70 text-xs"
           title={formatDateTr(swot.created_at)}
@@ -53,12 +57,12 @@ export function SwotSnapshotCard({
 
       <div className="mt-5 grid flex-1 grid-cols-1 gap-5 sm:grid-cols-2">
         <SwotColumn
-          label="Güçlü yönler"
+          label={t("dashboard.strategySnapshots.swot.strengths")}
           dotClass="bg-emerald-500"
           items={swot.strengths.map((s) => s.title)}
         />
         <SwotColumn
-          label="Zayıf yönler"
+          label={t("dashboard.strategySnapshots.swot.weaknesses")}
           dotClass="bg-red-400"
           items={swot.weaknesses.map((w) => w.title)}
         />
@@ -68,7 +72,7 @@ export function SwotSnapshotCard({
         href="/strategy"
         className="text-foreground/70 hover:text-foreground mt-6 inline-flex items-center gap-1.5 text-sm font-semibold transition-colors"
       >
-        Analizin tamamı
+        {t("dashboard.strategySnapshots.swot.seeFull")}
         <ArrowRight className="size-4" aria-hidden />
       </Link>
     </section>
@@ -111,14 +115,15 @@ export function OkrSnapshotCard({
   okr: ExecutiveOkrSnapshot | null | undefined;
   isLoading: boolean;
 }) {
+  const { t } = useTranslation();
   if (isLoading) return <Skeleton className="h-64 rounded-3xl" />;
 
   if (!okr) {
     return (
       <EmptyStrategyCard
-        title="OKR hedeflerinizi oluşturun"
-        description="SWOT'unuzdan yola çıkarak önümüzdeki dönem için ölçülebilir hedefler üretilir."
-        cta="OKR oluştur"
+        title={t("dashboard.strategySnapshots.okr.emptyTitle")}
+        description={t("dashboard.strategySnapshots.okr.emptyDesc")}
+        cta={t("dashboard.strategySnapshots.okr.emptyCta")}
       />
     );
   }
@@ -126,7 +131,9 @@ export function OkrSnapshotCard({
   return (
     <section className="rise-in shadow-soft bg-card ring-foreground/5 flex flex-col rounded-3xl p-6 ring-1 md:p-7">
       <header className="flex items-baseline justify-between gap-3">
-        <h3 className="text-lg font-semibold tracking-tight">Son OKR Hedefleri</h3>
+        <h3 className="text-lg font-semibold tracking-tight">
+          {t("dashboard.strategySnapshots.okr.title")}
+        </h3>
         <span
           className="text-muted-foreground/70 text-xs"
           title={formatDateTr(okr.created_at)}
@@ -164,7 +171,7 @@ export function OkrSnapshotCard({
         href="/strategy"
         className="text-foreground/70 hover:text-foreground mt-6 inline-flex items-center gap-1.5 text-sm font-semibold transition-colors"
       >
-        Hedeflerin tamamı
+        {t("dashboard.strategySnapshots.okr.seeFull")}
         <ArrowRight className="size-4" aria-hidden />
       </Link>
     </section>

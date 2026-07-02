@@ -40,16 +40,17 @@ import {
   useTenantPendingWebhooks,
 } from "@/hooks/use-pending-webhooks";
 import { ApiError } from "@/lib/api-client";
+import { useTranslation } from "@/lib/i18n/use-translation";
 
 const STATUS_TABS: ReadonlyArray<{
   value: PendingWebhookStatus | "all";
-  label: string;
+  labelKey: string;
 }> = [
-  { value: "pending", label: "Bekleyen" },
-  { value: "sent", label: "Gönderildi" },
-  { value: "failed", label: "Başarısız" },
-  { value: "dismissed", label: "İptal" },
-  { value: "all", label: "Hepsi" },
+  { value: "pending", labelKey: "admin.pendingNotifications.tab.pending" },
+  { value: "sent", labelKey: "admin.pendingNotifications.tab.sent" },
+  { value: "failed", labelKey: "admin.pendingNotifications.tab.failed" },
+  { value: "dismissed", labelKey: "admin.pendingNotifications.tab.dismissed" },
+  { value: "all", labelKey: "admin.pendingNotifications.tab.all" },
 ];
 
 const PAGE_SIZE = 25;
@@ -63,13 +64,14 @@ export default function PendingWebhooksPage() {
 }
 
 function HeaderSkeleton() {
+  const { t } = useTranslation();
   return (
     <main className="mx-auto w-full max-w-5xl space-y-6 px-4 py-6 md:p-8">
       <header className="flex items-center gap-2">
         <ShieldAlert className="text-primary size-6" aria-hidden />
         <div>
-          <h1 className="text-2xl font-semibold">Bekleyen Bildirimler</h1>
-          <p className="text-muted-foreground text-sm">Yükleniyor…</p>
+          <h1 className="text-2xl font-semibold">{t("admin.pendingNotifications.title")}</h1>
+          <p className="text-muted-foreground text-sm">{t("common.loading")}</p>
         </div>
       </header>
     </main>
@@ -77,24 +79,20 @@ function HeaderSkeleton() {
 }
 
 function Content() {
+  const { t } = useTranslation();
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
 
-  const initialStatus = (searchParams.get("status") ??
-    "pending") as PendingWebhookStatus | "all";
+  const initialStatus = (searchParams.get("status") ?? "pending") as PendingWebhookStatus | "all";
   const initialPage = Math.max(1, Number(searchParams.get("page") ?? "1") || 1);
 
-  const [statusTab, setStatusTabState] = useState<
-    PendingWebhookStatus | "all"
-  >(initialStatus);
+  const [statusTab, setStatusTabState] = useState<PendingWebhookStatus | "all">(initialStatus);
   const [page, setPageState] = useState<number>(initialPage);
 
   /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
-    const urlStatus = (searchParams.get("status") ?? "pending") as
-      | PendingWebhookStatus
-      | "all";
+    const urlStatus = (searchParams.get("status") ?? "pending") as PendingWebhookStatus | "all";
     setStatusTabState((prev) => (prev === urlStatus ? prev : urlStatus));
     const urlPage = Math.max(1, Number(searchParams.get("page") ?? "1") || 1);
     setPageState((prev) => (prev === urlPage ? prev : urlPage));
@@ -128,11 +126,10 @@ function Content() {
           <ShieldAlert className="text-primary mt-1 size-6" aria-hidden />
           <div>
             <h1 className="text-2xl font-semibold tracking-tight md:text-3xl">
-              Bekleyen Bildirimler
+              {t("admin.pendingNotifications.title")}
             </h1>
             <p className="text-muted-foreground text-sm">
-              Manuel modda tetiklenen SLA bildirimleri. Buradan onay
-              vererek Slack/Teams kanallarına gönder veya iptal et.
+              {t("admin.pendingNotifications.subtitle")}
             </p>
           </div>
         </div>
@@ -140,7 +137,7 @@ function Content() {
           href="/settings/sla-rules"
           className="text-muted-foreground hover:text-foreground inline-flex items-center gap-1 text-sm"
         >
-          <ChevronLeft className="size-4" /> SLA kuralları
+          <ChevronLeft className="size-4" /> {t("admin.pendingNotifications.slaRules")}
         </Link>
       </header>
 
@@ -158,27 +155,25 @@ function Content() {
               });
             }}
             className={`rounded-md px-3 py-1.5 text-sm font-medium transition ${
-              statusTab === tab.value
-                ? "bg-primary text-primary-foreground"
-                : "hover:bg-muted"
+              statusTab === tab.value ? "bg-primary text-primary-foreground" : "hover:bg-muted"
             }`}
           >
-            {tab.label}
+            {t(tab.labelKey)}
           </button>
         ))}
         <span className="text-muted-foreground ml-auto text-xs">
-          Toplam {total}
+          {t("admin.pendingNotifications.total", { n: total })}
         </span>
       </div>
 
       {list.isLoading ? (
         <div className="flex items-center gap-2 p-6 text-sm">
-          <Loader2 className="size-4 animate-spin" /> Yükleniyor…
+          <Loader2 className="size-4 animate-spin" /> {t("common.loading")}
         </div>
       ) : list.isError ? (
         <Card>
           <CardContent className="flex items-center gap-2 p-6 text-sm text-red-600">
-            <AlertTriangle className="size-4" /> Liste alınamadı.
+            <AlertTriangle className="size-4" /> {t("admin.common.listError")}
           </CardContent>
         </Card>
       ) : events.length === 0 ? (
@@ -206,6 +201,7 @@ function Content() {
 }
 
 function PendingRow({ event }: { event: PendingWebhookEvent }) {
+  const { t } = useTranslation();
   const dispatch = useDispatchPendingWebhook();
   const cancel = useCancelPendingWebhook();
   const isPending = event.status === "pending";
@@ -220,26 +216,28 @@ function PendingRow({ event }: { event: PendingWebhookEvent }) {
   const ruleName =
     typeof event.payload?.rule_name === "string"
       ? event.payload.rule_name
-      : "(kural adı yok)";
+      : t("admin.pendingNotifications.noRuleName");
   const reviewText =
-    typeof event.payload?.review_text === "string"
-      ? event.payload.review_text
-      : null;
+    typeof event.payload?.review_text === "string" ? event.payload.review_text : null;
 
   const onDispatch = () => {
     dispatch.mutate(event.id, {
-      onSuccess: () => toast.success("Bildirim gönderildi."),
+      onSuccess: () => toast.success(t("admin.pendingNotifications.toast.dispatched")),
       onError: (err) =>
         toast.error(
-          err instanceof ApiError ? err.detail : "Gönderim başarısız.",
+          err instanceof ApiError
+            ? err.detail
+            : t("admin.pendingNotifications.toast.dispatchFailed"),
         ),
     });
   };
   const onCancel = () => {
     cancel.mutate(event.id, {
-      onSuccess: () => toast.success("İptal edildi."),
+      onSuccess: () => toast.success(t("admin.pendingNotifications.toast.cancelled")),
       onError: (err) =>
-        toast.error(err instanceof ApiError ? err.detail : "İptal başarısız."),
+        toast.error(
+          err instanceof ApiError ? err.detail : t("admin.pendingNotifications.toast.cancelFailed"),
+        ),
     });
   };
 
@@ -253,40 +251,30 @@ function PendingRow({ event }: { event: PendingWebhookEvent }) {
           </Badge>
           <StatusBadge status={event.status} />
           {event.channel && (
-            <span className="text-muted-foreground text-xs">
-              · #{event.channel}
-            </span>
+            <span className="text-muted-foreground text-xs">· #{event.channel}</span>
           )}
         </div>
-        {reviewText && (
-          <p className="text-muted-foreground line-clamp-2 text-xs">
-            {reviewText}
-          </p>
-        )}
+        {reviewText && <p className="text-muted-foreground line-clamp-2 text-xs">{reviewText}</p>}
         <p className="text-muted-foreground text-xs">
           {new Date(event.created_at).toLocaleString("tr-TR")}
-          {event.retry_count > 0 && ` · ${event.retry_count} deneme`}
+          {event.retry_count > 0 &&
+            ` · ${t("admin.pendingNotifications.retries", {
+              n: event.retry_count,
+            })}`}
         </p>
         {isFailed && event.last_error && (
-          <p className="line-clamp-2 text-xs text-red-600">
-            {event.last_error}
-          </p>
+          <p className="line-clamp-2 text-xs text-red-600">{event.last_error}</p>
         )}
       </div>
       {(isPending || isFailed) && (
         <div className="flex flex-wrap gap-2 sm:flex-col sm:items-end">
-          <Button
-            size="sm"
-            onClick={onDispatch}
-            disabled={dispatch.isPending}
-            className="gap-1"
-          >
+          <Button size="sm" onClick={onDispatch} disabled={dispatch.isPending} className="gap-1">
             {dispatch.isPending ? (
               <Loader2 className="size-3.5 animate-spin" aria-hidden />
             ) : (
               <Send className="size-3.5" aria-hidden />
             )}
-            Gönder
+            {t("admin.pendingNotifications.dispatch")}
           </Button>
           <Button
             size="sm"
@@ -296,7 +284,7 @@ function PendingRow({ event }: { event: PendingWebhookEvent }) {
             className="gap-1"
           >
             <Trash2 className="size-3.5" aria-hidden />
-            İptal
+            {t("admin.pendingNotifications.cancel")}
           </Button>
         </div>
       )}
@@ -305,40 +293,38 @@ function PendingRow({ event }: { event: PendingWebhookEvent }) {
 }
 
 function StatusBadge({ status }: { status: PendingWebhookStatus }) {
+  const { t } = useTranslation();
   if (status === "pending")
     return (
       <Badge className="bg-amber-100 text-amber-900 hover:bg-amber-100">
-        Bekliyor
+        {t("admin.pendingNotifications.status.pending")}
       </Badge>
     );
   if (status === "sent")
     return (
       <Badge className="bg-emerald-100 text-emerald-900 hover:bg-emerald-100">
-        <CheckCircle2 className="mr-1 size-3" /> Gönderildi
+        <CheckCircle2 className="mr-1 size-3" /> {t("admin.pendingNotifications.status.sent")}
       </Badge>
     );
   if (status === "failed")
     return (
       <Badge className="bg-red-100 text-red-900 hover:bg-red-100">
-        <XCircle className="mr-1 size-3" /> Başarısız
+        <XCircle className="mr-1 size-3" /> {t("admin.pendingNotifications.status.failed")}
       </Badge>
     );
   return (
     <Badge variant="outline" className="text-xs">
-      İptal
+      {t("admin.pendingNotifications.status.dismissed")}
     </Badge>
   );
 }
 
-function EmptyState({
-  statusTab,
-}: {
-  statusTab: PendingWebhookStatus | "all";
-}) {
+function EmptyState({ statusTab }: { statusTab: PendingWebhookStatus | "all" }) {
+  const { t } = useTranslation();
   const message =
     statusTab === "pending"
-      ? "Bekleyen webhook yok. SLA breach olduğunda burada görünecek."
-      : "Bu filtrede kayıt bulunamadı.";
+      ? t("admin.pendingNotifications.empty.pending")
+      : t("admin.pendingNotifications.empty.filtered");
   return (
     <div className="bg-card rounded-lg border border-dashed p-8 text-center">
       <p className="text-muted-foreground text-sm">{message}</p>
@@ -355,6 +341,7 @@ function Pagination({
   totalPages: number;
   onChange: (page: number) => void;
 }) {
+  const { t } = useTranslation();
   return (
     <div className="flex items-center justify-center gap-2">
       <Button
@@ -364,10 +351,13 @@ function Pagination({
         disabled={page <= 1}
         className="gap-1"
       >
-        <ChevronLeft className="size-4" /> Önceki
+        <ChevronLeft className="size-4" /> {t("admin.pendingNotifications.prev")}
       </Button>
       <span className="text-muted-foreground text-sm">
-        Sayfa {page} / {totalPages}
+        {t("admin.pendingNotifications.pageInfo", {
+          page,
+          total: totalPages,
+        })}
       </span>
       <Button
         variant="outline"
@@ -376,7 +366,7 @@ function Pagination({
         disabled={page >= totalPages}
         className="gap-1"
       >
-        Sonraki <ChevronRight className="size-4" />
+        {t("admin.pendingNotifications.next")} <ChevronRight className="size-4" />
       </Button>
     </div>
   );

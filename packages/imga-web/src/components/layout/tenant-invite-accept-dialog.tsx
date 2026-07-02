@@ -19,6 +19,7 @@ import { Label } from "@/components/ui/label";
 import { useInvitationPreview } from "@/hooks/use-invitation";
 import { ApiError } from "@/lib/api-client";
 import { useAuthStore } from "@/lib/auth-store";
+import { useTranslation } from "@/lib/i18n/use-translation";
 import type { UserTenantRole } from "@/lib/types";
 import { USER_ROLE_LABELS } from "@/lib/user-helpers";
 
@@ -50,6 +51,7 @@ export function TenantInviteAcceptDialog({
 }: TenantInviteAcceptDialogProps) {
   const user = useAuthStore((s) => s.user);
   const joinTenant = useAuthStore((s) => s.joinTenantViaInvitation);
+  const { t } = useTranslation();
 
   const [token, setToken] = useState("");
   const [password, setPassword] = useState("");
@@ -81,10 +83,15 @@ export function TenantInviteAcceptDialog({
   useEffect(() => {
     if (!preview.data || !user) return;
     if (preview.data.invited_email.toLowerCase() !== user.email.toLowerCase()) {
-      toast.warning("Bu davet farklı bir e-posta için", {
-        description: `Davet ${preview.data.invited_email} için. Bu modal sadece kendi davetlerini kabul etmek içindir.`,
+      toast.warning(t("shell.invite.otherEmailTitle"), {
+        description: t("shell.invite.otherEmailDesc", {
+          email: preview.data.invited_email,
+        }),
       });
     }
+    // `t` is a fresh closure each render; adding it would re-fire the
+    // toast on every render while the mismatch persists.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [preview.data, user]);
 
   async function handleSubmit(e: FormEvent<HTMLFormElement>) {
@@ -93,13 +100,15 @@ export function TenantInviteAcceptDialog({
     setSubmitting(true);
     try {
       await joinTenant(token.trim(), password);
-      toast.success("Davet kabul edildi", {
-        description: `${preview.data.tenant_name} artık kurum listende.`,
+      toast.success(t("shell.invite.acceptedTitle"), {
+        description: t("shell.invite.acceptedDesc", {
+          name: preview.data.tenant_name,
+        }),
       });
       onOpenChange(false);
     } catch (err) {
-      toast.error("Davet kabul edilemedi", {
-        description: describeError(err),
+      toast.error(t("shell.invite.acceptFailedTitle"), {
+        description: describeError(err, t),
       });
     } finally {
       setSubmitting(false);
@@ -115,16 +124,13 @@ export function TenantInviteAcceptDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Yeni davet kabul et</DialogTitle>
-          <DialogDescription>
-            Davet linkindeki token&apos;ı yapıştır, mevcut hesabınla yeni
-            kuruma katıl.
-          </DialogDescription>
+          <DialogTitle>{t("shell.tenant.acceptInvite")}</DialogTitle>
+          <DialogDescription>{t("shell.invite.desc")}</DialogDescription>
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-2">
-            <Label htmlFor="invite-token">Davet token&apos;ı</Label>
+            <Label htmlFor="invite-token">{t("shell.invite.tokenLabel")}</Label>
             <Input
               id="invite-token"
               value={token}
@@ -138,12 +144,12 @@ export function TenantInviteAcceptDialog({
 
           {preview.isLoading && previewToken ? (
             <p className="text-muted-foreground text-xs">
-              Davet kontrol ediliyor...
+              {t("shell.invite.checking")}
             </p>
           ) : null}
           {preview.isError && previewToken ? (
             <p className="text-destructive text-xs">
-              Bu token geçersiz, süresi dolmuş veya kullanılmış.
+              {t("shell.invite.invalidToken")}
             </p>
           ) : null}
           {preview.data ? (
@@ -160,7 +166,7 @@ export function TenantInviteAcceptDialog({
               </div>
               {previewIsForOtherEmail ? (
                 <p className="text-amber-700 dark:text-amber-400">
-                  ⚠ Davet bu hesap için değil. Kabul edilmeyecek.
+                  {t("shell.invite.otherEmailInline")}
                 </p>
               ) : null}
             </div>
@@ -168,7 +174,9 @@ export function TenantInviteAcceptDialog({
 
           {preview.data && !previewIsForOtherEmail ? (
             <div className="space-y-2">
-              <Label htmlFor="confirm-password">Şifren</Label>
+              <Label htmlFor="confirm-password">
+                {t("shell.invite.passwordLabel")}
+              </Label>
               <Input
                 id="confirm-password"
                 type="password"
@@ -179,7 +187,7 @@ export function TenantInviteAcceptDialog({
                 disabled={submitting}
               />
               <p className="text-muted-foreground text-xs">
-                Güvenlik için yeni kuruma katılırken şifrenle doğrulan.
+                {t("shell.invite.passwordHelp")}
               </p>
             </div>
           ) : null}
@@ -191,7 +199,7 @@ export function TenantInviteAcceptDialog({
               onClick={() => onOpenChange(false)}
               disabled={submitting}
             >
-              Vazgeç
+              {t("shell.invite.cancel")}
             </Button>
             <Button
               type="submit"
@@ -203,7 +211,9 @@ export function TenantInviteAcceptDialog({
               }
               className="gap-2"
             >
-              {submitting ? "Kabul ediliyor..." : "Daveti kabul et"}
+              {submitting
+                ? t("shell.invite.submitting")
+                : t("shell.invite.submit")}
               <CheckCircle2 className="size-4" aria-hidden />
             </Button>
           </DialogFooter>
@@ -213,12 +223,14 @@ export function TenantInviteAcceptDialog({
   );
 }
 
-function describeError(err: unknown): string {
+function describeError(
+  err: unknown,
+  t: (key: string, vars?: Record<string, string | number>) => string,
+): string {
   if (err instanceof ApiError) {
-    if (err.status === 401) return "Şifre hatalı.";
-    if (err.status === 403) return "Bu davet farklı bir e-posta için.";
-    if (err.status === 404)
-      return "Davet geçersiz, süresi dolmuş veya zaten kullanılmış.";
+    if (err.status === 401) return t("shell.invite.err401");
+    if (err.status === 403) return t("shell.invite.err403");
+    if (err.status === 404) return t("shell.invite.err404");
   }
-  return "Beklenmeyen bir hata oluştu.";
+  return t("shell.invite.errGeneric");
 }

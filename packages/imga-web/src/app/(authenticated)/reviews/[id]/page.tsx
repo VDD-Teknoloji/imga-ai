@@ -12,18 +12,19 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useManualPromoteReview, useReviewDetail } from "@/hooks/use-reviews";
 import { ApiError } from "@/lib/api-client";
+import { useTranslation } from "@/lib/i18n/use-translation";
 import type { ReviewDecision } from "@/lib/types";
 
-// Map every decision branch to a Türkçe label + the auto-ticket
-// rationale so the detail page reads as an audit narrative, not a
-// bag of enum values. Reasons mirror the bridge's decision tree in
+// Map every decision branch to an i18n key + the auto-ticket rationale so
+// the detail page reads as an audit narrative, not a bag of enum values.
+// Reasons mirror the bridge's decision tree in
 // imga_api.services.review_service.
-const DECISION_LABELS_TR: Record<ReviewDecision, string> = {
-  create: "Ticket Açıldı",
-  skipped_belirsiz: "Atlandı (Kategori Belirsiz)",
-  skipped_mode: "Atlandı (Manuel Mod)",
-  skipped_threshold: "Atlandı (Eşik Altı)",
-  skipped_dedup: "Atlandı (24s İçinde Mükerrer)",
+const DECISION_LABEL_KEYS: Record<ReviewDecision, string> = {
+  create: "reviews.decision.create",
+  skipped_belirsiz: "reviews.decision.skippedBelirsiz",
+  skipped_mode: "reviews.decision.skippedMode",
+  skipped_threshold: "reviews.decision.skippedThreshold",
+  skipped_dedup: "reviews.decision.skippedDedup",
 };
 
 const PROMOTABLE_DECISIONS: ReadonlySet<ReviewDecision> = new Set([
@@ -37,6 +38,7 @@ const PROMOTABLE_DECISIONS: ReadonlySet<ReviewDecision> = new Set([
  * raw vs final score split, linked-ticket section) lands in 8.3.4.
  */
 export default function ReviewDetailPage() {
+  const { t } = useTranslation();
   const params = useParams<{ id: string }>();
   const reviewId = params?.id ?? null;
   const detail = useReviewDetail(reviewId);
@@ -51,19 +53,19 @@ export default function ReviewDetailPage() {
     if (!detail.data) return;
     promote.mutate(detail.data.id, {
       onSuccess: () => {
-        toast.success("Manuel olarak Ticket açıldı.");
+        toast.success(t("reviews.detail.promoteSuccess"));
         detail.refetch();
       },
       onError: (err) => {
         if (err instanceof ApiError && err.status === 403) {
-          toast.error("Bu işlem için yetkin yok.");
+          toast.error(t("reviews.detail.noPermission"));
           return;
         }
         if (err instanceof ApiError && err.status === 409) {
-          toast.error("Bu analiz zaten bir Ticket'a bağlı.");
+          toast.error(t("reviews.detail.alreadyLinked"));
           return;
         }
-        toast.error("Ticket açılamadı.");
+        toast.error(t("reviews.detail.promoteError"));
       },
     });
   }
@@ -74,32 +76,42 @@ export default function ReviewDetailPage() {
         href="/reviews"
         className="text-muted-foreground hover:text-foreground inline-flex items-center gap-1 text-sm"
       >
-        <ChevronLeft className="size-4" /> Analizler
+        <ChevronLeft className="size-4" /> {t("reviews.detail.backToList")}
       </Link>
 
       {detail.isLoading && (
         <div className="flex items-center gap-2 p-6 text-sm">
-          <Loader2 className="size-4 animate-spin" /> Yükleniyor…
+          <Loader2 className="size-4 animate-spin" /> {t("common.loading")}
         </div>
       )}
 
       {detail.error && (
-        <p className="text-destructive p-6 text-sm">Analiz bulunamadı veya erişim yok.</p>
+        <p className="text-destructive p-6 text-sm">
+          {t("reviews.detail.notFound")}
+        </p>
       )}
 
       {detail.data && (
         <div className="space-y-4">
           <Card>
             <CardHeader>
-              <CardTitle>Analiz #{detail.data.id.slice(0, 8)}</CardTitle>
+              <CardTitle>
+                {t("reviews.detail.analysisNo", {
+                  id: detail.data.id.slice(0, 8),
+                })}
+              </CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
               <div>
-                <p className="text-muted-foreground text-xs">Tarih</p>
+                <p className="text-muted-foreground text-xs">
+                  {t("reviews.detail.date")}
+                </p>
                 <p className="text-sm">
                   {new Date(detail.data.analyzed_at).toLocaleString("tr-TR")}
                   {" — "}
-                  {detail.data.source_type === "batch" ? "Toplu Yükleme" : "Manuel"}
+                  {detail.data.source_type === "batch"
+                    ? t("reviews.detail.batchUpload")
+                    : t("reviews.source.manual")}
                   {detail.data.batch_job_id && (
                     <>
                       {" "}
@@ -111,7 +123,9 @@ export default function ReviewDetailPage() {
               </div>
 
               <div>
-                <p className="text-muted-foreground text-xs">Metin</p>
+                <p className="text-muted-foreground text-xs">
+                  {t("reviews.detail.text")}
+                </p>
                 <p className="text-sm whitespace-pre-wrap">{detail.data.text}</p>
               </div>
             </CardContent>
@@ -119,7 +133,9 @@ export default function ReviewDetailPage() {
 
           <Card>
             <CardHeader className="flex flex-row items-center justify-between gap-3 space-y-0">
-              <CardTitle className="text-base">Analiz</CardTitle>
+              <CardTitle className="text-base">
+                {t("reviews.detail.analysis")}
+              </CardTitle>
               {/* Sprint 11.0 — düzeltme-geri-besleme girişi. Yanlış
                   karar buradan düzeltilir; sistem benzer yorumlarda
                   düzeltmeyi örnek alır. */}
@@ -131,16 +147,31 @@ export default function ReviewDetailPage() {
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-                <Stat label="Duygu" value={detail.data.sentiment.label} />
-                <Stat label="Skor (final)" value={detail.data.sentiment.final_score.toFixed(2)} />
-                <Stat label="Skor (raw, BERT)" value={detail.data.sentiment.raw_score.toFixed(2)} />
                 <Stat
-                  label="Güven"
-                  value={`%${(detail.data.categorization.primary_confidence * 100).toFixed(0)}`}
+                  label={t("reviews.detail.sentiment")}
+                  value={detail.data.sentiment.label}
+                />
+                <Stat
+                  label={t("reviews.detail.scoreFinal")}
+                  value={detail.data.sentiment.final_score.toFixed(2)}
+                />
+                <Stat
+                  label={t("reviews.detail.scoreRaw")}
+                  value={detail.data.sentiment.raw_score.toFixed(2)}
+                />
+                <Stat
+                  label={t("reviews.detail.confidence")}
+                  value={t("reviews.detail.percentValue", {
+                    value: (
+                      detail.data.categorization.primary_confidence * 100
+                    ).toFixed(0),
+                  })}
                 />
               </div>
               <div>
-                <p className="text-muted-foreground text-xs">Kategori</p>
+                <p className="text-muted-foreground text-xs">
+                  {t("reviews.detail.category")}
+                </p>
                 <p className="text-sm">{detail.data.categorization.primary}</p>
               </div>
             </CardContent>
@@ -148,23 +179,32 @@ export default function ReviewDetailPage() {
 
           <Card>
             <CardHeader>
-              <CardTitle className="text-base">Şirket Perspektifi</CardTitle>
+              <CardTitle className="text-base">
+                {t("reviews.detail.companyPerspective")}
+              </CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <div>
-                  <p className="text-muted-foreground text-xs">BERT kategorisi</p>
+                  <p className="text-muted-foreground text-xs">
+                    {t("reviews.detail.bertCategory")}
+                  </p>
                   <p className="text-sm font-medium">{detail.data.categorization.primary}</p>
                 </div>
                 <div>
-                  <p className="text-muted-foreground text-xs">Heuristik perspektif</p>
+                  <p className="text-muted-foreground text-xs">
+                    {t("reviews.detail.heuristicPerspective")}
+                  </p>
                   <p className="text-sm font-medium">
                     {detail.data.company_perspective.code === null ? (
-                      <span className="text-muted-foreground italic">eşleşme yok</span>
+                      <span className="text-muted-foreground italic">
+                        {t("reviews.detail.noMatch")}
+                      </span>
                     ) : detail.data.company_perspective.label_tr === null ? (
                       <span className="text-muted-foreground italic">
-                        kaldırılmış kategori (kod:{" "}
-                        <span className="font-mono">{detail.data.company_perspective.code}</span>)
+                        {t("reviews.detail.removedCategoryPre")}{" "}
+                        <span className="font-mono">{detail.data.company_perspective.code}</span>
+                        {t("reviews.detail.removedCategoryPost")}
                       </span>
                     ) : (
                       detail.data.company_perspective.label_tr
@@ -194,7 +234,9 @@ export default function ReviewDetailPage() {
 
           <Card>
             <CardHeader>
-              <CardTitle className="text-base">Kural Katmanları</CardTitle>
+              <CardTitle className="text-base">
+                {t("reviews.detail.ruleLayers")}
+              </CardTitle>
             </CardHeader>
             <CardContent>
               <OverrideStack hits={detail.data.overrides_applied} />
@@ -203,13 +245,16 @@ export default function ReviewDetailPage() {
 
           <Card>
             <CardHeader>
-              <CardTitle className="text-base">Karar</CardTitle>
+              <CardTitle className="text-base">
+                {t("reviews.detail.decision")}
+              </CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
               <div className="flex items-center gap-2">
                 <Badge variant="outline">
-                  {DECISION_LABELS_TR[detail.data.auto_ticket_decision] ??
-                    detail.data.auto_ticket_decision}
+                  {DECISION_LABEL_KEYS[detail.data.auto_ticket_decision]
+                    ? t(DECISION_LABEL_KEYS[detail.data.auto_ticket_decision])
+                    : detail.data.auto_ticket_decision}
                 </Badge>
                 {detail.data.auto_ticket_decision_reason && (
                   <span className="text-muted-foreground font-mono text-xs">
@@ -221,11 +266,11 @@ export default function ReviewDetailPage() {
               {detail.data.ticket_id ? (
                 <div className="bg-muted/30 flex items-center justify-between rounded-md border p-3">
                   <p className="text-sm">
-                    Bağlı Ticket:{" "}
+                    {t("reviews.detail.linkedTicket")}{" "}
                     <span className="font-mono">#{detail.data.ticket_id.slice(0, 8)}</span>
                   </p>
                   <Button size="sm" render={<Link href={`/tickets/${detail.data.ticket_id}`} />}>
-                    Ticket&apos;a Git →
+                    {t("reviews.detail.goToTicket")}
                   </Button>
                 </div>
               ) : canPromote ? (
@@ -242,10 +287,10 @@ export default function ReviewDetailPage() {
                     ) : (
                       <ArrowRight className="size-4" aria-hidden />
                     )}
-                    Bu Analizi Ticket&apos;a Dönüştür
+                    {t("reviews.detail.promoteButton")}
                   </Button>
                   <span className="text-muted-foreground text-xs">
-                    Elle açıldı — sistem bu karar için Ticket açmamıştı.
+                    {t("reviews.detail.promoteHint")}
                   </span>
                 </div>
               ) : null}

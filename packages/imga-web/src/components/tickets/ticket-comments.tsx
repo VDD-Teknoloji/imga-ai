@@ -34,6 +34,7 @@ import {
 import { useTenantMembers } from "@/hooks/use-tenant-members";
 import { useAuthStore } from "@/lib/auth-store";
 import { formatRelativeDate } from "@/lib/date-format";
+import { useTranslation } from "@/lib/i18n/use-translation";
 import type {
   TenantMember,
   TicketComment,
@@ -64,6 +65,7 @@ interface TicketCommentsProps {
  * yok; Sprint 7.7.2 raporunda eksik olarak işaretlendi.
  */
 export function TicketComments({ ticketId, ticketState }: TicketCommentsProps) {
+  const { t } = useTranslation();
   const comments = useTicketComments(ticketId);
   const currentUserId = useAuthStore((s) => s.user?.id);
   const role = useAuthStore((s) => s.activeContext?.role);
@@ -81,7 +83,7 @@ export function TicketComments({ ticketId, ticketState }: TicketCommentsProps) {
   return (
     <section className="space-y-4">
       <h2 className="text-base font-semibold tracking-tight">
-        Yorumlar
+        {t("tickets.comments.title")}
         {comments.data ? (
           <span className="text-muted-foreground ml-2 text-sm font-normal">
             ({comments.data.length})
@@ -96,7 +98,7 @@ export function TicketComments({ ticketId, ticketState }: TicketCommentsProps) {
           ))}
         </div>
       ) : comments.isError ? (
-        <p className="text-destructive text-sm">Yorumlar yüklenemedi.</p>
+        <p className="text-destructive text-sm">{t("tickets.comments.loadError")}</p>
       ) : comments.data && comments.data.length > 0 ? (
         <ul className="space-y-3">
           {comments.data.map((c) => (
@@ -111,7 +113,7 @@ export function TicketComments({ ticketId, ticketState }: TicketCommentsProps) {
           ))}
         </ul>
       ) : (
-        <p className="text-muted-foreground text-sm">Henüz yorum yok.</p>
+        <p className="text-muted-foreground text-sm">{t("tickets.comments.empty")}</p>
       )}
 
       <CommentComposer
@@ -140,6 +142,7 @@ function CommentCard({
   currentUserId,
   isAdmin,
 }: CommentCardProps) {
+  const { t } = useTranslation();
   const [confirmOpen, setConfirmOpen] = useState(false);
   const archive = useArchiveComment();
 
@@ -149,7 +152,7 @@ function CommentCard({
       (currentUserId !== undefined &&
         comment.author_user_id === currentUserId));
 
-  const displayName = author?.full_name ?? "Bilinmeyen kullanıcı";
+  const displayName = author?.full_name ?? t("tickets.common.unknownUser");
   const isCustomerReply = comment.kind === "customer_reply";
 
   function handleConfirmArchive() {
@@ -186,7 +189,7 @@ function CommentCard({
           </Badge>
           {comment.is_archived ? (
             <Badge variant="outline" className="h-5 px-1.5 text-xs">
-              Arşivlenmiş
+              {t("tickets.common.archived")}
             </Badge>
           ) : null}
           <span className="text-muted-foreground ml-auto text-xs">
@@ -210,7 +213,7 @@ function CommentCard({
               className="h-7 gap-1.5 text-xs"
             >
               <Archive className="size-3" aria-hidden />
-              Arşivle
+              {t("tickets.comments.archive")}
             </Button>
           </div>
         ) : null}
@@ -219,21 +222,22 @@ function CommentCard({
       <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Yorumu arşivle</AlertDialogTitle>
+            <AlertDialogTitle>{t("tickets.comments.archiveTitle")}</AlertDialogTitle>
             <AlertDialogDescription>
-              Bu yorum arşivlenecek ve geri alınamaz. Yorum tarihçede
-              görünmeye devam eder, üzeri çizili olarak gösterilir.
+              {t("tickets.comments.archiveDescription")}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel disabled={archive.isPending}>
-              Vazgeç
+              {t("tickets.common.dismiss")}
             </AlertDialogCancel>
             <AlertDialogAction
               onClick={handleConfirmArchive}
               disabled={archive.isPending}
             >
-              {archive.isPending ? "Arşivleniyor..." : "Arşivle"}
+              {archive.isPending
+                ? t("tickets.comments.archiving")
+                : t("tickets.comments.archive")}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -255,6 +259,7 @@ function CommentComposer({
   ticketState,
   role,
 }: CommentComposerProps) {
+  const { t } = useTranslation();
   const [body, setBody] = useState("");
   const [kind, setKind] = useState<TicketCommentKind>("internal_note");
   const create = useCreateComment();
@@ -300,10 +305,10 @@ function CommentComposer({
       <Textarea
         value={body}
         onChange={(e) => setBody(e.target.value)}
-        placeholder="Yorum yaz..."
+        placeholder={t("tickets.comments.placeholder")}
         maxLength={8000}
         rows={3}
-        aria-label="Yorum metni"
+        aria-label={t("tickets.comments.ariaBody")}
       />
       <div className="flex flex-wrap items-center justify-between gap-3">
         <KindToggle
@@ -314,12 +319,12 @@ function CommentComposer({
           isTerminal={isTerminal}
         />
         <Button type="submit" disabled={submitDisabled}>
-          {create.isPending ? "Gönderiliyor..." : "Gönder"}
+          {create.isPending ? t("tickets.comments.sending") : t("tickets.comments.send")}
         </Button>
       </div>
       {create.isError ? (
         <p className="text-destructive text-xs">
-          Yorum gönderilemedi. Sayfayı yenileyip tekrar dene.
+          {t("tickets.comments.sendError")}
         </p>
       ) : null}
     </form>
@@ -341,6 +346,7 @@ function KindToggle({
   customerReplyDisabled,
   isTerminal,
 }: KindToggleProps) {
+  const { t } = useTranslation();
   return (
     <RadioGroup
       value={kind}
@@ -349,7 +355,7 @@ function KindToggle({
     >
       <Label className="flex cursor-pointer items-center gap-2 text-sm">
         <RadioGroupItem value="internal_note" />
-        İç not
+        {t("tickets.comments.internalNote")}
       </Label>
       {showCustomerReply ? (
         customerReplyDisabled ? (
@@ -359,21 +365,21 @@ function KindToggle({
                 render={
                   <Label className="flex cursor-not-allowed items-center gap-2 text-sm opacity-50">
                     <RadioGroupItem value="customer_reply" disabled />
-                    Müşteri yanıtı
+                    {t("tickets.comments.customerReply")}
                   </Label>
                 }
               />
               <TooltipContent>
                 {isTerminal
-                  ? "Kapalı ticket'a yanıt yazılamaz"
-                  : "Bu rol müşteri yanıtı yazamaz"}
+                  ? t("tickets.comments.terminalTooltip")
+                  : t("tickets.comments.roleTooltip")}
               </TooltipContent>
             </Tooltip>
           </TooltipProvider>
         ) : (
           <Label className="flex cursor-pointer items-center gap-2 text-sm">
             <RadioGroupItem value="customer_reply" />
-            Müşteri yanıtı
+            {t("tickets.comments.customerReply")}
           </Label>
         )
       ) : null}

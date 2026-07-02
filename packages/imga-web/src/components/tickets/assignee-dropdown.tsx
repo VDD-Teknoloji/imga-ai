@@ -23,6 +23,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useTenantMembers } from "@/hooks/use-tenant-members";
 import { useTicketAssign } from "@/hooks/use-ticket-mutations";
 import { useAuthStore } from "@/lib/auth-store";
+import { useTranslation } from "@/lib/i18n/use-translation";
 import type { TenantMember } from "@/lib/types";
 import { USER_ROLE_LABELS, userInitials } from "@/lib/user-helpers";
 import { cn } from "@/lib/utils";
@@ -53,6 +54,7 @@ export function AssigneeDropdown({
   isAdmin,
   enabled,
 }: AssigneeDropdownProps) {
+  const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const currentUserId = useAuthStore((s) => s.user?.id);
   const activeTenantId = useAuthStore((s) => s.activeContext?.tenant_id);
@@ -91,8 +93,8 @@ export function AssigneeDropdown({
   const triggerLabel = currentMember
     ? currentMember.full_name
     : currentAssigneeId
-      ? "Bilinmeyen kullanıcı"
-      : "Atanmamış";
+      ? t("tickets.common.unknownUser")
+      : t("tickets.common.unassigned");
 
   return (
     <div className="space-y-2">
@@ -121,7 +123,7 @@ export function AssigneeDropdown({
                 <span className="truncate">{triggerLabel}</span>
                 {currentAssigneeId === currentUserId ? (
                   <Badge variant="secondary" className="h-5 px-1.5 text-[10px]">
-                    Sen
+                    {t("tickets.assignee.you")}
                   </Badge>
                 ) : null}
               </span>
@@ -141,13 +143,13 @@ export function AssigneeDropdown({
             </div>
           ) : members.isError ? (
             <p className="text-destructive p-3 text-xs">
-              Kullanıcı listesi yüklenemedi.
+              {t("tickets.assignee.loadError")}
             </p>
           ) : (
             <Command>
-              <CommandInput placeholder="Kullanıcı ara..." />
+              <CommandInput placeholder={t("tickets.assignee.searchPlaceholder")} />
               <CommandList>
-                <CommandEmpty>Eşleşme yok.</CommandEmpty>
+                <CommandEmpty>{t("tickets.common.noMatch")}</CommandEmpty>
 
                 <CommandGroup>
                   <CommandItem
@@ -156,7 +158,7 @@ export function AssigneeDropdown({
                     className="flex items-center gap-2"
                   >
                     <UserMinus className="text-muted-foreground size-4" aria-hidden />
-                    <span className="flex-1">Atanmamış</span>
+                    <span className="flex-1">{t("tickets.common.unassigned")}</span>
                     {currentAssigneeId === null ? (
                       <Check className="text-primary size-4" aria-hidden />
                     ) : null}
@@ -164,7 +166,7 @@ export function AssigneeDropdown({
                 </CommandGroup>
 
                 {selectableMembers.length > 0 ? (
-                  <CommandGroup heading="Kullanıcılar">
+                  <CommandGroup heading={t("tickets.assignee.usersHeading")}>
                     {selectableMembers.map((m) => (
                       <CommandItem
                         key={m.user_id}
@@ -188,7 +190,7 @@ export function AssigneeDropdown({
                                 variant="secondary"
                                 className="h-4 px-1 text-[10px]"
                               >
-                                Sen
+                                {t("tickets.assignee.you")}
                               </Badge>
                             ) : null}
                           </span>
@@ -210,7 +212,7 @@ export function AssigneeDropdown({
 
                 {!isAdmin && selectableMembers.length === 0 ? (
                   <p className="text-muted-foreground p-3 text-xs">
-                    Sadece kurum yöneticisi başka kullanıcıya atayabilir.
+                    {t("tickets.assignee.adminOnly")}
                     <UserRound className="ml-1 inline size-3" aria-hidden />
                   </p>
                 ) : null}

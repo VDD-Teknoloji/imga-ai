@@ -20,56 +20,49 @@ import {
 
 import { Skeleton } from "@/components/ui/skeleton";
 import { useNpsMonthlyTrend } from "@/hooks/use-analytics";
+import { useTranslation } from "@/lib/i18n/use-translation";
 
-const TR_MONTHS = [
-  "Oca",
-  "Şub",
-  "Mar",
-  "Nis",
-  "May",
-  "Haz",
-  "Tem",
-  "Ağu",
-  "Eyl",
-  "Eki",
-  "Kas",
-  "Ara",
-];
-
-function formatMonth(iso: string): string {
+function formatMonth(iso: string, months: string[]): string {
   // ISO date — "2025-06-01". Avoid Date() to dodge timezone drift.
   const m = iso.match(/^(\d{4})-(\d{2})/);
   if (!m) return iso;
   const monthIdx = Math.max(0, Math.min(11, Number(m[2]) - 1));
-  return `${TR_MONTHS[monthIdx] ?? ""} ${(m[1] ?? "").slice(2)}`;
+  return `${months[monthIdx] ?? ""} ${(m[1] ?? "").slice(2)}`;
 }
 
 export function NpsMonthlyTrend() {
+  const { t } = useTranslation();
   const { data, isLoading, isError } = useNpsMonthlyTrend(12);
 
-  const chartData = useMemo(
-    () =>
-      (data ?? []).map((p) => ({
-        ...p,
-        label: formatMonth(p.month),
-      })),
-    [data],
-  );
+  const monthLabels = t("dashboard.npsMonthlyTrend.months");
+  const chartData = useMemo(() => {
+    const months = monthLabels.split(",");
+    return (data ?? []).map((p) => ({
+      ...p,
+      label: formatMonth(p.month, months),
+    }));
+  }, [data, monthLabels]);
 
   return (
     <section className="bg-card rounded-lg border p-5">
       <header className="mb-4 flex items-baseline justify-between">
-        <h2 className="text-base font-semibold tracking-tight">Son 12 ay NPS trendi</h2>
+        <h2 className="text-base font-semibold tracking-tight">
+          {t("dashboard.npsMonthlyTrend.title")}
+        </h2>
         <p className="text-muted-foreground text-xs">
-          Aylık · veri olmayan aylar boşluk olarak görünür
+          {t("dashboard.npsMonthlyTrend.subtitle")}
         </p>
       </header>
       {isLoading ? (
         <Skeleton className="h-[260px]" />
       ) : isError ? (
-        <p className="text-destructive py-12 text-center text-sm">Veri yüklenemedi.</p>
+        <p className="text-destructive py-12 text-center text-sm">
+          {t("dashboard.common.loadFailed")}
+        </p>
       ) : chartData.length === 0 ? (
-        <p className="text-muted-foreground py-12 text-center text-sm">Veri yok.</p>
+        <p className="text-muted-foreground py-12 text-center text-sm">
+          {t("dashboard.common.noData")}
+        </p>
       ) : (
         <div className="h-[260px] w-full">
           <ResponsiveContainer width="100%" height="100%">
@@ -95,7 +88,9 @@ export function NpsMonthlyTrend() {
                   fontSize: 12,
                 }}
                 formatter={(value) =>
-                  value === null || value === undefined ? "veri yok" : String(value)
+                  value === null || value === undefined
+                    ? t("dashboard.npsMonthlyTrend.tooltipNoData")
+                    : String(value)
                 }
               />
               <Line

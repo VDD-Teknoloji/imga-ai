@@ -13,6 +13,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useCategoryLabelMap } from "@/hooks/use-categories";
 import { useTicket } from "@/hooks/use-ticket";
 import { ApiError } from "@/lib/api-client";
+import { useTranslation } from "@/lib/i18n/use-translation";
 
 /**
  * Single-ticket detail page. Two-column layout:
@@ -28,6 +29,7 @@ import { ApiError } from "@/lib/api-client";
  * (see TicketActionBar). Viewers see no buttons.
  */
 export default function TicketDetailPage() {
+  const { t } = useTranslation();
   const params = useParams<{ id: string }>();
   const ticketId = params.id;
 
@@ -50,13 +52,15 @@ export default function TicketDetailPage() {
         className="text-muted-foreground hover:text-foreground inline-flex items-center gap-1 text-sm"
       >
         <ChevronLeft className="size-4" aria-hidden />
-        Ticket listesi
+        {t("tickets.detail.backToList")}
       </Link>
 
       {ticket.isLoading ? (
         <DetailSkeleton />
       ) : ticket.isError ? (
-        <p className="text-destructive py-12 text-center text-sm">Ticket yüklenemedi.</p>
+        <p className="text-destructive py-12 text-center text-sm">
+          {t("tickets.detail.loadError")}
+        </p>
       ) : !data ? null : (
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
           <div className="space-y-6">

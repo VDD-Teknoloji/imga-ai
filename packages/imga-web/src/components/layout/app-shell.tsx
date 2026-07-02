@@ -8,6 +8,7 @@ import { QuickActionFab } from "@/components/layout/quick-action-fab";
 import { Sidebar } from "@/components/layout/sidebar";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
+import { useTranslation } from "@/lib/i18n/use-translation";
 
 interface AppShellProps {
   children: React.ReactNode;
@@ -25,6 +26,7 @@ interface AppShellProps {
  */
 export function AppShell({ children }: AppShellProps) {
   const [mobileOpen, setMobileOpen] = useState(false);
+  const { t } = useTranslation();
 
   return (
     <div className="flex min-h-screen w-full">
@@ -39,13 +41,13 @@ export function AppShell({ children }: AppShellProps) {
           <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
             <SheetTrigger
               render={
-                <Button variant="ghost" size="icon" aria-label="Menüyü aç" className="size-9">
+                <Button variant="ghost" size="icon" aria-label={t("shell.header.openMenu")} className="size-9">
                   <Menu className="size-5" aria-hidden />
                 </Button>
               }
             />
             <SheetContent side="left" className="w-[260px] p-0">
-              <SheetTitle className="sr-only">Kenar çubuğu</SheetTitle>
+              <SheetTitle className="sr-only">{t("shell.sidebar.label")}</SheetTitle>
               <Sidebar variant="mobile" onNavigate={() => setMobileOpen(false)} />
             </SheetContent>
           </Sheet>

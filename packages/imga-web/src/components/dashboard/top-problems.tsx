@@ -15,6 +15,7 @@ import { SectionHeading } from "@/components/dashboard/section-heading";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useMounted } from "@/hooks/use-count-up";
 import type { ExecutiveTopProblem } from "@/hooks/use-executive-overview";
+import { useTranslation } from "@/lib/i18n/use-translation";
 
 interface Props {
   problems: ExecutiveTopProblem[] | undefined;
@@ -22,6 +23,7 @@ interface Props {
 }
 
 export function TopProblems({ problems, isLoading }: Props) {
+  const { t } = useTranslation();
   // Pay barları açılışta sıfırdan dolar. Hook early-return'lardan ÖNCE.
   const mounted = useMounted();
 
@@ -38,11 +40,11 @@ export function TopProblems({ problems, isLoading }: Props) {
   const maxShare = Math.max(...problems.map((p) => p.share_pct), 1);
 
   return (
-    <section aria-label="En çok şikayet edilen konular">
+    <section aria-label={t("dashboard.topProblems.title")}>
       <SectionHeading
-        title="En çok şikayet edilen konular"
-        description="Müşterileriniz en çok bunlardan şikayetçi"
-        action={{ href: "/strategy", label: "Aksiyon planı" }}
+        title={t("dashboard.topProblems.title")}
+        description={t("dashboard.topProblems.description")}
+        action={{ href: "/strategy", label: t("dashboard.topProblems.actionLabel") }}
       />
 
       <div className="mt-5 space-y-3">
@@ -69,7 +71,9 @@ export function TopProblems({ problems, isLoading }: Props) {
                   <strong className="text-foreground font-semibold">
                     {p.count.toLocaleString("tr-TR")}
                   </strong>{" "}
-                  olumsuz yorum · şikayetlerin %{Math.round(p.share_pct)}&apos;i
+                  {t("dashboard.topProblems.statSuffix", {
+                    share: Math.round(p.share_pct),
+                  })}
                 </p>
               </div>
 

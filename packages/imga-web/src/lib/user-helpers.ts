@@ -2,35 +2,32 @@
 // comment author block, timeline actor resolution) plus tenant
 // plan / automation labels (Sprint 7.7.4 — admin tenant CRUD).
 
+import { localeLabels } from "@/lib/i18n/locale-labels";
 import type {
   AutomationMode,
   TicketCommentKind,
   UserTenantRole,
 } from "@/lib/types";
 
-export const USER_ROLE_LABELS: Record<UserTenantRole, string> = {
-  tenant_admin: "Yönetici",
-  analyst: "Analist",
-  viewer: "İzleyici",
-};
+export const USER_ROLE_LABELS: Record<UserTenantRole, string> = localeLabels({
+  tr: { tenant_admin: "Yönetici", analyst: "Analist", viewer: "İzleyici" },
+  en: { tenant_admin: "Admin", analyst: "Analyst", viewer: "Viewer" },
+});
 
-export const COMMENT_KIND_LABELS: Record<TicketCommentKind, string> = {
-  internal_note: "İç not",
-  customer_reply: "Müşteri yanıtı",
-};
+export const COMMENT_KIND_LABELS: Record<TicketCommentKind, string> = localeLabels({
+  tr: { internal_note: "İç not", customer_reply: "Müşteri yanıtı" },
+  en: { internal_note: "Internal note", customer_reply: "Customer reply" },
+});
 
-export const AUTOMATION_MODE_LABELS: Record<AutomationMode, string> = {
-  manual: "Manuel",
-  semi_auto: "Yarı otomatik",
-  full_auto: "Tam otomatik",
-};
+export const AUTOMATION_MODE_LABELS: Record<AutomationMode, string> = localeLabels({
+  tr: { manual: "Manuel", semi_auto: "Yarı otomatik", full_auto: "Tam otomatik" },
+  en: { manual: "Manual", semi_auto: "Semi-automatic", full_auto: "Fully automatic" },
+});
 
-export const PLAN_TIER_LABELS: Record<string, string> = {
-  trial: "Deneme",
-  starter: "Başlangıç",
-  business: "Kurumsal",
-  enterprise: "Enterprise",
-};
+export const PLAN_TIER_LABELS: Record<string, string> = localeLabels({
+  tr: { trial: "Deneme", starter: "Başlangıç", business: "Kurumsal", enterprise: "Enterprise" },
+  en: { trial: "Trial", starter: "Starter", business: "Business", enterprise: "Enterprise" },
+});
 
 /**
  * Two-letter avatar initials from a full name. Falls back to the first

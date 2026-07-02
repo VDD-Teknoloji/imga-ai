@@ -13,6 +13,7 @@ import Link from "next/link";
 import { SectionHeading } from "@/components/dashboard/section-heading";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { ExecutiveQuote } from "@/hooks/use-executive-overview";
+import { useTranslation } from "@/lib/i18n/use-translation";
 import { formatDateTr, relativeTimeTr } from "@/lib/relative-time";
 
 const SENTIMENT_ACCENT: Record<string, string> = {
@@ -28,10 +29,10 @@ const SENTIMENT_CHIP: Record<string, string> = {
   "NÖTR": "bg-zinc-100 text-zinc-600 dark:bg-zinc-900 dark:text-zinc-300",
 };
 
-const SENTIMENT_TR: Record<string, string> = {
-  NEGATIF: "Olumsuz",
-  POZITIF: "Olumlu",
-  "NÖTR": "Nötr",
+const SENTIMENT_LABEL_KEYS: Record<string, string> = {
+  NEGATIF: "dashboard.voiceOfCustomer.sentiment.negative",
+  POZITIF: "dashboard.voiceOfCustomer.sentiment.positive",
+  "NÖTR": "dashboard.voiceOfCustomer.sentiment.neutral",
 };
 
 interface Props {
@@ -40,6 +41,7 @@ interface Props {
 }
 
 export function VoiceOfCustomer({ quotes, isLoading }: Props) {
+  const { t } = useTranslation();
   if (isLoading) {
     return (
       <section className="space-y-4">
@@ -55,14 +57,16 @@ export function VoiceOfCustomer({ quotes, isLoading }: Props) {
   if (!quotes || quotes.length === 0) return null;
 
   return (
-    <section aria-label="Müşterinin sesi">
+    <section aria-label={t("dashboard.voiceOfCustomer.aria")}>
       <SectionHeading
-        title="Müşterinin Sesi"
-        description="Yorumların kendi cümleleriyle"
-        action={{ href: "/reviews", label: "Tüm yorumlar" }}
+        title={t("dashboard.voiceOfCustomer.title")}
+        description={t("dashboard.voiceOfCustomer.description")}
+        action={{ href: "/reviews", label: t("dashboard.voiceOfCustomer.action") }}
       />
       <div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-3">
-        {quotes.map((q, idx) => (
+        {quotes.map((q, idx) => {
+          const sentimentKey = SENTIMENT_LABEL_KEYS[q.sentiment_label];
+          return (
           <Link
             key={q.id}
             href={`/reviews?primary_categories=${encodeURIComponent(q.category_code)}&sentiment_labels=${encodeURIComponent(q.sentiment_label)}`}
@@ -76,7 +80,7 @@ export function VoiceOfCustomer({ quotes, isLoading }: Props) {
               <span
                 className={`inline-flex items-center rounded-full px-2.5 py-1 font-semibold ${SENTIMENT_CHIP[q.sentiment_label] ?? ""}`}
               >
-                {SENTIMENT_TR[q.sentiment_label] ?? q.sentiment_label}
+                {sentimentKey ? t(sentimentKey) : q.sentiment_label}
               </span>
               <span className="text-muted-foreground font-medium">
                 {q.category_label}
@@ -89,7 +93,8 @@ export function VoiceOfCustomer({ quotes, isLoading }: Props) {
               </span>
             </div>
           </Link>
-        ))}
+          );
+        })}
       </div>
     </section>
   );

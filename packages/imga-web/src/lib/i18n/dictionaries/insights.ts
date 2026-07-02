@@ -1,0 +1,558 @@
+import type { Bundle } from "./types";
+
+/**
+ * insights alan sözlüğü (Sprint 12 i18n).
+ *
+ * Kapsam: /insights (+ _components: cohort / heatmap / word-cloud tab'ları),
+ * /reviews (liste + detay), /reports ve paylaşılan charts/heatmap. Anahtar
+ * ön-ekleri sayfa/özellik alanına göredir (insights.* / reviews.* / reports.*
+ * / charts.*); hepsi tek bir düz haritaya birleşir. Ortak "Yükleniyor…",
+ * "İptal" gibi metinler core.ts'teki common.* anahtarlarını yeniden kullanır.
+ */
+export const insights: Bundle = {
+  tr: {
+    // --- /insights: sekmeler ---
+    "insights.tabs.sentiment": "Duygu",
+    "insights.tabs.category": "Kategori",
+    "insights.tabs.nps": "NPS",
+    "insights.tabs.cross": "Çapraz",
+    "insights.tabs.perspective": "Perspektif",
+    "insights.tabs.tickets": "Ticket",
+    "insights.tabs.heatmap": "Isı haritası",
+    "insights.tabs.cohort": "Kohort",
+    "insights.tabs.wordcloud": "Kelimeler",
+    "insights.tabs.overrides": "Kural Katmanları",
+
+    // --- /insights: sayfa başlığı ---
+    "insights.page.title": "İçgörüler",
+    "insights.page.subtitle":
+      "Duygu, kategori ve Ticket metriklerinin ayrıntılı görünümü.",
+
+    // --- /insights: filtre çubuğu ---
+    "insights.filter.allTime": "Tüm zamanlar",
+    "insights.filter.noFilterHint":
+      "Filtre uygulanmadı — başlangıç ve bitiş seçerek daraltın.",
+    "insights.filter.startDate": "Başlangıç",
+    "insights.filter.endDate": "Bitiş",
+    "insights.filter.source": "Kaynak",
+    "insights.filter.sourceAll": "Tümü",
+    "insights.filter.sourceManualOnly": "Sadece Manuel",
+    "insights.filter.sourceBatchOnly": "Sadece Toplu",
+
+    // --- /insights: ortak durum metinleri ---
+    "insights.state.loadError": "Veri yüklenemedi: {message}",
+    "insights.state.loadErrorShort": "Veri yüklenemedi.",
+    "insights.state.noData": "Bu filtrelerle veri bulunamadı.",
+    "insights.state.noValue": "veri yok",
+
+    // --- /insights: grafik başlıkları / notlar ---
+    "insights.chart.sentimentDistribution": "Duygu Dağılımı",
+    "insights.chart.scoreHistogram": "Skor Histogramı",
+    "insights.chart.sentimentTrendDaily": "Duygu Trendi (gün)",
+    "insights.chart.categoryTop10": "Kategori Top 10",
+    "insights.chart.categorySentimentMatrix": "Kategori × Duygu Matrisi",
+    "insights.chart.matrixTooltip": "{row} × {col}: {value} analiz",
+    "insights.chart.belirsizNote":
+      "\"Belirsiz\" kategori sınıflandırılamayan yorumları kapsar — büyük rakam genelde aşırı geniş veya çok kısa yorumlardan kaynaklanır. Tablonun sonuna alındı ki sinyalleri görmek kolaylaşsın.",
+    "insights.chart.ruleLayers": "Kural Katmanları",
+    "insights.chart.ruleLayersNotePre":
+      "Kural katman sayımı Sprint 8.3.4'te doldurulacak (",
+    "insights.chart.ruleLayersNotePost":
+      "JSONB kolonu); şimdilik 5 katman sıfır sayımla gösteriliyor.",
+    "insights.chart.npsScore": "NPS Skoru",
+    "insights.chart.npsResponsesCoverage": "{count} yanıt · kapsama %{coverage}",
+    "insights.chart.bucketDistribution": "Bucket Dağılımı",
+    "insights.chart.monthlyTrend12": "Aylık Trend (son 12 ay)",
+    "insights.chart.companyPerspectiveTop10": "Şirket Perspektifi Top 10",
+    "insights.chart.unmatchedLabel": "Eşleşme yok:",
+    "insights.chart.analysesCount": "{count} analiz",
+    "insights.chart.unmatchedHint":
+      "(heuristik bir taksonomi girdisiyle eşleşmedi).",
+    "insights.chart.resolutionTimeDistribution": "Çözüm Süresi Dağılımı",
+    "insights.chart.avg": "Ortalama",
+    "insights.chart.median": "Ortanca",
+    "insights.chart.hours": "{value} saat",
+
+    // --- /insights: kohort tab ---
+    "insights.cohort.periodWeek": "Hafta",
+    "insights.cohort.periodMonth": "Ay",
+    "insights.cohort.periodQuarter": "Çeyrek",
+    "insights.cohort.dimTaxonomy": "Kategori (BERT)",
+    "insights.cohort.dimPerspective": "Şirket Perspektifi",
+    "insights.cohort.dimNpsBucket": "NPS Kovası",
+    "insights.cohort.period": "Dönem",
+    "insights.cohort.dimension": "Boyut",
+    "insights.cohort.topCohorts": "Top kohort",
+    "insights.cohort.trendTitle": "Kohort Trendi",
+
+    // --- /insights: ısı haritası tab ---
+    "insights.heatmap.xHourOfDay": "Günün Saati",
+    "insights.heatmap.dayOfWeek": "Haftanın Günü",
+    "insights.heatmap.weekOfYear": "Yılın Haftası",
+    "insights.heatmap.month": "Ay",
+    "insights.heatmap.category": "Kategori",
+    "insights.heatmap.metricCount": "Yorum Sayısı",
+    "insights.heatmap.metricAvgSentiment": "Ortalama Duygu",
+    "insights.heatmap.metricAvgNps": "Ortalama NPS",
+    "insights.heatmap.xAxis": "X ekseni",
+    "insights.heatmap.yAxis": "Y ekseni",
+    "insights.heatmap.metric": "Metrik",
+    "insights.heatmap.sameAxisError": "X ve Y eksenleri farklı olmalı.",
+    "insights.heatmap.metricScale": "{metric} skalası",
+    "insights.heatmap.low": "düşük",
+    "insights.heatmap.high": "yüksek",
+    "insights.heatmap.legendNotePre": "Her hücre o saat × gün kesişimindeki ",
+    "insights.heatmap.legendNotePost":
+      " değerini gösterir. Renk koyulaştıkça değer yükselir. Boş hücre = veri yok.",
+    "insights.heatmap.cellEmptyTitle": "{y} × {x} — veri yok",
+    "insights.heatmap.cellTitle": "{y} × {x}: {value} ({metric}) — yorumları gör",
+    "insights.heatmap.cellEmptyAria": "{y} × {x} boş hücre",
+    "insights.heatmap.cellAria": "{y} × {x} hücresinin yorumlarını aç",
+
+    // --- /insights: kelime bulutu tab ---
+    "insights.wordcloud.sentAll": "Tümü",
+    "insights.wordcloud.sentPositive": "Pozitif",
+    "insights.wordcloud.sentNegative": "Negatif",
+    "insights.wordcloud.sentNeutral": "Nötr",
+    "insights.wordcloud.sentiment": "Duygu",
+    "insights.wordcloud.categoryFilter": "Kategori filtresi (opsiyonel)",
+    "insights.wordcloud.categoryPlaceholder": "kategori_kodu",
+    "insights.wordcloud.bigrams": "İkili kelimeler",
+    "insights.wordcloud.title": "Kelime Bulutu",
+    "insights.wordcloud.noWords": "Bu filtrelerle gösterilecek kelime yok.",
+    "insights.wordcloud.wordTitle": "{text} · {weight} yorum · skew {skew}",
+    "insights.wordcloud.top20": "İlk 20 Kelime",
+    "insights.wordcloud.analyzedCount": "{count} yorum analiz edildi.",
+
+    // --- /reviews: kaynak + duygu etiketleri ---
+    "reviews.source.manual": "Manuel",
+    "reviews.source.batch": "Toplu",
+    "reviews.source.api": "API",
+    "reviews.sentiment.negatif": "Olumsuz",
+    "reviews.sentiment.pozitif": "Olumlu",
+    "reviews.sentiment.notr": "Nötr",
+
+    // --- /reviews: liste ---
+    "reviews.list.title": "Analiz Arşivi",
+    "reviews.list.subtitleBatch":
+      "Belirli bir yüklemenin analizleri gösteriliyor.",
+    "reviews.list.subtitleAll": "Tüm analizler — manuel ve toplu giriş bir arada.",
+    "reviews.list.recordCount": "{count} kayıt",
+    "reviews.list.emptyTitle": "Bu filtrelerle eşleşen analiz yok",
+    "reviews.list.emptyHint": "Filtreleri temizleyin ya da yeni bir dosya yükleyin.",
+    "reviews.list.loadMore": "Daha fazla göster",
+
+    // --- /reviews: analiz satırı ---
+    "reviews.review.removed": "kaldırılmış",
+    "reviews.review.hasTicket": "Ticket var",
+    "reviews.review.corrected": "düzeltildi",
+
+    // --- /reviews: gün / ay etiketleri (heatmap drilldown pill'leri) ---
+    "reviews.dow.0": "Pazar",
+    "reviews.dow.1": "Pazartesi",
+    "reviews.dow.2": "Salı",
+    "reviews.dow.3": "Çarşamba",
+    "reviews.dow.4": "Perşembe",
+    "reviews.dow.5": "Cuma",
+    "reviews.dow.6": "Cumartesi",
+    "reviews.month.1": "Ocak",
+    "reviews.month.2": "Şubat",
+    "reviews.month.3": "Mart",
+    "reviews.month.4": "Nisan",
+    "reviews.month.5": "Mayıs",
+    "reviews.month.6": "Haziran",
+    "reviews.month.7": "Temmuz",
+    "reviews.month.8": "Ağustos",
+    "reviews.month.9": "Eylül",
+    "reviews.month.10": "Ekim",
+    "reviews.month.11": "Kasım",
+    "reviews.month.12": "Aralık",
+
+    // --- /reviews: filtre pill'leri ---
+    "reviews.pill.upload": "Yükleme: {id}…",
+    "reviews.pill.sentiment": "Duygu: {value}",
+    "reviews.pill.source": "Kaynak: {value}",
+    "reviews.pill.hour": "Saat: {value}:00",
+    "reviews.pill.day": "Gün: {value}",
+    "reviews.pill.week": "Hafta: {value}",
+    "reviews.pill.month": "Ay: {value}",
+
+    // --- /reviews: perspektif filtre dropdown ---
+    "reviews.perspFilter.trigger": "Şirket perspektifi",
+    "reviews.perspFilter.selected": "Perspektif: {count} seçili",
+    "reviews.perspFilter.unmatched": "Eşleşme yok",
+    "reviews.perspFilter.noTaxonomy": "Taksonomi yok.",
+    "reviews.perspFilter.clearAll": "Tümünü temizle",
+
+    // --- /reviews/[id]: karar etiketleri ---
+    "reviews.decision.create": "Ticket Açıldı",
+    "reviews.decision.skippedBelirsiz": "Atlandı (Kategori Belirsiz)",
+    "reviews.decision.skippedMode": "Atlandı (Manuel Mod)",
+    "reviews.decision.skippedThreshold": "Atlandı (Eşik Altı)",
+    "reviews.decision.skippedDedup": "Atlandı (24s İçinde Mükerrer)",
+
+    // --- /reviews/[id]: detay ---
+    "reviews.detail.promoteSuccess": "Manuel olarak Ticket açıldı.",
+    "reviews.detail.noPermission": "Bu işlem için yetkin yok.",
+    "reviews.detail.alreadyLinked": "Bu analiz zaten bir Ticket'a bağlı.",
+    "reviews.detail.promoteError": "Ticket açılamadı.",
+    "reviews.detail.backToList": "Analizler",
+    "reviews.detail.notFound": "Analiz bulunamadı veya erişim yok.",
+    "reviews.detail.analysisNo": "Analiz #{id}",
+    "reviews.detail.date": "Tarih",
+    "reviews.detail.batchUpload": "Toplu Yükleme",
+    "reviews.detail.text": "Metin",
+    "reviews.detail.analysis": "Analiz",
+    "reviews.detail.sentiment": "Duygu",
+    "reviews.detail.scoreFinal": "Skor (final)",
+    "reviews.detail.scoreRaw": "Skor (raw, BERT)",
+    "reviews.detail.confidence": "Güven",
+    "reviews.detail.percentValue": "%{value}",
+    "reviews.detail.category": "Kategori",
+    "reviews.detail.companyPerspective": "Şirket Perspektifi",
+    "reviews.detail.bertCategory": "BERT kategorisi",
+    "reviews.detail.heuristicPerspective": "Heuristik perspektif",
+    "reviews.detail.noMatch": "eşleşme yok",
+    "reviews.detail.removedCategoryPre": "kaldırılmış kategori (kod:",
+    "reviews.detail.removedCategoryPost": ")",
+    "reviews.detail.ruleLayers": "Kural Katmanları",
+    "reviews.detail.decision": "Karar",
+    "reviews.detail.linkedTicket": "Bağlı Ticket:",
+    "reviews.detail.goToTicket": "Ticket'a Git →",
+    "reviews.detail.promoteButton": "Bu Analizi Ticket'a Dönüştür",
+    "reviews.detail.promoteHint":
+      "Elle açıldı — sistem bu karar için Ticket açmamıştı.",
+
+    // --- /reports: tip + durum etiketleri ---
+    "reports.type.comprehensive": "Kapsamlı",
+    "reports.type.reviewsOnly": "Sadece Yorumlar",
+    "reports.type.ticketsOnly": "Sadece Ticket'lar",
+    "reports.status.queued": "Sırada",
+    "reports.status.generating": "Üretiliyor",
+    "reports.status.completed": "Tamamlandı",
+    "reports.status.failed": "Başarısız",
+
+    // --- /reports: sayfa + tablo ---
+    "reports.page.title": "Raporlar",
+    "reports.page.subtitle":
+      "Excel veya CSV olarak çok-sayfalı analiz + Ticket raporları üretip 24 saat boyunca indirin.",
+    "reports.newReport": "Yeni Rapor",
+    "reports.generatingMid": "raporu üretiliyor… durum:",
+    "reports.emptyPre": "Henüz rapor yok. Üstteki ",
+    "reports.emptyPost": " butonu ile ilk raporunuzu üretebilirsiniz.",
+    "reports.table.date": "Tarih",
+    "reports.table.type": "Tip",
+    "reports.table.format": "Format",
+    "reports.table.rows": "Satır",
+    "reports.table.size": "Boyut",
+    "reports.table.status": "Durum",
+    "reports.download": "İndir",
+    "reports.deleteConfirm": "Raporu silmek istediğinizden emin misiniz?",
+    "reports.deleteError": "Silinemedi.",
+    "reports.deleteSuccess": "Rapor silindi.",
+    "reports.downloadError": "İndirilemedi: {status} {detail}",
+    "reports.downloadStartError": "İndirme başlatılamadı.",
+
+    // --- /reports: yeni rapor modalı ---
+    "reports.estimateError": "Tahmin alınamadı.",
+    "reports.queuedSuccess": "Rapor sıraya alındı.",
+    "reports.generateError": "Rapor üretilemedi.",
+    "reports.modalTitle": "Yeni Rapor — Adım {step}/3",
+    "reports.close": "Kapat",
+    "reports.back": "Geri",
+    "reports.continue": "Devam",
+    "reports.preview": "Önizleme",
+    "reports.generate": "Üret",
+    "reports.hardLimit": "Hard limit: 90 gün, 50.000 satır.",
+    "reports.reportType": "Rapor Tipi",
+    "reports.dateRange": "Tarih Aralığı",
+    "reports.thisMonth": "Bu ay",
+    "reports.lastMonth": "Geçen ay",
+    "reports.thisQuarter": "Bu çeyrek",
+    "reports.rangeDays": "Aralık: {days} gün",
+    "reports.rangeOverLimit": " — 90 gün limitini aşıyor.",
+    "reports.est.rows": "Tahmini satır:",
+    "reports.est.time": "Tahmini süre:",
+    "reports.est.seconds": "~{n} saniye",
+    "reports.est.type": "Tip:",
+    "reports.est.format": "Format:",
+    "reports.est.dateRange": "Tarih aralığı:",
+    "reports.est.reviewRows": "Analiz satırı:",
+    "reports.est.ticketRows": "Ticket satırı:",
+
+    // --- paylaşılan charts/heatmap ---
+    "charts.heatmapAria": "Isı haritası",
+  },
+  en: {
+    // --- /insights: tabs ---
+    "insights.tabs.sentiment": "Sentiment",
+    "insights.tabs.category": "Category",
+    "insights.tabs.nps": "NPS",
+    "insights.tabs.cross": "Cross",
+    "insights.tabs.perspective": "Perspective",
+    "insights.tabs.tickets": "Ticket",
+    "insights.tabs.heatmap": "Heatmap",
+    "insights.tabs.cohort": "Cohort",
+    "insights.tabs.wordcloud": "Words",
+    "insights.tabs.overrides": "Rule Layers",
+
+    // --- /insights: page header ---
+    "insights.page.title": "Insights",
+    "insights.page.subtitle":
+      "Detailed view of sentiment, category, and Ticket metrics.",
+
+    // --- /insights: filter bar ---
+    "insights.filter.allTime": "All time",
+    "insights.filter.noFilterHint":
+      "No filter applied — narrow down by choosing a start and end date.",
+    "insights.filter.startDate": "Start",
+    "insights.filter.endDate": "End",
+    "insights.filter.source": "Source",
+    "insights.filter.sourceAll": "All",
+    "insights.filter.sourceManualOnly": "Manual only",
+    "insights.filter.sourceBatchOnly": "Batch only",
+
+    // --- /insights: shared state messages ---
+    "insights.state.loadError": "Failed to load data: {message}",
+    "insights.state.loadErrorShort": "Failed to load data.",
+    "insights.state.noData": "No data found for these filters.",
+    "insights.state.noValue": "no data",
+
+    // --- /insights: chart titles / notes ---
+    "insights.chart.sentimentDistribution": "Sentiment Distribution",
+    "insights.chart.scoreHistogram": "Score Histogram",
+    "insights.chart.sentimentTrendDaily": "Sentiment Trend (daily)",
+    "insights.chart.categoryTop10": "Top 10 Categories",
+    "insights.chart.categorySentimentMatrix": "Category × Sentiment Matrix",
+    "insights.chart.matrixTooltip": "{row} × {col}: {value} analyses",
+    "insights.chart.belirsizNote":
+      "The \"Belirsiz\" (unclassifiable) category covers comments that couldn't be classified — a large number usually comes from overly broad or very short comments. It's moved to the end of the table to make the signals easier to see.",
+    "insights.chart.ruleLayers": "Rule Layers",
+    "insights.chart.ruleLayersNotePre":
+      "The rule-layer counts will be populated in Sprint 8.3.4 (",
+    "insights.chart.ruleLayersNotePost":
+      "JSONB column); for now the 5 layers show with zero counts.",
+    "insights.chart.npsScore": "NPS Score",
+    "insights.chart.npsResponsesCoverage": "{count} responses · {coverage}% coverage",
+    "insights.chart.bucketDistribution": "Bucket Distribution",
+    "insights.chart.monthlyTrend12": "Monthly Trend (last 12 months)",
+    "insights.chart.companyPerspectiveTop10": "Top 10 Company Perspectives",
+    "insights.chart.unmatchedLabel": "No match:",
+    "insights.chart.analysesCount": "{count} analyses",
+    "insights.chart.unmatchedHint": "(didn't match a heuristic taxonomy entry).",
+    "insights.chart.resolutionTimeDistribution": "Resolution Time Distribution",
+    "insights.chart.avg": "Average",
+    "insights.chart.median": "Median",
+    "insights.chart.hours": "{value} h",
+
+    // --- /insights: cohort tab ---
+    "insights.cohort.periodWeek": "Week",
+    "insights.cohort.periodMonth": "Month",
+    "insights.cohort.periodQuarter": "Quarter",
+    "insights.cohort.dimTaxonomy": "Category (BERT)",
+    "insights.cohort.dimPerspective": "Company Perspective",
+    "insights.cohort.dimNpsBucket": "NPS Bucket",
+    "insights.cohort.period": "Period",
+    "insights.cohort.dimension": "Dimension",
+    "insights.cohort.topCohorts": "Top cohorts",
+    "insights.cohort.trendTitle": "Cohort Trend",
+
+    // --- /insights: heatmap tab ---
+    "insights.heatmap.xHourOfDay": "Hour of Day",
+    "insights.heatmap.dayOfWeek": "Day of Week",
+    "insights.heatmap.weekOfYear": "Week of Year",
+    "insights.heatmap.month": "Month",
+    "insights.heatmap.category": "Category",
+    "insights.heatmap.metricCount": "Comment Count",
+    "insights.heatmap.metricAvgSentiment": "Average Sentiment",
+    "insights.heatmap.metricAvgNps": "Average NPS",
+    "insights.heatmap.xAxis": "X axis",
+    "insights.heatmap.yAxis": "Y axis",
+    "insights.heatmap.metric": "Metric",
+    "insights.heatmap.sameAxisError": "The X and Y axes must be different.",
+    "insights.heatmap.metricScale": "{metric} scale",
+    "insights.heatmap.low": "low",
+    "insights.heatmap.high": "high",
+    "insights.heatmap.legendNotePre": "Each cell shows the ",
+    "insights.heatmap.legendNotePost":
+      " value at that hour × day intersection. The darker the colour, the higher the value. Empty cell = no data.",
+    "insights.heatmap.cellEmptyTitle": "{y} × {x} — no data",
+    "insights.heatmap.cellTitle": "{y} × {x}: {value} ({metric}) — view comments",
+    "insights.heatmap.cellEmptyAria": "{y} × {x} empty cell",
+    "insights.heatmap.cellAria": "Open comments for the {y} × {x} cell",
+
+    // --- /insights: word cloud tab ---
+    "insights.wordcloud.sentAll": "All",
+    "insights.wordcloud.sentPositive": "Positive",
+    "insights.wordcloud.sentNegative": "Negative",
+    "insights.wordcloud.sentNeutral": "Neutral",
+    "insights.wordcloud.sentiment": "Sentiment",
+    "insights.wordcloud.categoryFilter": "Category filter (optional)",
+    "insights.wordcloud.categoryPlaceholder": "category_code",
+    "insights.wordcloud.bigrams": "Bigrams",
+    "insights.wordcloud.title": "Word Cloud",
+    "insights.wordcloud.noWords": "No words to show for these filters.",
+    "insights.wordcloud.wordTitle": "{text} · {weight} comments · skew {skew}",
+    "insights.wordcloud.top20": "Top 20 Words",
+    "insights.wordcloud.analyzedCount": "{count} comments analysed.",
+
+    // --- /reviews: source + sentiment labels ---
+    "reviews.source.manual": "Manual",
+    "reviews.source.batch": "Batch",
+    "reviews.source.api": "API",
+    "reviews.sentiment.negatif": "Negative",
+    "reviews.sentiment.pozitif": "Positive",
+    "reviews.sentiment.notr": "Neutral",
+
+    // --- /reviews: list ---
+    "reviews.list.title": "Analysis Archive",
+    "reviews.list.subtitleBatch": "Showing analyses from a specific upload.",
+    "reviews.list.subtitleAll":
+      "All analyses — manual and batch entries together.",
+    "reviews.list.recordCount": "{count} records",
+    "reviews.list.emptyTitle": "No analyses match these filters",
+    "reviews.list.emptyHint": "Clear the filters or upload a new file.",
+    "reviews.list.loadMore": "Show more",
+
+    // --- /reviews: review row ---
+    "reviews.review.removed": "removed",
+    "reviews.review.hasTicket": "Has Ticket",
+    "reviews.review.corrected": "corrected",
+
+    // --- /reviews: day / month labels (heatmap drilldown pills) ---
+    "reviews.dow.0": "Sunday",
+    "reviews.dow.1": "Monday",
+    "reviews.dow.2": "Tuesday",
+    "reviews.dow.3": "Wednesday",
+    "reviews.dow.4": "Thursday",
+    "reviews.dow.5": "Friday",
+    "reviews.dow.6": "Saturday",
+    "reviews.month.1": "January",
+    "reviews.month.2": "February",
+    "reviews.month.3": "March",
+    "reviews.month.4": "April",
+    "reviews.month.5": "May",
+    "reviews.month.6": "June",
+    "reviews.month.7": "July",
+    "reviews.month.8": "August",
+    "reviews.month.9": "September",
+    "reviews.month.10": "October",
+    "reviews.month.11": "November",
+    "reviews.month.12": "December",
+
+    // --- /reviews: filter pills ---
+    "reviews.pill.upload": "Upload: {id}…",
+    "reviews.pill.sentiment": "Sentiment: {value}",
+    "reviews.pill.source": "Source: {value}",
+    "reviews.pill.hour": "Hour: {value}:00",
+    "reviews.pill.day": "Day: {value}",
+    "reviews.pill.week": "Week: {value}",
+    "reviews.pill.month": "Month: {value}",
+
+    // --- /reviews: perspective filter dropdown ---
+    "reviews.perspFilter.trigger": "Company perspective",
+    "reviews.perspFilter.selected": "Perspective: {count} selected",
+    "reviews.perspFilter.unmatched": "No match",
+    "reviews.perspFilter.noTaxonomy": "No taxonomy.",
+    "reviews.perspFilter.clearAll": "Clear all",
+
+    // --- /reviews/[id]: decision labels ---
+    "reviews.decision.create": "Ticket Opened",
+    "reviews.decision.skippedBelirsiz": "Skipped (Category Unclear)",
+    "reviews.decision.skippedMode": "Skipped (Manual Mode)",
+    "reviews.decision.skippedThreshold": "Skipped (Below Threshold)",
+    "reviews.decision.skippedDedup": "Skipped (Duplicate Within 24h)",
+
+    // --- /reviews/[id]: detail ---
+    "reviews.detail.promoteSuccess": "Ticket opened manually.",
+    "reviews.detail.noPermission": "You don't have permission for this action.",
+    "reviews.detail.alreadyLinked": "This analysis is already linked to a Ticket.",
+    "reviews.detail.promoteError": "Couldn't open a Ticket.",
+    "reviews.detail.backToList": "Analyses",
+    "reviews.detail.notFound": "Analysis not found or no access.",
+    "reviews.detail.analysisNo": "Analysis #{id}",
+    "reviews.detail.date": "Date",
+    "reviews.detail.batchUpload": "Batch Upload",
+    "reviews.detail.text": "Text",
+    "reviews.detail.analysis": "Analysis",
+    "reviews.detail.sentiment": "Sentiment",
+    "reviews.detail.scoreFinal": "Score (final)",
+    "reviews.detail.scoreRaw": "Score (raw, BERT)",
+    "reviews.detail.confidence": "Confidence",
+    "reviews.detail.percentValue": "{value}%",
+    "reviews.detail.category": "Category",
+    "reviews.detail.companyPerspective": "Company Perspective",
+    "reviews.detail.bertCategory": "BERT category",
+    "reviews.detail.heuristicPerspective": "Heuristic perspective",
+    "reviews.detail.noMatch": "no match",
+    "reviews.detail.removedCategoryPre": "removed category (code:",
+    "reviews.detail.removedCategoryPost": ")",
+    "reviews.detail.ruleLayers": "Rule Layers",
+    "reviews.detail.decision": "Decision",
+    "reviews.detail.linkedTicket": "Linked Ticket:",
+    "reviews.detail.goToTicket": "Go to Ticket →",
+    "reviews.detail.promoteButton": "Convert This Analysis to a Ticket",
+    "reviews.detail.promoteHint":
+      "Opened manually — the system hadn't opened a Ticket for this decision.",
+
+    // --- /reports: type + status labels ---
+    "reports.type.comprehensive": "Comprehensive",
+    "reports.type.reviewsOnly": "Reviews Only",
+    "reports.type.ticketsOnly": "Tickets Only",
+    "reports.status.queued": "Queued",
+    "reports.status.generating": "Generating",
+    "reports.status.completed": "Completed",
+    "reports.status.failed": "Failed",
+
+    // --- /reports: page + table ---
+    "reports.page.title": "Reports",
+    "reports.page.subtitle":
+      "Generate multi-sheet analysis + Ticket reports as Excel or CSV and download them for 24 hours.",
+    "reports.newReport": "New Report",
+    "reports.generatingMid": "report is generating… status:",
+    "reports.emptyPre": "No reports yet. Use the ",
+    "reports.emptyPost": " button above to generate your first report.",
+    "reports.table.date": "Date",
+    "reports.table.type": "Type",
+    "reports.table.format": "Format",
+    "reports.table.rows": "Rows",
+    "reports.table.size": "Size",
+    "reports.table.status": "Status",
+    "reports.download": "Download",
+    "reports.deleteConfirm": "Are you sure you want to delete the report?",
+    "reports.deleteError": "Couldn't delete.",
+    "reports.deleteSuccess": "Report deleted.",
+    "reports.downloadError": "Download failed: {status} {detail}",
+    "reports.downloadStartError": "Couldn't start the download.",
+
+    // --- /reports: new report modal ---
+    "reports.estimateError": "Couldn't get an estimate.",
+    "reports.queuedSuccess": "Report queued.",
+    "reports.generateError": "Couldn't generate the report.",
+    "reports.modalTitle": "New Report — Step {step}/3",
+    "reports.close": "Close",
+    "reports.back": "Back",
+    "reports.continue": "Continue",
+    "reports.preview": "Preview",
+    "reports.generate": "Generate",
+    "reports.hardLimit": "Hard limit: 90 days, 50,000 rows.",
+    "reports.reportType": "Report Type",
+    "reports.dateRange": "Date Range",
+    "reports.thisMonth": "This month",
+    "reports.lastMonth": "Last month",
+    "reports.thisQuarter": "This quarter",
+    "reports.rangeDays": "Range: {days} days",
+    "reports.rangeOverLimit": " — exceeds the 90-day limit.",
+    "reports.est.rows": "Estimated rows:",
+    "reports.est.time": "Estimated time:",
+    "reports.est.seconds": "~{n} seconds",
+    "reports.est.type": "Type:",
+    "reports.est.format": "Format:",
+    "reports.est.dateRange": "Date range:",
+    "reports.est.reviewRows": "Analysis rows:",
+    "reports.est.ticketRows": "Ticket rows:",
+
+    // --- shared charts/heatmap ---
+    "charts.heatmapAria": "Heatmap",
+  },
+};

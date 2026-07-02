@@ -4,6 +4,8 @@
 // the surface stays explicit and easy to grep. When backend response
 // shapes change (Sprint 7.5.5 / Grup B), update here in one place.
 
+import type { Locale } from "@/lib/i18n/config";
+
 export type UserTenantRole = "tenant_admin" | "analyst" | "viewer";
 
 export type TicketState =
@@ -38,6 +40,8 @@ export interface ActiveContext {
   tenant_name: string | null;
   tenant_slug: string | null;
   role: UserTenantRole | null;
+  /** Aktif kurumun arayüz + AI çıktı dili (Sprint 12 i18n). */
+  language: Locale;
 }
 
 export interface TenantSummary {
@@ -45,6 +49,8 @@ export interface TenantSummary {
   name: string;
   slug: string;
   role: UserTenantRole;
+  /** Kurumun dili — tenant seçicide bilgi amaçlı. */
+  language: Locale;
 }
 
 export interface MeResponse {
@@ -189,6 +195,7 @@ export interface AdminTenantSummary {
   slug: string;
   plan_tier: TenantPlanTier;
   automation_mode: AutomationMode;
+  language: Locale;
   created_at: string;
   deleted_at: string | null;
 }
@@ -202,6 +209,8 @@ export interface AdminTenantCreateRequest {
   slug: string;
   plan_tier?: TenantPlanTier;
   automation_mode?: AutomationMode;
+  /** Kurum arayüz + AI çıktı dili — oluştururken seçilir (Sprint 12 i18n). */
+  language?: Locale;
   initial_admin?: {
     email: string;
     full_name: string;
@@ -219,6 +228,7 @@ export interface AdminTenantUpdateRequest {
   name?: string;
   plan_tier?: TenantPlanTier;
   automation_mode?: AutomationMode;
+  language?: Locale;
 }
 
 // --- Admin invitation create (mirrors routes/admin/invitations.py) ---

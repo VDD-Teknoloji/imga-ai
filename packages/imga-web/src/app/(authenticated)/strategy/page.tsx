@@ -44,6 +44,7 @@ import {
   useStrategicReports,
 } from "@/hooks/use-strategic-reports";
 import { ApiError } from "@/lib/api-client";
+import { useTranslation } from "@/lib/i18n/use-translation";
 import type {
   OkrPayload,
   StrategicReportDetail,
@@ -57,10 +58,10 @@ const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8003";
 
 type TabKey = "swot" | "okr" | "history";
 
-const TAB_LABELS: Record<TabKey, string> = {
-  swot: "SWOT Üret",
-  okr: "OKR Üret",
-  history: "Geçmiş",
+const TAB_KEYS: Record<TabKey, string> = {
+  swot: "dashboard.strategy.tab.swot",
+  okr: "dashboard.strategy.tab.okr",
+  history: "dashboard.strategy.tab.history",
 };
 
 export default function StrategyPage() {
@@ -72,13 +73,16 @@ export default function StrategyPage() {
 }
 
 function HeaderSkeleton() {
+  const { t } = useTranslation();
   return (
     <main className="mx-auto w-full max-w-5xl space-y-6 px-4 py-6 md:px-8 md:py-10">
       <header className="space-y-1.5">
         <h1 className="text-2xl font-semibold tracking-tight md:text-3xl">
-          Strateji
+          {t("dashboard.strategy.title")}
         </h1>
-        <p className="text-muted-foreground text-sm">Yükleniyor…</p>
+        <p className="text-muted-foreground text-sm">
+          {t("dashboard.common.loading")}
+        </p>
       </header>
     </main>
   );
@@ -88,6 +92,7 @@ function StrategyContent() {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
+  const { t } = useTranslation();
 
   // URL → state mirror (Sprint 8.3.4 round-2 / 8.3.5.6 round-2 pattern).
   // useSearchParams stops notifying inside Suspense after the first
@@ -168,11 +173,10 @@ function StrategyContent() {
     <main className="mx-auto w-full max-w-5xl space-y-6 px-4 py-6 md:px-8 md:py-10">
       <header className="space-y-1.5">
         <h1 className="text-2xl font-semibold tracking-tight md:text-3xl">
-          Strateji
+          {t("dashboard.strategy.title")}
         </h1>
         <p className="text-muted-foreground text-sm">
-          Analizleriniz üzerine SWOT ve OKR raporları üretin. Raporlar Gemini
-          ile oluşturulur ve PDF olarak indirilebilir.
+          {t("dashboard.strategy.subtitle")}
         </p>
       </header>
 
@@ -182,9 +186,9 @@ function StrategyContent() {
 
       <Tabs value={tab} onValueChange={(v) => handleTabChange(v as TabKey)}>
         <TabsList className="grid w-full grid-cols-3 sm:w-fit">
-          {(Object.keys(TAB_LABELS) as TabKey[]).map((k) => (
+          {(Object.keys(TAB_KEYS) as TabKey[]).map((k) => (
             <TabsTrigger key={k} value={k}>
-              {TAB_LABELS[k]}
+              {t(TAB_KEYS[k])}
             </TabsTrigger>
           ))}
         </TabsList>
@@ -251,22 +255,23 @@ function StrategyContent() {
 // --- Disabled-CTA banner ---------------------------------------------
 
 function NoCredentialBanner({ onNavigate }: { onNavigate: () => void }) {
+  const { t } = useTranslation();
   return (
     <div className="bg-amber-50 dark:bg-amber-950/30 flex flex-col gap-3 rounded-2xl border border-amber-200 dark:border-amber-900/50 p-5 sm:flex-row sm:items-center sm:justify-between">
       <div className="flex items-start gap-3">
         <AlertTriangle className="mt-0.5 size-5 text-amber-600" aria-hidden />
         <div className="text-sm">
           <p className="font-medium text-amber-900">
-            Strateji raporu üretmek için Gemini API anahtarı gerekli.
+            {t("dashboard.strategy.banner.title")}
           </p>
           <p className="text-amber-800">
-            En az bir aktif anahtar tanımlanana kadar SWOT/OKR üretimi devre
-            dışı. Geçmiş raporlar görüntülenebilir ve indirilebilir.
+            {t("dashboard.strategy.banner.desc")}
           </p>
         </div>
       </div>
       <Button onClick={onNavigate} variant="outline" className="shrink-0 gap-2">
-        Anahtar ekle <ArrowRight className="size-4" aria-hidden />
+        {t("dashboard.strategy.banner.addKey")}{" "}
+        <ArrowRight className="size-4" aria-hidden />
       </Button>
     </div>
   );
@@ -293,6 +298,7 @@ function SwotTab({
   onDateToChange: (value: string) => void;
   onSelectReport: (id: string) => void;
 }) {
+  const { t } = useTranslation();
   const generate = useGenerateSwot();
   const detail = useStrategicReport(reportId || null);
   const [forceRefresh, setForceRefresh] = useState(false);
@@ -318,12 +324,16 @@ function SwotTab({
       {
         onSuccess: (report) => {
           onSelectReport(report.id);
-          toast.success("SWOT raporu hazır.");
+          toast.success(t("dashboard.strategy.swot.ready"));
         },
         onError: (err) => {
           if (err instanceof ApiError) {
             if (err.status === 503) {
-              toast.error("Gemini şu an erişilemiyor: " + err.detail);
+              toast.error(
+                t("dashboard.strategy.geminiUnavailable", {
+                  detail: err.detail,
+                }),
+              );
               return;
             }
             if (err.status === 400 || err.status === 422) {
@@ -331,7 +341,7 @@ function SwotTab({
               return;
             }
           }
-          toast.error("SWOT raporu üretilemedi.");
+          toast.error(t("dashboard.strategy.swot.generateFailed"));
         },
       },
     );
@@ -341,17 +351,19 @@ function SwotTab({
     <>
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">SWOT raporu üret</CardTitle>
+          <CardTitle className="text-base">
+            {t("dashboard.strategy.swot.cardTitle")}
+          </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           <p className="text-muted-foreground text-sm">
-            Seçilen tarih aralığındaki analizler özetlenir, Gemini SWOT
-            (güçlü/zayıf yönler, fırsat/tehdit) ve stratejik öneri çıktısı
-            üretir. Tarih boş bırakılırsa son 90 gün kullanılır.
+            {t("dashboard.strategy.swot.cardDesc")}
           </p>
           <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
             <div>
-              <Label className="text-xs">Başlangıç</Label>
+              <Label className="text-xs">
+                {t("dashboard.strategy.field.startDate")}
+              </Label>
               <input
                 type="date"
                 value={dateFrom}
@@ -361,7 +373,9 @@ function SwotTab({
               />
             </div>
             <div>
-              <Label className="text-xs">Bitiş</Label>
+              <Label className="text-xs">
+                {t("dashboard.strategy.field.endDate")}
+              </Label>
               <input
                 type="date"
                 value={dateTo}
@@ -378,20 +392,20 @@ function SwotTab({
                   onChange={(e) => setForceRefresh(e.target.checked)}
                   className="size-4"
                 />
-                Önbelleği atla (yeniden üret)
+                {t("dashboard.strategy.swot.skipCache")}
               </label>
             </div>
           </div>
           <div className="space-y-1">
-            <Label className="text-xs">Yükleme kapsamı (opsiyonel)</Label>
+            <Label className="text-xs">
+              {t("dashboard.strategy.swot.batchScopeLabel")}
+            </Label>
             <BatchFilterDropdown
               selected={batchScopeId}
               onChange={(next) => setBatchScopeId(next)}
             />
             <p className="text-muted-foreground text-xs">
-              Bir yükleme seçerseniz SWOT sadece o yüklemenin
-              yorumlarını analiz eder; aksi halde tarih aralığı
-              içindeki tüm yorumlar kullanılır.
+              {t("dashboard.strategy.swot.batchScopeHelp")}
             </p>
           </div>
           <div>
@@ -405,12 +419,11 @@ function SwotTab({
               ) : (
                 <Wand2 className="size-4" aria-hidden />
               )}
-              SWOT üret
+              {t("dashboard.strategy.swot.generate")}
             </Button>
             {!hasActiveKey && credentialsLoaded && (
               <p className="text-muted-foreground mt-2 text-xs">
-                Aktif Gemini anahtarı yok — yukarıdaki uyarıdan eklemeniz
-                gerekir.
+                {t("dashboard.strategy.noKeyHint")}
               </p>
             )}
           </div>
@@ -423,14 +436,15 @@ function SwotTab({
       {reportId && detail.isLoading && (
         <Card>
           <CardContent className="flex items-center gap-2 p-6 text-sm">
-            <Loader2 className="size-4 animate-spin" /> Rapor yükleniyor…
+            <Loader2 className="size-4 animate-spin" />{" "}
+            {t("dashboard.strategy.reportLoading")}
           </CardContent>
         </Card>
       )}
       {reportId && detail.isError && (
         <Card>
           <CardContent className="text-destructive p-6 text-sm">
-            Rapor yüklenemedi.
+            {t("dashboard.strategy.reportLoadFailed")}
           </CardContent>
         </Card>
       )}
@@ -448,22 +462,25 @@ const SWOT_PRIORITY_TONE: Record<string, string> = {
 
 const SWOT_QUADRANTS: ReadonlyArray<{
   key: keyof Pick<SwotPayload, "strengths" | "weaknesses" | "opportunities" | "threats">;
-  label: string;
+  labelKey: string;
   tone: string;
 }> = [
-  { key: "strengths", label: "Güçlü Yönler", tone: "bg-emerald-50 border-emerald-300" },
-  { key: "weaknesses", label: "Zayıf Yönler", tone: "bg-red-50 border-red-300" },
-  { key: "opportunities", label: "Fırsatlar", tone: "bg-blue-50 border-blue-300" },
-  { key: "threats", label: "Tehditler", tone: "bg-orange-50 border-orange-300" },
+  { key: "strengths", labelKey: "dashboard.strategy.swot.strengths", tone: "bg-emerald-50 border-emerald-300" },
+  { key: "weaknesses", labelKey: "dashboard.strategy.swot.weaknesses", tone: "bg-red-50 border-red-300" },
+  { key: "opportunities", labelKey: "dashboard.strategy.swot.opportunities", tone: "bg-blue-50 border-blue-300" },
+  { key: "threats", labelKey: "dashboard.strategy.swot.threats", tone: "bg-orange-50 border-orange-300" },
 ];
 
 function SwotViewer({ report }: { report: StrategicReportDetail }) {
+  const { t } = useTranslation();
   const payload = report.output_payload as unknown as SwotPayload;
   return (
     <Card>
       <CardHeader className="flex flex-row items-start justify-between gap-3">
         <div>
-          <CardTitle className="text-base">SWOT Raporu</CardTitle>
+          <CardTitle className="text-base">
+            {t("dashboard.strategy.swot.reportTitle")}
+          </CardTitle>
           <p className="text-muted-foreground mt-1 text-xs">
             <ReportMeta report={report} />
           </p>
@@ -477,10 +494,12 @@ function SwotViewer({ report }: { report: StrategicReportDetail }) {
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
           {SWOT_QUADRANTS.map((q) => (
             <div key={q.key} className={`rounded-lg border p-4 ${q.tone}`}>
-              <h3 className="mb-3 text-sm font-semibold">{q.label}</h3>
+              <h3 className="mb-3 text-sm font-semibold">{t(q.labelKey)}</h3>
               <ul className="space-y-3">
                 {payload[q.key].length === 0 ? (
-                  <li className="text-muted-foreground text-xs">Madde yok.</li>
+                  <li className="text-muted-foreground text-xs">
+                    {t("dashboard.strategy.swot.noItems")}
+                  </li>
                 ) : (
                   payload[q.key].map((item, idx) => (
                     <li key={idx} className="space-y-1 text-sm">
@@ -490,7 +509,9 @@ function SwotViewer({ report }: { report: StrategicReportDetail }) {
                       </p>
                       {item.evidence && (
                         <p className="text-muted-foreground text-xs italic">
-                          Kanıt: {item.evidence}
+                          {t("dashboard.strategy.swot.evidence", {
+                            text: item.evidence,
+                          })}
                         </p>
                       )}
                     </li>
@@ -503,7 +524,9 @@ function SwotViewer({ report }: { report: StrategicReportDetail }) {
 
         {payload.strategic_recommendations.length > 0 && (
           <div className="space-y-3">
-            <h3 className="text-sm font-semibold">Stratejik Öneriler</h3>
+            <h3 className="text-sm font-semibold">
+              {t("dashboard.strategy.swot.recommendations")}
+            </h3>
             <ul className="space-y-2">
               {payload.strategic_recommendations.map((rec, idx) => (
                 <RecommendationRow key={idx} rec={rec} />
@@ -517,6 +540,7 @@ function SwotViewer({ report }: { report: StrategicReportDetail }) {
 }
 
 function RecommendationRow({ rec }: { rec: SwotRecommendation }) {
+  const { t } = useTranslation();
   const priorityTone =
     SWOT_PRIORITY_TONE[rec.priority.toLowerCase()] ??
     "bg-gray-50 border-gray-300 text-gray-800";
@@ -528,10 +552,12 @@ function RecommendationRow({ rec }: { rec: SwotRecommendation }) {
       <div className="flex flex-wrap items-center gap-2">
         <p className="text-sm font-medium">{rec.title}</p>
         <Badge variant="outline" className={`text-xs ${priorityTone}`}>
-          öncelik: {rec.priority}
+          {t("dashboard.strategy.swot.priorityBadge", { value: rec.priority })}
         </Badge>
         <Badge variant="outline" className={`text-xs ${impactTone}`}>
-          etki: {rec.estimated_impact}
+          {t("dashboard.strategy.swot.impactBadge", {
+            value: rec.estimated_impact,
+          })}
         </Badge>
       </div>
       <p className="text-muted-foreground text-sm">{rec.description}</p>
@@ -556,6 +582,7 @@ function OkrTab({
   onSourceReportChange: (id: string) => void;
   onSelectReport: (id: string) => void;
 }) {
+  const { t } = useTranslation();
   const swotList = useStrategicReports({ report_type: "swot", limit: 50 });
   const generate = useGenerateOkr();
   const detail = useStrategicReport(reportId || null);
@@ -574,12 +601,16 @@ function OkrTab({
       {
         onSuccess: (report) => {
           onSelectReport(report.id);
-          toast.success("OKR raporu hazır.");
+          toast.success(t("dashboard.strategy.okr.ready"));
         },
         onError: (err) => {
           if (err instanceof ApiError) {
             if (err.status === 503) {
-              toast.error("Gemini şu an erişilemiyor: " + err.detail);
+              toast.error(
+                t("dashboard.strategy.geminiUnavailable", {
+                  detail: err.detail,
+                }),
+              );
               return;
             }
             if (err.status === 400 || err.status === 404 || err.status === 422) {
@@ -587,7 +618,7 @@ function OkrTab({
               return;
             }
           }
-          toast.error("OKR raporu üretilemedi.");
+          toast.error(t("dashboard.strategy.okr.generateFailed"));
         },
       },
     );
@@ -599,23 +630,26 @@ function OkrTab({
     <>
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">OKR raporu üret</CardTitle>
+          <CardTitle className="text-base">
+            {t("dashboard.strategy.okr.cardTitle")}
+          </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           <p className="text-muted-foreground text-sm">
-            OKR&apos;lar mevcut bir SWOT raporundan türetilir — önce bir
-            SWOT seçin, ardından Gemini hedef-anahtar sonuç önerisi üretir.
+            {t("dashboard.strategy.okr.cardDesc")}
           </p>
           <div>
-            <Label className="text-xs">Kaynak SWOT</Label>
+            <Label className="text-xs">
+              {t("dashboard.strategy.okr.sourceSwot")}
+            </Label>
             {swotList.isLoading ? (
               <p className="text-muted-foreground mt-1 text-sm">
                 <Loader2 className="mr-1 inline size-3 animate-spin" />
-                SWOT listesi yükleniyor…
+                {t("dashboard.strategy.okr.swotListLoading")}
               </p>
             ) : swotItems.length === 0 ? (
               <p className="text-muted-foreground mt-1 text-sm">
-                Önce bir SWOT raporu üretmeniz gerekir.
+                {t("dashboard.strategy.okr.needSwotFirst")}
               </p>
             ) : (
               <select
@@ -623,10 +657,12 @@ function OkrTab({
                 onChange={(e) => onSourceReportChange(e.target.value)}
                 className="border-input bg-background mt-1 w-full rounded-md border px-3 py-2 text-sm"
               >
-                <option value="">Bir SWOT seçin…</option>
+                <option value="">
+                  {t("dashboard.strategy.okr.selectSwot")}
+                </option>
                 {swotItems.map((r) => (
                   <option key={r.id} value={r.id}>
-                    {formatSwotOption(r)}
+                    {formatSwotOption(r, t)}
                   </option>
                 ))}
               </select>
@@ -643,12 +679,11 @@ function OkrTab({
               ) : (
                 <Target className="size-4" aria-hidden />
               )}
-              OKR üret
+              {t("dashboard.strategy.okr.generate")}
             </Button>
             {!hasActiveKey && credentialsLoaded && (
               <p className="text-muted-foreground mt-2 text-xs">
-                Aktif Gemini anahtarı yok — yukarıdaki uyarıdan eklemeniz
-                gerekir.
+                {t("dashboard.strategy.noKeyHint")}
               </p>
             )}
           </div>
@@ -661,14 +696,15 @@ function OkrTab({
       {reportId && detail.isLoading && (
         <Card>
           <CardContent className="flex items-center gap-2 p-6 text-sm">
-            <Loader2 className="size-4 animate-spin" /> Rapor yükleniyor…
+            <Loader2 className="size-4 animate-spin" />{" "}
+            {t("dashboard.strategy.reportLoading")}
           </CardContent>
         </Card>
       )}
       {reportId && detail.isError && (
         <Card>
           <CardContent className="text-destructive p-6 text-sm">
-            Rapor yüklenemedi.
+            {t("dashboard.strategy.reportLoadFailed")}
           </CardContent>
         </Card>
       )}
@@ -676,12 +712,15 @@ function OkrTab({
   );
 }
 
-function formatSwotOption(r: StrategicReportSummary): string {
+function formatSwotOption(
+  r: StrategicReportSummary,
+  t: (key: string) => string,
+): string {
   const created = new Date(r.created_at).toLocaleDateString("tr-TR");
   const range =
     r.date_from && r.date_to
       ? `${r.date_from} → ${r.date_to}`
-      : "tüm dönem";
+      : t("dashboard.strategy.allPeriod");
   return `${created} · ${range}`;
 }
 
@@ -694,17 +733,20 @@ function OkrViewer({
   report: StrategicReportDetail;
   sourceReport: StrategicReportDetail | null;
 }) {
+  const { t } = useTranslation();
   const payload = report.output_payload as unknown as OkrPayload;
   return (
     <Card>
       <CardHeader className="flex flex-row items-start justify-between gap-3">
         <div>
-          <CardTitle className="text-base">OKR Raporu</CardTitle>
+          <CardTitle className="text-base">
+            {t("dashboard.strategy.okr.reportTitle")}
+          </CardTitle>
           <p className="text-muted-foreground mt-1 text-xs">
             <ReportMeta report={report} />
             {sourceReport && (
               <>
-                {" · Kaynak SWOT: "}
+                {t("dashboard.strategy.okr.sourceSwotPrefix")}
                 {new Date(sourceReport.created_at).toLocaleDateString("tr-TR")}
               </>
             )}
@@ -714,7 +756,9 @@ function OkrViewer({
       </CardHeader>
       <CardContent className="space-y-4">
         {payload.objectives.length === 0 ? (
-          <p className="text-muted-foreground text-sm">Hedef yok.</p>
+          <p className="text-muted-foreground text-sm">
+            {t("dashboard.strategy.okr.noObjectives")}
+          </p>
         ) : (
           <ul className="space-y-4">
             {payload.objectives.map((obj, idx) => (
@@ -724,16 +768,21 @@ function OkrViewer({
               >
                 <div>
                   <p className="text-sm font-semibold">
-                    Hedef {idx + 1}: {obj.objective}
+                    {t("dashboard.strategy.okr.objective", { n: idx + 1 })}:{" "}
+                    {obj.objective}
                   </p>
                   {obj.rationale && (
                     <p className="text-muted-foreground mt-1 text-xs italic">
-                      Gerekçe: {obj.rationale}
+                      {t("dashboard.strategy.okr.rationale", {
+                        text: obj.rationale,
+                      })}
                     </p>
                   )}
                 </div>
                 <div>
-                  <p className="text-xs font-medium">Anahtar Sonuçlar</p>
+                  <p className="text-xs font-medium">
+                    {t("dashboard.strategy.okr.keyResults")}
+                  </p>
                   <ul className="mt-2 space-y-2">
                     {obj.key_results.map((kr, krIdx) => (
                       <li
@@ -743,15 +792,15 @@ function OkrViewer({
                         <p className="font-medium">{kr.text}</p>
                         <dl className="text-muted-foreground mt-1 grid grid-cols-3 gap-2 text-xs">
                           <div>
-                            <dt>Metrik</dt>
+                            <dt>{t("dashboard.strategy.okr.metric")}</dt>
                             <dd className="text-foreground">{kr.metric}</dd>
                           </div>
                           <div>
-                            <dt>Mevcut</dt>
+                            <dt>{t("dashboard.strategy.okr.baseline")}</dt>
                             <dd className="text-foreground">{kr.baseline}</dd>
                           </div>
                           <div>
-                            <dt>Hedef</dt>
+                            <dt>{t("dashboard.strategy.okr.target")}</dt>
                             <dd className="text-foreground">{kr.target}</dd>
                           </div>
                         </dl>
@@ -781,6 +830,7 @@ function HistoryTab({
   onReportTypeChange: (value: string) => void;
   onOpenReport: (id: string, type: StrategicReportType) => void;
 }) {
+  const { t } = useTranslation();
   const [offset, setOffset] = useState(0);
   // Reset paginator when the filter changes — otherwise switching swot
   // ↔ okr while on page 3 leaves the offset past the new list's end.
@@ -802,36 +852,41 @@ function HistoryTab({
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="text-base">Rapor geçmişi</CardTitle>
+        <CardTitle className="text-base">
+          {t("dashboard.strategy.history.cardTitle")}
+        </CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
         <div className="flex flex-wrap items-center gap-2">
-          <Label className="text-xs">Tür</Label>
+          <Label className="text-xs">
+            {t("dashboard.strategy.history.type")}
+          </Label>
           <select
             value={reportType}
             onChange={(e) => onReportTypeChange(e.target.value)}
             className="border-input bg-background rounded-md border px-2 py-1 text-sm"
           >
-            <option value="">Tümü</option>
+            <option value="">{t("dashboard.common.all")}</option>
             <option value="swot">SWOT</option>
             <option value="okr">OKR</option>
           </select>
           <span className="text-muted-foreground text-xs">
-            {total} kayıt
+            {t("dashboard.strategy.history.recordsCount", { n: total })}
           </span>
         </div>
 
         {list.isLoading ? (
           <p className="flex items-center gap-2 py-6 text-sm">
-            <Loader2 className="size-4 animate-spin" /> Yükleniyor…
+            <Loader2 className="size-4 animate-spin" />{" "}
+            {t("dashboard.common.loading")}
           </p>
         ) : list.isError ? (
           <p className="text-destructive py-6 text-sm">
-            Geçmiş yüklenemedi.
+            {t("dashboard.strategy.history.loadFailed")}
           </p>
         ) : items.length === 0 ? (
           <p className="text-muted-foreground py-6 text-sm">
-            Henüz rapor yok.
+            {t("dashboard.strategy.history.empty")}
           </p>
         ) : (
           <ul className="divide-y">
@@ -858,8 +913,10 @@ function HistoryTab({
                     {r.report_type === "swot"
                       ? r.date_from && r.date_to
                         ? `${r.date_from} → ${r.date_to}`
-                        : "tüm dönem"
-                      : `kaynak SWOT: ${r.source_report_id?.slice(0, 8) ?? "-"}…`}
+                        : t("dashboard.strategy.allPeriod")
+                      : t("dashboard.strategy.history.sourceSwot", {
+                          id: r.source_report_id?.slice(0, 8) ?? "-",
+                        })}
                     {r.model_name && ` · ${r.model_name}`}
                   </p>
                 </div>
@@ -869,7 +926,8 @@ function HistoryTab({
                   onClick={() => onOpenReport(r.id, r.report_type)}
                   className="gap-1"
                 >
-                  Görüntüle <ExternalLink className="size-3.5" aria-hidden />
+                  {t("dashboard.common.view")}{" "}
+                  <ExternalLink className="size-3.5" aria-hidden />
                 </Button>
                 <DownloadPdfButton
                   reportId={r.id}
@@ -890,7 +948,7 @@ function HistoryTab({
               disabled={offset === 0}
               onClick={() => setOffset((o) => Math.max(0, o - PAGE_SIZE))}
             >
-              Önceki
+              {t("dashboard.strategy.pager.prev")}
             </Button>
             <span className="text-muted-foreground text-xs">
               {offset + 1}–{Math.min(offset + items.length, total)} / {total}
@@ -901,7 +959,7 @@ function HistoryTab({
               disabled={!hasMore}
               onClick={() => setOffset((o) => o + PAGE_SIZE)}
             >
-              Sonraki
+              {t("dashboard.strategy.pager.next")}
             </Button>
           </div>
         )}
@@ -917,7 +975,7 @@ function HistoryTab({
             className={`size-3.5 ${list.isFetching ? "animate-spin" : ""}`}
             aria-hidden
           />
-          Yenile
+          {t("dashboard.strategy.refresh")}
         </Button>
       </CardContent>
     </Card>
@@ -954,6 +1012,7 @@ function DownloadPdfButton({
   size?: "default" | "sm";
   variant?: "default" | "outline" | "ghost";
 }) {
+  const { t } = useTranslation();
   const [pending, setPending] = useState(false);
   return (
     <Button
@@ -963,7 +1022,7 @@ function DownloadPdfButton({
       onClick={async () => {
         setPending(true);
         try {
-          await downloadStrategicPdf(reportId, reportType);
+          await downloadStrategicPdf(reportId, reportType, t);
         } finally {
           setPending(false);
         }
@@ -983,6 +1042,7 @@ function DownloadPdfButton({
 async function downloadStrategicPdf(
   reportId: string,
   reportType: StrategicReportType,
+  t: (key: string, vars?: Record<string, string | number>) => string,
 ): Promise<void> {
   // Same fetch+blob+anchor pattern as /reports — credentials:'include'
   // ships the auth cookie on this cross-origin XHR; a plain
@@ -996,7 +1056,12 @@ async function downloadStrategicPdf(
     });
     if (!res.ok) {
       const detail = await res.text().catch(() => "");
-      toast.error(`İndirilemedi: ${res.status} ${detail.slice(0, 80)}`);
+      toast.error(
+        t("dashboard.strategy.pdf.downloadFailed", {
+          status: res.status,
+          detail: detail.slice(0, 80),
+        }),
+      );
       return;
     }
     const blob = await res.blob();
@@ -1013,7 +1078,7 @@ async function downloadStrategicPdf(
     a.remove();
     URL.revokeObjectURL(url);
   } catch {
-    toast.error("İndirme başlatılamadı.");
+    toast.error(t("dashboard.strategy.pdf.downloadStartFailed"));
   }
 }
 
@@ -1022,6 +1087,7 @@ async function downloadStrategicPdf(
 // action items. Uses the dedicated useExtractFromReport hook so
 // the cache invalidation lines up with /action-items.
 function ExtractActionItemsButton({ reportId }: { reportId: string }) {
+  const { t } = useTranslation();
   const router = useRouter();
   const extract = useExtractFromReport();
   return (
@@ -1033,16 +1099,16 @@ function ExtractActionItemsButton({ reportId }: { reportId: string }) {
         extract.mutate(reportId, {
           onSuccess: (rows) => {
             toast.success(
-              `${rows.length} aksiyon eklendi.`,
+              t("dashboard.strategy.extract.added", { n: rows.length }),
               {
                 action: {
-                  label: "Görüntüle",
+                  label: t("dashboard.common.view"),
                   onClick: () => router.push("/action-items"),
                 },
               },
             );
           },
-          onError: () => toast.error("Aksiyon çıkarma başarısız."),
+          onError: () => toast.error(t("dashboard.strategy.extract.failed")),
         })
       }
       className="gap-1"
@@ -1050,7 +1116,7 @@ function ExtractActionItemsButton({ reportId }: { reportId: string }) {
       {extract.isPending && (
         <Loader2 className="size-3.5 animate-spin" aria-hidden />
       )}
-      Aksiyon olarak çıkar
+      {t("dashboard.strategy.extract.button")}
     </Button>
   );
 }

@@ -18,6 +18,7 @@ import { useTicketTimeline } from "@/hooks/use-ticket-timeline";
 import { useTenantMembers } from "@/hooks/use-tenant-members";
 import { useAuthStore } from "@/lib/auth-store";
 import { formatTimelineDate } from "@/lib/date-format";
+import { useTranslation } from "@/lib/i18n/use-translation";
 import { TICKET_STATE_LABELS } from "@/lib/ticket-helpers";
 import type { TenantMember, TimelineEvent } from "@/lib/types";
 import { COMMENT_KIND_LABELS, userInitials } from "@/lib/user-helpers";
@@ -44,6 +45,7 @@ interface TicketTimelineProps {
  * flags this as a backend gap.
  */
 export function TicketTimeline({ ticketId }: TicketTimelineProps) {
+  const { t } = useTranslation();
   const timeline = useTicketTimeline(ticketId);
   const activeTenantId = useAuthStore((s) => s.activeContext?.tenant_id);
   const members = useTenantMembers(activeTenantId);
@@ -58,7 +60,7 @@ export function TicketTimeline({ ticketId }: TicketTimelineProps) {
 
   return (
     <section className="space-y-3">
-      <h2 className="text-base font-semibold tracking-tight">Geçmiş</h2>
+      <h2 className="text-base font-semibold tracking-tight">{t("tickets.timeline.title")}</h2>
 
       {timeline.isLoading ? (
         <div className="space-y-2">
@@ -67,9 +69,9 @@ export function TicketTimeline({ ticketId }: TicketTimelineProps) {
           ))}
         </div>
       ) : timeline.isError ? (
-        <p className="text-destructive text-sm">Geçmiş yüklenemedi.</p>
+        <p className="text-destructive text-sm">{t("tickets.timeline.loadError")}</p>
       ) : !timeline.data || timeline.data.length === 0 ? (
-        <p className="text-muted-foreground text-sm">Henüz aktivite yok.</p>
+        <p className="text-muted-foreground text-sm">{t("tickets.timeline.empty")}</p>
       ) : (
         <ol className="border-border space-y-3 border-l pl-5">
           {timeline.data.map((event) => (
@@ -128,6 +130,7 @@ function TimelineRow({ event, actor, fromMember, toMember }: TimelineRowProps) {
 // --- state_transition ---------------------------------------------------
 
 function TransitionRow({ event, actor }: TimelineRowProps) {
+  const { t } = useTranslation();
   const fromState = event.from_state;
   const toState = event.to_state;
   const isCreation =
@@ -145,7 +148,7 @@ function TransitionRow({ event, actor }: TimelineRowProps) {
             {isCreation ? (
               <>
                 <CirclePlay className="text-primary size-3.5" aria-hidden />
-                Açıldı
+                {t("tickets.timeline.created")}
               </>
             ) : fromState && toState ? (
               <>
@@ -154,7 +157,7 @@ function TransitionRow({ event, actor }: TimelineRowProps) {
                 {TICKET_STATE_LABELS[toState]}
               </>
             ) : (
-              "Durum güncellendi"
+              t("tickets.timeline.stateUpdated")
             )}
           </span>
           <span className="text-muted-foreground text-xs">
@@ -162,7 +165,11 @@ function TransitionRow({ event, actor }: TimelineRowProps) {
           </span>
         </div>
         <p className="text-muted-foreground mt-1 text-xs">
-          {actor ? actor.full_name : event.actor_user_id ? "Kullanıcı" : "Sistem"}
+          {actor
+            ? actor.full_name
+            : event.actor_user_id
+              ? t("tickets.timeline.actorUser")
+              : t("tickets.timeline.actorSystem")}
           {event.reason ? ` — ${event.reason}` : ""}
         </p>
       </div>
@@ -187,6 +194,7 @@ function AssignmentRow({
   fromMember,
   toMember,
 }: AssignmentRowProps) {
+  const { t } = useTranslation();
   const isAssign = event.from_user_id == null && event.to_user_id != null;
   const isUnassign = event.from_user_id != null && event.to_user_id == null;
   const Icon = isAssign ? UserPlus : isUnassign ? UserMinus : UserRoundCog;
@@ -196,12 +204,12 @@ function AssignmentRow({
   // can't resolve (e.g. soft-deleted member; FK is SET NULL).
   const fromLabel =
     event.from_user_id == null
-      ? "Atanmamış"
-      : (fromMember?.full_name ?? "Bilinmeyen kullanıcı");
+      ? t("tickets.common.unassigned")
+      : (fromMember?.full_name ?? t("tickets.common.unknownUser"));
   const toLabel =
     event.to_user_id == null
-      ? "Atanmamış"
-      : (toMember?.full_name ?? "Bilinmeyen kullanıcı");
+      ? t("tickets.common.unassigned")
+      : (toMember?.full_name ?? t("tickets.common.unknownUser"));
 
   return (
     <li className="relative">
@@ -226,10 +234,10 @@ function AssignmentRow({
         </div>
         <p className="text-muted-foreground mt-1 text-xs">
           {actor
-            ? `${actor.full_name} atadı`
+            ? t("tickets.timeline.assignedBy", { name: actor.full_name })
             : event.actor_user_id
-              ? "Kullanıcı atadı"
-              : "Sistem atadı"}
+              ? t("tickets.timeline.assignedByUser")
+              : t("tickets.timeline.assignedBySystem")}
         </p>
       </div>
     </li>
@@ -237,6 +245,7 @@ function AssignmentRow({
 }
 
 function CommentRow({ event, actor }: TimelineRowProps) {
+  const { t } = useTranslation();
   const kind = event.kind ?? "internal_note";
   const isCustomerReply = kind === "customer_reply";
   const isArchived = event.is_archived === true;
@@ -275,7 +284,7 @@ function CommentRow({ event, actor }: TimelineRowProps) {
                 })}
               </AvatarFallback>
             </Avatar>
-            {actor?.full_name ?? "Bilinmeyen kullanıcı"}
+            {actor?.full_name ?? t("tickets.common.unknownUser")}
             <Badge
               variant={isCustomerReply ? "default" : "secondary"}
               className="h-5 px-1.5 text-xs"
@@ -284,7 +293,7 @@ function CommentRow({ event, actor }: TimelineRowProps) {
             </Badge>
             {isArchived ? (
               <Badge variant="outline" className="h-5 px-1.5 text-xs">
-                Arşivlenmiş
+                {t("tickets.common.archived")}
               </Badge>
             ) : null}
           </span>

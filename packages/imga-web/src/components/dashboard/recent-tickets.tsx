@@ -15,6 +15,7 @@ import {
 import { useCategoryLabelMap } from "@/hooks/use-categories";
 import { useTickets } from "@/hooks/use-tickets";
 import { formatRelativeDate } from "@/lib/date-format";
+import { useTranslation } from "@/lib/i18n/use-translation";
 
 /**
  * Recent tickets table — first five rows of the tenant's ticket list,
@@ -25,6 +26,7 @@ import { formatRelativeDate } from "@/lib/date-format";
  * "Tümünü gör" link could grow a counter later if we want.
  */
 export function RecentTicketsTable() {
+  const { t } = useTranslation();
   const tickets = useTickets({ limit: 5 });
   const labelMap = useCategoryLabelMap();
 
@@ -33,12 +35,14 @@ export function RecentTicketsTable() {
   return (
     <section className="bg-card rounded-lg border p-5">
       <header className="mb-4 flex items-baseline justify-between">
-        <h2 className="text-base font-semibold tracking-tight">Son ticket&apos;lar</h2>
+        <h2 className="text-base font-semibold tracking-tight">
+          {t("dashboard.recentTickets.title")}
+        </h2>
         <Link
           href="/tickets"
           className="text-primary text-xs font-medium underline-offset-2 hover:underline"
         >
-          Tümünü gör →
+          {t("dashboard.recentTickets.seeAll")} →
         </Link>
       </header>
 
@@ -46,20 +50,24 @@ export function RecentTicketsTable() {
         <SkeletonRows />
       ) : tickets.isError ? (
         <p className="text-destructive py-8 text-center text-sm">
-          Veri yüklenemedi.
+          {t("dashboard.common.loadFailed")}
         </p>
       ) : rows.length === 0 ? (
         <p className="text-muted-foreground py-8 text-center text-sm">
-          Henüz ticket yok.
+          {t("dashboard.recentTickets.empty")}
         </p>
       ) : (
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Başlık</TableHead>
-              <TableHead className="hidden md:table-cell">Kategori</TableHead>
-              <TableHead>Durum</TableHead>
-              <TableHead className="hidden lg:table-cell">Son güncelleme</TableHead>
+              <TableHead>{t("dashboard.recentTickets.colTitle")}</TableHead>
+              <TableHead className="hidden md:table-cell">
+                {t("dashboard.recentTickets.colCategory")}
+              </TableHead>
+              <TableHead>{t("dashboard.recentTickets.colStatus")}</TableHead>
+              <TableHead className="hidden lg:table-cell">
+                {t("dashboard.recentTickets.colLastUpdate")}
+              </TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>

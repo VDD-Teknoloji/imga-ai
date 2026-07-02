@@ -11,6 +11,7 @@
 
 import { ShieldAlert } from "lucide-react";
 
+import { useTranslation } from "@/lib/i18n/use-translation";
 import type { SmartPreviewResponse } from "@/lib/types";
 
 interface Props {
@@ -20,6 +21,7 @@ interface Props {
 }
 
 export function PiiWarningBanner({ preview, consented, onConsentChange }: Props) {
+  const { t } = useTranslation();
   if (preview.pii_warnings.length === 0) return null;
 
   const columns = preview.pii_warnings.map((w) => w.split(":").slice(1).join(":"));
@@ -30,10 +32,10 @@ export function PiiWarningBanner({ preview, consented, onConsentChange }: Props)
         <ShieldAlert className="mt-0.5 size-5 shrink-0 text-amber-700" aria-hidden />
         <div className="flex-1 space-y-2">
           <p className="font-medium text-amber-900">
-            Bu dosyada kişisel veri içerebilecek sütun(lar) bulundu.
+            {t("analyze.pii.heading")}
           </p>
           <p className="text-amber-900">
-            Tespit edilen sütun(lar):{" "}
+            {t("analyze.pii.detectedColumns")}
             {columns.map((c, idx) => (
               <span key={c} className="font-mono">
                 {c}
@@ -42,10 +44,7 @@ export function PiiWarningBanner({ preview, consented, onConsentChange }: Props)
             ))}
           </p>
           <p className="text-amber-800 text-xs">
-            Bu sütunlardaki değerler analiz sürecinde işlenecek ve
-            ilgili kurumun veri kayıtlarında saklanabilir. KVKK
-            uyarınca yüklemeye devam etmek için aşağıdaki onayı
-            işaretleyin.
+            {t("analyze.pii.body")}
           </p>
           <label className="flex items-start gap-2 pt-1 font-medium text-amber-900">
             <input
@@ -55,8 +54,7 @@ export function PiiWarningBanner({ preview, consented, onConsentChange }: Props)
               className="mt-0.5 size-4"
             />
             <span>
-              Bu kolonlardaki kişisel verilerin işlenmesine onay
-              veriyorum.
+              {t("analyze.pii.consent")}
             </span>
           </label>
         </div>

@@ -3,6 +3,7 @@
 import type { LucideIcon } from "lucide-react";
 
 import { Skeleton } from "@/components/ui/skeleton";
+import { useTranslation } from "@/lib/i18n/use-translation";
 
 interface MetricCardProps {
   title: string;
@@ -36,6 +37,7 @@ export function MetricCard({
   icon: Icon,
   iconClassName,
 }: MetricCardProps) {
+  const { t } = useTranslation();
   return (
     <div className="bg-card flex flex-col gap-2 rounded-lg border p-5">
       <div className="flex items-center justify-between">
@@ -53,7 +55,9 @@ export function MetricCard({
       </div>
       {hint ? <p className="text-muted-foreground text-xs">{hint}</p> : null}
       {isError ? (
-        <p className="text-destructive text-xs">Veri yüklenemedi.</p>
+        <p className="text-destructive text-xs">
+          {t("dashboard.common.loadFailed")}
+        </p>
       ) : null}
     </div>
   );

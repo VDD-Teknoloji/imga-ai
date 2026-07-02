@@ -35,6 +35,7 @@ import {
   useBatchUploadMutation,
 } from "@/hooks/use-batch-uploads";
 import { ApiError } from "@/lib/api-client";
+import { useTranslation } from "@/lib/i18n/use-translation";
 import type { BatchJob } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
@@ -49,6 +50,7 @@ type DockState =
   | { phase: "error"; message: string };
 
 export function UploadDock() {
+  const { t } = useTranslation();
   const [state, setState] = useState<DockState>({ phase: "idle" });
   const [dragOver, setDragOver] = useState(false);
   const upload = useBatchUploadMutation();
@@ -77,11 +79,11 @@ export function UploadDock() {
     if (!file) return;
     const ext = "." + file.name.split(".").pop()?.toLowerCase();
     if (!ACCEPTED_EXTENSIONS.includes(ext)) {
-      toast.error("Sadece .csv veya .xlsx dosyaları kabul edilir.");
+      toast.error(t("dashboard.uploadDock.acceptError"));
       return;
     }
     if (file.size > MAX_FILE_BYTES) {
-      toast.error("Dosya 50 MB sınırını aşıyor.");
+      toast.error(t("dashboard.uploadDock.sizeError"));
       return;
     }
     setState({ phase: "uploading", fileName: file.name });
@@ -107,7 +109,7 @@ export function UploadDock() {
             message:
               err instanceof ApiError
                 ? err.detail
-                : "Yükleme sırasında beklenmeyen bir hata oluştu.",
+                : t("dashboard.uploadDock.uploadError"),
           }),
       },
     );
@@ -115,7 +117,7 @@ export function UploadDock() {
 
   return (
     <section
-      aria-label="Hızlı yükleme"
+      aria-label={t("dashboard.uploadDock.aria")}
       className="rise-in shadow-soft bg-card ring-foreground/5 overflow-hidden rounded-3xl ring-1"
     >
       <header className="flex items-center gap-2.5 px-5 pt-4 pb-1">
@@ -123,9 +125,11 @@ export function UploadDock() {
           <UploadCloud className="size-4" aria-hidden />
         </span>
         <div className="min-w-0">
-          <h2 className="text-sm font-semibold">Hızlı yükleme</h2>
+          <h2 className="text-sm font-semibold">
+            {t("dashboard.uploadDock.title")}
+          </h2>
           <p className="text-muted-foreground text-xs">
-            Dosyayı bırakın — analiz burada başlasın
+            {t("dashboard.uploadDock.subtitle")}
           </p>
         </div>
       </header>
@@ -140,7 +144,9 @@ export function UploadDock() {
             <Loader2 className="text-primary size-5 animate-spin" aria-hidden />
             <div className="min-w-0">
               <p className="truncate font-medium">{state.fileName}</p>
-              <p className="text-muted-foreground text-xs">Dosya yükleniyor…</p>
+              <p className="text-muted-foreground text-xs">
+                {t("dashboard.uploadDock.uploading")}
+              </p>
             </div>
           </div>
         )}
@@ -174,12 +180,18 @@ export function UploadDock() {
             <div className="flex items-start gap-2.5">
               <CheckCircle2 className="mt-0.5 size-5 shrink-0 text-emerald-600" aria-hidden />
               <div className="min-w-0 text-sm">
-                <p className="font-semibold">Analiz tamamlandı</p>
+                <p className="font-semibold">
+                  {t("dashboard.uploadDock.done.title")}
+                </p>
                 <p className="text-muted-foreground text-xs">
-                  {state.succeeded.toLocaleString("tr-TR")} yorum analiz edildi
+                  {t("dashboard.uploadDock.done.analyzed", {
+                    n: state.succeeded.toLocaleString("tr-TR"),
+                  })}
                   {state.failed > 0 &&
-                    ` · ${state.failed.toLocaleString("tr-TR")} satır hatalı`}
-                  . Yukarıdaki rapor güncellendi.
+                    t("dashboard.uploadDock.done.failed", {
+                      n: state.failed.toLocaleString("tr-TR"),
+                    })}
+                  {t("dashboard.uploadDock.done.updated")}
                 </p>
               </div>
             </div>
@@ -188,7 +200,7 @@ export function UploadDock() {
                 href={`/reviews?batch_job_id=${state.jobId}`}
                 className="bg-primary text-primary-foreground inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition-transform hover:scale-[1.02]"
               >
-                Sonuçları gör
+                {t("dashboard.uploadDock.seeResults")}
                 <ArrowRight className="size-3.5" aria-hidden />
               </Link>
               <button
@@ -197,7 +209,7 @@ export function UploadDock() {
                 className="text-muted-foreground hover:text-foreground inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold ring-1 ring-border transition-colors"
               >
                 <RotateCcw className="size-3.5" aria-hidden />
-                Yeni yükleme
+                {t("dashboard.uploadDock.newUpload")}
               </button>
             </div>
           </div>
@@ -215,13 +227,13 @@ export function UploadDock() {
                 className="bg-primary text-primary-foreground inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition-transform hover:scale-[1.02]"
               >
                 <RotateCcw className="size-3.5" aria-hidden />
-                Tekrar dene
+                {t("dashboard.uploadDock.retry")}
               </button>
               <Link
                 href="/analyze/upload"
                 className="text-muted-foreground hover:text-foreground inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold ring-1 ring-border transition-colors"
               >
-                Gelişmiş yükleme
+                {t("dashboard.uploadDock.advanced")}
                 <ArrowRight className="size-3.5" aria-hidden />
               </Link>
             </div>
@@ -230,10 +242,11 @@ export function UploadDock() {
 
         {state.phase === "idle" && (
           <p className="text-muted-foreground mt-3 text-[11px] leading-relaxed">
-            Şablon standardı: yorumlar <strong>yorum</strong> kolonunda.
-            Farklı düzendeki dosyalar için{" "}
+            {t("dashboard.uploadDock.hint.prefix")}
+            <strong>yorum</strong>
+            {t("dashboard.uploadDock.hint.mid")}
             <Link href="/analyze/upload" className="text-primary font-semibold hover:underline">
-              gelişmiş yükleme
+              {t("dashboard.uploadDock.hint.linkText")}
             </Link>
             .
           </p>
@@ -252,6 +265,7 @@ function DropZone({
   setDragOver: (v: boolean) => void;
   onFile: (f: File | null) => void;
 }) {
+  const { t } = useTranslation();
   return (
     <label
       htmlFor="dock-file-input"
@@ -273,10 +287,10 @@ function DropZone({
       <FileSpreadsheet className="text-primary size-8" aria-hidden />
       <div>
         <p className="text-sm font-semibold">
-          CSV / XLSX dosyanızı buraya bırakın
+          {t("dashboard.uploadDock.drop.title")}
         </p>
         <p className="text-muted-foreground text-xs">
-          veya tıklayarak seçin · en fazla 50 MB
+          {t("dashboard.uploadDock.drop.subtitle")}
         </p>
       </div>
       <input

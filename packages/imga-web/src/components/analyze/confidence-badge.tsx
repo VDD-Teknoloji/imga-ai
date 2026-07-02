@@ -10,6 +10,7 @@
 import { CheckCircle2, CircleDashed, AlertTriangle } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
+import { useTranslation } from "@/lib/i18n/use-translation";
 import { cn } from "@/lib/utils";
 import { CONFIDENCE_HIGH, CONFIDENCE_MEDIUM } from "@/lib/types";
 
@@ -27,10 +28,10 @@ const BAND_CLASSES: Record<ConfidenceBand, string> = {
   low: "border-red-300 bg-red-50 text-red-800",
 };
 
-const BAND_LABELS: Record<ConfidenceBand, string> = {
-  high: "Yüksek güven",
-  medium: "Orta güven",
-  low: "Düşük güven — lütfen kontrol edin",
+const BAND_LABEL_KEYS: Record<ConfidenceBand, string> = {
+  high: "analyze.confidence.high",
+  medium: "analyze.confidence.medium",
+  low: "analyze.confidence.low",
 };
 
 export function ConfidenceBadge({
@@ -40,7 +41,9 @@ export function ConfidenceBadge({
   confidence: number;
   className?: string;
 }) {
+  const { t } = useTranslation();
   const band = bandFor(confidence);
+  const label = t(BAND_LABEL_KEYS[band]);
   const Icon =
     band === "high"
       ? CheckCircle2
@@ -55,10 +58,10 @@ export function ConfidenceBadge({
         BAND_CLASSES[band],
         className,
       )}
-      aria-label={`${BAND_LABELS[band]} (%${Math.round(confidence * 100)})`}
+      aria-label={`${label} (%${Math.round(confidence * 100)})`}
     >
       <Icon className="size-3" aria-hidden />
-      {BAND_LABELS[band]} (%{Math.round(confidence * 100)})
+      {label} (%{Math.round(confidence * 100)})
     </Badge>
   );
 }

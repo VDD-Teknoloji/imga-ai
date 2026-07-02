@@ -20,6 +20,7 @@ import {
   CommandList,
 } from "@/components/ui/command";
 import { useCategories } from "@/hooks/use-categories";
+import { useTranslation } from "@/lib/i18n/use-translation";
 import { TICKET_PRIORITY_LABELS } from "@/lib/ticket-actions";
 import { TICKET_STATE_LABELS } from "@/lib/ticket-helpers";
 import type { TicketPriority, TicketState } from "@/lib/types";
@@ -37,9 +38,9 @@ const STATE_OPTIONS: ReadonlyArray<TicketState> = [
 const PRIORITY_OPTIONS: ReadonlyArray<TicketPriority> = ["urgent", "high", "normal", "low"];
 
 const ASSIGNEE_OPTIONS = [
-  { value: "me", label: "Bana atananlar" },
-  { value: "unassigned", label: "Atanmamış" },
-  { value: "any", label: "Herkes" },
+  { value: "me", labelKey: "tickets.filters.assigneeMe" },
+  { value: "unassigned", labelKey: "tickets.common.unassigned" },
+  { value: "any", labelKey: "tickets.filters.assigneeAny" },
 ] as const;
 
 export type AssigneeFilter = "me" | "unassigned" | "any";
@@ -78,6 +79,7 @@ interface TicketFiltersProps {
 }
 
 export function TicketFilters({ filters }: TicketFiltersProps) {
+  const { t } = useTranslation();
   const router = useRouter();
   const pathname = usePathname();
   const params = useSearchParams();
@@ -125,33 +127,33 @@ export function TicketFilters({ filters }: TicketFiltersProps) {
   return (
     <div className="flex flex-wrap items-center gap-2">
       <MultiSelectFilter
-        label="Durum"
+        label={t("tickets.filters.state")}
         active={filters.states}
         options={STATE_OPTIONS.map((s) => ({ id: s, label: TICKET_STATE_LABELS[s] }))}
         onToggle={(v) => toggleSetParam("state", v, filters.states)}
       />
       <MultiSelectFilter
-        label="Öncelik"
+        label={t("tickets.filters.priority")}
         active={filters.priorities}
         options={PRIORITY_OPTIONS.map((p) => ({ id: p, label: TICKET_PRIORITY_LABELS[p] }))}
         onToggle={(v) => toggleSetParam("priority", v, filters.priorities)}
       />
       <MultiSelectFilter
-        label="Kategori"
+        label={t("tickets.filters.category")}
         active={filters.categories}
         options={categoryOptions}
         onToggle={(v) => toggleSetParam("category", v, filters.categories)}
       />
       <SingleSelectFilter
-        label="Atanan"
+        label={t("tickets.filters.assignee")}
         value={filters.assignee}
-        options={ASSIGNEE_OPTIONS.map((o) => ({ id: o.value, label: o.label }))}
+        options={ASSIGNEE_OPTIONS.map((o) => ({ id: o.value, label: t(o.labelKey) }))}
         onChange={(v) => updateParam("assignee", v === "any" ? null : v)}
       />
       {hasFilters ? (
         <Button variant="ghost" size="sm" onClick={clearAll} className="ml-auto">
           <X className="size-3" aria-hidden />
-          Filtreleri temizle
+          {t("tickets.filters.clear")}
         </Button>
       ) : null}
     </div>
@@ -174,6 +176,7 @@ function MultiSelectFilter({
   options: ReadonlyArray<FilterOption>;
   onToggle: (id: string) => void;
 }) {
+  const { t } = useTranslation();
   const count = active.size;
   return (
     <Popover>
@@ -191,9 +194,9 @@ function MultiSelectFilter({
       />
       <PopoverContent align="start" className="w-[220px] p-0">
         <Command>
-          <CommandInput placeholder={`${label} ara...`} />
+          <CommandInput placeholder={t("tickets.filters.searchPlaceholder", { label })} />
           <CommandList>
-            <CommandEmpty>Eşleşme yok.</CommandEmpty>
+            <CommandEmpty>{t("tickets.common.noMatch")}</CommandEmpty>
             <CommandGroup>
               {options.map((opt) => {
                 const isOn = active.has(opt.id);

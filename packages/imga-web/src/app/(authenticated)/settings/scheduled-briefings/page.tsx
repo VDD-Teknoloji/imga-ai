@@ -33,19 +33,21 @@ import {
   useUpdateBriefingSchedule,
 } from "@/hooks/use-briefing-schedules";
 import { formatApiErrorMessage } from "@/lib/api-client";
+import { useTranslation } from "@/lib/i18n/use-translation";
 
-const WEEKDAYS = [
-  "Pazartesi",
-  "Salı",
-  "Çarşamba",
-  "Perşembe",
-  "Cuma",
-  "Cumartesi",
-  "Pazar",
+const WEEKDAY_KEYS = [
+  "settings.briefings.weekday.mon",
+  "settings.briefings.weekday.tue",
+  "settings.briefings.weekday.wed",
+  "settings.briefings.weekday.thu",
+  "settings.briefings.weekday.fri",
+  "settings.briefings.weekday.sat",
+  "settings.briefings.weekday.sun",
 ] as const;
 
 export default function ScheduledBriefingsPage() {
   const list = useBriefingSchedules();
+  const { t } = useTranslation();
 
   return (
     <main className="mx-auto w-full max-w-4xl space-y-6 px-4 py-6 md:p-8">
@@ -53,12 +55,10 @@ export default function ScheduledBriefingsPage() {
         <CalendarClock className="text-primary mt-1 size-6" aria-hidden />
         <div>
           <h1 className="text-2xl font-semibold tracking-tight md:text-3xl">
-            Otomatik Brifingler
+            {t("settings.briefings.title")}
           </h1>
           <p className="text-muted-foreground text-sm">
-            Haftalık veya aylık tetiklenen executive briefing planları.
-            Sistem her 5 dakikada due olanları kontrol eder, üretir
-            ve recipient&apos;ların dashboard&apos;una düşer.
+            {t("settings.briefings.subtitle")}
           </p>
         </div>
       </header>
@@ -67,14 +67,16 @@ export default function ScheduledBriefingsPage() {
 
       {list.isLoading ? (
         <div className="flex items-center gap-2 p-6 text-sm">
-          <Loader2 className="size-4 animate-spin" /> Yükleniyor…
+          <Loader2 className="size-4 animate-spin" /> {t("common.loading")}
         </div>
       ) : list.isError ? (
-        <p className="text-destructive text-sm">Plan listesi alınamadı.</p>
+        <p className="text-destructive text-sm">
+          {t("settings.briefings.loadError")}
+        </p>
       ) : !list.data || list.data.length === 0 ? (
         <Card>
           <CardContent className="text-muted-foreground p-6 text-center text-sm">
-            Henüz scheduled briefing yok.
+            {t("settings.briefings.empty")}
           </CardContent>
         </Card>
       ) : (
@@ -92,35 +94,50 @@ function ScheduleRow({ schedule }: { schedule: BriefingSchedule }) {
   const update = useUpdateBriefingSchedule();
   const del = useDeleteBriefingSchedule();
   const runNow = useRunBriefingScheduleNow();
+  const { t } = useTranslation();
 
+  const weekdayKey =
+    schedule.period === "weekly"
+      ? WEEKDAY_KEYS[schedule.schedule_day]
+      : undefined;
   const dayLabel =
     schedule.period === "weekly"
-      ? WEEKDAYS[schedule.schedule_day] ?? `gün ${schedule.schedule_day}`
-      : `${schedule.schedule_day}. gün`;
+      ? weekdayKey
+        ? t(weekdayKey)
+        : t("settings.briefings.dayFallback", { n: schedule.schedule_day })
+      : t("settings.briefings.dayOfMonth", { n: schedule.schedule_day });
   const hourLabel = `${schedule.schedule_hour.toString().padStart(2, "0")}:00`;
 
   return (
     <li className="bg-card flex flex-wrap items-center gap-3 rounded-lg border p-3">
       <div className="flex-1 space-y-0.5">
         <p className="text-sm font-medium">
-          {schedule.period === "weekly" ? "Haftalık" : "Aylık"} · {dayLabel} ·{" "}
-          {hourLabel} ({schedule.timezone})
+          {schedule.period === "weekly"
+            ? t("settings.briefings.weekly")
+            : t("settings.briefings.monthly")}{" "}
+          · {dayLabel} · {hourLabel} ({schedule.timezone})
         </p>
         <p className="text-muted-foreground text-xs">
-          Sonraki:{" "}
+          {t("settings.briefings.next")}{" "}
           {new Date(schedule.next_run_at).toLocaleString("tr-TR")}
           {schedule.last_run_at && (
             <>
-              {" · "}Son: {new Date(schedule.last_run_at).toLocaleString("tr-TR")}
+              {" · "}
+              {t("settings.briefings.last")}{" "}
+              {new Date(schedule.last_run_at).toLocaleString("tr-TR")}
             </>
           )}
         </p>
         <p className="text-muted-foreground text-xs">
-          Recipient: {schedule.recipients.length} kullanıcı
+          {t("settings.briefings.recipientsUsers", {
+            n: schedule.recipients.length,
+          })}
           {schedule.email_recipients.length > 0 && (
             <>
-              {" + "}
-              {schedule.email_recipients.length} email
+              {" "}
+              {t("settings.briefings.recipientsEmails", {
+                n: schedule.email_recipients.length,
+              })}
             </>
           )}
         </p>
@@ -131,7 +148,7 @@ function ScheduleRow({ schedule }: { schedule: BriefingSchedule }) {
           variant="outline"
           className="border-zinc-400 bg-zinc-100 text-xs text-zinc-700"
         >
-          Devre dışı
+          {t("settings.common.disabled")}
         </Badge>
       )}
       <Button
@@ -144,8 +161,8 @@ function ScheduleRow({ schedule }: { schedule: BriefingSchedule }) {
               onSuccess: () =>
                 toast.success(
                   !schedule.enabled
-                    ? "Plan etkinleştirildi."
-                    : "Plan duraklatıldı.",
+                    ? t("settings.briefings.enabled")
+                    : t("settings.briefings.paused"),
                 ),
               onError: (err) => toast.error(formatApiErrorMessage(err)),
             },
@@ -153,7 +170,9 @@ function ScheduleRow({ schedule }: { schedule: BriefingSchedule }) {
         }
         disabled={update.isPending}
       >
-        {schedule.enabled ? "Duraklat" : "Etkinleştir"}
+        {schedule.enabled
+          ? t("settings.briefings.pause")
+          : t("settings.briefings.enable")}
       </Button>
       <Button
         size="sm"
@@ -168,12 +187,14 @@ function ScheduleRow({ schedule }: { schedule: BriefingSchedule }) {
           runNow.mutate(schedule.id, {
             onSuccess: (updated) => {
               if (updated.last_run_status === "success") {
-                toast.success("Brifing üretildi.");
+                toast.success(t("settings.briefings.generated"));
               } else {
                 toast.error(
-                  `Brifing üretilemedi: ${
-                    updated.last_run_error || "bilinmeyen hata"
-                  }`,
+                  t("settings.briefings.generateFailed", {
+                    error:
+                      updated.last_run_error ||
+                      t("settings.briefings.unknownError"),
+                  }),
                 );
               }
             },
@@ -188,22 +209,22 @@ function ScheduleRow({ schedule }: { schedule: BriefingSchedule }) {
         ) : (
           <Send className="size-3.5" aria-hidden />
         )}
-        Şimdi gönder
+        {t("settings.briefings.sendNow")}
       </Button>
       <Button
         size="sm"
         variant="ghost"
         onClick={() => {
-          if (!confirm("Planı silmek istediğinizden emin misiniz?")) return;
+          if (!confirm(t("settings.briefings.deleteConfirm"))) return;
           del.mutate(schedule.id, {
-            onSuccess: () => toast.success("Plan silindi."),
+            onSuccess: () => toast.success(t("settings.briefings.deleted")),
             onError: (err) => toast.error(formatApiErrorMessage(err)),
           });
         }}
         disabled={del.isPending}
         className="gap-1 text-red-700 hover:text-red-900"
       >
-        <Trash2 className="size-3.5" aria-hidden /> Sil
+        <Trash2 className="size-3.5" aria-hidden /> {t("settings.common.delete")}
       </Button>
     </li>
   );
@@ -214,29 +235,31 @@ function StatusBadge({
 }: {
   status: BriefingSchedule["last_run_status"];
 }) {
+  const { t } = useTranslation();
   if (status === "success") {
     return (
       <Badge className="bg-emerald-100 text-emerald-900 hover:bg-emerald-100">
-        <CheckCircle2 className="mr-1 size-3" /> Son çalışma OK
+        <CheckCircle2 className="mr-1 size-3" /> {t("settings.briefings.statusOk")}
       </Badge>
     );
   }
   if (status === "failed") {
     return (
       <Badge className="bg-red-100 text-red-900 hover:bg-red-100">
-        <XCircle className="mr-1 size-3" /> Son çalışma başarısız
+        <XCircle className="mr-1 size-3" /> {t("settings.briefings.statusFailed")}
       </Badge>
     );
   }
   return (
     <Badge variant="outline" className="text-xs">
-      Henüz çalışmadı
+      {t("settings.briefings.statusNever")}
     </Badge>
   );
 }
 
 function CreateForm() {
   const create = useCreateBriefingSchedule();
+  const { t } = useTranslation();
   const [period, setPeriod] = useState<SchedulePeriod>("monthly");
   const [day, setDay] = useState<number>(1);
   const [hour, setHour] = useState<number>(9);
@@ -259,7 +282,7 @@ function CreateForm() {
       },
       {
         onSuccess: () => {
-          toast.success("Plan eklendi.");
+          toast.success(t("settings.briefings.added"));
           setEmailsRaw("");
         },
         onError: (err) => toast.error(formatApiErrorMessage(err)),
@@ -269,7 +292,7 @@ function CreateForm() {
 
   const dayOptions =
     period === "weekly"
-      ? WEEKDAYS.map((label, i) => ({ value: i, label }))
+      ? WEEKDAY_KEYS.map((key, i) => ({ value: i, label: t(key) }))
       : Array.from({ length: 28 }, (_, i) => ({
           value: i + 1,
           label: `${i + 1}.`,
@@ -278,10 +301,12 @@ function CreateForm() {
   return (
     <Card>
       <CardContent className="space-y-3 p-4">
-        <h2 className="text-sm font-semibold">Yeni plan</h2>
+        <h2 className="text-sm font-semibold">
+          {t("settings.briefings.newSchedule")}
+        </h2>
         <form onSubmit={onSubmit} className="grid gap-3 md:grid-cols-3">
           <div className="space-y-1">
-            <Label className="text-xs">Periyot</Label>
+            <Label className="text-xs">{t("settings.briefings.periodLabel")}</Label>
             <select
               value={period}
               onChange={(e) => {
@@ -291,12 +316,12 @@ function CreateForm() {
               }}
               className="border-input bg-background w-full rounded-md border px-2 py-1.5 text-sm"
             >
-              <option value="monthly">Aylık</option>
-              <option value="weekly">Haftalık</option>
+              <option value="monthly">{t("settings.briefings.monthly")}</option>
+              <option value="weekly">{t("settings.briefings.weekly")}</option>
             </select>
           </div>
           <div className="space-y-1">
-            <Label className="text-xs">Gün</Label>
+            <Label className="text-xs">{t("settings.briefings.dayLabel")}</Label>
             <select
               value={day}
               onChange={(e) => setDay(Number(e.target.value))}
@@ -310,7 +335,7 @@ function CreateForm() {
             </select>
           </div>
           <div className="space-y-1">
-            <Label className="text-xs">Saat (TR saati)</Label>
+            <Label className="text-xs">{t("settings.briefings.hourLabel")}</Label>
             <Input
               type="number"
               min={0}
@@ -321,7 +346,7 @@ function CreateForm() {
           </div>
           <div className="md:col-span-3">
             <Label className="text-xs">
-              Email recipient&apos;lar (virgül veya yeni satır)
+              {t("settings.briefings.emailRecipients")}
             </Label>
             <Input
               value={emailsRaw}
@@ -329,8 +354,7 @@ function CreateForm() {
               placeholder="ceo@firma.com, board@firma.com"
             />
             <p className="text-muted-foreground mt-1 text-[10px]">
-              SMTP yapılandırılmadıysa email gönderimi atlanır; brifing
-              hâlâ executive_briefings tablosuna düşer.
+              {t("settings.briefings.smtpHelp")}
             </p>
           </div>
           <Button
@@ -338,7 +362,9 @@ function CreateForm() {
             disabled={create.isPending}
             className="md:col-span-3"
           >
-            {create.isPending ? "Kaydediliyor…" : "Plan ekle"}
+            {create.isPending
+              ? t("settings.common.saving")
+              : t("settings.briefings.addSchedule")}
           </Button>
         </form>
       </CardContent>

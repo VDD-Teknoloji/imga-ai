@@ -23,6 +23,7 @@ import { ArrowRight, ClipboardList, Compass, ListChecks, Upload } from "lucide-r
 import Link from "next/link";
 
 import { useActionItems } from "@/hooks/use-action-items";
+import { useTranslation } from "@/lib/i18n/use-translation";
 
 interface Tile {
   href: string;
@@ -34,6 +35,7 @@ interface Tile {
 }
 
 export function QuickActions() {
+  const { t } = useTranslation();
   // Open + in-progress action items. Default filter on the page is
   // open-only; we mirror that here so the badge matches what the
   // user sees when they click through.
@@ -43,40 +45,43 @@ export function QuickActions() {
   const tiles: Tile[] = [
     {
       href: "/analyze/upload",
-      label: "Yeni yükleme",
-      hint: "CSV / Excel toplu analiz",
+      label: t("dashboard.quickActions.newUpload"),
+      hint: t("dashboard.quickActions.newUploadHint"),
       Icon: Upload,
     },
     {
       href: "/executive-briefing",
-      label: "Yönetici Özeti",
-      hint: "Aylık yönetici özeti",
+      label: t("dashboard.quickActions.briefing"),
+      hint: t("dashboard.quickActions.briefingHint"),
       Icon: ClipboardList,
     },
     {
       href: "/action-items",
-      label: "Aksiyonlar",
-      hint: openCount > 0 ? `${openCount} açık aksiyon` : "Bekleyen yok",
+      label: t("dashboard.quickActions.actionItemsLabel"),
+      hint:
+        openCount > 0
+          ? t("dashboard.quickActions.actionItemsOpen", { n: openCount })
+          : t("dashboard.quickActions.actionItemsNone"),
       Icon: ListChecks,
       badge: openCount,
     },
     {
       href: "/strategy",
-      label: "Strateji raporu",
-      hint: "SWOT / OKR",
+      label: t("dashboard.quickActions.strategy"),
+      hint: t("dashboard.quickActions.strategyHint"),
       Icon: Compass,
     },
   ];
 
   return (
     <section
-      aria-label="Hızlı işlemler"
+      aria-label={t("dashboard.common.quickActions")}
       className="grid grid-cols-2 gap-3 md:grid-cols-4"
     >
-      {tiles.map((t, idx) => (
+      {tiles.map((tile, idx) => (
         <Link
-          key={t.href}
-          href={t.href}
+          key={tile.href}
+          href={tile.href}
           // Sprint 9.6.1 — tile design language. Layered: bg-card on
           // top of bg, very subtle ring (almost imperceptible), the
           // canonical .hover-lift utility upgrades the shadow on
@@ -96,18 +101,18 @@ export function QuickActions() {
             className="pointer-events-none absolute inset-0 bg-gradient-to-br from-primary/8 via-transparent to-transparent opacity-0 transition-opacity duration-[var(--motion-duration)] group-hover:opacity-100"
           />
           <div className="from-primary/15 to-primary/5 text-primary relative flex size-11 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br ring-1 ring-primary/10">
-            <t.Icon className="size-5" aria-hidden />
+            <tile.Icon className="size-5" aria-hidden />
           </div>
           <div className="relative flex-1 min-w-0">
-            <p className="text-sm font-semibold truncate">{t.label}</p>
-            <p className="text-muted-foreground text-xs truncate">{t.hint}</p>
+            <p className="text-sm font-semibold truncate">{tile.label}</p>
+            <p className="text-muted-foreground text-xs truncate">{tile.hint}</p>
           </div>
-          {t.badge && t.badge > 0 ? (
+          {tile.badge && tile.badge > 0 ? (
             <span
               className="bg-primary text-primary-foreground shadow-glow absolute right-3 top-3 inline-flex h-5 min-w-[1.25rem] items-center justify-center rounded-full px-1.5 text-[10px] font-bold"
-              aria-label={`${t.badge} bekleyen`}
+              aria-label={t("dashboard.quickActions.badgeAria", { n: tile.badge })}
             >
-              {t.badge > 99 ? "99+" : t.badge}
+              {tile.badge > 99 ? "99+" : tile.badge}
             </span>
           ) : null}
           <ArrowRight

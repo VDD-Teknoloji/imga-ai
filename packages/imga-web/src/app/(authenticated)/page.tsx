@@ -31,20 +31,25 @@ import { UploadDock } from "@/components/dashboard/upload-dock";
 import { VoiceOfCustomer } from "@/components/dashboard/voice-of-customer";
 import { useExecutiveOverview } from "@/hooks/use-executive-overview";
 import { useAuthStore } from "@/lib/auth-store";
-
-const DATE_FORMATTER = new Intl.DateTimeFormat("tr-TR", {
-  day: "numeric",
-  month: "long",
-  year: "numeric",
-  weekday: "long",
-});
+import { useTranslation } from "@/lib/i18n/use-translation";
 
 export default function DashboardPage() {
   const user = useAuthStore((s) => s.user);
   const activeContext = useAuthStore((s) => s.activeContext);
   const overview = useExecutiveOverview();
+  const { t, locale } = useTranslation();
 
-  const tenantName = activeContext?.tenant_name ?? "Aktif kurum yok";
+  const dateFormatter = new Intl.DateTimeFormat(
+    locale === "en" ? "en-US" : "tr-TR",
+    {
+      day: "numeric",
+      month: "long",
+      year: "numeric",
+      weekday: "long",
+    },
+  );
+
+  const tenantName = activeContext?.tenant_name ?? t("dashboard.home.noTenant");
   const firstName = user?.full_name?.split(" ")[0] ?? "";
   const isLoading = overview.isLoading;
   const data = overview.data;
@@ -54,7 +59,9 @@ export default function DashboardPage() {
       <header className="flex flex-wrap items-end justify-between gap-2">
         <div className="space-y-1">
           <h1 className="text-2xl font-semibold tracking-tight md:text-3xl">
-            {firstName ? `Merhaba, ${firstName}` : "Merhaba"}
+            {firstName
+              ? t("dashboard.home.greetingNamed", { name: firstName })
+              : t("dashboard.home.greeting")}
           </h1>
           <p className="text-muted-foreground text-sm">{tenantName}</p>
         </div>
@@ -63,7 +70,7 @@ export default function DashboardPage() {
           className="text-muted-foreground text-sm tabular-nums"
           suppressHydrationWarning
         >
-          {DATE_FORMATTER.format(new Date())}
+          {dateFormatter.format(new Date())}
         </p>
       </header>
 

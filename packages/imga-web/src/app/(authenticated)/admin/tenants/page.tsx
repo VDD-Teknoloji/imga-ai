@@ -21,6 +21,7 @@ import {
 import { useAdminTenants } from "@/hooks/use-admin-tenants";
 import { useAuthStore } from "@/lib/auth-store";
 import { formatFullDate } from "@/lib/date-format";
+import { useTranslation } from "@/lib/i18n/use-translation";
 import type { AdminTenantSummary } from "@/lib/types";
 import { AUTOMATION_MODE_LABELS, PLAN_TIER_LABELS } from "@/lib/user-helpers";
 
@@ -31,9 +32,7 @@ import { AUTOMATION_MODE_LABELS, PLAN_TIER_LABELS } from "@/lib/user-helpers";
  * inscrutable 403 from the list endpoint.
  */
 export default function AdminTenantsPage() {
-  const isSuperAdmin = useAuthStore(
-    (s) => s.user?.is_super_admin ?? false,
-  );
+  const isSuperAdmin = useAuthStore((s) => s.user?.is_super_admin ?? false);
   if (!isSuperAdmin) {
     return <ForbiddenView />;
   }
@@ -41,35 +40,28 @@ export default function AdminTenantsPage() {
 }
 
 function ForbiddenView() {
+  const { t } = useTranslation();
   return (
     <main className="mx-auto w-full max-w-3xl p-6 md:p-8">
       <div className="bg-card space-y-2 rounded-lg border p-8 text-center">
         <h1 className="text-2xl font-semibold tracking-tight">
-          Yetkiniz yok
+          {t("admin.tenants.forbidden.title")}
         </h1>
-        <p className="text-muted-foreground text-sm">
-          Kurum yönetimi sayfası yalnızca süper-yönetici hesaplara
-          açıktır.
-        </p>
+        <p className="text-muted-foreground text-sm">{t("admin.tenants.forbidden.desc")}</p>
       </div>
     </main>
   );
 }
 
 function AdminTenantsBody() {
+  const { t } = useTranslation();
   const tenants = useAdminTenants();
   const [createOpen, setCreateOpen] = useState(false);
   const [editTarget, setEditTarget] = useState<AdminTenantSummary | null>(null);
-  const [deleteTarget, setDeleteTarget] = useState<AdminTenantSummary | null>(
-    null,
-  );
-  const [inviteTarget, setInviteTarget] = useState<AdminTenantSummary | null>(
-    null,
-  );
+  const [deleteTarget, setDeleteTarget] = useState<AdminTenantSummary | null>(null);
+  const [inviteTarget, setInviteTarget] = useState<AdminTenantSummary | null>(null);
 
-  const liveTenants = (tenants.data ?? []).filter(
-    (t) => t.deleted_at === null,
-  );
+  const liveTenants = (tenants.data ?? []).filter((tenant) => tenant.deleted_at === null);
 
   return (
     <main className="mx-auto w-full max-w-7xl space-y-6 p-6 md:p-8">
@@ -77,25 +69,20 @@ function AdminTenantsBody() {
         <div className="space-y-1">
           <h1 className="flex items-center gap-2 text-2xl font-semibold tracking-tight md:text-3xl">
             <Building2 className="text-primary size-5 md:size-6" aria-hidden />
-            Kurumlar
+            {t("admin.tenants.title")}
           </h1>
-          <p className="text-muted-foreground text-sm">
-            Süper-yönetici görünümü. Kurum oluştur, düzenle, davet
-            gönder veya soft-delete.
-          </p>
+          <p className="text-muted-foreground text-sm">{t("admin.tenants.subtitle")}</p>
         </div>
         <Button onClick={() => setCreateOpen(true)} className="gap-2">
           <Plus className="size-4" aria-hidden />
-          Yeni Kurum
+          {t("admin.tenants.new")}
         </Button>
       </header>
 
       {tenants.isLoading ? (
         <SkeletonTable />
       ) : tenants.isError ? (
-        <p className="text-destructive py-12 text-center text-sm">
-          Tenant listesi yüklenemedi.
-        </p>
+        <p className="text-destructive py-12 text-center text-sm">{t("admin.tenants.loadError")}</p>
       ) : liveTenants.length === 0 ? (
         <EmptyState onCreate={() => setCreateOpen(true)} />
       ) : (
@@ -103,62 +90,66 @@ function AdminTenantsBody() {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>İsim</TableHead>
-                <TableHead className="hidden md:table-cell">Slug</TableHead>
-                <TableHead>Plan</TableHead>
-                <TableHead className="hidden lg:table-cell">Otomasyon</TableHead>
-                <TableHead className="hidden xl:table-cell">Oluşturuldu</TableHead>
-                <TableHead className="text-right">Aksiyonlar</TableHead>
+                <TableHead>{t("admin.field.name")}</TableHead>
+                <TableHead className="hidden md:table-cell">{t("admin.field.slug")}</TableHead>
+                <TableHead>{t("admin.field.plan")}</TableHead>
+                <TableHead className="hidden lg:table-cell">
+                  {t("admin.field.automation")}
+                </TableHead>
+                <TableHead className="hidden xl:table-cell">
+                  {t("admin.tenants.col.created")}
+                </TableHead>
+                <TableHead className="text-right">{t("admin.tenants.col.actions")}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {liveTenants.map((t) => (
-                <TableRow key={t.id}>
-                  <TableCell className="font-medium">{t.name}</TableCell>
+              {liveTenants.map((tenant) => (
+                <TableRow key={tenant.id}>
+                  <TableCell className="font-medium">{tenant.name}</TableCell>
                   <TableCell className="text-muted-foreground hidden font-mono text-xs md:table-cell">
-                    {t.slug}
+                    {tenant.slug}
                   </TableCell>
                   <TableCell>
                     <Badge variant="outline">
-                      {PLAN_TIER_LABELS[t.plan_tier] ?? t.plan_tier}
+                      {PLAN_TIER_LABELS[tenant.plan_tier] ?? tenant.plan_tier}
                     </Badge>
                   </TableCell>
                   <TableCell className="hidden lg:table-cell">
                     <Badge variant="secondary">
-                      {AUTOMATION_MODE_LABELS[t.automation_mode]}
+                      {AUTOMATION_MODE_LABELS[tenant.automation_mode]}
                     </Badge>
                   </TableCell>
                   <TableCell className="text-muted-foreground hidden text-xs xl:table-cell">
-                    {formatFullDate(t.created_at)}
+                    {formatFullDate(tenant.created_at)}
                   </TableCell>
                   <TableCell className="text-right">
                     <div className="flex justify-end gap-1">
                       <Button
                         size="sm"
                         variant="ghost"
-                        onClick={() => setEditTarget(t)}
+                        onClick={() => setEditTarget(tenant)}
                         className="gap-1.5"
                       >
                         <Pencil className="size-3.5" aria-hidden />
-                        <span className="hidden sm:inline">Düzenle</span>
+                        <span className="hidden sm:inline">{t("admin.tenants.action.edit")}</span>
                       </Button>
                       <Button
                         size="sm"
                         variant="ghost"
-                        onClick={() => setInviteTarget(t)}
+                        onClick={() => setInviteTarget(tenant)}
                         className="gap-1.5"
                       >
                         <MailPlus className="size-3.5" aria-hidden />
-                        <span className="hidden sm:inline">Davet</span>
+                        <span className="hidden sm:inline">{t("admin.tenants.action.invite")}</span>
                       </Button>
                       <Button
                         size="sm"
                         variant="ghost"
-                        onClick={() => setDeleteTarget(t)}
+                        onClick={() => setDeleteTarget(tenant)}
                         className="text-destructive hover:text-destructive gap-1.5"
                       >
                         <Trash2 className="size-3.5" aria-hidden />
-                        <span className="hidden sm:inline">Sil</span>
+                        <span className="hidden sm:inline">{t("admin.tenants.action.delete")}</span>
                       </Button>
                     </div>
                   </TableCell>
@@ -196,18 +187,17 @@ function AdminTenantsBody() {
 }
 
 function EmptyState({ onCreate }: { onCreate: () => void }) {
+  const { t } = useTranslation();
   return (
     <div className="bg-card flex flex-col items-center gap-3 rounded-lg border p-12 text-center">
       <Building2 className="text-muted-foreground size-10" aria-hidden />
       <div className="space-y-1">
-        <h2 className="text-base font-medium">Henüz kurum yok</h2>
-        <p className="text-muted-foreground text-sm">
-          İlk kurumu oluştur ve admin davetini gönder.
-        </p>
+        <h2 className="text-base font-medium">{t("admin.tenants.empty.title")}</h2>
+        <p className="text-muted-foreground text-sm">{t("admin.tenants.empty.desc")}</p>
       </div>
       <Button onClick={onCreate} className="mt-2 gap-2">
         <Plus className="size-4" aria-hidden />
-        Yeni Kurum
+        {t("admin.tenants.new")}
       </Button>
     </div>
   );

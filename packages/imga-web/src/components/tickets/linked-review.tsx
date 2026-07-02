@@ -14,20 +14,22 @@ import { OverrideChip } from "@/components/reviews/override-display";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useReviewDetail } from "@/hooks/use-reviews";
+import { useTranslation } from "@/lib/i18n/use-translation";
 import {
   type OverrideLayer,
   OVERRIDE_LAYER_LABELS_TR,
 } from "@/lib/types";
 
 export function LinkedReviewSection({ reviewId }: { reviewId: string | null }) {
+  const { t } = useTranslation();
   const review = useReviewDetail(reviewId);
 
   if (!reviewId) return null;
   if (review.isLoading) {
     return (
       <section className="bg-card flex flex-col gap-2 rounded-lg border p-4">
-        <h2 className="text-sm font-semibold">Bu Ticket&apos;ı Açan Analiz</h2>
-        <p className="text-muted-foreground text-xs">Yükleniyor…</p>
+        <h2 className="text-sm font-semibold">{t("tickets.linkedReview.title")}</h2>
+        <p className="text-muted-foreground text-xs">{t("tickets.common.loading")}</p>
       </section>
     );
   }
@@ -41,7 +43,7 @@ export function LinkedReviewSection({ reviewId }: { reviewId: string | null }) {
   return (
     <section className="bg-card flex flex-col gap-3 rounded-lg border p-4">
       <header className="flex items-center justify-between gap-2">
-        <h2 className="text-sm font-semibold">Bu Ticket&apos;ı Açan Analiz</h2>
+        <h2 className="text-sm font-semibold">{t("tickets.linkedReview.title")}</h2>
         <OverrideChip count={hits.length} />
       </header>
       <p className="text-muted-foreground line-clamp-2 text-xs">
@@ -62,7 +64,7 @@ export function LinkedReviewSection({ reviewId }: { reviewId: string | null }) {
         className="self-start gap-1"
         render={<Link href={`/reviews/${review.data.id}`} />}
       >
-        Detaylı Görüntüle
+        {t("tickets.linkedReview.viewDetail")}
         <ArrowRight className="size-3.5" aria-hidden />
       </Button>
     </section>

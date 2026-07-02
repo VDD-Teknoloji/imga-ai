@@ -23,11 +23,8 @@ import {
 } from "@/components/ui/select";
 import { useUpdateAdminTenant } from "@/hooks/use-admin-tenants";
 import { ApiError } from "@/lib/api-client";
-import type {
-  AdminTenantSummary,
-  AutomationMode,
-  TenantPlanTier,
-} from "@/lib/types";
+import { useTranslation } from "@/lib/i18n/use-translation";
+import type { AdminTenantSummary, AutomationMode, TenantPlanTier } from "@/lib/types";
 import { AUTOMATION_MODE_LABELS, PLAN_TIER_LABELS } from "@/lib/user-helpers";
 
 interface TenantEditDialogProps {
@@ -36,35 +33,21 @@ interface TenantEditDialogProps {
   tenant: AdminTenantSummary;
 }
 
-const PLAN_OPTIONS: ReadonlyArray<TenantPlanTier> = [
-  "trial",
-  "starter",
-  "business",
-  "enterprise",
-];
+const PLAN_OPTIONS: ReadonlyArray<TenantPlanTier> = ["trial", "starter", "business", "enterprise"];
 
-const AUTOMATION_OPTIONS: ReadonlyArray<AutomationMode> = [
-  "manual",
-  "semi_auto",
-  "full_auto",
-];
+const AUTOMATION_OPTIONS: ReadonlyArray<AutomationMode> = ["manual", "semi_auto", "full_auto"];
 
 /**
  * Slug intentionally not editable — backend treats it as URL-stable
  * after creation. Only name + plan_tier + automation_mode flow
  * through PATCH.
  */
-export function TenantEditDialog({
-  open,
-  onOpenChange,
-  tenant,
-}: TenantEditDialogProps) {
+export function TenantEditDialog({ open, onOpenChange, tenant }: TenantEditDialogProps) {
   const update = useUpdateAdminTenant();
+  const { t } = useTranslation();
   const [name, setName] = useState(tenant.name);
   const [planTier, setPlanTier] = useState<TenantPlanTier>(tenant.plan_tier);
-  const [automationMode, setAutomationMode] = useState<AutomationMode>(
-    tenant.automation_mode,
-  );
+  const [automationMode, setAutomationMode] = useState<AutomationMode>(tenant.automation_mode);
 
   // Re-sync the form when the parent swaps which tenant we're editing,
   // using the render-time conditional setState pattern.
@@ -81,8 +64,7 @@ export function TenantEditDialog({
     const patch = {
       name: name !== tenant.name ? name.trim() : undefined,
       plan_tier: planTier !== tenant.plan_tier ? planTier : undefined,
-      automation_mode:
-        automationMode !== tenant.automation_mode ? automationMode : undefined,
+      automation_mode: automationMode !== tenant.automation_mode ? automationMode : undefined,
     };
     if (
       patch.name === undefined &&
@@ -94,11 +76,11 @@ export function TenantEditDialog({
     }
     try {
       await update.mutateAsync({ tenantId: tenant.id, patch });
-      toast.success("Kurum güncellendi");
+      toast.success(t("admin.tenantEdit.toast.updated"));
       onOpenChange(false);
     } catch (err) {
-      toast.error("Güncellenemedi", {
-        description: describeError(err),
+      toast.error(t("admin.tenantEdit.toast.updateError"), {
+        description: t(describeError(err)),
       });
     }
   }
@@ -108,15 +90,12 @@ export function TenantEditDialog({
       <DialogContent>
         <form onSubmit={handleSubmit} className="space-y-4">
           <DialogHeader>
-            <DialogTitle>Kurum düzenle</DialogTitle>
-            <DialogDescription>
-              Slug değiştirilemez. İsim ve plan / otomasyon ayarlarını
-              güncelleyebilirsin.
-            </DialogDescription>
+            <DialogTitle>{t("admin.tenantEdit.title")}</DialogTitle>
+            <DialogDescription>{t("admin.tenantEdit.desc")}</DialogDescription>
           </DialogHeader>
 
           <div className="space-y-2">
-            <Label htmlFor="edit-name">İsim</Label>
+            <Label htmlFor="edit-name">{t("admin.field.name")}</Label>
             <Input
               id="edit-name"
               value={name}
@@ -128,17 +107,14 @@ export function TenantEditDialog({
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="edit-slug">Slug (değişmez)</Label>
+            <Label htmlFor="edit-slug">{t("admin.tenantEdit.slugLabel")}</Label>
             <Input id="edit-slug" value={tenant.slug} disabled readOnly />
           </div>
 
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div className="space-y-2">
-              <Label htmlFor="edit-plan">Plan</Label>
-              <Select
-                value={planTier}
-                onValueChange={(v) => setPlanTier(v as TenantPlanTier)}
-              >
+              <Label htmlFor="edit-plan">{t("admin.field.plan")}</Label>
+              <Select value={planTier} onValueChange={(v) => setPlanTier(v as TenantPlanTier)}>
                 <SelectTrigger id="edit-plan">
                   <SelectValue />
                 </SelectTrigger>
@@ -152,12 +128,10 @@ export function TenantEditDialog({
               </Select>
             </div>
             <div className="space-y-2">
-              <Label htmlFor="edit-automation">Otomasyon</Label>
+              <Label htmlFor="edit-automation">{t("admin.field.automation")}</Label>
               <Select
                 value={automationMode}
-                onValueChange={(v) =>
-                  setAutomationMode(v as AutomationMode)
-                }
+                onValueChange={(v) => setAutomationMode(v as AutomationMode)}
               >
                 <SelectTrigger id="edit-automation">
                   <SelectValue />
@@ -180,10 +154,10 @@ export function TenantEditDialog({
               onClick={() => onOpenChange(false)}
               disabled={update.isPending}
             >
-              Vazgeç
+              {t("admin.action.cancel")}
             </Button>
             <Button type="submit" disabled={update.isPending}>
-              {update.isPending ? "Kaydediliyor..." : "Kaydet"}
+              {update.isPending ? t("admin.tenantEdit.saving") : t("admin.tenantEdit.save")}
             </Button>
           </DialogFooter>
         </form>
@@ -192,11 +166,12 @@ export function TenantEditDialog({
   );
 }
 
+/** i18n anahtarı döndürür; çağıran `t(...)` ile çevirir. */
 function describeError(err: unknown): string {
   if (err instanceof ApiError) {
-    if (err.status === 404) return "Kurum bulunamadı.";
-    if (err.status === 403) return "Bu işlem için süper-yönetici yetkisi gerekli.";
-    if (err.status === 422) return "Form alanları geçersiz.";
+    if (err.status === 404) return "admin.error.notFound";
+    if (err.status === 403) return "admin.error.superAdminRequired";
+    if (err.status === 422) return "admin.error.invalidForm";
   }
-  return "Beklenmeyen bir hata oluştu.";
+  return "admin.error.unexpected";
 }

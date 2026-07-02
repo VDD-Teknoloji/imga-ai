@@ -14,6 +14,7 @@ import {
 
 import { Skeleton } from "@/components/ui/skeleton";
 import { useCategoryDistribution } from "@/hooks/use-tickets";
+import { useTranslation } from "@/lib/i18n/use-translation";
 
 /**
  * Top categories by ticket count.
@@ -36,6 +37,7 @@ interface ChartDatum {
 }
 
 export function CategoryChart() {
+  const { t } = useTranslation();
   const distribution = useCategoryDistribution();
 
   // /tickets/stats?group_by=category already LEFT-JOINs the categories
@@ -55,18 +57,24 @@ export function CategoryChart() {
   return (
     <section className="bg-card rounded-lg border p-5">
       <header className="mb-4 flex items-baseline justify-between">
-        <h2 className="text-base font-semibold tracking-tight">Kategori dağılımı</h2>
-        <p className="text-muted-foreground text-xs">İlk 5 kategori</p>
+        <h2 className="text-base font-semibold tracking-tight">
+          {t("dashboard.categoryChart.title")}
+        </h2>
+        <p className="text-muted-foreground text-xs">
+          {t("dashboard.common.top5Categories")}
+        </p>
       </header>
 
       {isLoading ? (
         <SkeletonChart />
       ) : isError ? (
         <p className="text-destructive py-12 text-center text-sm">
-          Veri yüklenemedi.
+          {t("dashboard.common.loadFailed")}
         </p>
       ) : data.length === 0 ? (
-        <p className="text-muted-foreground py-12 text-center text-sm">Veri yok.</p>
+        <p className="text-muted-foreground py-12 text-center text-sm">
+          {t("dashboard.common.noData")}
+        </p>
       ) : (
         <div className="h-[260px] w-full">
           <ResponsiveContainer width="100%" height="100%">

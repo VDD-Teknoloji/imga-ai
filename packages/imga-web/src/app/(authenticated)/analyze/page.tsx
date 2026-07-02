@@ -25,6 +25,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { useAnalyze } from "@/hooks/use-analyze";
 import { useManualPromoteReview } from "@/hooks/use-reviews";
 import { ApiError } from "@/lib/api-client";
+import { useTranslation } from "@/lib/i18n/use-translation";
 import type { ReviewDecision, TenantAnalyzeResponse } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
@@ -44,6 +45,7 @@ const TEXT_MAX_LENGTH = 10_000;
  * roadmap C7 for the deferred design alongside webhook ingestion.
  */
 export default function AnalyzePage() {
+  const { t } = useTranslation();
   const [text, setText] = useState("");
   // Sprint 8.3.5 — optional NPS, kept as string in state so an empty
   // input round-trips without coercing to 0. Validated to 0..10 below;
@@ -63,7 +65,7 @@ export default function AnalyzePage() {
       if (Number.isFinite(parsed) && parsed >= 0 && parsed <= 10) {
         npsScore = parsed;
       } else {
-        toast.error("NPS 0 ile 10 arasında olmalı.");
+        toast.error(t("analyze.manual.npsRange"));
         return;
       }
     }
@@ -76,15 +78,15 @@ export default function AnalyzePage() {
         onError: (err) => {
           if (err instanceof ApiError) {
             if (err.status === 422) {
-              toast.error("Metin 10.000 karakteri aşıyor.");
+              toast.error(t("analyze.manual.textTooLong"));
               return;
             }
             if (err.status === 403) {
-              toast.error("Bu işlem için yetkin yok.");
+              toast.error(t("analyze.manual.noPermission"));
               return;
             }
           }
-          toast.error("Analiz tamamlanamadı.");
+          toast.error(t("analyze.manual.analyzeFailed"));
         },
       },
     );
@@ -104,22 +106,21 @@ export default function AnalyzePage() {
     <main className="mx-auto w-full max-w-3xl space-y-6 px-4 py-6 md:px-8 md:py-10">
       <header className="space-y-1.5">
         <h1 className="text-2xl font-semibold tracking-tight md:text-3xl">
-          Yorum Analiz Et
+          {t("analyze.manual.title")}
         </h1>
         <p className="text-muted-foreground text-sm">
-          Müşteri yorumunu yapıştırın. Duygu ve kategori analizi yapılır; kurum
-          otomasyon ayarına göre gerekirse Ticket otomatik açılır.
+          {t("analyze.manual.subtitle")}
         </p>
       </header>
 
       <form onSubmit={handleSubmit} className="space-y-3">
         <div className="space-y-2">
-          <Label htmlFor="analyze-text">Yorum metni</Label>
+          <Label htmlFor="analyze-text">{t("analyze.manual.textLabel")}</Label>
           <Textarea
             id="analyze-text"
             value={text}
             onChange={(e) => setText(e.target.value)}
-            placeholder="Örnek: Kargom 5 gündür gelmedi, takip numarası da çalışmıyor."
+            placeholder={t("analyze.manual.textPlaceholder")}
             rows={6}
             maxLength={TEXT_MAX_LENGTH}
             disabled={analyze.isPending}
@@ -133,12 +134,15 @@ export default function AnalyzePage() {
               overLimit && "text-destructive",
             )}
           >
-            {charCount.toLocaleString("tr-TR")} / {TEXT_MAX_LENGTH.toLocaleString("tr-TR")} karakter
+            {t("analyze.manual.charCount", {
+              count: charCount.toLocaleString("tr-TR"),
+              max: TEXT_MAX_LENGTH.toLocaleString("tr-TR"),
+            })}
           </p>
         </div>
         <div className="max-w-[200px] space-y-1">
           <Label htmlFor="analyze-nps" className="text-xs">
-            NPS (opsiyonel, 0–10)
+            {t("analyze.manual.npsLabel")}
           </Label>
           <input
             id="analyze-nps"
@@ -158,18 +162,18 @@ export default function AnalyzePage() {
             {analyze.isPending ? (
               <>
                 <Loader2 className="size-4 animate-spin" aria-hidden />
-                Analiz ediliyor...
+                {t("analyze.manual.analyzing")}
               </>
             ) : (
               <>
-                Analiz Et
+                {t("analyze.manual.submit")}
                 <ArrowRight className="size-4" aria-hidden />
               </>
             )}
           </Button>
           {result || analyze.isError ? (
             <Button type="button" variant="ghost" onClick={reset} disabled={analyze.isPending}>
-              Yeni analiz
+              {t("analyze.manual.newAnalysis")}
             </Button>
           ) : null}
         </div>
@@ -208,12 +212,13 @@ function AnalysisOutput({
 // Pills + expandable detail. Hidden when nothing fired so the page
 // stays compact in the common neutral-text case.
 function OverrideHits({ hits }: { hits: TenantAnalyzeResponse["analysis"]["overrides_applied"] }) {
+  const { t } = useTranslation();
   const [expanded, setExpanded] = useState(false);
   if (hits.length === 0) return null;
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="text-base">Tetiklenen Katmanlar</CardTitle>
+        <CardTitle className="text-base">{t("analyze.manual.triggeredLayers")}</CardTitle>
       </CardHeader>
       <CardContent className="space-y-3">
         <div className="flex flex-wrap gap-2">
@@ -230,7 +235,7 @@ function OverrideHits({ hits }: { hits: TenantAnalyzeResponse["analysis"]["overr
           onClick={() => setExpanded((v) => !v)}
           className="gap-1"
         >
-          {expanded ? "Detayları Gizle" : "Detayları Göster"}
+          {expanded ? t("analyze.manual.hideDetails") : t("analyze.manual.showDetails")}
           {expanded ? (
             <ChevronUp className="size-4" aria-hidden />
           ) : (
@@ -244,6 +249,7 @@ function OverrideHits({ hits }: { hits: TenantAnalyzeResponse["analysis"]["overr
 }
 
 function AnalysisSummary({ result }: { result: TenantAnalyzeResponse }) {
+  const { t } = useTranslation();
   const a = result.analysis;
   const sentimentVariant =
     a.sentiment_label === "NEGATIF"
@@ -258,10 +264,10 @@ function AnalysisSummary({ result }: { result: TenantAnalyzeResponse }) {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Analiz sonucu</CardTitle>
+        <CardTitle>{t("analyze.manual.resultTitle")}</CardTitle>
       </CardHeader>
       <CardContent className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-        <Metric label="Duygu">
+        <Metric label={t("analyze.manual.sentiment")}>
           <div className="flex items-center gap-2">
             <Badge variant={sentimentVariant} className="px-2 py-0.5">
               {a.sentiment_label}
@@ -271,21 +277,21 @@ function AnalysisSummary({ result }: { result: TenantAnalyzeResponse }) {
             </span>
           </div>
         </Metric>
-        <Metric label="Kategori">
+        <Metric label={t("analyze.manual.category")}>
           <div className="flex items-center gap-2">
             <Badge variant="outline" className="px-2 py-0.5">
               {categoryCode}
             </Badge>
             {confidencePct != null ? (
               <span className="text-muted-foreground text-xs tabular-nums">
-                %{confidencePct} güven
+                {t("analyze.manual.confidenceSuffix", { pct: confidencePct })}
               </span>
             ) : null}
           </div>
         </Metric>
-        <Metric label="Şirket perspektifi">
+        <Metric label={t("analyze.manual.companyPerspective")}>
           {result.company_perspective_code === null ? (
-            <span className="text-muted-foreground text-sm italic">eşleşme yok</span>
+            <span className="text-muted-foreground text-sm italic">{t("analyze.manual.noMatch")}</span>
           ) : (
             <Badge variant="outline" className="px-2 py-0.5">
               {result.company_perspective_label_tr ?? result.company_perspective_code}
@@ -298,7 +304,7 @@ function AnalysisSummary({ result }: { result: TenantAnalyzeResponse }) {
           </Metric>
         ) : null}
         {a.summary ? (
-          <Metric label="Özet" className="sm:col-span-2">
+          <Metric label={t("analyze.manual.summary")} className="sm:col-span-2">
             <p className="text-foreground text-sm">{a.summary}</p>
           </Metric>
         ) : null}
@@ -329,43 +335,40 @@ function Metric({
 interface DecisionVariant {
   variant: "success" | "info" | "warning";
   Icon: typeof Sparkles;
-  title: string;
-  message: string;
+  titleKey: string;
+  messageKey: string;
 }
 
 const DECISION_VARIANTS: Record<ReviewDecision, DecisionVariant> = {
   create: {
     variant: "success",
     Icon: CheckCircle2,
-    title: "Otomatik Ticket açıldı",
-    message: "Kurumunuzun otomasyon ayarı bu yoruma göre yeni bir Ticket açtı.",
+    titleKey: "analyze.manual.decision.create.title",
+    messageKey: "analyze.manual.decision.create.message",
   },
   skipped_dedup: {
     variant: "info",
     Icon: Info,
-    title: "Aynı metin son 24 saatte zaten analiz edildi",
-    message: "Tekrar Ticket açılmadı; mevcut Ticket'ın altında çalışmaya devam et.",
+    titleKey: "analyze.manual.decision.dedup.title",
+    messageKey: "analyze.manual.decision.dedup.message",
   },
   skipped_mode: {
     variant: "info",
     Icon: ShieldOff,
-    title: "Otomasyon modu manuel — Ticket açılmadı",
-    message:
-      "Manuel modda yalnızca duygu ve kategori analizi yapılır; Ticket açma için kurum ayarlarını Tam veya Yarı otomatik yap.",
+    titleKey: "analyze.manual.decision.mode.title",
+    messageKey: "analyze.manual.decision.mode.message",
   },
   skipped_threshold: {
     variant: "info",
     Icon: CircleAlert,
-    title: "Eşik altı — Ticket açılmadı",
-    message:
-      "Kurum otomasyon eşiği bu yorumu otomatik Ticket açmak için yeterli bulmadı; metni manuel inceleyebilirsin.",
+    titleKey: "analyze.manual.decision.threshold.title",
+    messageKey: "analyze.manual.decision.threshold.message",
   },
   skipped_belirsiz: {
     variant: "info",
     Icon: HelpCircle,
-    title: "Kategori belirsiz — manuel sınıflandırma gerekli",
-    message:
-      "Sınıflandırıcı bu metni emin bir kategoriye yerleştiremedi. Hangi modda olursan ol, belirsiz yorumlardan otomatik Ticket açılmaz.",
+    titleKey: "analyze.manual.decision.belirsiz.title",
+    messageKey: "analyze.manual.decision.belirsiz.message",
   },
 };
 
@@ -376,6 +379,7 @@ function DecisionCard({
   result: TenantAnalyzeResponse;
   onPromoted: (ticketId: string) => void;
 }) {
+  const { t } = useTranslation();
   const variant = DECISION_VARIANTS[result.decision];
   const Icon = variant.Icon;
   const cardBorder =
@@ -398,18 +402,18 @@ function DecisionCard({
     promote.mutate(result.review_id, {
       onSuccess: (data) => {
         onPromoted(data.ticket_id);
-        toast.success("Manuel olarak Ticket açıldı.");
+        toast.success(t("analyze.manual.promoteSuccess"));
       },
       onError: (err) => {
         if (err instanceof ApiError && err.status === 403) {
-          toast.error("Bu işlem için yetkin yok.");
+          toast.error(t("analyze.manual.noPermission"));
           return;
         }
         if (err instanceof ApiError && err.status === 409) {
-          toast.error("Bu analiz zaten bir Ticket'a bağlı.");
+          toast.error(t("analyze.manual.alreadyLinked"));
           return;
         }
-        toast.error("Ticket açılamadı.");
+        toast.error(t("analyze.manual.promoteFailed"));
       },
     });
   }
@@ -419,18 +423,21 @@ function DecisionCard({
       <CardHeader className="flex flex-row items-start gap-3">
         <Icon className={cn("mt-0.5 size-5 shrink-0", iconClass)} aria-hidden />
         <div className="space-y-1">
-          <CardTitle className="text-base">{variant.title}</CardTitle>
-          <p className="text-muted-foreground text-sm">{variant.message}</p>
+          <CardTitle className="text-base">{t(variant.titleKey)}</CardTitle>
+          <p className="text-muted-foreground text-sm">{t(variant.messageKey)}</p>
         </div>
       </CardHeader>
       {result.ticket_id ? (
         <CardContent className="flex flex-wrap items-center gap-3">
           <Button render={<Link href={`/tickets/${result.ticket_id}`} />} className="gap-2">
-            {result.decision === "create" ? "Yeni Ticket'a git" : "Mevcut Ticket'a git"}
+            {result.decision === "create"
+              ? t("analyze.manual.goNewTicket")
+              : t("analyze.manual.goExistingTicket")}
             <ArrowRight className="size-4" aria-hidden />
           </Button>
           <span className="text-muted-foreground text-xs">
-            Ticket ID: <code className="font-mono">{result.ticket_id.slice(0, 8)}</code>
+            {t("analyze.manual.ticketIdLabel")}{" "}
+            <code className="font-mono">{result.ticket_id.slice(0, 8)}</code>
           </span>
         </CardContent>
       ) : canPromote ? (
@@ -447,10 +454,10 @@ function DecisionCard({
             ) : (
               <ArrowRight className="size-4" aria-hidden />
             )}
-            Yine de Ticket Aç
+            {t("analyze.manual.promoteAnyway")}
           </Button>
           <span className="text-muted-foreground text-xs">
-            Sistem güvenini geçersiz kıl — manuel olarak Ticket aç.
+            {t("analyze.manual.promoteHint")}
           </span>
         </CardContent>
       ) : null}

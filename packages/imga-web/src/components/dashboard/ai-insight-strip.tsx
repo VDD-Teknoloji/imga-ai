@@ -12,12 +12,13 @@ import Link from "next/link";
 
 import { Skeleton } from "@/components/ui/skeleton";
 import type { ExecutiveBriefingSnapshot } from "@/hooks/use-executive-overview";
+import { useTranslation } from "@/lib/i18n/use-translation";
 import { formatDateTr, relativeTimeTr } from "@/lib/relative-time";
 
-const PERIOD_TR: Record<string, string> = {
-  week: "Haftalık",
-  month: "Aylık",
-  quarter: "Üç aylık",
+const PERIOD_KEYS: Record<string, string> = {
+  week: "dashboard.aiInsight.period.week",
+  month: "dashboard.aiInsight.period.month",
+  quarter: "dashboard.aiInsight.period.quarter",
 };
 
 interface Props {
@@ -26,6 +27,7 @@ interface Props {
 }
 
 export function AiInsightStrip({ briefing, isLoading }: Props) {
+  const { t } = useTranslation();
   if (isLoading) return <Skeleton className="h-40 w-full rounded-3xl" />;
 
   if (!briefing) {
@@ -36,11 +38,10 @@ export function AiInsightStrip({ briefing, isLoading }: Props) {
       >
         <div className="min-w-0 flex-1">
           <p className="text-base font-semibold">
-            Yönetici özetinizi oluşturun
+            {t("dashboard.aiInsight.empty.title")}
           </p>
           <p className="text-muted-foreground mt-1 text-sm">
-            Dönemin değişimleri, kritik içgörüler ve öncelikli aksiyonlar —
-            tek tıkla.
+            {t("dashboard.aiInsight.empty.desc")}
           </p>
         </div>
         <ArrowRight
@@ -51,13 +52,16 @@ export function AiInsightStrip({ briefing, isLoading }: Props) {
     );
   }
 
+  const periodKey = PERIOD_KEYS[briefing.period];
+
   return (
     <section
       className="rise-in shadow-soft bg-card ring-foreground/5 rounded-3xl p-6 ring-1 md:p-8"
-      aria-label="Yönetici özeti"
+      aria-label={t("dashboard.aiInsight.aria")}
     >
       <p className="text-muted-foreground text-sm font-medium">
-        Yönetici Özeti · {PERIOD_TR[briefing.period] ?? briefing.period} ·{" "}
+        {t("dashboard.aiInsight.label")} ·{" "}
+        {periodKey ? t(periodKey) : briefing.period} ·{" "}
         <span title={formatDateTr(briefing.created_at)}>
           {relativeTimeTr(briefing.created_at)}
         </span>
@@ -85,7 +89,7 @@ export function AiInsightStrip({ briefing, isLoading }: Props) {
         href="/executive-briefing"
         className="text-foreground/70 hover:text-foreground mt-5 inline-flex items-center gap-1.5 text-sm font-semibold transition-colors"
       >
-        Özetin tamamını gör
+        {t("dashboard.aiInsight.seeFull")}
         <ArrowRight className="size-4" aria-hidden />
       </Link>
     </section>

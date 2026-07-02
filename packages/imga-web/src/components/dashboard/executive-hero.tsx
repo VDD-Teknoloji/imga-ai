@@ -28,6 +28,9 @@ import type {
   ExecutiveOverview,
   ExecutiveSentimentTrend,
 } from "@/hooks/use-executive-overview";
+import { useTranslation } from "@/lib/i18n/use-translation";
+
+type Translate = (key: string, vars?: Record<string, string | number>) => string;
 
 type Band = "healthy" | "watch" | "critical" | "balanced";
 
@@ -70,20 +73,35 @@ function bandFor(posPct: number, negPct: number): BandVisual {
 
 /** Manşet: sabit önek + duruma göre renklenen anahtar kelime.
  *  Yöneticinin tek bakışta okuduğu "cevap". */
-function headlineFor(band: Band): { prefix: string; keyword: string; suffix: string } {
+function headlineFor(
+  band: Band,
+  t: Translate,
+): { prefix: string; keyword: string; suffix: string } {
   switch (band) {
     case "critical":
-      return { prefix: "Müşterileriniz ", keyword: "memnun değil", suffix: "." };
+      return {
+        prefix: t("dashboard.executiveHero.headline.critical.prefix"),
+        keyword: t("dashboard.executiveHero.headline.critical.keyword"),
+        suffix: ".",
+      };
     case "watch":
       return {
-        prefix: "Müşterilerinizin bir kısmı ",
-        keyword: "memnun değil",
+        prefix: t("dashboard.executiveHero.headline.watch.prefix"),
+        keyword: t("dashboard.executiveHero.headline.watch.keyword"),
         suffix: ".",
       };
     case "healthy":
-      return { prefix: "Müşterileriniz ", keyword: "memnun", suffix: "." };
+      return {
+        prefix: t("dashboard.executiveHero.headline.healthy.prefix"),
+        keyword: t("dashboard.executiveHero.headline.healthy.keyword"),
+        suffix: ".",
+      };
     default:
-      return { prefix: "Müşteri memnuniyeti ", keyword: "dengeli", suffix: "." };
+      return {
+        prefix: t("dashboard.executiveHero.headline.balanced.prefix"),
+        keyword: t("dashboard.executiveHero.headline.balanced.keyword"),
+        suffix: ".",
+      };
   }
 }
 
@@ -93,6 +111,7 @@ interface Props {
 }
 
 export function ExecutiveHero({ overview, isLoading }: Props) {
+  const { t } = useTranslation();
   if (isLoading) return <Skeleton className="h-72 w-full rounded-3xl" />;
   if (!overview) return null;
 
@@ -102,17 +121,17 @@ export function ExecutiveHero({ overview, isLoading }: Props) {
     return (
       <section className="rise-in shadow-soft bg-card ring-foreground/5 rounded-3xl p-8 text-center ring-1 md:p-12">
         <h2 className="text-2xl font-semibold tracking-tight md:text-3xl">
-          Müşterilerinizin sesini dinlemeye başlayın
+          {t("dashboard.executiveHero.empty.title")}
         </h2>
         <p className="text-muted-foreground mx-auto mt-3 max-w-xl text-base leading-relaxed">
-          İlk yorum dosyanızı yükleyin — dakikalar içinde memnuniyet durumunuz,
-          ana sorunlarınız ve yönetici özetiniz hazır olsun.
+          {t("dashboard.executiveHero.empty.desc")}
         </p>
         <Link
           href="/analyze/upload"
           className="bg-primary text-primary-foreground hover:bg-primary/90 mt-7 inline-flex items-center gap-2 rounded-2xl px-6 py-3 text-sm font-semibold transition-colors"
         >
-          <Upload className="size-4" aria-hidden /> İlk dosyanızı yükleyin
+          <Upload className="size-4" aria-hidden />{" "}
+          {t("dashboard.executiveHero.empty.upload")}
         </Link>
       </section>
     );
@@ -122,18 +141,18 @@ export function ExecutiveHero({ overview, isLoading }: Props) {
   const negPct = Math.round((NEGATIF / total) * 100);
   const notrPct = Math.max(0, 100 - posPct - negPct);
   const visual = bandFor(posPct, negPct);
-  const headline = headlineFor(visual.band);
+  const headline = headlineFor(visual.band, t);
 
   return (
     <section
       className="rise-in shadow-soft bg-card ring-foreground/5 rounded-3xl p-6 ring-1 md:p-10"
-      aria-label="Müşteri memnuniyet durumu"
+      aria-label={t("dashboard.executiveHero.aria")}
     >
       <div className="flex flex-col gap-8 md:flex-row md:items-start md:justify-between md:gap-12">
         {/* Cevap — büyük, sade, tek cümle. */}
         <div className="min-w-0 flex-1">
           <p className="text-muted-foreground text-sm font-medium">
-            Genel müşteri memnuniyeti
+            {t("dashboard.executiveHero.overallLabel")}
           </p>
           <h2 className="mt-2 text-3xl font-semibold leading-tight tracking-tight md:text-5xl md:leading-[1.1]">
             {headline.prefix}
@@ -141,19 +160,19 @@ export function ExecutiveHero({ overview, isLoading }: Props) {
             {headline.suffix}
           </h2>
           <p className="text-muted-foreground mt-4 max-w-xl text-base leading-relaxed md:text-lg">
-            Toplam{" "}
+            {t("dashboard.executiveHero.summary.prefix")}{" "}
             <strong className="text-foreground font-semibold tabular-nums">
               {total.toLocaleString("tr-TR")}
             </strong>{" "}
-            yorumdan{" "}
+            {t("dashboard.executiveHero.summary.mid1")}{" "}
             <strong className="text-foreground font-semibold tabular-nums">
               {POZITIF.toLocaleString("tr-TR")}
             </strong>{" "}
-            tanesi olumlu,{" "}
+            {t("dashboard.executiveHero.summary.mid2")}{" "}
             <strong className="text-foreground font-semibold tabular-nums">
               {NEGATIF.toLocaleString("tr-TR")}
             </strong>{" "}
-            tanesi olumsuz.
+            {t("dashboard.executiveHero.summary.suffix")}
           </p>
           {overview.trend && <TrendPill trend={overview.trend} />}
         </div>
@@ -162,7 +181,7 @@ export function ExecutiveHero({ overview, isLoading }: Props) {
         <div className="flex shrink-0 flex-col items-start md:items-end">
           <BigPercent pct={posPct} className={visual.numberClass} />
           <p className="text-muted-foreground mt-0.5 text-sm font-medium">
-            memnuniyet
+            {t("dashboard.executiveHero.satisfaction")}
           </p>
           {overview.nps_score !== null && (
             <p className="text-muted-foreground mt-3 text-sm tabular-nums">
@@ -177,7 +196,7 @@ export function ExecutiveHero({ overview, isLoading }: Props) {
       </div>
 
       {/* Segmentli memnuniyet çubuğu — tüm denge tek bakışta. */}
-      <SatisfactionBar posPct={posPct} notrPct={notrPct} negPct={negPct} />
+      <SatisfactionBar posPct={posPct} notrPct={notrPct} negPct={negPct} t={t} />
 
       {/* Tek birincil aksiyon — duruma göre yön. */}
       <div className="mt-7 flex flex-wrap items-center gap-x-6 gap-y-3">
@@ -190,15 +209,15 @@ export function ExecutiveHero({ overview, isLoading }: Props) {
           className="bg-primary text-primary-foreground hover:bg-primary/90 inline-flex items-center gap-2 rounded-2xl px-5 py-3 text-sm font-semibold transition-colors"
         >
           {visual.band === "healthy"
-            ? "Müşteri yorumlarını incele"
-            : "Olumsuz yorumları incele"}
+            ? t("dashboard.executiveHero.reviewReviews")
+            : t("dashboard.executiveHero.reviewNegative")}
           <ArrowRight className="size-4" aria-hidden />
         </Link>
         <Link
           href="/strategy"
           className="text-foreground/70 hover:text-foreground text-sm font-semibold transition-colors"
         >
-          Aksiyon planı oluştur
+          {t("dashboard.executiveHero.createActionPlan")}
         </Link>
       </div>
     </section>
@@ -208,6 +227,7 @@ export function ExecutiveHero({ overview, isLoading }: Props) {
 /** Son 30 gün vs önceki 30 gün memnuniyet değişimi — sakin, aydınlık
  *  rozet. |delta| < 1 puan: "değişmedi". */
 function TrendPill({ trend }: { trend: ExecutiveSentimentTrend }) {
+  const { t } = useTranslation();
   const delta = trend.delta_points;
   const flat = Math.abs(delta) < 1;
   const up = delta >= 1;
@@ -217,9 +237,12 @@ function TrendPill({ trend }: { trend: ExecutiveSentimentTrend }) {
     : up
       ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300"
       : "bg-red-50 text-red-700 dark:bg-red-950/40 dark:text-red-300";
+  const points = Math.abs(delta).toLocaleString("tr-TR");
   const label = flat
-    ? "Son 30 günde memnuniyet değişmedi"
-    : `Son 30 günde memnuniyet ${up ? "+" : "−"}${Math.abs(delta).toLocaleString("tr-TR")} puan ${up ? "arttı" : "düştü"}`;
+    ? t("dashboard.executiveHero.trend.flat")
+    : up
+      ? t("dashboard.executiveHero.trend.up", { points })
+      : t("dashboard.executiveHero.trend.down", { points });
   return (
     <span
       className={`mt-5 inline-flex items-center gap-2 rounded-full px-3.5 py-1.5 text-sm font-medium tabular-nums ${cls}`}
@@ -250,10 +273,12 @@ function SatisfactionBar({
   posPct,
   notrPct,
   negPct,
+  t,
 }: {
   posPct: number;
   notrPct: number;
   negPct: number;
+  t: Translate;
 }) {
   const mounted = useMounted();
   return (
@@ -273,9 +298,21 @@ function SatisfactionBar({
         />
       </div>
       <div className="text-muted-foreground mt-3 flex flex-wrap items-center gap-x-5 gap-y-1.5 text-sm">
-        <LegendDot className="bg-emerald-500" label="Olumlu" pct={posPct} />
-        <LegendDot className="bg-zinc-300 dark:bg-zinc-600" label="Nötr" pct={notrPct} />
-        <LegendDot className="bg-red-500" label="Olumsuz" pct={negPct} />
+        <LegendDot
+          className="bg-emerald-500"
+          label={t("dashboard.executiveHero.legend.positive")}
+          pct={posPct}
+        />
+        <LegendDot
+          className="bg-zinc-300 dark:bg-zinc-600"
+          label={t("dashboard.executiveHero.legend.neutral")}
+          pct={notrPct}
+        />
+        <LegendDot
+          className="bg-red-500"
+          label={t("dashboard.executiveHero.legend.negative")}
+          pct={negPct}
+        />
       </div>
     </div>
   );

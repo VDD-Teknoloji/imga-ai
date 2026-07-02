@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { useDeleteAdminTenant } from "@/hooks/use-admin-tenants";
 import { ApiError } from "@/lib/api-client";
+import { useTranslation } from "@/lib/i18n/use-translation";
 import type { AdminTenantSummary } from "@/lib/types";
 
 interface TenantDeleteDialogProps {
@@ -27,23 +28,22 @@ interface TenantDeleteDialogProps {
  * cascade — tickets and users stay intact, the tenant just stops
  * surfacing in non-admin lists.
  */
-export function TenantDeleteDialog({
-  open,
-  onOpenChange,
-  tenant,
-}: TenantDeleteDialogProps) {
+export function TenantDeleteDialog({ open, onOpenChange, tenant }: TenantDeleteDialogProps) {
   const remove = useDeleteAdminTenant();
+  const { t } = useTranslation();
 
   async function handleConfirm() {
     try {
       await remove.mutateAsync({ tenantId: tenant.id });
-      toast.success("Kurum silindi", {
-        description: `${tenant.name} arşivlendi (soft-delete).`,
+      toast.success(t("admin.tenantDelete.toast.deletedTitle"), {
+        description: t("admin.tenantDelete.toast.deletedDesc", {
+          name: tenant.name,
+        }),
       });
       onOpenChange(false);
     } catch (err) {
-      toast.error("Silinemedi", {
-        description: describeError(err),
+      toast.error(t("admin.tenantDelete.toast.deleteError"), {
+        description: t(describeError(err)),
       });
     }
   }
@@ -52,22 +52,17 @@ export function TenantDeleteDialog({
     <AlertDialog open={open} onOpenChange={onOpenChange}>
       <AlertDialogContent>
         <AlertDialogHeader>
-          <AlertDialogTitle>{tenant.name}&apos;ı sil</AlertDialogTitle>
-          <AlertDialogDescription>
-            Bu kurumu silmek üzeresin. Tüm verisi soft-delete
-            edilir; gerekirse veritabanı seviyesinde geri yüklenebilir.
-            Aktif kullanıcılar artık bu kurumu göremez.
-          </AlertDialogDescription>
+          <AlertDialogTitle>
+            {t("admin.tenantDelete.title", { name: tenant.name })}
+          </AlertDialogTitle>
+          <AlertDialogDescription>{t("admin.tenantDelete.desc")}</AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
           <AlertDialogCancel disabled={remove.isPending}>
-            Vazgeç
+            {t("admin.action.cancel")}
           </AlertDialogCancel>
-          <AlertDialogAction
-            onClick={handleConfirm}
-            disabled={remove.isPending}
-          >
-            {remove.isPending ? "Siliniyor..." : "Sil"}
+          <AlertDialogAction onClick={handleConfirm} disabled={remove.isPending}>
+            {remove.isPending ? t("admin.tenantDelete.deleting") : t("admin.tenantDelete.delete")}
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>
@@ -75,10 +70,11 @@ export function TenantDeleteDialog({
   );
 }
 
+/** i18n anahtarı döndürür; çağıran `t(...)` ile çevirir. */
 function describeError(err: unknown): string {
   if (err instanceof ApiError) {
-    if (err.status === 404) return "Kurum zaten silinmiş veya bulunamadı.";
-    if (err.status === 403) return "Bu işlem için süper-yönetici yetkisi gerekli.";
+    if (err.status === 404) return "admin.tenantDelete.error.notFound";
+    if (err.status === 403) return "admin.error.superAdminRequired";
   }
-  return "Beklenmeyen bir hata oluştu.";
+  return "admin.error.unexpected";
 }

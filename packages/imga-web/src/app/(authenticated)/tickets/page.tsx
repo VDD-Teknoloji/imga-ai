@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useCategoryLabelMap } from "@/hooks/use-categories";
 import { flattenInfinitePages, useInfiniteTickets } from "@/hooks/use-tickets";
+import { useTranslation } from "@/lib/i18n/use-translation";
 import type {
   AssigneeFilterValue,
   TicketBackendFilters,
@@ -20,6 +21,7 @@ import type {
 const PAGE_SIZE = 100;
 
 export default function TicketsListPage() {
+  const { t } = useTranslation();
   const filters = useTicketFilters();
   const backendFilters = useMemo(
     () => toBackendFilters(filters),
@@ -34,11 +36,13 @@ export default function TicketsListPage() {
   return (
     <main className="mx-auto w-full max-w-7xl space-y-6 px-4 py-6 md:px-8 md:py-10">
       <header className="space-y-1.5">
-        <h1 className="text-2xl font-semibold tracking-tight md:text-3xl">Ticket&apos;lar</h1>
+        <h1 className="text-2xl font-semibold tracking-tight md:text-3xl">
+          {t("tickets.list.title")}
+        </h1>
         <p className="text-muted-foreground text-sm">
           {tickets.isLoading
-            ? "Yükleniyor..."
-            : `${rows.length} Ticket gösteriliyor / toplam ${total}`}
+            ? t("tickets.common.loading")
+            : t("tickets.list.showing", { shown: rows.length, total })}
         </p>
       </header>
 
@@ -48,13 +52,13 @@ export default function TicketsListPage() {
         <SkeletonTable />
       ) : tickets.isError ? (
         <p className="text-destructive py-12 text-center text-sm">
-          Ticket&apos;lar yüklenemedi.
+          {t("tickets.list.loadError")}
         </p>
       ) : rows.length === 0 ? (
         <p className="text-muted-foreground py-12 text-center text-sm">
           {total === 0
-            ? "Henüz ticket yok."
-            : "Bu filtrelerle eşleşen ticket'ı yok."}
+            ? t("tickets.list.empty")
+            : t("tickets.list.emptyFiltered")}
         </p>
       ) : (
         <>
@@ -70,8 +74,8 @@ export default function TicketsListPage() {
                 disabled={tickets.isFetchingNextPage}
               >
                 {tickets.isFetchingNextPage
-                  ? "Yükleniyor..."
-                  : `Daha fazla göster (${total - rows.length} kaldı)`}
+                  ? t("tickets.common.loading")
+                  : t("tickets.list.loadMore", { count: total - rows.length })}
               </Button>
             </div>
           ) : null}

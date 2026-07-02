@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import * as React from "react";
 
 import { useAuthStore } from "@/lib/auth-store";
+import { useTranslation } from "@/lib/i18n/use-translation";
 import { cn } from "@/lib/utils";
 
 import {
@@ -30,9 +31,10 @@ interface SidebarNavProps {
 export function SidebarNav({ collapsed, onNavigate }: SidebarNavProps) {
   const pathname = usePathname();
   const isSuperAdmin = useAuthStore((s) => s.user?.is_super_admin ?? false);
+  const { t } = useTranslation();
 
   return (
-    <nav aria-label="Ana menü" className="flex flex-col gap-1 px-2">
+    <nav aria-label={t("shell.nav.mainMenu")} className="flex flex-col gap-1 px-2">
       {NAV_SECTIONS.map((section, sectionIdx) => (
         <SidebarSection
           key={`section-${sectionIdx}`}
@@ -49,7 +51,7 @@ export function SidebarNav({ collapsed, onNavigate }: SidebarNavProps) {
           — no heading, no separator, no DOM at all. */}
       {isSuperAdmin ? (
         <SidebarSection
-          heading="Yönetim"
+          heading="shell.nav.section.admin"
           items={ADMIN_NAV_ITEMS}
           showDivider
           collapsed={collapsed}
@@ -78,6 +80,7 @@ function SidebarSection({
   pathname,
   onNavigate,
 }: SidebarSectionProps) {
+  const { t } = useTranslation();
   return (
     <>
       {showDivider ? (
@@ -95,9 +98,9 @@ function SidebarSection({
             <div className="bg-sidebar-border mx-0 mb-2 h-px" aria-hidden />
             <p
               className="text-sidebar-foreground/70 text-[11px] font-bold tracking-[0.12em] uppercase"
-              aria-label={`${heading} bölümü`}
+              aria-label={t("shell.nav.sectionAria", { name: t(heading) })}
             >
-              {heading}
+              {t(heading)}
             </p>
           </div>
         ) : (
@@ -124,14 +127,17 @@ function SidebarSection({
           !!item.subgroup &&
           item.subgroup !== prev?.subgroup;
         const indented = !collapsed && !!item.subgroup;
+        const subgroupLabel = item.subgroup ? t(item.subgroup) : "";
         return (
           <React.Fragment key={item.href}>
             {showSubgroupHeader ? (
               <p
                 className="text-sidebar-foreground/55 mt-2 mb-0.5 px-3 text-[10px] font-semibold tracking-[0.10em] uppercase"
-                aria-label={`${item.subgroup} alt grubu`}
+                aria-label={t("shell.nav.subgroupAria", {
+                  name: subgroupLabel,
+                })}
               >
-                {item.subgroup}
+                {subgroupLabel}
               </p>
             ) : null}
             <SidebarNavLink
@@ -171,7 +177,9 @@ function SidebarNavLink({
   indented = false,
   onNavigate,
 }: SidebarNavLinkProps) {
+  const { t } = useTranslation();
   const Icon = item.icon;
+  const label = t(item.label);
   // In collapsed mode the icon-only link gets the full label via the
   // native `title` attribute (browser-native tooltip). Base UI's
   // Tooltip primitive is button-only and would emit the wrong ARIA
@@ -185,8 +193,8 @@ function SidebarNavLink({
       href={item.href}
       onClick={onNavigate}
       aria-current={isActive ? "page" : undefined}
-      aria-label={collapsed ? item.label : undefined}
-      title={collapsed ? item.label : undefined}
+      aria-label={collapsed ? label : undefined}
+      title={collapsed ? label : undefined}
       className={cn(
         "relative flex h-10 items-center gap-3 rounded-xl px-3 text-sm font-medium",
         "transition-[background,color,box-shadow] duration-[var(--motion-duration)] [transition-timing-function:var(--motion-ease)]",
@@ -214,7 +222,7 @@ function SidebarNavLink({
         className={cn("size-4 shrink-0", isActive && "text-sidebar-primary")}
         aria-hidden
       />
-      {collapsed ? null : <span className="truncate">{item.label}</span>}
+      {collapsed ? null : <span className="truncate">{label}</span>}
     </Link>
   );
 }

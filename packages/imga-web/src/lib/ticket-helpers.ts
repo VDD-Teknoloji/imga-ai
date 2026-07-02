@@ -4,16 +4,27 @@
 // Turkish label. Centralised here so adding a new state in Sprint
 // 7.5.5 or 8 only touches one file.
 
+import { localeLabels } from "@/lib/i18n/locale-labels";
 import type { TicketPriority, TicketState } from "@/lib/types";
 
-export const TICKET_STATE_LABELS: Record<TicketState, string> = {
-  open: "Açık",
-  in_progress: "İlerlemekte",
-  pending_customer: "Müşteri Bekleniyor",
-  resolved: "Çözüldü",
-  closed: "Kapatıldı",
-  cancelled: "İptal",
-};
+export const TICKET_STATE_LABELS: Record<TicketState, string> = localeLabels({
+  tr: {
+    open: "Açık",
+    in_progress: "İlerlemekte",
+    pending_customer: "Müşteri Bekleniyor",
+    resolved: "Çözüldü",
+    closed: "Kapatıldı",
+    cancelled: "İptal",
+  },
+  en: {
+    open: "Open",
+    in_progress: "In Progress",
+    pending_customer: "Pending Customer",
+    resolved: "Resolved",
+    closed: "Closed",
+    cancelled: "Cancelled",
+  },
+});
 
 /** Non-terminal states — used by "active ticket" counts. */
 export const ACTIVE_TICKET_STATES: ReadonlyArray<TicketState> = [
@@ -25,12 +36,10 @@ export const ACTIVE_TICKET_STATES: ReadonlyArray<TicketState> = [
 /** Terminal states — once here a ticket is "off the queue". */
 export const TERMINAL_TICKET_STATES: ReadonlyArray<TicketState> = ["closed", "cancelled"];
 
-export const TICKET_PRIORITY_LABELS: Record<TicketPriority, string> = {
-  low: "Düşük",
-  normal: "Normal",
-  high: "Yüksek",
-  urgent: "Acil",
-};
+export const TICKET_PRIORITY_LABELS: Record<TicketPriority, string> = localeLabels({
+  tr: { low: "Düşük", normal: "Normal", high: "Yüksek", urgent: "Acil" },
+  en: { low: "Low", normal: "Normal", high: "High", urgent: "Urgent" },
+});
 
 export const HIGH_PRIORITIES: ReadonlyArray<TicketPriority> = ["high", "urgent"];
 

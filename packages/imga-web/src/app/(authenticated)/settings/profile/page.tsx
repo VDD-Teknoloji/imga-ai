@@ -33,6 +33,7 @@ import {
   useUpdateTenantProfile,
 } from "@/hooks/use-tenant-profile";
 import { ApiError } from "@/lib/api-client";
+import { useTranslation } from "@/lib/i18n/use-translation";
 import {
   COMPANY_SIZE_OPTIONS,
   INDUSTRY_OPTIONS,
@@ -44,6 +45,7 @@ const DESCRIPTION_MAX = 500;
 export default function TenantProfilePage() {
   const profile = useTenantProfile();
   const update = useUpdateTenantProfile();
+  const { t } = useTranslation();
 
   // Local form mirror so the user can edit freely without each
   // keystroke hitting TanStack Query. Hydrate from the loaded profile;
@@ -93,18 +95,18 @@ export default function TenantProfilePage() {
       },
       {
         onSuccess: () => {
-          toast.success("Profil kaydedildi.");
+          toast.success(t("settings.profile.saved"));
         },
         onError: (err) => {
           if (err instanceof ApiError && err.status === 422) {
-            toast.error("Geçersiz alan: " + err.detail);
+            toast.error(t("settings.profile.invalidField", { detail: err.detail }));
             return;
           }
           if (err instanceof ApiError && err.status === 400) {
             toast.error(err.detail);
             return;
           }
-          toast.error("Kayıt başarısız.");
+          toast.error(t("settings.profile.saveFailed"));
         },
       },
     );
@@ -114,32 +116,31 @@ export default function TenantProfilePage() {
     <main className="mx-auto w-full max-w-2xl space-y-6 p-6 md:p-8">
       <header className="space-y-1">
         <h1 className="text-2xl font-semibold tracking-tight md:text-3xl">
-          Şirket Profili
+          {t("settings.profile.title")}
         </h1>
         <p className="text-muted-foreground text-sm">
-          Bu bilgiler stratejik raporlarda (SWOT, OKR) prompta verilir;
-          sektöre ve büyüklüğe göre özelleştirilmiş analiz üretilir.
+          {t("settings.profile.subtitle")}
         </p>
       </header>
 
       {profile.isLoading ? (
         <div className="flex items-center gap-2 p-6 text-sm">
-          <Loader2 className="size-4 animate-spin" /> Yükleniyor…
+          <Loader2 className="size-4 animate-spin" /> {t("common.loading")}
         </div>
       ) : profile.isError ? (
         <p className="text-destructive p-6 text-sm">
-          Profil yüklenemedi.
+          {t("settings.profile.loadError")}
         </p>
       ) : (
         <form onSubmit={onSubmit} className="space-y-5">
           <div className="space-y-2">
-            <Label htmlFor="industry">Sektör</Label>
+            <Label htmlFor="industry">{t("settings.profile.industry")}</Label>
             <Select
               value={industry || undefined}
               onValueChange={(v) => setIndustry(v ?? "")}
             >
               <SelectTrigger id="industry">
-                <SelectValue placeholder="Sektör seçin" />
+                <SelectValue placeholder={t("settings.profile.industryPlaceholder")} />
               </SelectTrigger>
               <SelectContent>
                 {INDUSTRY_OPTIONS.map((opt) => (
@@ -154,14 +155,14 @@ export default function TenantProfilePage() {
           {otherRequired && (
             <div className="space-y-2">
               <Label htmlFor="industry_other_text">
-                Sektör (serbest metin)
+                {t("settings.profile.industryOther")}
               </Label>
               <Input
                 id="industry_other_text"
                 value={otherText}
                 onChange={(e) => setOtherText(e.target.value)}
                 maxLength={INDUSTRY_OTHER_MAX}
-                placeholder="Örn. Kuyumculuk"
+                placeholder={t("settings.profile.industryOtherPlaceholder")}
                 aria-invalid={otherMissing || otherTooLong || undefined}
               />
               <p
@@ -171,19 +172,19 @@ export default function TenantProfilePage() {
                 }
               >
                 {otherText.length} / {INDUSTRY_OTHER_MAX}
-                {otherMissing ? " — bu alan zorunlu" : ""}
+                {otherMissing ? t("settings.profile.requiredSuffix") : ""}
               </p>
             </div>
           )}
 
           <div className="space-y-2">
-            <Label htmlFor="company_size">Şirket büyüklüğü</Label>
+            <Label htmlFor="company_size">{t("settings.profile.companySize")}</Label>
             <Select
               value={size || undefined}
               onValueChange={(v) => setSize(v ?? "")}
             >
               <SelectTrigger id="company_size">
-                <SelectValue placeholder="Büyüklük seçin" />
+                <SelectValue placeholder={t("settings.profile.companySizePlaceholder")} />
               </SelectTrigger>
               <SelectContent>
                 {COMPANY_SIZE_OPTIONS.map((opt) => (
@@ -196,14 +197,16 @@ export default function TenantProfilePage() {
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="business_description">İş tanımı</Label>
+            <Label htmlFor="business_description">
+              {t("settings.profile.businessDescription")}
+            </Label>
             <Textarea
               id="business_description"
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               maxLength={DESCRIPTION_MAX}
               rows={4}
-              placeholder="Hangi ürün/hizmeti veriyorsunuz, kimi hedefliyorsunuz?"
+              placeholder={t("settings.profile.businessDescriptionPlaceholder")}
               aria-invalid={descriptionTooLong || undefined}
             />
             <p
@@ -223,7 +226,7 @@ export default function TenantProfilePage() {
               ) : (
                 <Save className="size-4" aria-hidden />
               )}
-              Kaydet
+              {t("common.save")}
             </Button>
           </div>
         </form>

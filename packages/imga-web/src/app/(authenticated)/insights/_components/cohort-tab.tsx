@@ -32,6 +32,7 @@ import {
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
+import { useTranslation } from "@/lib/i18n/use-translation";
 import { useInsightsCohort } from "@/hooks/use-insights-cohort";
 import type {
   CohortDimension,
@@ -39,16 +40,16 @@ import type {
   CohortResponse,
 } from "@/lib/types";
 
-const PERIOD_LABELS: Record<CohortPeriod, string> = {
-  week: "Hafta",
-  month: "Ay",
-  quarter: "Çeyrek",
+const PERIOD_LABEL_KEYS: Record<CohortPeriod, string> = {
+  week: "insights.cohort.periodWeek",
+  month: "insights.cohort.periodMonth",
+  quarter: "insights.cohort.periodQuarter",
 };
 
-const DIMENSION_LABELS: Record<CohortDimension, string> = {
-  taxonomy: "Kategori (BERT)",
-  company_perspective: "Şirket Perspektifi",
-  nps_bucket: "NPS Kovası",
+const DIMENSION_LABEL_KEYS: Record<CohortDimension, string> = {
+  taxonomy: "insights.cohort.dimTaxonomy",
+  company_perspective: "insights.cohort.dimPerspective",
+  nps_bucket: "insights.cohort.dimNpsBucket",
 };
 
 // Distinct line colours — picked for contrast on a white background;
@@ -89,6 +90,7 @@ export function CohortTab({
   onDimensionChange,
   onLimitChange,
 }: Props) {
+  const { t } = useTranslation();
   const query = useInsightsCohort({
     period,
     dimension,
@@ -107,21 +109,21 @@ export function CohortTab({
       <Card>
         <CardContent className="grid grid-cols-1 gap-3 p-4 md:grid-cols-3">
           <div>
-            <Label className="text-xs">Dönem</Label>
+            <Label className="text-xs">{t("insights.cohort.period")}</Label>
             <select
               value={period}
               onChange={(e) => onPeriodChange(e.target.value as CohortPeriod)}
               className="border-input bg-background mt-1 w-full rounded-md border px-3 py-2 text-sm"
             >
-              {(Object.keys(PERIOD_LABELS) as CohortPeriod[]).map((p) => (
+              {(Object.keys(PERIOD_LABEL_KEYS) as CohortPeriod[]).map((p) => (
                 <option key={p} value={p}>
-                  {PERIOD_LABELS[p]}
+                  {t(PERIOD_LABEL_KEYS[p])}
                 </option>
               ))}
             </select>
           </div>
           <div>
-            <Label className="text-xs">Boyut</Label>
+            <Label className="text-xs">{t("insights.cohort.dimension")}</Label>
             <select
               value={dimension}
               onChange={(e) =>
@@ -129,15 +131,17 @@ export function CohortTab({
               }
               className="border-input bg-background mt-1 w-full rounded-md border px-3 py-2 text-sm"
             >
-              {(Object.keys(DIMENSION_LABELS) as CohortDimension[]).map((d) => (
-                <option key={d} value={d}>
-                  {DIMENSION_LABELS[d]}
-                </option>
-              ))}
+              {(Object.keys(DIMENSION_LABEL_KEYS) as CohortDimension[]).map(
+                (d) => (
+                  <option key={d} value={d}>
+                    {t(DIMENSION_LABEL_KEYS[d])}
+                  </option>
+                ),
+              )}
             </select>
           </div>
           <div>
-            <Label className="text-xs">Top kohort</Label>
+            <Label className="text-xs">{t("insights.cohort.topCohorts")}</Label>
             <input
               type="number"
               min={1}
@@ -156,20 +160,22 @@ export function CohortTab({
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Kohort Trendi</CardTitle>
+          <CardTitle className="text-base">
+            {t("insights.cohort.trendTitle")}
+          </CardTitle>
         </CardHeader>
         <CardContent>
           {query.isLoading || query.isPending ? (
             <p className="text-muted-foreground py-12 text-center text-sm">
-              Yükleniyor…
+              {t("common.loading")}
             </p>
           ) : query.isError ? (
             <p className="text-destructive py-12 text-center text-sm">
-              Veri yüklenemedi.
+              {t("insights.state.loadErrorShort")}
             </p>
           ) : !query.data || query.data.cohorts.length === 0 ? (
             <p className="text-muted-foreground py-12 text-center text-sm">
-              Bu filtrelerle veri bulunamadı.
+              {t("insights.state.noData")}
             </p>
           ) : (
             <ResponsiveContainer width="100%" height={360}>

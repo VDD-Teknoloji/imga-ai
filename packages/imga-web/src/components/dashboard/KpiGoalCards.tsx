@@ -21,9 +21,11 @@ import {
   type MetricDefinition,
   useMetricDefinitions,
 } from "@/hooks/use-metric-definitions";
+import { useTranslation } from "@/lib/i18n/use-translation";
 import { cn } from "@/lib/utils";
 
 export function KpiGoalCards() {
+  const { t } = useTranslation();
   const goals = useKpiGoalProgressBulk();
   const metrics = useMetricDefinitions();
 
@@ -40,14 +42,13 @@ export function KpiGoalCards() {
         <CardContent className="flex flex-wrap items-center gap-3 p-4">
           <Target className="text-muted-foreground size-5" aria-hidden />
           <p className="text-muted-foreground flex-1 text-sm">
-            Henüz KPI hedefi yok. İlk hedefinizi ekleyerek dashboard
-            kartlarında achievement yüzdesini görün.
+            {t("dashboard.kpiGoals.empty")}
           </p>
           <Link
             href="/settings/kpi-goals"
             className="text-primary text-sm font-medium hover:underline"
           >
-            Hedef ekle →
+            {t("dashboard.kpiGoals.addGoal")} →
           </Link>
         </CardContent>
       </Card>
@@ -57,12 +58,14 @@ export function KpiGoalCards() {
   return (
     <section className="space-y-3">
       <header className="flex items-center justify-between gap-2">
-        <h2 className="text-sm font-semibold tracking-tight">KPI Hedefleri</h2>
+        <h2 className="text-sm font-semibold tracking-tight">
+          {t("dashboard.kpiGoals.title")}
+        </h2>
         <Link
           href="/settings/kpi-goals"
           className="text-muted-foreground hover:text-foreground text-xs"
         >
-          Düzenle →
+          {t("dashboard.kpiGoals.edit")} →
         </Link>
       </header>
       <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
@@ -85,6 +88,7 @@ function GoalCard({
   progress: KpiGoalProgress;
   metric?: MetricDefinition;
 }) {
+  const { t } = useTranslation();
   const tone =
     g.achievement_pct === null
       ? "border-zinc-300"
@@ -95,12 +99,12 @@ function GoalCard({
       : "border-red-400";
   const stateLabel =
     g.achievement_pct === null
-      ? "Veri yok"
+      ? t("dashboard.kpiGoals.state.noData")
       : g.on_track
-      ? "Yolda"
+      ? t("dashboard.kpiGoals.state.onTrack")
       : g.achievement_pct >= 70
-      ? "Risk altında"
-      : "Hedef altında";
+      ? t("dashboard.kpiGoals.state.atRisk")
+      : t("dashboard.kpiGoals.state.belowTarget");
   const stateClass =
     g.achievement_pct === null
       ? "bg-zinc-100 text-zinc-700"
