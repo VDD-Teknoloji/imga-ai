@@ -90,6 +90,9 @@ export interface ExecutiveOverview {
   latest_briefing: ExecutiveBriefingSnapshot | null;
   latest_swot: ExecutiveSwotSnapshot | null;
   latest_okr: ExecutiveOkrSnapshot | null;
+  /** Son veri girişi (ISO). null: tenant'ta hiç yorum yok. "Son 24
+   *  saatte yükleme yok → yükleme alanı öne" kuralının kaynağı. */
+  last_data_at: string | null;
 }
 
 export function useExecutiveOverview() {

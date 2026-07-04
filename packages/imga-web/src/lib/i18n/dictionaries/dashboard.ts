@@ -203,6 +203,44 @@ export const dashboard: Bundle = {
     "dashboard.executiveHero.legend.positive": "Olumlu",
     "dashboard.executiveHero.legend.neutral": "Nötr",
     "dashboard.executiveHero.legend.negative": "Olumsuz",
+    "dashboard.executiveHero.windowEmpty.title": "Seçilen dönemde yorum yok",
+    "dashboard.executiveHero.windowEmpty.desc":
+      "Dönem filtresini genişletin veya yeni yorum verisi yükleyin.",
+    "dashboard.executiveHero.scoreInfo.aria":
+      "Memnuniyet skoru nasıl hesaplanır?",
+    "dashboard.executiveHero.scoreInfo.text":
+      "Memnuniyet skoru, pozitif yorumların tüm yorumlara (pozitif + nötr + negatif) oranıdır ve seçili döneme göre hesaplanır. Trend rozeti son 30 günü önceki 30 günle karşılaştırır.",
+    "dashboard.executiveHero.swotCta": "SWOT Analizi",
+
+    // --- dönem filtresi ---
+    "dashboard.window.label": "Dönem",
+    "dashboard.window.3m": "Son 3 Ay",
+    "dashboard.window.6m": "Son 6 Ay",
+    "dashboard.window.all": "Tüm Zamanlar",
+
+    // --- NPS dağılımı kartı ---
+    "dashboard.npsCard.title": "NPS Dağılımı",
+    "dashboard.npsCard.infoAria": "NPS nasıl hesaplanır?",
+    "dashboard.npsCard.info":
+      "NPS = Destekçi yüzdesi − Kötüleyen yüzdesi (−100 ile +100 arası). 0-10 ölçeğinde 9-10 puan Destekçi, 7-8 Pasif, 0-6 Kötüleyen sayılır.",
+    "dashboard.npsCard.promoters": "Destekçiler",
+    "dashboard.npsCard.passives": "Pasifler",
+    "dashboard.npsCard.detractors": "Kötüleyenler",
+    "dashboard.npsCard.scoreLabel": "NPS Skoru",
+    "dashboard.npsCard.empty":
+      "Bu dönemde NPS verisi yok. Yükleme dosyanızda NPS kolonu eşlerseniz dağılım burada görünür.",
+    "dashboard.npsCard.coverage": "NPS verisi olan yorum oranı: %{pct}",
+
+    // --- kategori bazlı duygu dağılımı ---
+    "dashboard.categoryBreakdown.title": "Kategori Bazlı Duygu Dağılımı",
+    "dashboard.categoryBreakdown.subtitle":
+      "Her kategorideki olumsuz / nötr / olumlu payı. Bir dilime tıklayınca ilgili yorumlar açılır.",
+    "dashboard.categoryBreakdown.empty": "Bu dönemde kategori verisi yok.",
+
+    // --- önce yükleme (24 saat kuralı) ---
+    "dashboard.uploadFirst.title": "Bugün henüz veri yüklemediniz",
+    "dashboard.uploadFirst.desc":
+      "Son 24 saatte yeni yorum verisi gelmedi. Analizlerin güncel kalması için son müşteri yorumlarınızı yükleyin — sonuçlar dakikalar içinde bu sayfaya yansır.",
 
     // --- öncelikli aksiyon ---
     "dashboard.priorityAction.label": "Bu ayki önceliğiniz",
@@ -630,6 +668,45 @@ export const dashboard: Bundle = {
     "dashboard.executiveHero.legend.positive": "Positive",
     "dashboard.executiveHero.legend.neutral": "Neutral",
     "dashboard.executiveHero.legend.negative": "Negative",
+    "dashboard.executiveHero.windowEmpty.title":
+      "No reviews in the selected period",
+    "dashboard.executiveHero.windowEmpty.desc":
+      "Widen the period filter or upload new review data.",
+    "dashboard.executiveHero.scoreInfo.aria":
+      "How is the satisfaction score calculated?",
+    "dashboard.executiveHero.scoreInfo.text":
+      "The satisfaction score is the share of positive reviews among all reviews (positive + neutral + negative), calculated for the selected period. The trend badge compares the last 30 days with the previous 30 days.",
+    "dashboard.executiveHero.swotCta": "SWOT Analysis",
+
+    // --- period filter ---
+    "dashboard.window.label": "Period",
+    "dashboard.window.3m": "Last 3 Months",
+    "dashboard.window.6m": "Last 6 Months",
+    "dashboard.window.all": "All Time",
+
+    // --- NPS breakdown card ---
+    "dashboard.npsCard.title": "NPS Distribution",
+    "dashboard.npsCard.infoAria": "How is NPS calculated?",
+    "dashboard.npsCard.info":
+      "NPS = % Promoters − % Detractors (ranges from −100 to +100). On a 0-10 scale, 9-10 counts as Promoter, 7-8 as Passive and 0-6 as Detractor.",
+    "dashboard.npsCard.promoters": "Promoters",
+    "dashboard.npsCard.passives": "Passives",
+    "dashboard.npsCard.detractors": "Detractors",
+    "dashboard.npsCard.scoreLabel": "NPS Score",
+    "dashboard.npsCard.empty":
+      "No NPS data in this period. Map an NPS column in your upload file and the distribution will appear here.",
+    "dashboard.npsCard.coverage": "Reviews carrying NPS data: {pct}%",
+
+    // --- category sentiment breakdown ---
+    "dashboard.categoryBreakdown.title": "Sentiment by Category",
+    "dashboard.categoryBreakdown.subtitle":
+      "Negative / neutral / positive share per category. Click a slice to open the matching reviews.",
+    "dashboard.categoryBreakdown.empty": "No category data in this period.",
+
+    // --- upload first (24-hour rule) ---
+    "dashboard.uploadFirst.title": "You haven't uploaded data today",
+    "dashboard.uploadFirst.desc":
+      "No new review data has arrived in the last 24 hours. Upload your latest customer reviews to keep the analyses fresh — results land on this page within minutes.",
 
     // --- priority action ---
     "dashboard.priorityAction.label": "This month's priority",

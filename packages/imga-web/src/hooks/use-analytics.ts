@@ -7,7 +7,7 @@
 // Cache strategy: every hook keys on the serialised filter QS so the
 // /insights filter bar's URL-state changes invalidate cleanly.
 
-import { useQuery } from "@tanstack/react-query";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
 
 import { apiRequest } from "@/lib/api-client";
 import type {
@@ -74,6 +74,8 @@ export function useSentimentDistribution(filters: AnalyticsFilters) {
     queryKey: ["analytics-sentiment-dist", query],
     queryFn: () =>
       apiRequest<SentimentDistResponse>(`/tenants/me/analytics/sentiment-distribution?${query}`),
+    // Dönem filtresi değişince önceki veri görünür kalır (skeleton flash yok).
+    placeholderData: keepPreviousData,
   });
 }
 
@@ -99,6 +101,7 @@ export function useSentimentByCategory(filters: AnalyticsFilters, topN = 10) {
       apiRequest<SentimentByCategoryResponse>(
         `/tenants/me/analytics/sentiment-by-category?${query}`,
       ),
+    placeholderData: keepPreviousData,
   });
 }
 
@@ -173,6 +176,7 @@ export function useNpsSummary(filters: NpsDateFilters) {
   return useQuery<NPSSummary>({
     queryKey: ["analytics-nps-summary", query],
     queryFn: () => apiRequest<NPSSummary>(`/tenants/me/analytics/nps-summary?${query}`),
+    placeholderData: keepPreviousData,
   });
 }
 

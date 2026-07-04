@@ -14,15 +14,24 @@
 //   * Büyük memnuniyet yüzdesi + altında tek bir SEGMENTLİ ÇUBUK
 //     (olumlu / nötr / olumsuz oranı) — "depolama çubuğu" gibi tüm
 //     dengeyi tek bakışta gösterir. Rakam değil, bilgi.
-//   * Tek birincil aksiyon. Fazla buton = fazla karar.
 //
-// Veri: useExecutiveOverview (tek round-trip). Memnuniyet sayıları
-// tüm zamanlar; trend son 30 gün — etiketler buna göre.
+// Sprint 13 revizyonu (ürün sahibi görsel geri bildirimi):
+//   * Trend rozetindeki ok ikonu kaldırıldı — sadece metin + renk.
+//   * Memnuniyet skoru yanına "nasıl hesaplanıyor?" tooltip'i.
+//   * Veri artık sayfadaki dönem filtresine göre pencereli gelir;
+//     pencere boşsa hafif bir "bu dönemde yorum yok" kartı çizilir.
+//   * SWOT analizine göze çarpan yönlendirme butonu.
 
-import { ArrowRight, Minus, TrendingDown, TrendingUp, Upload } from "lucide-react";
+import { ArrowRight, Compass, Info, Upload } from "lucide-react";
 import Link from "next/link";
 
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { useCountUp, useMounted } from "@/hooks/use-count-up";
 import type {
   ExecutiveOverview,
@@ -31,6 +40,8 @@ import type {
 import { useTranslation } from "@/lib/i18n/use-translation";
 
 type Translate = (key: string, vars?: Record<string, string | number>) => string;
+
+type SentimentCounts = ExecutiveOverview["sentiment"];
 
 type Band = "healthy" | "watch" | "critical" | "balanced";
 
@@ -106,18 +117,33 @@ function headlineFor(
 }
 
 interface Props {
-  overview: ExecutiveOverview | undefined;
+  /** Seçili döneme göre pencereli duygu sayıları. */
+  sentiment: SentimentCounts | undefined;
+  /** Son 30 gün vs önceki 30 gün (dönem filtresinden bağımsız). */
+  trend: ExecutiveSentimentTrend | null | undefined;
+  /** Seçili dönemin NPS skoru (veri yoksa null). */
+  npsScore: number | null | undefined;
   isLoading: boolean;
+  /** Tenant'ta (tüm zamanlar) hiç yorum var mı? Pencere-boş ile
+   *  gerçekten-boş ayrımını bu yapar. */
+  hasAnyData: boolean;
 }
 
-export function ExecutiveHero({ overview, isLoading }: Props) {
+export function ExecutiveHero({
+  sentiment,
+  trend,
+  npsScore,
+  isLoading,
+  hasAnyData,
+}: Props) {
   const { t } = useTranslation();
-  if (isLoading) return <Skeleton className="h-72 w-full rounded-3xl" />;
-  if (!overview) return null;
+  if (isLoading || !sentiment) {
+    return <Skeleton className="h-72 w-full rounded-3xl" />;
+  }
 
-  const { POZITIF, NEGATIF, total } = overview.sentiment;
+  const { POZITIF, NEGATIF, total } = sentiment;
 
-  if (total === 0) {
+  if (total === 0 && !hasAnyData) {
     return (
       <section className="rise-in shadow-soft bg-card ring-foreground/5 rounded-3xl p-8 text-center ring-1 md:p-12">
         <h2 className="text-2xl font-semibold tracking-tight md:text-3xl">
@@ -133,6 +159,21 @@ export function ExecutiveHero({ overview, isLoading }: Props) {
           <Upload className="size-4" aria-hidden />{" "}
           {t("dashboard.executiveHero.empty.upload")}
         </Link>
+      </section>
+    );
+  }
+
+  if (total === 0) {
+    // Veri var ama seçili dönem penceresi boş — dev boş-CTA yerine
+    // sakin bir bilgilendirme (dönem filtresi hemen altta duruyor).
+    return (
+      <section className="rise-in shadow-soft bg-card ring-foreground/5 rounded-3xl p-8 ring-1 md:p-10">
+        <h2 className="text-xl font-semibold tracking-tight md:text-2xl">
+          {t("dashboard.executiveHero.windowEmpty.title")}
+        </h2>
+        <p className="text-muted-foreground mt-2 max-w-xl text-sm leading-relaxed">
+          {t("dashboard.executiveHero.windowEmpty.desc")}
+        </p>
       </section>
     );
   }
@@ -174,21 +215,22 @@ export function ExecutiveHero({ overview, isLoading }: Props) {
             </strong>{" "}
             {t("dashboard.executiveHero.summary.suffix")}
           </p>
-          {overview.trend && <TrendPill trend={overview.trend} />}
+          {trend && <TrendPill trend={trend} />}
         </div>
 
         {/* Büyük yüzde — destekleyici tek rakam. */}
         <div className="flex shrink-0 flex-col items-start md:items-end">
           <BigPercent pct={posPct} className={visual.numberClass} />
-          <p className="text-muted-foreground mt-0.5 text-sm font-medium">
+          <p className="text-muted-foreground mt-0.5 inline-flex items-center gap-1.5 text-sm font-medium">
             {t("dashboard.executiveHero.satisfaction")}
+            <ScoreInfoTip />
           </p>
-          {overview.nps_score !== null && (
+          {npsScore !== null && npsScore !== undefined && (
             <p className="text-muted-foreground mt-3 text-sm tabular-nums">
               NPS{" "}
               <strong className="text-foreground font-semibold">
-                {overview.nps_score > 0 ? "+" : ""}
-                {Math.round(overview.nps_score)}
+                {npsScore > 0 ? "+" : ""}
+                {Math.round(npsScore)}
               </strong>
             </p>
           )}
@@ -198,8 +240,8 @@ export function ExecutiveHero({ overview, isLoading }: Props) {
       {/* Segmentli memnuniyet çubuğu — tüm denge tek bakışta. */}
       <SatisfactionBar posPct={posPct} notrPct={notrPct} negPct={negPct} t={t} />
 
-      {/* Tek birincil aksiyon — duruma göre yön. */}
-      <div className="mt-7 flex flex-wrap items-center gap-x-6 gap-y-3">
+      {/* Aksiyonlar — negatiflere git + göze çarpan SWOT kapısı. */}
+      <div className="mt-7 flex flex-wrap items-center gap-3">
         <Link
           href={
             visual.band === "healthy"
@@ -214,24 +256,47 @@ export function ExecutiveHero({ overview, isLoading }: Props) {
           <ArrowRight className="size-4" aria-hidden />
         </Link>
         <Link
-          href="/strategy"
-          className="text-foreground/70 hover:text-foreground text-sm font-semibold transition-colors"
+          href="/strategy?tab=swot"
+          className="inline-flex items-center gap-2 rounded-2xl bg-gradient-to-r from-violet-600 to-indigo-600 px-5 py-3 text-sm font-semibold text-white shadow-md transition-all hover:from-violet-500 hover:to-indigo-500 hover:shadow-lg"
         >
-          {t("dashboard.executiveHero.createActionPlan")}
+          <Compass className="size-4" aria-hidden />
+          {t("dashboard.executiveHero.swotCta")}
+          <ArrowRight className="size-4" aria-hidden />
         </Link>
       </div>
     </section>
   );
 }
 
+/** Memnuniyet skorunun nasıl hesaplandığını açıklayan bilgi balonu.
+ *  Ürün sahibi isteği: skor mantıklıysa açıklaması görünür olsun. */
+function ScoreInfoTip() {
+  const { t } = useTranslation();
+  return (
+    <TooltipProvider>
+      <Tooltip>
+        <TooltipTrigger
+          aria-label={t("dashboard.executiveHero.scoreInfo.aria")}
+          className="text-muted-foreground/70 hover:text-foreground inline-flex cursor-help items-center transition-colors"
+        >
+          <Info className="size-3.5" aria-hidden />
+        </TooltipTrigger>
+        <TooltipContent className="max-w-72 leading-relaxed">
+          {t("dashboard.executiveHero.scoreInfo.text")}
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  );
+}
+
 /** Son 30 gün vs önceki 30 gün memnuniyet değişimi — sakin, aydınlık
- *  rozet. |delta| < 1 puan: "değişmedi". */
+ *  rozet. |delta| < 1 puan: "değişmedi". İkonsuz: renk + metin yeter
+ *  (ürün sahibi görsel geri bildirimi, Sprint 13). */
 function TrendPill({ trend }: { trend: ExecutiveSentimentTrend }) {
   const { t } = useTranslation();
   const delta = trend.delta_points;
   const flat = Math.abs(delta) < 1;
   const up = delta >= 1;
-  const Icon = flat ? Minus : up ? TrendingUp : TrendingDown;
   const cls = flat
     ? "bg-muted text-muted-foreground"
     : up
@@ -245,9 +310,8 @@ function TrendPill({ trend }: { trend: ExecutiveSentimentTrend }) {
       : t("dashboard.executiveHero.trend.down", { points });
   return (
     <span
-      className={`mt-5 inline-flex items-center gap-2 rounded-full px-3.5 py-1.5 text-sm font-medium tabular-nums ${cls}`}
+      className={`mt-5 inline-flex items-center rounded-full px-3.5 py-1.5 text-sm font-medium tabular-nums ${cls}`}
     >
-      <Icon className="size-4" aria-hidden />
       {label}
     </span>
   );
