@@ -168,3 +168,70 @@ async def test_invalid_status_update_returns_422(
         json={"status": "snoozed"},
     )
     assert r.status_code == 422, r.text
+
+
+@pytest.mark.asyncio
+async def test_viewer_cannot_acknowledge_alert(
+    batch_client: TestClient,
+    semi_auto_tenant: tuple[User, UUID, str],
+    admin_session: AsyncSession,
+) -> None:
+    """Sprint 13 rol matrisi: ack/dismiss durum mutasyonu — VIEWER
+    (salt-okuma) 403 almalı; listeleme serbest kalır."""
+    from uuid import uuid4
+
+    from imga_db.models import TrendAlert as _TA, UserTenantRole
+
+    from imga_api.services import AuditService, UserService
+
+    _user, tid, _pw = semi_auto_tenant
+    async with admin_session.begin():
+        await admin_session.execute(
+            text("SELECT set_config('app.current_tenant_id', :t, true)"),
+            {"t": str(tid)},
+        )
+        alert = _TA(
+            tenant_id=tid,
+            alert_type="nps_drop_week",
+            severity="warning",
+            title="Viewer testi",
+            description="…",
+            evidence={},
+            status="active",
+        )
+        admin_session.add(alert)
+        await admin_session.flush()
+        alert_id = str(alert.id)
+
+    audit = AuditService(admin_session)
+    usvc = UserService(admin_session, audit)
+    viewer_plain = "Viewer-Password-123!"
+    viewer_email = f"viewer-{uuid4().hex[:8]}@example.com"
+    async with admin_session.begin():
+        viewer = await usvc.create(
+            email=viewer_email, password=viewer_plain, full_name="TA Viewer"
+        )
+        await usvc.attach_to_tenant(
+            user_id=viewer.id, tenant_id=tid, role=UserTenantRole.VIEWER
+        )
+        viewer_id = viewer.id
+
+    try:
+        token = login_token(batch_client, viewer_email, viewer_plain, tid)
+        list_r = batch_client.get(
+            "/tenants/me/trend-alerts", headers=_auth(token)
+        )
+        assert list_r.status_code == 200, list_r.text
+
+        r = batch_client.patch(
+            f"/tenants/me/trend-alerts/{alert_id}",
+            headers=_auth(token),
+            json={"status": "acknowledged"},
+        )
+        assert r.status_code == 403, r.text
+    finally:
+        async with admin_session.begin():
+            await admin_session.execute(
+                text("DELETE FROM users WHERE id = :id"),
+                {"id": str(viewer_id)},
+            )

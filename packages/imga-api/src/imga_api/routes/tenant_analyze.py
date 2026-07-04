@@ -46,6 +46,12 @@ _AnyMember = Depends(require_role(
     UserTenantRole.ANALYST,
     UserTenantRole.VIEWER,
 ))
+# Sprint 13 yetki denetimi: analiz reviews'a satır yazar ve auto-ticket
+# açabilir — salt-okuma viewer'ın işi değil.
+_WriteMember = Depends(require_role(
+    UserTenantRole.TENANT_ADMIN,
+    UserTenantRole.ANALYST,
+))
 
 
 # --- request / response models -----------------------------------------
@@ -188,7 +194,7 @@ def _require_active_tenant(current: CurrentUser) -> UUID:
 )
 async def tenant_analyze(
     body: TenantAnalyzeRequest,
-    current: Annotated[CurrentUser, _AnyMember],
+    current: Annotated[CurrentUser, _WriteMember],
     app_session: Annotated[AsyncSession, Depends(get_app_session)],
     pipeline: Annotated[AnalysisPipeline, Depends(get_pipeline)],
     reviews: Annotated[ReviewService, Depends(get_review_service)],

@@ -111,3 +111,48 @@ async def test_analyze_audit_row_carries_actor_user_id(
             )
         ).scalar_one()
     assert audit.actor_user_id == user.id
+
+
+@pytest.mark.asyncio
+async def test_viewer_cannot_analyze(
+    batch_client: TestClient,
+    semi_auto_tenant: tuple[User, UUID, str],
+    admin_session: AsyncSession,
+) -> None:
+    """Sprint 13 rol matrisi: /tenants/me/analyze reviews'a satır yazar
+    ve auto-ticket açabilir — VIEWER (salt-okuma) 403 almalı."""
+    from uuid import uuid4
+
+    from imga_db.models import UserTenantRole
+
+    from imga_api.services import AuditService, UserService
+
+    _admin, tid, _pw = semi_auto_tenant
+
+    audit = AuditService(admin_session)
+    usvc = UserService(admin_session, audit)
+    viewer_plain = "Viewer-Password-123!"
+    viewer_email = f"viewer-{uuid4().hex[:8]}@example.com"
+    async with admin_session.begin():
+        viewer = await usvc.create(
+            email=viewer_email, password=viewer_plain, full_name="Rev Viewer"
+        )
+        await usvc.attach_to_tenant(
+            user_id=viewer.id, tenant_id=tid, role=UserTenantRole.VIEWER
+        )
+        viewer_id = viewer.id
+
+    try:
+        token = login_token(batch_client, viewer_email, viewer_plain, tid)
+        r = batch_client.post(
+            "/tenants/me/analyze",
+            headers={"Authorization": f"Bearer {token}"},
+            json={"text": "Kargom gelmedi çok kötü bir deneyim"},
+        )
+        assert r.status_code == 403, r.text
+    finally:
+        async with admin_session.begin():
+            await admin_session.execute(
+                text("DELETE FROM users WHERE id = :id"),
+                {"id": str(viewer_id)},
+            )

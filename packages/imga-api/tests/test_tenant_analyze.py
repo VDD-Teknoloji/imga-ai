@@ -603,3 +603,4 @@ async def test_rls_hides_other_tenant_reviews(
                 text("DELETE FROM tenants WHERE id = :id"),
                 {"id": str(tenant_b.id)},
             )
+

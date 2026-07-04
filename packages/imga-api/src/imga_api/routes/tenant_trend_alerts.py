@@ -39,6 +39,12 @@ _AnyMember = Depends(require_role(
     UserTenantRole.VIEWER,
 ))
 _AdminOnly = Depends(require_role(UserTenantRole.TENANT_ADMIN))
+# Sprint 13 yetki denetimi: ack/dismiss durum mutasyonu — viewer
+# salt-okuma kalır.
+_WriteMember = Depends(require_role(
+    UserTenantRole.TENANT_ADMIN,
+    UserTenantRole.ANALYST,
+))
 
 ALLOWED_STATUSES = {"active", "acknowledged", "dismissed"}
 
@@ -129,7 +135,7 @@ async def list_trend_alerts(
 async def update_trend_alert(
     alert_id: UUID,
     body: TrendAlertUpdateRequest,
-    current: Annotated[CurrentUser, _AnyMember],
+    current: Annotated[CurrentUser, _WriteMember],
     app_session: Annotated[AsyncSession, Depends(get_app_session)],
 ) -> TrendAlertResponse:
     tenant_id = _require_active_tenant(current)
