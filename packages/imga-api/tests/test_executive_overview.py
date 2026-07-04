@@ -94,6 +94,7 @@ async def test_overview_empty_tenant_returns_nulls_and_zeros(
     assert body["latest_briefing"] is None
     assert body["latest_swot"] is None
     assert body["latest_okr"] is None
+    assert body["last_data_at"] is None
 
 
 @pytest.mark.asyncio
@@ -303,6 +304,11 @@ async def test_overview_populated_returns_full_payload(
     kr = okr_snap["objectives"][0]["key_results"][0]
     assert kr["metric"] == "avg_delivery_days"
     assert kr["target"] == "2"
+
+    # Son veri girişi: yorumlar az önce seed'lendi → son 24 saat içinde.
+    assert body["last_data_at"] is not None
+    last_data = datetime.fromisoformat(body["last_data_at"])
+    assert (datetime.now(UTC) - last_data) < timedelta(hours=24)
 
 
 @pytest.mark.asyncio

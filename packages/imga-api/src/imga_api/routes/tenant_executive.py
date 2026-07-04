@@ -173,6 +173,9 @@ class ExecutiveOverviewResponse(BaseModel):
     latest_briefing: BriefingSnapshot | None
     latest_swot: SwotSnapshot | None
     latest_okr: OkrSnapshot | None
+    # Son veri girişi (max Review.created_at). Frontend "son 24 saatte
+    # yükleme yok → yükleme alanını öne al" kuralını buna göre kurar.
+    last_data_at: datetime | None
 
 
 # --- helpers ------------------------------------------------------------
@@ -208,6 +211,18 @@ async def _sentiment_totals(
         counts[k] for k in ("POZITIF", "NEGATIF", "NÖTR")
     )
     return counts
+
+
+async def _last_data_at(
+    session: AsyncSession, tenant_id: UUID
+) -> datetime | None:
+    return (
+        await session.execute(
+            select(func.max(Review.created_at))
+            .where(Review.tenant_id == tenant_id)
+            .where(Review.deleted_at.is_(None))
+        )
+    ).scalar_one_or_none()
 
 
 async def _sentiment_trend(
@@ -563,6 +578,7 @@ async def executive_overview(
 
             sentiment = await _sentiment_totals(app_session, tenant_id)
             trend = await _sentiment_trend(app_session, tenant_id)
+            last_data_at = await _last_data_at(app_session, tenant_id)
             top_problems = await _top_problems(
                 app_session, tenant_id,
                 total_negative=sentiment["NEGATIF"],
@@ -586,6 +602,7 @@ async def executive_overview(
             latest_briefing=briefing,
             latest_swot=swot,
             latest_okr=okr,
+            last_data_at=last_data_at,
         )
     except HTTPException:
         raise
