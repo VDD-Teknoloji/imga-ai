@@ -39,6 +39,7 @@ import {
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
+import { RequireRole } from "@/components/auth/require-role";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -69,6 +70,14 @@ import type { LlmCredential } from "@/lib/types";
 const GEMINI_KEY_PREFIX = "AIza";
 
 export default function IntegrationsPage() {
+  return (
+    <RequireRole level="admin">
+      <IntegrationsPageInner />
+    </RequireRole>
+  );
+}
+
+function IntegrationsPageInner() {
   const list = useLlmCredentials();
   const credentials = list.data ?? [];
   const { t } = useTranslation();

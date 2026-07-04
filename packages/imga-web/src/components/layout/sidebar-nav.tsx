@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import * as React from "react";
 
-import { useAuthStore } from "@/lib/auth-store";
+import { useRoleFlags, type RoleFlags } from "@/hooks/use-role-flags";
 import { useTranslation } from "@/lib/i18n/use-translation";
 import { cn } from "@/lib/utils";
 
@@ -13,6 +13,20 @@ import {
   NAV_SECTIONS,
   type NavItem,
 } from "./nav-config";
+
+/** Sprint 13 — rol eşiği filtresi. Backend require_role matrisinin
+ *  aynası: kullanıcıya 403 yiyeceği kapı hiç gösterilmez. */
+function visibleItems(
+  items: ReadonlyArray<NavItem>,
+  flags: RoleFlags,
+): NavItem[] {
+  return items.filter((item) => {
+    if (item.minRole === "super") return flags.isSuperAdmin;
+    if (item.minRole === "admin") return flags.isAdmin;
+    if (item.minRole === "write") return flags.canWrite;
+    return true;
+  });
+}
 
 interface SidebarNavProps {
   /** When true, only the icon is shown; label appears as a tooltip. */
@@ -30,12 +44,20 @@ interface SidebarNavProps {
  */
 export function SidebarNav({ collapsed, onNavigate }: SidebarNavProps) {
   const pathname = usePathname();
-  const isSuperAdmin = useAuthStore((s) => s.user?.is_super_admin ?? false);
+  const flags = useRoleFlags();
   const { t } = useTranslation();
+
+  // Sprint 13 — rol filtresi: item'lar minRole'e göre elenir, boş
+  // kalan bölüm başlığı/divider'ıyla birlikte hiç render edilmez.
+  const sections = NAV_SECTIONS.map((section) => ({
+    heading: section.heading,
+    items: visibleItems(section.items, flags),
+  })).filter((section) => section.items.length > 0);
+  const adminItems = visibleItems(ADMIN_NAV_ITEMS, flags);
 
   return (
     <nav aria-label={t("shell.nav.mainMenu")} className="flex flex-col gap-1 px-2">
-      {NAV_SECTIONS.map((section, sectionIdx) => (
+      {sections.map((section, sectionIdx) => (
         <SidebarSection
           key={`section-${sectionIdx}`}
           heading={section.heading}
@@ -47,12 +69,13 @@ export function SidebarNav({ collapsed, onNavigate }: SidebarNavProps) {
         />
       ))}
 
-      {/* Sprint 7.7.4: admin section is fully hidden for non-admins
-          — no heading, no separator, no DOM at all. */}
-      {isSuperAdmin ? (
+      {/* Sprint 7.7.4: admin section is fully hidden when empty —
+          no heading, no separator, no DOM at all. Sprint 13: bölüm
+          artık tenant_admin'e de açık (kurum CRUD'u super-only). */}
+      {adminItems.length > 0 ? (
         <SidebarSection
           heading="shell.nav.section.admin"
-          items={ADMIN_NAV_ITEMS}
+          items={adminItems}
           showDivider
           collapsed={collapsed}
           pathname={pathname}

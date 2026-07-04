@@ -14,6 +14,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useState } from "react";
 import { toast } from "sonner";
 
+import { RequireRole } from "@/components/auth/require-role";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -65,9 +66,11 @@ const PRIORITY_KEYS: Record<SlaPriority, string> = {
 
 export default function SlaRulesPage() {
   return (
-    <Suspense fallback={<HeaderSkeleton />}>
-      <SlaRulesContent />
-    </Suspense>
+    <RequireRole level="admin">
+      <Suspense fallback={<HeaderSkeleton />}>
+        <SlaRulesContent />
+      </Suspense>
+    </RequireRole>
   );
 }
 

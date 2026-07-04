@@ -22,6 +22,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 
+import { useRoleFlags } from "@/hooks/use-role-flags";
 import { useTranslation } from "@/lib/i18n/use-translation";
 import { cn } from "@/lib/utils";
 
@@ -32,6 +33,8 @@ interface QuickActionRow {
   /** i18n anahtarı — render sırasında t() ile çözülür. */
   hintKey: string;
   Icon: typeof Upload;
+  /** Sprint 13 — yalnız yazma yetkili roller görür (viewer 403 yerdi). */
+  requiresWrite?: boolean;
 }
 
 const ROWS: ReadonlyArray<QuickActionRow> = [
@@ -40,6 +43,7 @@ const ROWS: ReadonlyArray<QuickActionRow> = [
     labelKey: "shell.fab.newUpload.label",
     hintKey: "shell.fab.newUpload.hint",
     Icon: Upload,
+    requiresWrite: true,
   },
   {
     href: "/executive-briefing",
@@ -66,6 +70,8 @@ export function QuickActionFab() {
   const pathname = usePathname();
   const panelRef = useRef<HTMLDivElement | null>(null);
   const { t } = useTranslation();
+  const { canWrite } = useRoleFlags();
+  const rows = ROWS.filter((row) => !row.requiresWrite || canWrite);
 
   // Close on route change so a click-through doesn't leave the
   // panel open over the new page.
@@ -108,7 +114,7 @@ export function QuickActionFab() {
           <p className="text-muted-foreground px-3 pb-2 pt-2 text-[10px] font-semibold uppercase tracking-[0.14em]">
             {t("shell.fab.title")}
           </p>
-          {ROWS.map((row) => (
+          {rows.map((row) => (
             <Link
               key={row.href}
               href={row.href}

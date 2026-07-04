@@ -14,13 +14,12 @@ import {
 import Link from "next/link";
 import { useMemo } from "react";
 
+import { RequireRole } from "@/components/auth/require-role";
 import { AutomationModeForm } from "@/components/settings/automation-mode-form";
 import { CategoryToggleList } from "@/components/settings/category-toggle-list";
 import { CustomCategoriesSection } from "@/components/settings/custom-categories-section";
-import { ForbiddenNotice } from "@/components/settings/forbidden-notice";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useTenantConfig } from "@/hooks/use-tenant-config";
-import { useAuthStore } from "@/lib/auth-store";
 import { useTranslation } from "@/lib/i18n/use-translation";
 import type { AutomationMode } from "@/lib/types";
 
@@ -30,8 +29,14 @@ import type { AutomationMode } from "@/lib/types";
  * ForbiddenNotice. The custom CRUD section lands in the next commit.
  */
 export default function SettingsPage() {
-  const role = useAuthStore((s) => s.activeContext?.role);
-  const isSuperAdmin = useAuthStore((s) => s.user?.is_super_admin ?? false);
+  return (
+    <RequireRole level="admin">
+      <SettingsPageInner />
+    </RequireRole>
+  );
+}
+
+function SettingsPageInner() {
   const config = useTenantConfig();
   const { t } = useTranslation();
 
@@ -50,9 +55,6 @@ export default function SettingsPage() {
         }),
     };
   }, [config.data]);
-
-  const isAdmin = role === "tenant_admin" || isSuperAdmin;
-  if (!isAdmin) return <ForbiddenNotice />;
 
   return (
     <main className="mx-auto w-full max-w-3xl space-y-6 px-4 py-6 md:px-8 md:py-10">

@@ -11,6 +11,7 @@ import { Code2, Loader2 } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 
+import { RequireRole } from "@/components/auth/require-role";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -43,6 +44,14 @@ const KEY_TITLE_KEYS: Record<string, string> = {
 };
 
 export default function PromptTemplatesPage() {
+  return (
+    <RequireRole level="admin">
+      <PromptTemplatesPageInner />
+    </RequireRole>
+  );
+}
+
+function PromptTemplatesPageInner() {
   const { t } = useTranslation();
   const list = usePromptTemplates();
   const codeDefaults = usePromptCodeDefaults();

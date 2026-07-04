@@ -41,6 +41,11 @@ export interface NavItem {
    *  bir alt-grup haline getiriyor. Boş bırakılırsa item bağımsız
    *  bir satır olarak render edilir. */
   subgroup?: string;
+  /** Sprint 13 — rol eşiği. Boş: tüm üyeler görür.
+   *  "write" = tenant_admin | analyst; "admin" = tenant_admin;
+   *  "super" = yalnız super admin. Backend require_role matrisinin
+   *  aynası — kullanıcıya 403 yiyeceği kapı gösterilmez. */
+  minRole?: "write" | "admin" | "super";
 }
 
 export interface NavSection {
@@ -107,12 +112,14 @@ export const NAV_SECTIONS: ReadonlyArray<NavSection> = [
         href: "/analyze",
         icon: Sparkles,
         subgroup: "shell.nav.subgroup.dataUpload",
+        minRole: "write",
       },
       {
         label: "shell.nav.batchUpload",
         href: "/analyze/upload",
         icon: Upload,
         subgroup: "shell.nav.subgroup.dataUpload",
+        minRole: "write",
       },
     ],
   },
@@ -121,7 +128,14 @@ export const NAV_SECTIONS: ReadonlyArray<NavSection> = [
   // labeled "Yönetim" that crowds the rail.
   {
     heading: "",
-    items: [{ label: "shell.nav.settings", href: "/settings", icon: Settings }],
+    items: [
+      {
+        label: "shell.nav.settings",
+        href: "/settings",
+        icon: Settings,
+        minRole: "admin",
+      },
+    ],
   },
 ];
 
@@ -136,23 +150,45 @@ export const NAV_SECTIONS: ReadonlyArray<NavSection> = [
  * order an admin typically walks them — what the LLM did, what the
  * humans decided, what prompts shaped both.
  */
+// Sprint 13 — bölüm artık tenant_admin'e de görünür: backend
+// llm-audit / decision-audit / prompt-templates GET'lerine
+// tenant_admin'i zaten kabul ediyordu ama nav yalnız super_admin'e
+// gösteriyordu (hak sahibi kullanıcı kapıyı bulamıyordu). Kurum
+// CRUD'u ise super_admin'de kalır.
 export const ADMIN_NAV_ITEMS: ReadonlyArray<NavItem> = [
-  { label: "shell.nav.tenants", href: "/admin/tenants", icon: Building2 },
-  { label: "shell.nav.llmAudit", href: "/admin/llm-audit", icon: Cpu },
-  { label: "shell.nav.decisionAudit", href: "/admin/decision-audit", icon: History },
+  {
+    label: "shell.nav.tenants",
+    href: "/admin/tenants",
+    icon: Building2,
+    minRole: "super",
+  },
+  {
+    label: "shell.nav.llmAudit",
+    href: "/admin/llm-audit",
+    icon: Cpu,
+    minRole: "admin",
+  },
+  {
+    label: "shell.nav.decisionAudit",
+    href: "/admin/decision-audit",
+    icon: History,
+    minRole: "admin",
+  },
   {
     label: "shell.nav.promptTemplates",
     href: "/admin/prompt-templates",
     icon: Code2,
+    minRole: "admin",
   },
   // Sprint 9.8 — Madde 5: Bekleyen Bildirimler içerik çok teknik
   // (SLA webhook dispatch detayı). Operasyon grubundan çıkarıldı,
-  // admin-only oldu. Normal kullanıcı görmez; super_admin trend
+  // admin-only oldu. Normal kullanıcı görmez; yönetici trend
   // ihlali yöneten kişi zaten gerekiyorsa erişir.
   {
     label: "shell.nav.pendingWebhooks",
     href: "/pending-webhooks",
     icon: Send,
+    minRole: "admin",
   },
 ];
 

@@ -18,6 +18,7 @@ import { toast } from "sonner";
 
 import { ColumnMappingPreview } from "@/components/analyze/column-mapping-preview";
 import { PiiWarningBanner } from "@/components/analyze/pii-warning-banner";
+import { RequireRole } from "@/components/auth/require-role";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
@@ -43,6 +44,14 @@ type Step = 1 | 2 | 3 | 4;
 const ACCEPTED_EXTENSIONS = [".csv", ".xlsx"];
 const MAX_FILE_BYTES = 50 * 1024 * 1024;
 
+export default function BatchUploadPage() {
+  return (
+    <RequireRole level="write">
+      <BatchUploadPageInner />
+    </RequireRole>
+  );
+}
+
 /**
  * Sprint 8.3.1 — multi-step batch upload page.
  *
@@ -51,7 +60,7 @@ const MAX_FILE_BYTES = 50 * 1024 * 1024;
  *   3. Progress polling (3s)
  *   4. Completion summary + CTA to /reviews?batch_job_id=X
  */
-export default function BatchUploadPage() {
+function BatchUploadPageInner() {
   const { t } = useTranslation();
   const [step, setStep] = useState<Step>(1);
   const [file, setFile] = useState<File | null>(null);

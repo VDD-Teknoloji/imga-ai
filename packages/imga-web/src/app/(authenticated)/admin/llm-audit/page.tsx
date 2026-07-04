@@ -14,6 +14,7 @@ import { AlertTriangle, CheckCircle2, Cpu, Loader2 } from "lucide-react";
 import { Suspense, useCallback, useEffect, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
+import { RequireRole } from "@/components/auth/require-role";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { type LlmCallAuditRow, useLlmAuditList, useLlmAuditSummary } from "@/hooks/use-llm-audit";
@@ -31,9 +32,11 @@ const CALL_TYPES = [
 
 export default function LlmAuditPage() {
   return (
-    <Suspense fallback={<PageSkeleton />}>
-      <LlmAuditPageInner />
-    </Suspense>
+    <RequireRole level="admin">
+      <Suspense fallback={<PageSkeleton />}>
+        <LlmAuditPageInner />
+      </Suspense>
+    </RequireRole>
   );
 }
 

@@ -40,6 +40,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 
+import { RequireRole } from "@/components/auth/require-role";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -76,9 +77,11 @@ const CODE_REGEX = /^[a-z][a-z0-9_]*$/;
 
 export default function TaxonomiesPage() {
   return (
-    <Suspense fallback={<HeaderSkeleton />}>
-      <TaxonomiesContent />
-    </Suspense>
+    <RequireRole level="admin">
+      <Suspense fallback={<HeaderSkeleton />}>
+        <TaxonomiesContent />
+      </Suspense>
+    </RequireRole>
   );
 }
 

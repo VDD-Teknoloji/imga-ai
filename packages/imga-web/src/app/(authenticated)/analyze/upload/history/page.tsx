@@ -3,6 +3,7 @@
 import { ChevronLeft, Loader2, Upload } from "lucide-react";
 import Link from "next/link";
 
+import { RequireRole } from "@/components/auth/require-role";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -34,6 +35,14 @@ const STATUS_TONES: Record<BatchJobStatus, "default" | "success" | "danger" | "w
 };
 
 export default function BatchHistoryPage() {
+  return (
+    <RequireRole level="write">
+      <BatchHistoryPageInner />
+    </RequireRole>
+  );
+}
+
+function BatchHistoryPageInner() {
   const { t } = useTranslation();
   const history = useBatchHistory(50);
   const jobs = history.data?.pages.flatMap((p) => p.jobs) ?? [];

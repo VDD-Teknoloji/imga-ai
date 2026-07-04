@@ -16,6 +16,7 @@ import Link from "next/link";
 import { useState, type FormEvent } from "react";
 import { toast } from "sonner";
 
+import { RequireRole } from "@/components/auth/require-role";
 import { OverrideStack, overrideLayerLabel } from "@/components/reviews/override-display";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -37,6 +38,14 @@ const PROMOTABLE_DECISIONS: ReadonlySet<ReviewDecision> = new Set([
 
 const TEXT_MAX_LENGTH = 10_000;
 
+export default function AnalyzePage() {
+  return (
+    <RequireRole level="write">
+      <AnalyzePageInner />
+    </RequireRole>
+  );
+}
+
 /**
  * Manual analyze page. Calls `POST /tenants/me/analyze` (Sprint
  * 7.5.5 / Alt-Faz 3) and renders the resulting decision branch.
@@ -44,7 +53,7 @@ const TEXT_MAX_LENGTH = 10_000;
  * Source field is intentionally absent in this iteration — see
  * roadmap C7 for the deferred design alongside webhook ingestion.
  */
-export default function AnalyzePage() {
+function AnalyzePageInner() {
   const { t } = useTranslation();
   const [text, setText] = useState("");
   // Sprint 8.3.5 — optional NPS, kept as string in state so an empty

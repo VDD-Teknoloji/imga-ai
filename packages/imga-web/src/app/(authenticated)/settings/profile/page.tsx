@@ -17,6 +17,7 @@ import { Loader2, Save } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 
+import { RequireRole } from "@/components/auth/require-role";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -43,6 +44,14 @@ const INDUSTRY_OTHER_MAX = 128;
 const DESCRIPTION_MAX = 500;
 
 export default function TenantProfilePage() {
+  return (
+    <RequireRole level="admin">
+      <TenantProfilePageInner />
+    </RequireRole>
+  );
+}
+
+function TenantProfilePageInner() {
   const profile = useTenantProfile();
   const update = useUpdateTenantProfile();
   const { t } = useTranslation();

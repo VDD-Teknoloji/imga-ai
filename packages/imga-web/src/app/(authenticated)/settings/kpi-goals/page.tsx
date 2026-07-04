@@ -11,6 +11,7 @@ import { Loader2, Target, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 
+import { RequireRole } from "@/components/auth/require-role";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -34,6 +35,14 @@ const PERIODS: ReadonlyArray<GoalPeriod> = [
 ];
 
 export default function KpiGoalsPage() {
+  return (
+    <RequireRole level="admin">
+      <KpiGoalsPageInner />
+    </RequireRole>
+  );
+}
+
+function KpiGoalsPageInner() {
   const goals = useKpiGoals(false); // history + active
   const metrics = useMetricDefinitions();
   const { t } = useTranslation();

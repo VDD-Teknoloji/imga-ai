@@ -18,7 +18,7 @@ import { Copy, Loader2, Trash2, UserPlus, Users } from "lucide-react";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
 
-import { ForbiddenNotice } from "@/components/settings/forbidden-notice";
+import { RequireRole } from "@/components/auth/require-role";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -51,13 +51,16 @@ function roleLabel(
 }
 
 export default function SettingsUsersPage() {
-  const role = useAuthStore((s) => s.activeContext?.role);
-  const tenantId = useAuthStore((s) => s.activeContext?.tenant_id ?? null);
-  const isSuperAdmin = useAuthStore((s) => s.user?.is_super_admin ?? false);
-  const { t } = useTranslation();
+  return (
+    <RequireRole level="admin">
+      <SettingsUsersPageInner />
+    </RequireRole>
+  );
+}
 
-  const isAdmin = role === "tenant_admin" || isSuperAdmin;
-  if (!isAdmin) return <ForbiddenNotice />;
+function SettingsUsersPageInner() {
+  const tenantId = useAuthStore((s) => s.activeContext?.tenant_id ?? null);
+  const { t } = useTranslation();
 
   return (
     <main className="mx-auto w-full max-w-4xl space-y-6 px-4 py-6 md:p-8">

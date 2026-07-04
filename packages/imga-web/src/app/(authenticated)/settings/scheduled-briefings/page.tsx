@@ -18,6 +18,7 @@ import {
 import { useState } from "react";
 import { toast } from "sonner";
 
+import { RequireRole } from "@/components/auth/require-role";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -46,6 +47,14 @@ const WEEKDAY_KEYS = [
 ] as const;
 
 export default function ScheduledBriefingsPage() {
+  return (
+    <RequireRole level="admin">
+      <ScheduledBriefingsPageInner />
+    </RequireRole>
+  );
+}
+
+function ScheduledBriefingsPageInner() {
   const list = useBriefingSchedules();
   const { t } = useTranslation();
 

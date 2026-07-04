@@ -29,6 +29,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useState } from "react";
 import { toast } from "sonner";
 
+import { RequireRole } from "@/components/auth/require-role";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -57,9 +58,11 @@ const PAGE_SIZE = 25;
 
 export default function PendingWebhooksPage() {
   return (
-    <Suspense fallback={<HeaderSkeleton />}>
-      <Content />
-    </Suspense>
+    <RequireRole level="admin">
+      <Suspense fallback={<HeaderSkeleton />}>
+        <Content />
+      </Suspense>
+    </RequireRole>
   );
 }
 

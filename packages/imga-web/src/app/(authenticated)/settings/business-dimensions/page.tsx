@@ -10,6 +10,7 @@ import { Layers3, Loader2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
+import { RequireRole } from "@/components/auth/require-role";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -35,6 +36,14 @@ const DIMENSIONS: ReadonlyArray<{
 ];
 
 export default function BusinessDimensionsPage() {
+  return (
+    <RequireRole level="admin">
+      <BusinessDimensionsPageInner />
+    </RequireRole>
+  );
+}
+
+function BusinessDimensionsPageInner() {
   const list = useBusinessDimensions();
   const { t } = useTranslation();
 

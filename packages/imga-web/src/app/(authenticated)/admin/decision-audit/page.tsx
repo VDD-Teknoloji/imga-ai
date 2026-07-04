@@ -8,6 +8,7 @@ import { History, Loader2 } from "lucide-react";
 import { Suspense, useCallback, useEffect, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
+import { RequireRole } from "@/components/auth/require-role";
 import { Badge } from "@/components/ui/badge";
 import { type DecisionAuditRow, useDecisionAuditList } from "@/hooks/use-decision-audit";
 import { useTranslation } from "@/lib/i18n/use-translation";
@@ -28,9 +29,11 @@ const DECISION_LABEL_KEYS: Record<string, string> = {
 
 export default function DecisionAuditPage() {
   return (
-    <Suspense fallback={<PageSkeleton />}>
-      <DecisionAuditPageInner />
-    </Suspense>
+    <RequireRole level="admin">
+      <Suspense fallback={<PageSkeleton />}>
+        <DecisionAuditPageInner />
+      </Suspense>
+    </RequireRole>
   );
 }
 
