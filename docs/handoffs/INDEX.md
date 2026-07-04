@@ -2,6 +2,8 @@
 
 | Tarih      | Başlık                                                                                       | Yazar         | Hedef         | Durum    | Öncelik |
 |------------|----------------------------------------------------------------------------------------------|---------------|---------------|----------|---------|
+| 2026-07-05 | [dashboard-redesign-deploy](2026-07-05-dashboard-redesign-deploy.md)                         | local-agent   | server-agent  | open     | yüksek  |
+| 2026-07-02 | [i18n-deploy](2026-07-02-i18n-deploy.md)                                                     | local-agent   | server-agent  | open     | yüksek  |
 | 2026-07-01 | [asakai-v1-delivery-report](2026-07-01-asakai-v1-delivery-report.md)                         | local-agent   | asakai-agent  | open     | yüksek  |
 | 2026-07-01 | [asakai-n1-auth-migration-0032](2026-07-01-asakai-n1-auth-migration-0032.md)                 | local-agent   | server-agent  | resolved | yüksek  |
 | 2026-07-01 | [asakai-n1-deploy-and-cutover](2026-07-01-asakai-n1-deploy-and-cutover.md)                   | local-agent   | server-agent  | open     | yüksek  |
