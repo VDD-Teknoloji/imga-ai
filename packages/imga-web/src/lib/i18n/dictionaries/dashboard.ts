@@ -234,8 +234,19 @@ export const dashboard: Bundle = {
     // --- kategori bazlı duygu dağılımı ---
     "dashboard.categoryBreakdown.title": "Kategori Bazlı Duygu Dağılımı",
     "dashboard.categoryBreakdown.subtitle":
-      "Her kategorideki olumsuz / nötr / olumlu payı. Bir dilime tıklayınca ilgili yorumlar açılır.",
+      "En sorunlu kategori en üstte — her kategorideki olumsuz / nötr / olumlu payı. Bir dilime tıklayınca ilgili yorumlar açılır.",
     "dashboard.categoryBreakdown.empty": "Bu dönemde kategori verisi yok.",
+    "dashboard.categoryBreakdown.rowTotal": "Toplam {n} yorum",
+
+    // --- deneyim dağılımı kartları ---
+    "dashboard.experience.title": "Deneyim Dağılımı",
+    "dashboard.experience.infoAria": "Deneyim dağılımı nasıl hesaplanır?",
+    "dashboard.experience.info":
+      "Yorumlar kategorilerine göre iki deneyim tipine ayrılır: Teknik Destek ve Faturalama/Ödeme dijital; kargo, iade, ürün kalitesi gibi kategoriler operasyonel sayılır. Sınıflandırılamayan yorumlar dahil edilmez.",
+    "dashboard.experience.digital": "Dijital Deneyim",
+    "dashboard.experience.operational": "Operasyonel Deneyim",
+    "dashboard.experience.reviews": "yorum",
+    "dashboard.experience.viewReviews": "Yorumları gör",
 
     // --- önce yükleme (24 saat kuralı) ---
     "dashboard.uploadFirst.title": "Bugün henüz veri yüklemediniz",
@@ -700,8 +711,19 @@ export const dashboard: Bundle = {
     // --- category sentiment breakdown ---
     "dashboard.categoryBreakdown.title": "Sentiment by Category",
     "dashboard.categoryBreakdown.subtitle":
-      "Negative / neutral / positive share per category. Click a slice to open the matching reviews.",
+      "Most problematic category first — negative / neutral / positive share per category. Click a slice to open the matching reviews.",
     "dashboard.categoryBreakdown.empty": "No category data in this period.",
+    "dashboard.categoryBreakdown.rowTotal": "{n} reviews in total",
+
+    // --- experience breakdown cards ---
+    "dashboard.experience.title": "Experience Breakdown",
+    "dashboard.experience.infoAria": "How is the experience breakdown calculated?",
+    "dashboard.experience.info":
+      "Reviews are split into two experience types by category: Technical Support and Billing/Payment count as digital; categories like shipping, returns and product quality count as operational. Unclassified reviews are excluded.",
+    "dashboard.experience.digital": "Digital Experience",
+    "dashboard.experience.operational": "Operational Experience",
+    "dashboard.experience.reviews": "reviews",
+    "dashboard.experience.viewReviews": "View reviews",
 
     // --- upload first (24-hour rule) ---
     "dashboard.uploadFirst.title": "You haven't uploaded data today",

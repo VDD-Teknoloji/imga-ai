@@ -28,6 +28,7 @@ import { AiInsightStrip } from "@/components/dashboard/ai-insight-strip";
 import { CategorySentimentBreakdown } from "@/components/dashboard/category-sentiment-breakdown";
 import { ClassificationQualityChip } from "@/components/dashboard/classification-quality-chip";
 import { ExecutiveHero } from "@/components/dashboard/executive-hero";
+import { ExperienceBreakdownCards } from "@/components/dashboard/experience-breakdown-cards";
 import { NpsBreakdownCard } from "@/components/dashboard/nps-breakdown-card";
 import { PriorityAction } from "@/components/dashboard/priority-action";
 import { QuickLinks } from "@/components/dashboard/quick-links";
@@ -46,6 +47,7 @@ import { UploadDock } from "@/components/dashboard/upload-dock";
 import { VoiceOfCustomer } from "@/components/dashboard/voice-of-customer";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
+  useCategoryDistribution,
   useNpsSummary,
   useSentimentByCategory,
   useSentimentDistribution,
@@ -120,6 +122,9 @@ function DashboardInner() {
   const dist = useSentimentDistribution({ date_from: dateFrom });
   const nps = useNpsSummary({ date_from: dateFrom });
   const byCategory = useSentimentByCategory({ date_from: dateFrom }, 10);
+  // Deneyim kartları tüm kategorileri toplar — top-10 kesmesi
+  // dağılımı yanıltmasın diye limit geniş.
+  const categoryDist = useCategoryDistribution({ date_from: dateFrom }, 50);
 
   const sentimentCounts = toSentimentCounts(dist.data);
   const hasAnyData = (overview.data?.sentiment.total ?? 0) > 0;
@@ -195,9 +200,13 @@ function DashboardInner() {
       {/* DÖNEM — hero'nun hemen altında zaman bazlı filtre. */}
       <TimeWindowFilter value={windowKey} onChange={handleWindowChange} />
 
-      {/* GRAFİKLER — yönetim görünümü: NPS dağılımı + kategori×duygu. */}
+      {/* GRAFİKLER — yönetim görünümü: NPS + deneyim + kategori×duygu. */}
       <div className="rise-in space-y-6" style={{ animationDelay: "60ms" }}>
         <NpsBreakdownCard data={nps.data} isLoading={nps.isLoading} />
+        <ExperienceBreakdownCards
+          data={categoryDist.data}
+          isLoading={categoryDist.isLoading}
+        />
         <CategorySentimentBreakdown
           data={byCategory.data}
           isLoading={byCategory.isLoading}

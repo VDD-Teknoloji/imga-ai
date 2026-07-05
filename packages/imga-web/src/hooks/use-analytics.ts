@@ -85,6 +85,7 @@ export function useCategoryDistribution(filters: AnalyticsFilters, limit = 10) {
     queryKey: ["analytics-category-dist", query],
     queryFn: () =>
       apiRequest<CategoryDistResponse>(`/tenants/me/analytics/category-distribution?${query}`),
+    placeholderData: keepPreviousData,
   });
 }
 

@@ -66,7 +66,10 @@ interface Row {
 }
 
 /** Backend matrisi (satır=kategori, kolon=sentiments dizi sırası)
- *  satır nesnelerine açılır; 'belirsiz' listenin sonuna itilir
+ *  satır nesnelerine açılır. Sıralama "en sorunlu en üstte":
+ *  negatif payı azalan (referans yönetim görünümüyle aynı okuma) —
+ *  seçim zaten hacim bazlı top-N olduğu için cılız kategoriler
+ *  sahte sinyal üretemez. 'belirsiz' listenin sonuna itilir
  *  (insights heatmap'iyle aynı ilke — sınıflandırılamayan yorum
  *  ana sinyali bastırmasın). */
 function toRows(data: SentimentByCategoryResponse): Row[] {
@@ -88,8 +91,11 @@ function toRows(data: SentimentByCategoryResponse): Row[] {
       },
     };
   });
+  const negShare = (r: Row) => (r.total > 0 ? r.counts.NEGATIF / r.total : 0);
   return [
-    ...rows.filter((r) => r.code !== "belirsiz"),
+    ...rows
+      .filter((r) => r.code !== "belirsiz")
+      .sort((a, b) => negShare(b) - negShare(a)),
     ...rows.filter((r) => r.code === "belirsiz"),
   ];
 }
@@ -176,6 +182,14 @@ export function CategorySentimentBreakdown({ data, isLoading }: Props) {
                   );
                 })}
               </div>
+              <span
+                className="text-muted-foreground w-12 shrink-0 text-right text-xs tabular-nums"
+                title={t("dashboard.categoryBreakdown.rowTotal", {
+                  n: row.total.toLocaleString(numberLocale),
+                })}
+              >
+                {row.total.toLocaleString(numberLocale)}
+              </span>
             </li>
           ))}
         </ul>
