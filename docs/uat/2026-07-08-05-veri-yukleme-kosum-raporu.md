@@ -19,7 +19,7 @@ enjeksiyonuyla yapıldı (SHA-256 doğrulamalı). Ön-doğrulama senaryoları CS
 | ANL-06 Belirsiz kategori | ✅ Geçti | Kart doğru; duygu kalitesi notu (alakasız metne −0.93) |
 | ANL-07 Yine de Ticket Aç | ⚠️ Kısmen | **BUG-3:** belirsiz'de 409 + yanlış hata mesajı; normal kategoride çalışıyor (`fea02eca`) |
 | ANL-08 Limit + NPS doğrulama | ✅ Geçti | 10.200 kırmızı sayaç + pasif buton; NPS 11 engellendi (mesaj native — kozmetik) |
-| ANL-09 İzleyici engeli | ⏸ Koşulamadı | Viewer hesabı yoktu; backend 403 otomatik regresyon testiyle + RequireRole korumasıyla ayrıca doğrulanmış durumda |
+| ANL-09 İzleyici engeli | ✅ Geçti | Gerçek viewer hesabıyla (uat-izleyici@example.com) doğrulandı: menüde Veri Yükle/Ayarlar/Yönetim yok, /analyze ve /analyze/upload URL'leri "Yetkiniz yok", API POST /analyze → 403, FAB'da yükleme kısayolu yok |
 | UPL-01 Şablon indirme | ✅ Geçti | Endpoint 200; içerik doğru (yorum/tarih/kaynak/nps + TALIMAT). Not: dosya `.tmp` GUID adıyla indi |
 | UPL-02 Tip/boyut doğrulaması | ✅ Geçti | .txt ve 51MB reddi birebir mesajlarla |
 | UPL-03 Temiz dosya (yeşil) | ✅ Geçti | "Dosya şablona uygun — 35 satır analiz edilecek." |
@@ -36,7 +36,7 @@ enjeksiyonuyla yapıldı (SHA-256 doğrulamalı). Ön-doğrulama senaryoları CS
 | UPL-14 CSV ile tekrar | ✅ Geçti | Tüm ön-doğrulama + yükleme akışı CSV ile koşuldu |
 | UPL-15 Geçmiş listesi | ✅ Geçti | Tablo + "Analizleri gör" filtreli açılıyor. Not: "Tamamlandı" rozeti yeşil değil turuncu |
 
-**Toplam: 24 senaryo → 20 geçti · 1 kaldı · 2 kısmen · 1 koşulamadı**
+**Toplam: 24 senaryo → 21 geçti · 1 kaldı · 2 kısmen** (güncelleme 2026-07-08: ANL-09 viewer hesabıyla koşuldu ve geçti)
 
 ## Bulunan bug'lar (öncelik sırasıyla)
 
@@ -65,6 +65,13 @@ Buton belirsiz sonuç kartında sunulduğu halde hiçbir zaman çalışamıyor (
 (b) Frontend: her 409'u sabit **"Bu analiz zaten bir Ticket'a bağlı."** metniyle gösteriyor —
 API detayını yansıtmalı. Doğrulama: normal kategori (urun_kalitesi) ile promote sorunsuz (201).
 
+### BUG-5 [Yüksek] Kullanıcılar sayfasının ürettiği davet linki 404 veriyor
+`settings/users/page.tsx:158` davet bağlantısını `${origin}/invitations/${token}` olarak
+üretiyor; oysa kabul sayfasının route'u **`/invite/[token]`**. Kullanıcılar sayfasından
+kopyalanan HER davet linki 404'e düşüyor — davet akışı bu yüzeyden fiilen kırık.
+(Karşılaştırma: `tenant-create-dialog.tsx:366` doğru üretiyor: `/invite/${token}`.)
+ANL-09 koşumu sırasında canlıda doğrulandı; test `/invite/<token>` ile devam ettirildi.
+
 ### BUG-4 [Orta] Batch preview/upload istekleri access-token yenileme akışına bağlı değil
 15 dk'lık access token süresi dolduktan sonraki ilk preview → 401 → kullanıcıya "Önizleme
 alınamadı: missing access token". Diğer tüm çağrılar `apiRequest`'in 401→refresh→retry
@@ -82,6 +89,9 @@ sarmalayıcısından geçiyor; multipart preview/upload fetch'i de aynı akışa
   güven vermez).
 - Model duygu kalitesi: alakasız metin ("Bugün hava çok güzel...") −0.93 NEGATIF; nötr sorular
   ("Fatura bilgilerimi nasıl güncelleyebilirim") Olumsuz işaretlenebiliyor. BUG-2 ile ilişkili.
+- ForbiddenNotice metni bağlamdan bağımsız: /analyze'da da "Kurum yapılandırması yalnızca
+  yöneticiler tarafından düzenlenebilir" diyor — ayar-odaklı metin genel yetki mesajına
+  dönüştürülebilir.
 
 ## Test verisi kalıntısı (DEMO kurumu — temizlik önerisi)
 
@@ -90,3 +100,5 @@ sarmalayıcısından geçiyor; multipart preview/upload fetch'i de aynı akışa
 - 3 test ticket'ı: `ed2d7b74` (ANL-02), `2a766438` (ANL-05 — yanlış oto-ticket kanıtı),
   `fea02eca` (ANL-07). İncelendikten sonra İptal edilebilir.
 - Otomasyon modu teste başlarkenki değerine (Yarı otomatik) geri döndürüldü.
+- ANL-09 için DEMO'ya viewer test üyesi eklendi: `uat-izleyici@example.com` ("izleyici").
+  Kalıcı olması gerekmiyorsa süper-yönetici Kullanıcılar sayfasından çıkarabilir.
