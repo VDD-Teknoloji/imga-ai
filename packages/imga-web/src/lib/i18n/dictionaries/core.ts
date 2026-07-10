@@ -37,6 +37,20 @@ export const core: Bundle = {
     "tenant.language.label": "Kurum dili",
     "tenant.language.help":
       "Bu kurumun arayüzü ve yapay zeka çıktıları bu dilde olur. Sonradan Ayarlar'dan değiştirilebilir.",
+
+    "common.batchPicker.prefix": "Yükleme",
+    "common.batchPicker.all": "Tümü",
+    "common.batchPicker.triggerAll": "Yükleme: Tümü",
+    "common.batchPicker.selectedFallback": "Yükleme seçili",
+    "common.batchPicker.none": "Henüz yükleme yok",
+    "common.batchPicker.rows": "{n} satır",
+    "common.batchPicker.today": "Bugün",
+    "common.batchPicker.yesterday": "Dün",
+    "common.batchStatus.completed": "Tamamlandı",
+    "common.batchStatus.processing": "İşleniyor",
+    "common.batchStatus.queued": "Kuyrukta",
+    "common.batchStatus.failed": "Başarısız",
+    "common.batchStatus.cancelled": "İptal edildi",
   },
   en: {
     "common.save": "Save",
@@ -73,5 +87,19 @@ export const core: Bundle = {
     "tenant.language.label": "Organization language",
     "tenant.language.help":
       "This organization's interface and AI outputs will be in this language. It can be changed later in Settings.",
+
+    "common.batchPicker.prefix": "Upload",
+    "common.batchPicker.all": "All",
+    "common.batchPicker.triggerAll": "Upload: All",
+    "common.batchPicker.selectedFallback": "Upload selected",
+    "common.batchPicker.none": "No uploads yet",
+    "common.batchPicker.rows": "{n} rows",
+    "common.batchPicker.today": "Today",
+    "common.batchPicker.yesterday": "Yesterday",
+    "common.batchStatus.completed": "Completed",
+    "common.batchStatus.processing": "Processing",
+    "common.batchStatus.queued": "Queued",
+    "common.batchStatus.failed": "Failed",
+    "common.batchStatus.cancelled": "Cancelled",
   },
 };

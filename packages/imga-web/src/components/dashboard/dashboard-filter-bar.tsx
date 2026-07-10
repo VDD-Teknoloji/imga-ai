@@ -12,6 +12,7 @@ import { X } from "lucide-react";
 
 import { TimeWindowFilter, type TimeWindowKey } from "@/components/dashboard/time-window-filter";
 import { BatchFilterDropdown } from "@/components/reviews/batch-filter-dropdown";
+import { DateField } from "@/components/ui/date-field";
 import { useBatchHistory } from "@/hooks/use-batch-uploads";
 import { useTranslation } from "@/lib/i18n/use-translation";
 
@@ -51,9 +52,6 @@ export function DashboardFilterBar({
   const hasAnyFilter =
     windowKey !== "all" || dateFrom !== "" || dateTo !== "" || batchJobId !== "";
 
-  const dateInputClass =
-    "border-input bg-background h-8 rounded-md border px-2.5 text-xs";
-
   return (
     <div className="rise-in flex flex-wrap items-center gap-x-5 gap-y-3">
       <TimeWindowFilter value={windowKey} onChange={onWindowChange} />
@@ -66,24 +64,20 @@ export function DashboardFilterBar({
         <span className="text-muted-foreground text-sm font-medium">
           {t("dashboard.filterBar.customRange")}
         </span>
-        <input
-          type="date"
+        <DateField
           value={dateFrom}
           max={dateTo || undefined}
           aria-label={t("dashboard.filterBar.dateFromAria")}
           onChange={(e) => onDateFromChange(e.target.value)}
-          className={dateInputClass}
         />
         <span className="text-muted-foreground text-xs" aria-hidden>
           –
         </span>
-        <input
-          type="date"
+        <DateField
           value={dateTo}
           min={dateFrom || undefined}
           aria-label={t("dashboard.filterBar.dateToAria")}
           onChange={(e) => onDateToChange(e.target.value)}
-          className={dateInputClass}
         />
       </div>
 
