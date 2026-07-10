@@ -304,6 +304,15 @@
       "bert_required": false
     },
     {
+      "id": "tier2_skip_strong_positive_kargo",
+      "text": "Kargom çok hızlı geldi, harika hizmet.",
+      "expected_label": "POZITIF",
+      "expected_score_min": 0.6,
+      "expected_score_max": 1.0,
+      "expected_layer": null,
+      "bert_required": true
+    },
+    {
       "id": "borderline_short_neutral",
       "text": "Tamam.",
       "expected_label_options": ["NÖTR", "POZITIF", "NEGATIF"],

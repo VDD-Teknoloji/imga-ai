@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
-from imga_core.config import TIER2_FALLBACK_SCORE, TIER2_FALLBACK_TRIGGER_THRESHOLD
+from imga_core.config import (
+    TIER2_FALLBACK_SCORE,
+    TIER2_FALLBACK_STRONG_POSITIVE_SKIP,
+    TIER2_FALLBACK_TRIGGER_THRESHOLD,
+)
 from imga_core.lexicons import TIER2_ISSUES
 from imga_core.models import OverrideHit
 from imga_core.text_utils import normalize_turkish
@@ -17,11 +21,14 @@ def apply_tier2_fallback(text: str, current_score: float) -> OverrideHit | None:
 
     Returns:
         OverrideHit when an operational keyword is present and the current
-        score is above the negative threshold; None otherwise.
+        score is above the negative threshold but below the strong-positive
+        skip; None otherwise.
     """
     if not text:
         return None
     if current_score <= TIER2_FALLBACK_TRIGGER_THRESHOLD:
+        return None
+    if current_score >= TIER2_FALLBACK_STRONG_POSITIVE_SKIP:
         return None
 
     lowered = normalize_turkish(text)

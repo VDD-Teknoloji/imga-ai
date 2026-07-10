@@ -32,6 +32,11 @@ class FakeNeutralAnalyzer(SentimentAnalyzer):
         return [AnalyzerPrediction(label="NÖTR", score=0.0) for _ in texts]
 
 
+class FakeStrongPositiveAnalyzer(SentimentAnalyzer):
+    def analyze_batch(self, texts: list[str]) -> list[AnalyzerPrediction]:
+        return [AnalyzerPrediction(label="POZITIF", score=0.9) for _ in texts]
+
+
 def test_critical_override_short_circuits_bert() -> None:
     fake = FakeAnalyzer()
     p = AnalysisPipeline(analyzer=fake)
@@ -73,6 +78,15 @@ def test_tier2_fallback_when_bert_misses_negative() -> None:
     assert r.sentiment_score == TIER2_FALLBACK_SCORE
     assert r.sentiment_label == "NEGATIF"
     assert any(o.layer == "tier2" for o in r.overrides_applied)
+
+
+def test_tier2_skipped_on_strong_positive_bert() -> None:
+    """UAT HATA-02: 'kargo' substring'i güçlü pozitif cümleyi ezmemeli."""
+    p = AnalysisPipeline(analyzer=FakeStrongPositiveAnalyzer())
+    r = p.analyze("Kargom çok hızlı geldi, harika hizmet.")
+    assert r.sentiment_label == "POZITIF"
+    assert r.sentiment_score == 0.9
+    assert r.overrides_applied == []
 
 
 def test_tier2_does_not_fire_when_sla_already_did() -> None:

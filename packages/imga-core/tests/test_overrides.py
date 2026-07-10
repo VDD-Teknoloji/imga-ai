@@ -81,6 +81,20 @@ class TestTier2Fallback:
     def test_no_keyword_match_returns_none(self) -> None:
         assert apply_tier2_fallback("güzel ürün", current_score=0.5) is None
 
+    def test_skipped_when_strongly_positive(self) -> None:
+        # UAT HATA-02: güçlü pozitif BERT skoru kelime-eşleşmesini geçersiz kılar.
+        assert (
+            apply_tier2_fallback(
+                "kargom çok hızlı geldi, harika hizmet", current_score=0.9
+            )
+            is None
+        )
+
+    def test_fires_just_below_strong_positive_skip(self) -> None:
+        hit = apply_tier2_fallback("kargo gecikti, iade istiyorum", current_score=0.59)
+        assert hit is not None
+        assert hit.score == TIER2_FALLBACK_SCORE
+
 
 # --- SLA -------------------------------------------------------------------
 

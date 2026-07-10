@@ -27,6 +27,9 @@ SLA_BREACH_SCORE: Final[float] = -0.60
 
 TIER2_FALLBACK_SCORE: Final[float] = -0.40
 TIER2_FALLBACK_TRIGGER_THRESHOLD: Final[float] = -0.05  # only fire when score > this
+# Güçlü pozitif BERT skoru tier2 kelime-eşleşmesini geçersiz kılar; legacy'den
+# bilinçli sapma — UAT HATA-02 ("Kargom çok hızlı geldi" NEGATIF'e düşüyordu).
+TIER2_FALLBACK_STRONG_POSITIVE_SKIP: Final[float] = 0.6
 
 # --- SLA defaults ----------------------------------------------------------
 DEFAULT_MAX_SHIPPING_DAYS: Final[int] = 3
