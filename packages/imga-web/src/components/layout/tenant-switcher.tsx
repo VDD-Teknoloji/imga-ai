@@ -18,6 +18,7 @@ import {
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { useAuthStore } from "@/lib/auth-store";
 import { useTranslation } from "@/lib/i18n/use-translation";
+import { USER_ROLE_LABELS } from "@/lib/user-helpers";
 import { cn } from "@/lib/utils";
 
 interface TenantSwitcherProps {
@@ -107,7 +108,7 @@ export function TenantSwitcher({ collapsed }: TenantSwitcherProps) {
                     <span className="flex min-w-0 flex-col">
                       <span className="truncate font-medium">{tenant.name}</span>
                       <span className="text-muted-foreground truncate text-xs">
-                        {tenant.role}
+                        {USER_ROLE_LABELS[tenant.role]}
                       </span>
                     </span>
                     {tenant.id === activeTenantId ? (

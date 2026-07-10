@@ -10,10 +10,11 @@ import { OverrideStack } from "@/components/reviews/override-display";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { useCategories } from "@/hooks/use-categories";
 import { useManualPromoteReview, useReviewDetail } from "@/hooks/use-reviews";
 import { ApiError } from "@/lib/api-client";
 import { useTranslation } from "@/lib/i18n/use-translation";
-import type { ReviewDecision } from "@/lib/types";
+import { NPS_CATEGORY_LABELS, type ReviewDecision } from "@/lib/types";
 
 // Map every decision branch to an i18n key + the auto-ticket rationale so
 // the detail page reads as an audit narrative, not a bag of enum values.
@@ -33,6 +34,14 @@ const PROMOTABLE_DECISIONS: ReadonlySet<ReviewDecision> = new Set([
   "skipped_belirsiz",
 ]);
 
+// reviews/page.tsx ile aynı harita — ham POZITIF/NEGATIF/NÖTR enum'u
+// yerine locale'e uygun etiket.
+const SENTIMENT_LABEL_KEYS: Record<string, string> = {
+  NEGATIF: "reviews.sentiment.negatif",
+  POZITIF: "reviews.sentiment.pozitif",
+  "NÖTR": "reviews.sentiment.notr",
+};
+
 /**
  * Sprint 8.3.1 placeholder — full layout (override layer cards,
  * raw vs final score split, linked-ticket section) lands in 8.3.4.
@@ -43,6 +52,9 @@ export default function ReviewDetailPage() {
   const reviewId = params?.id ?? null;
   const detail = useReviewDetail(reviewId);
   const promote = useManualPromoteReview();
+  const categories = useCategories();
+  const categoryLabelFor = (code: string): string =>
+    categories.data?.find((c) => c.code === code)?.label_tr ?? code;
 
   const canPromote =
     detail.data != null &&
@@ -62,7 +74,13 @@ export default function ReviewDetailPage() {
           return;
         }
         if (err instanceof ApiError && err.status === 409) {
-          toast.error(t("reviews.detail.alreadyLinked"));
+          // 409 ayrımı: zaten bağlı / yapılandırılmamış kategori
+          // (UAT HATA-03 FE).
+          toast.error(
+            err.detail.includes("not configured")
+              ? t("reviews.detail.categoryNotConfigured")
+              : t("reviews.detail.alreadyLinked"),
+          );
           return;
         }
         toast.error(t("reviews.detail.promoteError"));
@@ -149,7 +167,11 @@ export default function ReviewDetailPage() {
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
                 <Stat
                   label={t("reviews.detail.sentiment")}
-                  value={detail.data.sentiment.label}
+                  value={
+                    SENTIMENT_LABEL_KEYS[detail.data.sentiment.label]
+                      ? t(SENTIMENT_LABEL_KEYS[detail.data.sentiment.label]!)
+                      : detail.data.sentiment.label
+                  }
                 />
                 <Stat
                   label={t("reviews.detail.scoreFinal")}
@@ -172,7 +194,9 @@ export default function ReviewDetailPage() {
                 <p className="text-muted-foreground text-xs">
                   {t("reviews.detail.category")}
                 </p>
-                <p className="text-sm">{detail.data.categorization.primary}</p>
+                <p className="text-sm">
+                  {categoryLabelFor(detail.data.categorization.primary)}
+                </p>
               </div>
             </CardContent>
           </Card>
@@ -189,7 +213,9 @@ export default function ReviewDetailPage() {
                   <p className="text-muted-foreground text-xs">
                     {t("reviews.detail.bertCategory")}
                   </p>
-                  <p className="text-sm font-medium">{detail.data.categorization.primary}</p>
+                  <p className="text-sm font-medium">
+                    {categoryLabelFor(detail.data.categorization.primary)}
+                  </p>
                 </div>
                 <div>
                   <p className="text-muted-foreground text-xs">
@@ -219,11 +245,7 @@ export default function ReviewDetailPage() {
                     {detail.data.nps_score} /10{" "}
                     {detail.data.nps_category && (
                       <Badge variant="outline" className="ml-1">
-                        {detail.data.nps_category === "promoter"
-                          ? "Promoter"
-                          : detail.data.nps_category === "passive"
-                            ? "Passive"
-                            : "Detractor"}
+                        {NPS_CATEGORY_LABELS[detail.data.nps_category]}
                       </Badge>
                     )}
                   </p>

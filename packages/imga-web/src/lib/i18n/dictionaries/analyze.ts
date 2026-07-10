@@ -31,6 +31,8 @@ export const analyze: Bundle = {
     "analyze.manual.summary": "Özet",
     "analyze.manual.promoteSuccess": "Manuel olarak Ticket açıldı.",
     "analyze.manual.alreadyLinked": "Bu analiz zaten bir Ticket'a bağlı.",
+    "analyze.manual.categoryNotConfigured":
+      "Kategori bu kurumda yapılandırılmamış — Ticket açılamadı.",
     "analyze.manual.promoteFailed": "Ticket açılamadı.",
     "analyze.manual.goNewTicket": "Yeni Ticket'a git",
     "analyze.manual.goExistingTicket": "Mevcut Ticket'a git",
@@ -91,12 +93,7 @@ export const analyze: Bundle = {
     "analyze.upload.rowCount": "{n} satır",
     "analyze.upload.analyzingColumns": "Sütunlar analiz ediliyor…",
     "analyze.upload.noAutoDetect":
-      "Otomatik tespit alınamadı; sütunları aşağıdan elle girebilirsiniz.",
-    "analyze.upload.textColumn": "Metin sütunu",
-    "analyze.upload.textColumnHelp":
-      "Analiz edilecek metni içeren sütunun başlığı.",
-    "analyze.upload.autoDetectLabel": "Otomatik tespit:",
-    "analyze.upload.sourceColumn": "Kaynak sütunu (opsiyonel)",
+      "Otomatik tespit alınamadı; yorum sütunu yükleme sırasında sunucu tarafından belirlenecek.",
     "analyze.upload.autoCreateTitle": "Otomatik Ticket aç",
     "analyze.upload.autoCreateHelp":
       "Kurumunuzun otomasyon modu ayarına göre eşiği geçen satırlar için otomatik Ticket açılır. Kapalıysa hiçbir satır Ticket açmaz; tüm analizler Analiz Arşivi'nde listelenir.",
@@ -120,6 +117,7 @@ export const analyze: Bundle = {
     "analyze.upload.rowPrefix": "Satır {n}:",
     "analyze.upload.general": "Genel:",
     "analyze.upload.viewAnalyses": "Bu Yüklemenin Analizlerini Gör",
+    "analyze.upload.openReviewList": "Yorum listesini aç",
     "analyze.upload.newUpload": "Yeni Yükleme",
     "analyze.upload.validation.cannotUpload": "Bu dosya yüklenemez",
     "analyze.upload.validation.okBefore": "Dosya şablona uygun — ",
@@ -210,6 +208,8 @@ export const analyze: Bundle = {
     "analyze.manual.promoteSuccess": "Ticket opened manually.",
     "analyze.manual.alreadyLinked":
       "This analysis is already linked to a Ticket.",
+    "analyze.manual.categoryNotConfigured":
+      "Category is not configured for this organization — could not open a Ticket.",
     "analyze.manual.promoteFailed": "Ticket could not be opened.",
     "analyze.manual.goNewTicket": "Go to new Ticket",
     "analyze.manual.goExistingTicket": "Go to existing Ticket",
@@ -271,12 +271,7 @@ export const analyze: Bundle = {
     "analyze.upload.rowCount": "{n} rows",
     "analyze.upload.analyzingColumns": "Analyzing columns…",
     "analyze.upload.noAutoDetect":
-      "Automatic detection unavailable; you can enter the columns manually below.",
-    "analyze.upload.textColumn": "Text column",
-    "analyze.upload.textColumnHelp":
-      "The header of the column containing the text to analyze.",
-    "analyze.upload.autoDetectLabel": "Auto-detected:",
-    "analyze.upload.sourceColumn": "Source column (optional)",
+      "Automatic detection unavailable; the review column will be resolved server-side during upload.",
     "analyze.upload.autoCreateTitle": "Open Tickets automatically",
     "analyze.upload.autoCreateHelp":
       "Depending on your organization's automation mode, Tickets are opened automatically for rows that pass the threshold. If off, no row opens a Ticket; all analyses are listed in the Analysis Archive.",
@@ -300,6 +295,7 @@ export const analyze: Bundle = {
     "analyze.upload.rowPrefix": "Row {n}:",
     "analyze.upload.general": "General:",
     "analyze.upload.viewAnalyses": "View This Upload's Analyses",
+    "analyze.upload.openReviewList": "Open the review list",
     "analyze.upload.newUpload": "New Upload",
     "analyze.upload.validation.cannotUpload": "This file can't be uploaded",
     "analyze.upload.validation.okBefore": "File matches the template — ",

@@ -23,10 +23,18 @@ interface Props {
   children: ReactNode;
 }
 
+// HATA-10 — açıklama level'a göre: "yalnızca yöneticiler" metni
+// write-korumalı sayfalarda yanıltıcıydı (Analist de girebilir).
+const DESC_KEY_BY_LEVEL: Record<Props["level"], string> = {
+  write: "common.forbidden.desc.write",
+  admin: "common.forbidden.desc.admin",
+  super: "common.forbidden.desc.super",
+};
+
 export function RequireRole({ level, children }: Props) {
   const { canWrite, isAdmin, isSuperAdmin } = useRoleFlags();
   const allowed =
     level === "super" ? isSuperAdmin : level === "admin" ? isAdmin : canWrite;
-  if (!allowed) return <ForbiddenNotice />;
+  if (!allowed) return <ForbiddenNotice descKey={DESC_KEY_BY_LEVEL[level]} />;
   return <>{children}</>;
 }

@@ -43,7 +43,7 @@ import {
   useStrategicReport,
   useStrategicReports,
 } from "@/hooks/use-strategic-reports";
-import { ApiError } from "@/lib/api-client";
+import { ApiError, apiRawFetch } from "@/lib/api-client";
 import { useTranslation } from "@/lib/i18n/use-translation";
 import type {
   OkrPayload,
@@ -53,8 +53,6 @@ import type {
   SwotPayload,
   SwotRecommendation,
 } from "@/lib/types";
-
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8003";
 
 type TabKey = "swot" | "okr" | "history";
 
@@ -1046,14 +1044,13 @@ async function downloadStrategicPdf(
 ): Promise<void> {
   // Same fetch+blob+anchor pattern as /reports — credentials:'include'
   // ships the auth cookie on this cross-origin XHR; a plain
-  // <a download> can't.
+  // <a download> can't. Sprint 13 (HATA-04) — apiRawFetch: 401'de
+  // refresh+tek replay'den geçer.
   // Backend route is /download.pdf (per imga-api routes/strategic_
   // reports.py); the bare /pdf shape returned 404 in production.
   const path = `/tenants/me/strategic-reports/${reportId}/download.pdf`;
   try {
-    const res = await fetch(`${API_BASE}${path}`, {
-      credentials: "include",
-    });
+    const res = await apiRawFetch(path);
     if (!res.ok) {
       const detail = await res.text().catch(() => "");
       toast.error(

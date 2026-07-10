@@ -24,6 +24,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useAnalyze } from "@/hooks/use-analyze";
+import { useCategories } from "@/hooks/use-categories";
 import { useManualPromoteReview } from "@/hooks/use-reviews";
 import { ApiError } from "@/lib/api-client";
 import { useTranslation } from "@/lib/i18n/use-translation";
@@ -37,6 +38,14 @@ const PROMOTABLE_DECISIONS: ReadonlySet<ReviewDecision> = new Set([
 ]);
 
 const TEXT_MAX_LENGTH = 10_000;
+
+// reviews/page.tsx ile aynı harita — ham POZITIF/NEGATIF/NÖTR enum'u
+// yerine locale'e uygun etiket (HATA: i18n A-listesi).
+const SENTIMENT_LABEL_KEYS: Record<string, string> = {
+  NEGATIF: "reviews.sentiment.negatif",
+  POZITIF: "reviews.sentiment.pozitif",
+  "NÖTR": "reviews.sentiment.notr",
+};
 
 export default function AnalyzePage() {
   return (
@@ -122,7 +131,9 @@ function AnalyzePageInner() {
         </p>
       </header>
 
-      <form onSubmit={handleSubmit} className="space-y-3">
+      {/* noValidate — HATA-07: tarayıcının kendi dilindeki min/max
+          balonu yerine handleSubmit'teki TR toast çalışsın. */}
+      <form onSubmit={handleSubmit} noValidate className="space-y-3">
         <div className="space-y-2">
           <Label htmlFor="analyze-text">{t("analyze.manual.textLabel")}</Label>
           <Textarea
@@ -259,6 +270,7 @@ function OverrideHits({ hits }: { hits: TenantAnalyzeResponse["analysis"]["overr
 
 function AnalysisSummary({ result }: { result: TenantAnalyzeResponse }) {
   const { t } = useTranslation();
+  const categories = useCategories();
   const a = result.analysis;
   const sentimentVariant =
     a.sentiment_label === "NEGATIF"
@@ -266,7 +278,11 @@ function AnalysisSummary({ result }: { result: TenantAnalyzeResponse }) {
       : a.sentiment_label === "POZITIF"
         ? "default"
         : "secondary";
+  const sentimentKey = SENTIMENT_LABEL_KEYS[a.sentiment_label];
   const categoryCode = a.categorization?.primary ?? "belirsiz";
+  const categoryLabel =
+    categories.data?.find((c) => c.code === categoryCode)?.label_tr ??
+    categoryCode;
   const confidencePct =
     a.categorization != null ? Math.round(a.categorization.primary_confidence * 100) : null;
 
@@ -279,7 +295,7 @@ function AnalysisSummary({ result }: { result: TenantAnalyzeResponse }) {
         <Metric label={t("analyze.manual.sentiment")}>
           <div className="flex items-center gap-2">
             <Badge variant={sentimentVariant} className="px-2 py-0.5">
-              {a.sentiment_label}
+              {sentimentKey ? t(sentimentKey) : a.sentiment_label}
             </Badge>
             <span className="text-muted-foreground text-xs tabular-nums">
               {a.sentiment_score.toFixed(2)}
@@ -289,7 +305,7 @@ function AnalysisSummary({ result }: { result: TenantAnalyzeResponse }) {
         <Metric label={t("analyze.manual.category")}>
           <div className="flex items-center gap-2">
             <Badge variant="outline" className="px-2 py-0.5">
-              {categoryCode}
+              {categoryLabel}
             </Badge>
             {confidencePct != null ? (
               <span className="text-muted-foreground text-xs tabular-nums">
@@ -419,7 +435,13 @@ function DecisionCard({
           return;
         }
         if (err instanceof ApiError && err.status === 409) {
-          toast.error(t("analyze.manual.alreadyLinked"));
+          // 409'un iki kaynağı var: zaten bağlı VE yapılandırılmamış
+          // kategori — API detail'ine göre ayrıştır (UAT HATA-03 FE).
+          toast.error(
+            err.detail.includes("not configured")
+              ? t("analyze.manual.categoryNotConfigured")
+              : t("analyze.manual.alreadyLinked"),
+          );
           return;
         }
         toast.error(t("analyze.manual.promoteFailed"));

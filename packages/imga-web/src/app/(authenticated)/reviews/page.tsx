@@ -26,6 +26,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { useCategories } from "@/hooks/use-categories";
 import { useInfiniteReviews } from "@/hooks/use-reviews";
 import { useCompanyTaxonomies } from "@/hooks/use-taxonomies";
 import { useTranslation } from "@/lib/i18n/use-translation";
@@ -314,6 +315,12 @@ function ReviewsPageInner() {
  *  renk şeridinde; kategori/tarih/kaynak ikincil. Tıklama → detay. */
 function ReviewRow({ review: r }: { review: ReviewListItem }) {
   const { t } = useTranslation();
+  // Ham BERT kodu (kargo_teslimat) yerine kurum sözlüğündeki etiket;
+  // sorgu tek anahtar altında cache'lenir, satır başına maliyet yok.
+  const categories = useCategories();
+  const categoryLabel =
+    categories.data?.find((c) => c.code === r.primary_category)?.label_tr ??
+    r.primary_category;
   const perspective =
     r.company_perspective_label_tr ??
     (r.company_perspective_code ? t("reviews.review.removed") : null);
@@ -334,7 +341,7 @@ function ReviewRow({ review: r }: { review: ReviewListItem }) {
               ? t(SENTIMENT_LABEL_KEYS[r.sentiment_label]!)
               : r.sentiment_label}
           </span>
-          <span className="font-medium">{r.primary_category}</span>
+          <span className="font-medium">{categoryLabel}</span>
           {perspective && <span>{perspective}</span>}
           <span className="tabular-nums">
             {DATE_FORMATTER.format(new Date(r.analyzed_at))}

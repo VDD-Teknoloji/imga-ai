@@ -155,7 +155,9 @@ function InviteForm({ tenantId }: { tenantId: string | null }) {
       { email: email.trim(), role: inviteRole },
       {
         onSuccess: (resp) => {
-          const url = `${window.location.origin}/invitations/${resp.token}`;
+          // Kabul sayfasinin route'u /invite/[token] — /invitations/ 404
+          // veriyordu (UAT HATA-05).
+          const url = `${window.location.origin}/invite/${resp.token}`;
           setLastToken({ email: resp.email, url });
           setEmail("");
           toast.success(t("settings.users.inviteCreated"));

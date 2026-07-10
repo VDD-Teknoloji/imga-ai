@@ -12,6 +12,12 @@ export const core: Bundle = {
     "common.forbidden.title": "Yetkiniz yok",
     "common.forbidden.desc":
       "Kurum yapılandırması yalnızca yöneticiler tarafından düzenlenebilir. Yetki için kurum yöneticinize başvurun.",
+    "common.forbidden.desc.write":
+      "Bu sayfa Analist ve Yönetici rollerine açıktır. Görüntüleyici rolü için kurum yöneticinize başvurun.",
+    "common.forbidden.desc.admin":
+      "Bu sayfa yalnızca Kurum Yöneticisi rolüne açıktır.",
+    "common.forbidden.desc.super":
+      "Bu sayfa yalnızca süper yönetici hesaplara açıktır.",
 
     "locale.tr": "Türkçe",
     "locale.en": "English",
@@ -42,6 +48,12 @@ export const core: Bundle = {
     "common.forbidden.title": "You don't have permission",
     "common.forbidden.desc":
       "Organization configuration can only be edited by administrators. Contact your organization admin for access.",
+    "common.forbidden.desc.write":
+      "This page is available to the Analyst and Admin roles. Contact your organization admin for access.",
+    "common.forbidden.desc.admin":
+      "This page is available to the Organization Admin role only.",
+    "common.forbidden.desc.super":
+      "This page is available to super admin accounts only.",
 
     "locale.tr": "Türkçe",
     "locale.en": "English",

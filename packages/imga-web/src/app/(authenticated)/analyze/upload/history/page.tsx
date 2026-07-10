@@ -26,12 +26,15 @@ const STATUS_LABEL_KEYS: Record<BatchJobStatus, string> = {
   cancelled: "analyze.history.status.cancelled",
 };
 
-const STATUS_TONES: Record<BatchJobStatus, "default" | "success" | "danger" | "warning"> = {
-  queued: "default",
-  processing: "warning",
-  completed: "success",
-  failed: "danger",
-  cancelled: "default",
+// pending-webhooks / scheduled-briefings StatusBadge kalıbı: Badge'in
+// varsayılan bg-primary'si tüm durumları aynı renge boyuyordu; className
+// tailwind-merge ile onu ezer, durum rengi gerçekten görünür.
+const STATUS_CLASSES: Record<BatchJobStatus, string> = {
+  completed: "bg-emerald-100 text-emerald-900 hover:bg-emerald-100",
+  processing: "bg-amber-100 text-amber-900 hover:bg-amber-100",
+  failed: "bg-red-100 text-red-900 hover:bg-red-100",
+  cancelled: "bg-zinc-100 text-zinc-600 hover:bg-zinc-100",
+  queued: "",
 };
 
 export default function BatchHistoryPage() {
@@ -92,7 +95,6 @@ function BatchHistoryPageInner() {
           </TableHeader>
           <TableBody>
             {jobs.map((job) => {
-              const tone = STATUS_TONES[job.status];
               return (
                 <TableRow key={job.job_id}>
                   <TableCell className="text-muted-foreground text-xs">
@@ -105,7 +107,10 @@ function BatchHistoryPageInner() {
                     {job.total_rows}
                   </TableCell>
                   <TableCell>
-                    <Badge variant={tone === "default" ? "outline" : undefined}>
+                    <Badge
+                      variant={job.status === "queued" ? "outline" : undefined}
+                      className={STATUS_CLASSES[job.status]}
+                    >
                       {t(STATUS_LABEL_KEYS[job.status])}
                     </Badge>
                   </TableCell>

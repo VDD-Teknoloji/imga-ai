@@ -21,15 +21,16 @@ import { PiiWarningBanner } from "@/components/analyze/pii-warning-banner";
 import { RequireRole } from "@/components/auth/require-role";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Label } from "@/components/ui/label";
 import {
   useActiveBatchJob,
   useBatchProgressStream,
   useBatchUploadMutation,
   useCancelBatchJobMutation,
+  type LiveBatchJob,
 } from "@/hooks/use-batch-uploads";
 import { useSmartPreview } from "@/hooks/use-smart-preview";
-import { ApiError } from "@/lib/api-client";
+import { useSmoothProgress } from "@/hooks/use-smooth-progress";
+import { ApiError, apiRawFetch } from "@/lib/api-client";
 import { useTranslation } from "@/lib/i18n/use-translation";
 import type {
   BatchJob,
@@ -64,11 +65,10 @@ function BatchUploadPageInner() {
   const { t } = useTranslation();
   const [step, setStep] = useState<Step>(1);
   const [file, setFile] = useState<File | null>(null);
-  // Sprint 9.8 — default "text" → "yorum" (şablonla uyumlu).
-  // smart preview detector zaten REVIEW_TEXT kolonunu bulup
-  // textColumn'a yazıyor; bu default sadece preview yokken
-  // veya kullanıcı manuel girene kadar geçerli.
-  const [textColumn, setTextColumn] = useState("yorum");
+  // Sprint 13 — manuel "Metin/Kaynak sütunu" inputları kaldırıldı.
+  // sourceColumn yalnız preview'dan sessizce türetilir; text kolonu
+  // sütun kartlarındaki override'lardan (derivedTextColumn) gelir,
+  // hiçbiri bulunamazsa backend REVIEW_TEXT'i kendisi çözer.
   const [sourceColumn, setSourceColumn] = useState("");
   const [autoCreateTickets, setAutoCreateTickets] = useState(false);
   const [activeJobId, setActiveJobId] = useState<string | null>(null);
@@ -83,6 +83,18 @@ function BatchUploadPageInner() {
     Record<string, SmartFieldName | undefined>
   >({});
   const [piiConsented, setPiiConsented] = useState(false);
+
+  // Sprint 8.3.8/13 — detector verdict + kullanıcı override'ından
+  // kanonik text kolonu. null ise upload isteğine text_column hiç
+  // yazılmaz; backend smart detector ile kendisi çözer.
+  const derivedTextColumn = useMemo(() => {
+    if (!preview) return null;
+    for (const col of preview.detected) {
+      const effective = overrides[col.column_name] ?? col.field_name;
+      if (effective === "review_text") return col.column_name;
+    }
+    return null;
+  }, [preview, overrides]);
 
   const upload = useBatchUploadMutation();
   const cancel = useCancelBatchJobMutation();
@@ -128,7 +140,6 @@ function BatchUploadPageInner() {
 
   function reset() {
     setFile(null);
-    setTextColumn("yorum");
     setSourceColumn("");
     setAutoCreateTickets(false);
     setActiveJobId(null);
@@ -145,17 +156,13 @@ function BatchUploadPageInner() {
     setPiiConsented(false);
     if (!picked) return;
     setStep(2);
-    // Fire detection — best-effort. On failure the user still sees
-    // the manual text_column input below.
+    // Fire detection — best-effort. On failure the upload still
+    // works; the backend resolves REVIEW_TEXT itself.
     previewMutation.mutate(picked, {
       onSuccess: (data) => {
         setPreview(data);
-        // Auto-set text_column from detector verdict + auto-set
-        // source_column if a customer_id column was detected.
-        const reviewText = data.detected.find(
-          (d) => d.field_name === "review_text",
-        );
-        if (reviewText) setTextColumn(reviewText.column_name);
+        // source_column'u sessizce türet: customer_id tespit edilen
+        // kolon varsa onu kullan (eski manuel inputun auto-fill'i).
         const customerId = data.detected.find(
           (d) => d.field_name === "customer_id",
         );
@@ -198,11 +205,7 @@ function BatchUploadPageInner() {
       {step === 2 && file && (
         <Step2ColumnMapping
           file={file}
-          textColumn={textColumn}
-          sourceColumn={sourceColumn}
           autoCreateTickets={autoCreateTickets}
-          setTextColumn={setTextColumn}
-          setSourceColumn={setSourceColumn}
           setAutoCreateTickets={setAutoCreateTickets}
           preview={preview}
           previewLoading={previewMutation.isPending}
@@ -217,7 +220,7 @@ function BatchUploadPageInner() {
             upload.mutate(
               {
                 file,
-                textColumn: textColumn.trim() || "yorum",
+                textColumn: derivedTextColumn,
                 sourceColumn: sourceColumn.trim() || null,
                 autoCreateTickets,
               },
@@ -309,18 +312,15 @@ function TemplateBanner() {
   // ilk işi şablonu indirmek olsun. İndirme isteği server'dan
   // bytes alıp blob → <a download> ile dosyayı kullanıcıya
   // veriyor (cookie credentials:'include' lazım, bu yüzden plain
-  // <a href> yerine fetch).
+  // <a href> yerine fetch). Sprint 13 (HATA-04) — apiRawFetch:
+  // access cookie süresi dolmuşsa indirme de refresh+replay'den geçer.
   const { t } = useTranslation();
   const [downloading, setDownloading] = useState(false);
-  const apiBase =
-    process.env.NEXT_PUBLIC_API_URL || "http://localhost:8003";
 
   async function handleDownload() {
     setDownloading(true);
     try {
-      const res = await fetch(`${apiBase}/tenants/me/analyze/batch/template`, {
-        credentials: "include",
-      });
+      const res = await apiRawFetch("/tenants/me/analyze/batch/template");
       if (!res.ok) {
         toast.error(t("analyze.upload.template.downloadFailedRetry"));
         return;
@@ -453,11 +453,7 @@ function Step1FilePick({
 
 function Step2ColumnMapping({
   file,
-  textColumn,
-  sourceColumn,
   autoCreateTickets,
-  setTextColumn,
-  setSourceColumn,
   setAutoCreateTickets,
   preview,
   previewLoading,
@@ -470,11 +466,7 @@ function Step2ColumnMapping({
   submitting,
 }: {
   file: File;
-  textColumn: string;
-  sourceColumn: string;
   autoCreateTickets: boolean;
-  setTextColumn: (v: string) => void;
-  setSourceColumn: (v: string) => void;
   setAutoCreateTickets: (v: boolean) => void;
   preview: SmartPreviewResponse | null;
   previewLoading: boolean;
@@ -487,30 +479,6 @@ function Step2ColumnMapping({
   submitting: boolean;
 }) {
   const { t } = useTranslation();
-  // Sprint 8.3.8 — derive the canonical text column from the
-  // detector verdict + the user's overrides. The textColumn local
-  // state stays the source of truth for the upload mutation; the
-  // preview just nudges it. If the user clears overrides AND the
-  // detector finds review_text, that column becomes the value.
-  const derivedTextColumn = useMemo(() => {
-    if (!preview) return null;
-    for (const col of preview.detected) {
-      const override = overrides[col.column_name];
-      const effective = override ?? col.field_name;
-      if (effective === "review_text") return col.column_name;
-    }
-    return null;
-  }, [preview, overrides]);
-
-  // Auto-sync derivedTextColumn → textColumn while the user hasn't
-  // typed manually. Keep the existing input as the override path so
-  // a tenant whose CSV uses an unusual header can still type it.
-  useEffect(() => {
-    if (derivedTextColumn && derivedTextColumn !== textColumn) {
-      setTextColumn(derivedTextColumn);
-    }
-  }, [derivedTextColumn, textColumn, setTextColumn]);
-
   const piiBlocked = preview !== null && preview.pii_warnings.length > 0 && !piiConsented;
   // Sprint 12 — engelleyici doğrulama hatası varsa (zorunlu kolon yok,
   // dosya boş, satır limiti) yükleme açılmaz; kullanıcı önce düzeltir.
@@ -556,37 +524,6 @@ function Step2ColumnMapping({
             {t("analyze.upload.noAutoDetect")}
           </div>
         )}
-
-        <div className="space-y-3">
-          <Label htmlFor="text-column">{t("analyze.upload.textColumn")}</Label>
-          <input
-            id="text-column"
-            value={textColumn}
-            onChange={(e) => setTextColumn(e.target.value)}
-            placeholder="text / yorum"
-            className="border-input bg-background w-full rounded-md border px-3 py-2 text-sm"
-          />
-          <p className="text-muted-foreground text-xs">
-            {t("analyze.upload.textColumnHelp")}
-            {derivedTextColumn && (
-              <>
-                {" "}{t("analyze.upload.autoDetectLabel")}{" "}
-                <code className="font-mono">{derivedTextColumn}</code>
-              </>
-            )}
-          </p>
-        </div>
-
-        <div className="space-y-3">
-          <Label htmlFor="source-column">{t("analyze.upload.sourceColumn")}</Label>
-          <input
-            id="source-column"
-            value={sourceColumn}
-            onChange={(e) => setSourceColumn(e.target.value)}
-            placeholder="kaynak / source"
-            className="border-input bg-background w-full rounded-md border px-3 py-2 text-sm"
-          />
-        </div>
 
         <label className="flex cursor-pointer items-start gap-3 rounded-md border p-4">
           <input
@@ -639,17 +576,25 @@ function Step3Progress({
   job,
   onCancel,
 }: {
-  job: BatchJob | null;
+  job: LiveBatchJob | null;
   onCancel: () => void;
 }) {
   const { t } = useTranslation();
-  const percent = useMemo(() => {
+  const realPercent = useMemo(() => {
     if (!job) return 0;
     return Math.min(
       100,
-      Math.round((job.processed_rows / Math.max(1, job.total_rows)) * 100),
+      (job.processed_rows / Math.max(1, job.total_rows)) * 100,
     );
   }, [job]);
+  const running = job?.status === "queued" || job?.status === "processing";
+  // Sprint 13 — gerçek kareler chunk başına gelir (200 satırda bir);
+  // aradaki boşlukta bar tahmini hızla akmaya devam eder.
+  const percent = useSmoothProgress(
+    realPercent,
+    job?.eta_seconds ?? null,
+    running === true,
+  );
 
   if (!job) {
     return (
@@ -674,12 +619,12 @@ function Step3Progress({
 
         <div className="bg-muted h-2 w-full overflow-hidden rounded">
           <div
-            className="bg-primary h-full transition-all"
+            className="bg-primary h-full transition-[width] duration-200 ease-linear"
             style={{ width: `${percent}%` }}
           />
         </div>
         <p className="text-muted-foreground text-xs">
-          {job.processed_rows} / {job.total_rows} ({percent}%)
+          {job.processed_rows} / {job.total_rows} ({Math.round(percent)}%)
         </p>
 
         <dl className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
@@ -689,11 +634,16 @@ function Step3Progress({
           <Stat label={t("analyze.upload.stat.tickets")} value={job.tickets_created} tone="success" />
         </dl>
 
-        {job.estimated_seconds !== null && job.estimated_seconds > 0 && (
-          <p className="text-muted-foreground text-xs">
-            {t("analyze.upload.estimatedTime", { n: Math.ceil(job.estimated_seconds / 60) })}
-          </p>
-        )}
+        {(() => {
+          // Canlı SSE ETA'sı varsa onu göster — estimated_seconds
+          // yükleme anında bir kez hesaplanan kaba heuristik.
+          const eta = job.eta_seconds ?? job.estimated_seconds;
+          return eta !== null && eta !== undefined && eta > 0 ? (
+            <p className="text-muted-foreground text-xs">
+              {t("analyze.upload.estimatedTime", { n: Math.max(1, Math.ceil(eta / 60)) })}
+            </p>
+          ) : null;
+        })()}
 
         {(job.status === "queued" || job.status === "processing") && (
           <Button variant="outline" type="button" onClick={onCancel}>
@@ -747,13 +697,23 @@ function Step4Summary({ job, onReset }: { job: BatchJob; onReset: () => void }) 
             </ul>
           </details>
         )}
-        <div className="flex flex-wrap gap-2">
-          <Button render={<Link href={`/reviews?batch_job_id=${job.job_id}`} />}>
-            {t("analyze.upload.viewAnalyses")} <ArrowRight className="size-4" />
-          </Button>
-          <Button variant="outline" type="button" onClick={onReset}>
-            {t("analyze.upload.newUpload")}
-          </Button>
+        <div className="space-y-2">
+          <div className="flex flex-wrap gap-2">
+            {/* Ana sayfa ?batch_job_id paramını okuyup dashboard'u bu
+                yüklemeye filtreler (dashboard ajanıyla sözleşme). */}
+            <Button render={<Link href={`/?batch_job_id=${job.job_id}`} />}>
+              {t("analyze.upload.viewAnalyses")} <ArrowRight className="size-4" />
+            </Button>
+            <Button variant="outline" type="button" onClick={onReset}>
+              {t("analyze.upload.newUpload")}
+            </Button>
+          </div>
+          <Link
+            href={`/reviews?batch_job_id=${job.job_id}`}
+            className="text-muted-foreground hover:text-foreground text-xs underline underline-offset-2"
+          >
+            {t("analyze.upload.openReviewList")}
+          </Link>
         </div>
       </CardContent>
     </Card>
@@ -765,14 +725,25 @@ function Step4Summary({ job, onReset }: { job: BatchJob; onReset: () => void }) 
  *
  *   * Engelleyici hata (zorunlu kolon yok / boş dosya / satır limiti):
  *     kırmızı panel + düzeltme ipucu; "Yüklemeyi Başlat" kilitli.
- *   * Yalnız uyarı (boş hücre / kopya satır): amber panel, satır
+ *   * Yalnız uyarı (boş hücre): gri/soluk bilgi paneli, satır
  *     numaralarıyla; yükleme açılabilir, o satırlar atlanır.
  *   * Temiz: yeşil onay + analiz edilecek satır sayısı.
+ *
+ * Sprint 13 — code="duplicate" uyarıları tamamen gizlenir (kopyalar
+ * zaten bir kez analiz edilir; kullanıcı bunu hata sanıyordu).
+ * Sayaçlar ve yeşil-panel kararı filtrelenmiş listeden hesaplanır.
  */
 function ValidationReportPanel({ report }: { report: ValidationReport }) {
   const { t } = useTranslation();
   const errors = report.issues.filter((i) => i.severity === "error");
-  const warnings = report.issues.filter((i) => i.severity === "warning");
+  const warnings = report.issues.filter(
+    (i) => i.severity === "warning" && i.code !== "duplicate",
+  );
+  // Satır-bazlı bulgular birebir sayılır; 50+ satırlık taşma tek
+  // "…ve N daha" özet bulgusuna katlandığı için burada ancak
+  // listelenen kadarı sayılabilir (report.warning_count kopyaları
+  // da içerdiğinden kullanılamaz).
+  const visibleWarningRows = warnings.filter((i) => i.row !== null).length;
 
   if (!report.ok) {
     return (
@@ -807,7 +778,7 @@ function ValidationReportPanel({ report }: { report: ValidationReport }) {
     );
   }
 
-  if (report.warning_count === 0) {
+  if (warnings.length === 0) {
     return (
       <div className="flex items-center gap-2.5 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 dark:border-emerald-900/60 dark:bg-emerald-950/30">
         <CheckCircle2
@@ -825,31 +796,33 @@ function ValidationReportPanel({ report }: { report: ValidationReport }) {
     );
   }
 
+  // Gri/soluk bilgi paneli — amber "uyarı" tonu kullanıcıya hata
+  // varmış hissi veriyordu; atlanan satırlar engelleyici değil.
   return (
-    <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 dark:border-amber-900/60 dark:bg-amber-950/30">
+    <div className="bg-muted/50 rounded-2xl border p-4">
       <div className="flex items-start gap-2.5">
         <AlertCircle
-          className="mt-0.5 size-5 shrink-0 text-amber-600 dark:text-amber-400"
+          className="text-zinc-400 mt-0.5 size-5 shrink-0 dark:text-zinc-500"
           aria-hidden
         />
         <div className="min-w-0 flex-1">
-          <p className="text-sm font-semibold text-amber-800 dark:text-amber-300">
+          <p className="text-muted-foreground text-sm font-semibold">
             {t("analyze.upload.validation.warnSummary", {
               valid: report.valid_rows.toLocaleString("tr-TR"),
-              warn: report.warning_count.toLocaleString("tr-TR"),
+              warn: visibleWarningRows.toLocaleString("tr-TR"),
             })}
           </p>
           <ul className="mt-2 max-h-44 space-y-1.5 overflow-y-auto pr-1">
             {warnings.map((iss, idx) => (
               <li
                 key={idx}
-                className="text-xs leading-relaxed text-amber-800/90 [overflow-wrap:anywhere] dark:text-amber-200"
+                className="text-muted-foreground text-xs leading-relaxed [overflow-wrap:anywhere]"
               >
                 {iss.message}
               </li>
             ))}
           </ul>
-          <p className="mt-2 text-xs text-amber-700/70 dark:text-amber-300/70">
+          <p className="text-muted-foreground/70 mt-2 text-xs">
             {t("analyze.upload.validation.warnFooter")}
           </p>
         </div>

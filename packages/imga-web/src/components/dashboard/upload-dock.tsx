@@ -196,8 +196,11 @@ export function UploadDock() {
               </div>
             </div>
             <div className="flex flex-wrap gap-2">
+              {/* Sprint 13 — batch-filtreli ana sayfa; dashboard
+                  ?batch_job_id paramını okuyup kartları bu yüklemeye
+                  daraltır (upload sihirbazındaki CTA ile aynı hedef). */}
               <Link
-                href={`/reviews?batch_job_id=${state.jobId}`}
+                href={`/?batch_job_id=${state.jobId}`}
                 className="bg-primary text-primary-foreground inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition-transform hover:scale-[1.02]"
               >
                 {t("dashboard.uploadDock.seeResults")}
@@ -211,6 +214,12 @@ export function UploadDock() {
                 <RotateCcw className="size-3.5" aria-hidden />
                 {t("dashboard.uploadDock.newUpload")}
               </button>
+              <Link
+                href={`/reviews?batch_job_id=${state.jobId}`}
+                className="text-muted-foreground hover:text-foreground inline-flex items-center px-1 py-1.5 text-xs underline underline-offset-2"
+              >
+                {t("analyze.upload.openReviewList")}
+              </Link>
             </div>
           </div>
         )}

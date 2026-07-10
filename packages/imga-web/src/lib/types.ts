@@ -5,6 +5,7 @@
 // shapes change (Sprint 7.5.5 / Grup B), update here in one place.
 
 import type { Locale } from "@/lib/i18n/config";
+import { localeLabels } from "@/lib/i18n/locale-labels";
 
 export type UserTenantRole = "tenant_admin" | "analyst" | "viewer";
 
@@ -459,8 +460,15 @@ export interface ReviewDetail {
   auto_ticket_decision_reason: string | null;
   // Sprint 8.3.5 NPS — null when the upload row didn't carry an NPS.
   nps_score: number | null;
-  nps_category: "detractor" | "passive" | "promoter" | null;
+  nps_category: NpsCategory | null;
 }
+
+export type NpsCategory = "detractor" | "passive" | "promoter";
+
+export const NPS_CATEGORY_LABELS: Record<NpsCategory, string> = localeLabels({
+  tr: { detractor: "Kötüleyen", passive: "Pasif", promoter: "Destekçi" },
+  en: { detractor: "Detractor", passive: "Passive", promoter: "Promoter" },
+});
 
 export interface ReviewListFilters {
   date_from?: string;
@@ -1024,17 +1032,30 @@ export type SmartFieldName =
   | "price"
   | "ignore";
 
-export const SMART_FIELD_LABELS: Record<SmartFieldName, string> = {
-  review_text: "Yorum",
-  nps_score: "NPS Skoru",
-  date: "Tarih",
-  customer_id: "Müşteri ID",
-  order_id: "Sipariş ID",
-  product_name: "Ürün Adı",
-  customer_name: "Müşteri Adı",
-  price: "Fiyat",
-  ignore: "Yoksay",
-};
+export const SMART_FIELD_LABELS: Record<SmartFieldName, string> = localeLabels({
+  tr: {
+    review_text: "Yorum",
+    nps_score: "NPS Skoru",
+    date: "Tarih",
+    customer_id: "Müşteri ID",
+    order_id: "Sipariş ID",
+    product_name: "Ürün Adı",
+    customer_name: "Müşteri Adı",
+    price: "Fiyat",
+    ignore: "Yoksay",
+  },
+  en: {
+    review_text: "Review Text",
+    nps_score: "NPS Score",
+    date: "Date",
+    customer_id: "Customer ID",
+    order_id: "Order ID",
+    product_name: "Product Name",
+    customer_name: "Customer Name",
+    price: "Price",
+    ignore: "Ignore",
+  },
+});
 
 /** UI confidence bands — must stay in sync with imga_api.services
  *  .smart_parser.types CONFIDENCE_HIGH / MEDIUM / LOW. */

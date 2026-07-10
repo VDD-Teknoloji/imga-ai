@@ -31,7 +31,7 @@ import {
   useReportJob,
   useReports,
 } from "@/hooks/use-reports";
-import { ApiError } from "@/lib/api-client";
+import { ApiError, apiRawFetch } from "@/lib/api-client";
 import { useTranslation } from "@/lib/i18n/use-translation";
 import type {
   GenerateReportRequest,
@@ -59,8 +59,6 @@ const STATUS_LABEL_KEYS: Record<ReportStatus, string> = {
   completed: "reports.status.completed",
   failed: "reports.status.failed",
 };
-
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8003";
 
 export default function ReportsPage() {
   const { t } = useTranslation();
@@ -256,11 +254,9 @@ function downloadReport(reportId: string, t: TFunc): void {
   // we fetch the bytes ourselves (the cookie does flow on fetch with
   // credentials), then trigger a synthetic anchor-click against an
   // ObjectURL so Chrome / Firefox / Safari all save the file with
-  // the right content-disposition filename.
-  const path = `/tenants/me/reports/${reportId}/download`;
-  fetch(`${API_BASE}${path}`, {
-    credentials: "include",
-  })
+  // the right content-disposition filename. Sprint 13 (HATA-04) —
+  // apiRawFetch: 401'de refresh+tek replay'den geçer.
+  apiRawFetch(`/tenants/me/reports/${reportId}/download`)
     .then(async (res) => {
       if (!res.ok) {
         const detail = await res.text().catch(() => "");

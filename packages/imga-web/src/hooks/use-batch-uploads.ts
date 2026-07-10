@@ -30,7 +30,9 @@ const API_BASE =
 
 export interface BatchUploadInput {
   file: File;
-  textColumn: string;
+  /** Sprint 13 — opsiyonel: verilmezse backend REVIEW_TEXT kolonunu
+   *  smart detector ile kendisi çözer. */
+  textColumn?: string | null;
   sourceColumn?: string | null;
   autoCreateTickets: boolean;
 }
@@ -47,7 +49,7 @@ export function useBatchUploadMutation() {
     mutationFn: async ({ file, textColumn, sourceColumn, autoCreateTickets }) => {
       const fd = new FormData();
       fd.append("file", file);
-      fd.append("text_column", textColumn);
+      if (textColumn) fd.append("text_column", textColumn);
       if (sourceColumn) fd.append("source_column", sourceColumn);
       fd.append("auto_create_tickets", autoCreateTickets ? "true" : "false");
       return apiRequest<BatchJob>("/tenants/me/analyze/batch", {
@@ -77,10 +79,62 @@ export function useBatchJob(jobId: string | null) {
   });
 }
 
+/** BatchJob + canlı SSE karesinden gelen tahmini kalan süre.
+ *  ``eta_seconds`` yalnız akış canlıyken dolar; poll yolunda kalmaz. */
+export interface LiveBatchJob extends BatchJob {
+  eta_seconds?: number | null;
+}
+
 export interface BatchProgressStreamState {
-  data: BatchJob | null;
+  data: LiveBatchJob | null;
   isLoading: boolean;
   error: string | null;
+}
+
+/** SSE 'progress'/'complete' kare şekli — backend
+ *  ``batch_analyzer._progress_snapshot`` ile birebir. Anahtarları
+ *  BatchJob'unkilerden FARKLI (``processed`` vs ``processed_rows``);
+ *  spread'lemeden önce eşlenmesi şart, yoksa kareler barı oynatmaz
+ *  (Sprint 13 — 200'lük donma bug'ının FE ayağı). */
+interface BatchProgressSseSnapshot {
+  status?: string;
+  processed?: number;
+  total?: number;
+  succeeded?: number;
+  failed?: number;
+  tickets_created?: number;
+  duplicates_skipped?: number;
+  eta_seconds?: number | null;
+}
+
+const BATCH_STATUSES: ReadonlySet<string> = new Set([
+  "queued",
+  "processing",
+  "completed",
+  "failed",
+  "cancelled",
+]);
+
+function sseSnapshotToPatch(raw: object): Partial<LiveBatchJob> {
+  const s = raw as BatchProgressSseSnapshot;
+  const patch: Partial<LiveBatchJob> = {};
+  if (typeof s.status === "string" && BATCH_STATUSES.has(s.status)) {
+    patch.status = s.status as BatchJob["status"];
+  }
+  if (typeof s.processed === "number") patch.processed_rows = s.processed;
+  if (typeof s.total === "number") patch.total_rows = s.total;
+  if (typeof s.succeeded === "number") patch.succeeded_rows = s.succeeded;
+  if (typeof s.failed === "number") patch.failed_rows = s.failed;
+  if (typeof s.tickets_created === "number") {
+    patch.tickets_created = s.tickets_created;
+  }
+  if (typeof s.duplicates_skipped === "number") {
+    patch.duplicates_skipped = s.duplicates_skipped;
+  }
+  if (s.eta_seconds === null || typeof s.eta_seconds === "number") {
+    patch.eta_seconds = s.eta_seconds;
+  }
+  return patch;
 }
 
 /**
@@ -98,7 +152,7 @@ export interface BatchProgressStreamState {
 export function useBatchProgressStream(
   jobId: string | null,
 ): BatchProgressStreamState {
-  const [data, setData] = useState<BatchJob | null>(null);
+  const [data, setData] = useState<LiveBatchJob | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(jobId !== null);
   const [error, setError] = useState<string | null>(null);
   const handleRef = useRef<SseHandle | null>(null);
@@ -142,24 +196,24 @@ export function useBatchProgressStream(
       handlers: {
         progress: (payload) => {
           if (!payload || typeof payload !== "object") return;
-          // Fold the SSE snapshot fields onto the existing BatchJob —
-          // the SSE payload is a subset of BatchJob keys, structured
-          // fields persist from the initial fetch.
-          setData((prev) => mergeProgress(prev, payload as Partial<BatchJob>));
+          // SSE karesi BatchJob anahtarlarını kullanmaz; eşleyip
+          // mevcut satırın üstüne katla — structured alanlar ilk
+          // GET'ten kalır, canlı eta_seconds da yüzeye çıkar.
+          const patch = sseSnapshotToPatch(payload);
+          setData((prev) => mergeProgress(prev, patch));
           // Sprint 11.4 — terminal durum 'progress' karesiyle de
           // gelebilir (iş bittikten sonra kurulan SSE'nin ilk karesi).
           // Akışı kapat ki reconnect döngüsü oluşmasın; sayfanın
           // adım-ilerletme effect'i data.status üzerinden zaten
           // tetiklenir.
-          const status = (payload as Partial<BatchJob>).status;
-          if (status && TERMINAL_STATUSES.has(status)) {
+          if (patch.status && TERMINAL_STATUSES.has(patch.status)) {
             handleRef.current?.close();
             handleRef.current = null;
           }
         },
         complete: (payload) => {
           if (!payload || typeof payload !== "object") return;
-          setData((prev) => mergeProgress(prev, payload as Partial<BatchJob>));
+          setData((prev) => mergeProgress(prev, sseSnapshotToPatch(payload)));
           handleRef.current?.close();
           handleRef.current = null;
         },
@@ -220,13 +274,13 @@ export function useBatchProgressStream(
 }
 
 function mergeProgress(
-  prev: BatchJob | null,
-  patch: Partial<BatchJob>,
-): BatchJob | null {
+  prev: LiveBatchJob | null,
+  patch: Partial<LiveBatchJob>,
+): LiveBatchJob | null {
   if (prev === null) {
     // No initial-fetch result yet; keep the SSE snapshot until the
     // GET resolves and back-fills the structured fields.
-    return patch as BatchJob;
+    return patch as LiveBatchJob;
   }
   return { ...prev, ...patch };
 }

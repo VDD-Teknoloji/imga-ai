@@ -152,7 +152,14 @@ function ColumnRow({
         }}
       >
         <SelectTrigger className="h-8 text-xs">
-          <SelectValue />
+          {/* Base UI Select.Value çocuk verilmezse ham value string'ini
+              basar (Radix'in "seçili item metni" davranışı yok) —
+              kapalı hâlde etiketi children-fn ile çöz. */}
+          <SelectValue>
+            {(value: SmartFieldName | null) =>
+              SMART_FIELD_LABELS[value ?? "ignore"]
+            }
+          </SelectValue>
         </SelectTrigger>
         <SelectContent>
           {FIELD_OPTIONS.map((opt) => (

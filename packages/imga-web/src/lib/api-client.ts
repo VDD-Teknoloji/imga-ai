@@ -152,6 +152,35 @@ export async function apiRequest<T>(
   throw new ApiError(response.status, detail, body, requestId);
 }
 
+/**
+ * Sprint 13 (HATA-04) — blob dönen endpoint'ler (şablon/rapor/PDF
+ * indirme) için ham Response sarmalayıcısı. ``apiRequest`` gövdeyi
+ * JSON parse ettiğinden blob'a uymaz; buradaki varyant Response'u
+ * olduğu gibi döndürür ama 401'de aynı tryRefresh mutex'inden geçip
+ * isteği bir kez tekrarlar — indirmeler de oturum tazelemeye bağlanır.
+ * ``tryRefresh``'i export etmek yerine bu dar sarmalayıcı: kilit +
+ * onSessionExpired semantiği tek modülde kalır.
+ */
+export async function apiRawFetch(
+  path: string,
+  init: RequestInit = {},
+  isRetry = false,
+): Promise<Response> {
+  const res = await fetch(`${API_BASE}${path}`, {
+    ...init,
+    credentials: "include",
+  });
+  if (
+    res.status === 401 &&
+    !isAuthBootstrap(path) &&
+    !isRetry &&
+    (await tryRefresh())
+  ) {
+    return apiRawFetch(path, init, true);
+  }
+  return res;
+}
+
 // Sprint 9.0.6 A — module-level singleton so concurrent 401s coalesce
 // into a single /auth/refresh call. Without this, an N-pane dashboard
 // firing simultaneous 401s would race N rotations against the same

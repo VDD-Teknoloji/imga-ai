@@ -195,6 +195,8 @@ export const insights: Bundle = {
     "reviews.detail.promoteSuccess": "Manuel olarak Ticket açıldı.",
     "reviews.detail.noPermission": "Bu işlem için yetkin yok.",
     "reviews.detail.alreadyLinked": "Bu analiz zaten bir Ticket'a bağlı.",
+    "reviews.detail.categoryNotConfigured":
+      "Kategori bu kurumda yapılandırılmamış — Ticket açılamadı.",
     "reviews.detail.promoteError": "Ticket açılamadı.",
     "reviews.detail.backToList": "Analizler",
     "reviews.detail.notFound": "Analiz bulunamadı veya erişim yok.",
@@ -467,6 +469,8 @@ export const insights: Bundle = {
     "reviews.detail.promoteSuccess": "Ticket opened manually.",
     "reviews.detail.noPermission": "You don't have permission for this action.",
     "reviews.detail.alreadyLinked": "This analysis is already linked to a Ticket.",
+    "reviews.detail.categoryNotConfigured":
+      "Category is not configured for this organization — could not open a Ticket.",
     "reviews.detail.promoteError": "Couldn't open a Ticket.",
     "reviews.detail.backToList": "Analyses",
     "reviews.detail.notFound": "Analysis not found or no access.",
