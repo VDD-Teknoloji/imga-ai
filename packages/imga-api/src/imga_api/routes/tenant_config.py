@@ -109,7 +109,14 @@ def _require_active_tenant(current: CurrentUser) -> UUID:
 
 
 def _categories_view(snapshot: dict[str, Any]) -> list[CategoryView]:
-    return [CategoryView(**c) for c in snapshot["categories"]]
+    # 'belirsiz' migration 0036'dan beri DB'de global satır (promote
+    # fallback'i için); sınıflandırıcı fallback kovası olduğundan
+    # ayarlardaki enable/disable listesinde anlamı yok — gizlenir.
+    return [
+        CategoryView(**c)
+        for c in snapshot["categories"]
+        if c["code"] != "belirsiz"
+    ]
 
 
 # Role guard reused across mutations: tenant_admin (or super-admin via

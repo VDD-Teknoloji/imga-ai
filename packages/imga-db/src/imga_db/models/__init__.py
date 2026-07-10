@@ -13,6 +13,11 @@ from imga_db.models.category import Category, TenantCategory
 from imga_db.models.category_taxonomy import CategoryTaxonomy
 from imga_db.models.comment import TicketComment, TicketCommentKind
 from imga_db.models.decision_audit_log import DecisionAuditLog
+from imga_db.models.email_outbox import (
+    EmailOutbox,
+    EmailOutboxEventType,
+    EmailOutboxStatus,
+)
 from imga_db.models.executive_briefing import ExecutiveBriefing
 from imga_db.models.executive_snapshot import ExecutiveSnapshot
 from imga_db.models.invitation import Invitation
@@ -46,8 +51,6 @@ from imga_db.models.tenant import (
 from imga_db.models.tenant_business_dimension import TenantBusinessDimension
 from imga_db.models.tenant_kpi_goal import TenantKpiGoal
 from imga_db.models.tenant_llm_credential import TenantLlmCredential
-from imga_db.models.trend_alert import TrendAlert
-from imga_db.models.trial_analysis import TrialAnalysis
 from imga_db.models.ticket import (
     CancellationReason,
     Ticket,
@@ -55,6 +58,9 @@ from imga_db.models.ticket import (
     TicketState,
     TicketStateTransition,
 )
+from imga_db.models.ticket_routing_rule import TicketRoutingRule
+from imga_db.models.trend_alert import TrendAlert
+from imga_db.models.trial_analysis import TrialAnalysis
 from imga_db.models.user import User, UserTenantLink, UserTenantRole
 
 __all__ = [
@@ -75,6 +81,9 @@ __all__ = [
     "CategoryTaxonomy",
     "DataPurgeAudit",
     "DecisionAuditLog",
+    "EmailOutbox",
+    "EmailOutboxEventType",
+    "EmailOutboxStatus",
     "ExecutiveBriefing",
     "ExecutiveSnapshot",
     "Invitation",
@@ -90,6 +99,7 @@ __all__ = [
     "ReportStatus",
     "ReportType",
     "Review",
+    "ReviewCorrection",
     "ReviewDecision",
     "SlaRule",
     "SlaWebhookDispatchMode",
@@ -109,11 +119,11 @@ __all__ = [
     "TicketComment",
     "TicketCommentKind",
     "TicketPriority",
+    "TicketRoutingRule",
     "TicketState",
     "TicketStateTransition",
     "TimestampMixin",
     "TrendAlert",
-    "ReviewCorrection",
     "TrialAnalysis",
     "User",
     "UserTenantLink",

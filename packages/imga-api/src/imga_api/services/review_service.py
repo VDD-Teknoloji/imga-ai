@@ -33,6 +33,7 @@ even after the tenant flips modes.
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
@@ -45,6 +46,7 @@ from imga_db.models import (
     CategoryTaxonomy,
     Review,
     ReviewDecision,
+    Tenant,
     Ticket,
     TicketPriority,
 )
@@ -53,10 +55,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from imga_api.services.audit_service import AuditService
 from imga_api.services.tenant_config_service import TenantConfigService
+from imga_api.services.ticket_routing_service import (
+    apply_routing,
+    resolve_rule,
+)
 from imga_api.services.ticket_service import (
     TicketService,
     decide_auto_create_state,
 )
+
+_logger = logging.getLogger(__name__)
 
 # 24-hour dedup window. Same text submitted twice in this window
 # collapses to a single ticket; outside the window it's a fresh ticket
@@ -226,6 +234,11 @@ class ReviewService:
                     ticket_id = ticket.id
                     decision = ReviewDecision.CREATE
                     decision_reason = threshold.reason
+                    await self._route_new_ticket(
+                        tenant_id=tenant_id,
+                        ticket=ticket,
+                        category_code=primary_code,
+                    )
 
         # Persist the review row regardless of branch — every analyze
         # call leaves an audit trail.
@@ -339,6 +352,9 @@ class ReviewService:
             created_by_user_id=actor_user_id,
             opened_at=moment,
         )
+        await self._route_new_ticket(
+            tenant_id=tenant_id, ticket=ticket, category_code=category_code
+        )
         review.ticket_id = ticket.id
         # Preserve the original `decision` (skipped_mode etc.) so the
         # audit trail still shows the bridge's call. `decision_reason`
@@ -362,6 +378,43 @@ class ReviewService:
         return ticket
 
     # --- helpers --------------------------------------------------------
+
+    async def _route_new_ticket(
+        self,
+        *,
+        tenant_id: UUID,
+        ticket: Ticket,
+        category_code: str,
+    ) -> None:
+        """Kategori yönlendirme hook'u — üç mint yolunun ortak noktası.
+        Yönlendirme hatası ticket mint'ini geri almamalı: kural/atama
+        problemi loglanır, review + ticket akışı devam eder."""
+        try:
+            rule = await resolve_rule(
+                self._session, tenant_id=tenant_id, category_code=category_code
+            )
+            if rule is None:
+                return
+            tenant = await self._session.get(Tenant, tenant_id)
+            if tenant is None:
+                return
+            await apply_routing(
+                self._session,
+                tenant=tenant,
+                ticket=ticket,
+                category_code=category_code,
+                rule=rule,
+                ticket_service=self._tickets,
+            )
+        except Exception:
+            _logger.exception(
+                "ticket routing failed",
+                extra={
+                    "tenant_id": str(tenant_id),
+                    "ticket_id": str(ticket.id),
+                    "category_code": category_code,
+                },
+            )
 
     async def _find_dedup_ticket(
         self,

@@ -73,6 +73,9 @@ from imga_api.routes import (
     tenant_strategic_reports as tenant_strategic_reports_routes,
 )
 from imga_api.routes import tenant_taxonomies as tenant_taxonomies_routes
+from imga_api.routes import (
+    tenant_ticket_routing as tenant_ticket_routing_routes,
+)
 from imga_api.routes import tenant_trend_alerts as tenant_trend_alerts_routes
 from imga_api.routes import tickets as tickets_routes
 from imga_api.v1 import admin_tenants as v1_admin_tenants_routes
@@ -373,6 +376,8 @@ app.include_router(tenant_executive_routes.router)
 app.include_router(tenant_directory_routes.router)
 app.include_router(tenant_taxonomies_routes.router)
 app.include_router(tenant_sla_rules_routes.router)
+# Kategori bazlı ticket yönlendirme kuralları + e-posta outbox penceresi.
+app.include_router(tenant_ticket_routing_routes.router)
 app.include_router(tenant_insights_routes.router)
 app.include_router(tenant_executive_briefings_routes.router)
 app.include_router(tenant_briefing_schedules_routes.router)

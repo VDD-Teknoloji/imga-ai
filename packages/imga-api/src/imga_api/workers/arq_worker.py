@@ -45,6 +45,10 @@ from imga_api.workers.batch_analyzer import (
     process_batch_job,
     recover_orphans,
 )
+from imga_api.workers.email_outbox_worker import (
+    email_outbox_tick,
+    sla_breach_tick,
+)
 from imga_api.workers.scheduled_briefings import scheduled_briefing_tick
 
 _logger = logging.getLogger("imga-api.workers.arq")
@@ -218,6 +222,19 @@ class WorkerSettings:
         cron(
             scheduled_briefing_tick,
             minute={0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55},
+            run_at_startup=False,
+        ),
+        # Sprint 13+ — email outbox dispatcher (2 dk) + SLA ihlal
+        # taraması (15 dk). Her ikisi de tarama tabanlı ve idempotent;
+        # ayrı worker container gerekmez.
+        cron(
+            email_outbox_tick,
+            minute=set(range(0, 60, 2)),
+            run_at_startup=False,
+        ),
+        cron(
+            sla_breach_tick,
+            minute={0, 15, 30, 45},
             run_at_startup=False,
         ),
     ]
