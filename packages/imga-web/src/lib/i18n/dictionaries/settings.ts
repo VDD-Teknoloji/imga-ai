@@ -250,6 +250,56 @@ export const settings: Bundle = {
       ". Bekleyen Bildirimler sayfasında listelenir; gönderim için her birini operatör onaylamalıdır.",
     "settings.sla.switchToManualConfirm": "Manuel moda geç",
 
+    // --- ticket-routing (kategori bazlı yönlendirme + e-posta outbox) ---
+    "settings.index.ticketRouting.title": "Ticket Yönlendirme",
+    "settings.index.ticketRouting.desc":
+      "Kategori bazlı otomatik atama + e-posta bildirimi.",
+    "settings.ticketRouting.title": "Ticket Yönlendirme",
+    "settings.ticketRouting.subtitle":
+      "Otomatik açılan ticket'lar kategoriye göre bir sorumluya atanır ve e-posta bildirimi gönderilir.",
+    "settings.ticketRouting.loadError": "Kurallar yüklenemedi.",
+    "settings.ticketRouting.empty":
+      "Henüz yönlendirme kuralı yok. Aşağıdaki formdan ilkini tanımlayın.",
+    "settings.ticketRouting.colCategory": "Kategori",
+    "settings.ticketRouting.colEmail": "Bildirim e-postası",
+    "settings.ticketRouting.colAssignee": "Atanan kullanıcı",
+    "settings.ticketRouting.colSla": "SLA",
+    "settings.ticketRouting.colActive": "Aktif",
+    "settings.ticketRouting.noAssignee": "(atama yok)",
+    "settings.ticketRouting.slaHoursValue": "{n} saat",
+    "settings.ticketRouting.activeToggleAria": "Kuralı aç/kapat",
+    "settings.ticketRouting.ruleEnabled": "Kural etkinleştirildi.",
+    "settings.ticketRouting.ruleDisabled": "Kural devre dışı bırakıldı.",
+    "settings.ticketRouting.ruleDeleted": "Kural devre dışı bırakıldı.",
+    "settings.ticketRouting.newRule": "Yeni kural",
+    "settings.ticketRouting.categoryPlaceholder": "Kategori seçin",
+    "settings.ticketRouting.noAvailableCategories":
+      "Tüm kategoriler için kural tanımlı.",
+    "settings.ticketRouting.emailPlaceholder": "destek@sirket.com",
+    "settings.ticketRouting.assigneeOptional": "Atanan kullanıcı (opsiyonel)",
+    "settings.ticketRouting.slaOptional": "SLA (saat, opsiyonel)",
+    "settings.ticketRouting.categoryRequired": "Kategori seçin.",
+    "settings.ticketRouting.emailInvalid": "Geçerli bir e-posta girin.",
+    "settings.ticketRouting.slaPositive": "SLA saati pozitif bir sayı olmalı.",
+    "settings.ticketRouting.ruleAdded": "Kural eklendi.",
+    "settings.ticketRouting.addFailed": "Kural eklenemedi.",
+    "settings.ticketRouting.duplicateCategory":
+      "Bu kategori için kural zaten var.",
+    "settings.ticketRouting.outboxTitle": "Son e-posta bildirimleri",
+    "settings.ticketRouting.outboxError": "Bildirim listesi alınamadı.",
+    "settings.ticketRouting.outboxEmpty": "Henüz e-posta bildirimi yok.",
+    "settings.ticketRouting.outboxDate": "Tarih",
+    "settings.ticketRouting.outboxRecipient": "Alıcı",
+    "settings.ticketRouting.outboxSubject": "Konu",
+    "settings.ticketRouting.outboxStatus": "Durum",
+    "settings.ticketRouting.eventTicketOpened": "ticket açıldı",
+    "settings.ticketRouting.eventSlaBreach": "SLA ihlali",
+    "settings.ticketRouting.statusPending": "Bekliyor",
+    "settings.ticketRouting.statusSent": "Gönderildi",
+    "settings.ticketRouting.statusFailed": "Başarısız",
+    "settings.ticketRouting.smtpPendingNote":
+      "E-postalar SMTP yapılandırılana kadar kuyrukta bekler.",
+
     // --- taxonomies (şikayet kategorileri) ---
     "settings.taxonomies.title": "Şikayet Kategorileri",
     "settings.taxonomies.subtitle":
@@ -595,6 +645,56 @@ export const settings: Bundle = {
     "settings.sla.manualConfirmDesc2":
       " when an SLA is breached. They are listed on the Pending Notifications page; the operator must approve each one for dispatch.",
     "settings.sla.switchToManualConfirm": "Switch to manual mode",
+
+    // --- ticket-routing ---
+    "settings.index.ticketRouting.title": "Ticket Routing",
+    "settings.index.ticketRouting.desc":
+      "Category-based auto-assignment + email notification.",
+    "settings.ticketRouting.title": "Ticket Routing",
+    "settings.ticketRouting.subtitle":
+      "Automatically opened tickets are assigned to a responsible person by category and an email notification is sent.",
+    "settings.ticketRouting.loadError": "Failed to load rules.",
+    "settings.ticketRouting.empty":
+      "No routing rules yet. Define the first one with the form below.",
+    "settings.ticketRouting.colCategory": "Category",
+    "settings.ticketRouting.colEmail": "Notification email",
+    "settings.ticketRouting.colAssignee": "Assigned user",
+    "settings.ticketRouting.colSla": "SLA",
+    "settings.ticketRouting.colActive": "Active",
+    "settings.ticketRouting.noAssignee": "(no assignee)",
+    "settings.ticketRouting.slaHoursValue": "{n} hours",
+    "settings.ticketRouting.activeToggleAria": "Toggle rule",
+    "settings.ticketRouting.ruleEnabled": "Rule enabled.",
+    "settings.ticketRouting.ruleDisabled": "Rule disabled.",
+    "settings.ticketRouting.ruleDeleted": "Rule disabled.",
+    "settings.ticketRouting.newRule": "New rule",
+    "settings.ticketRouting.categoryPlaceholder": "Select a category",
+    "settings.ticketRouting.noAvailableCategories":
+      "All categories already have a rule.",
+    "settings.ticketRouting.emailPlaceholder": "support@company.com",
+    "settings.ticketRouting.assigneeOptional": "Assigned user (optional)",
+    "settings.ticketRouting.slaOptional": "SLA (hours, optional)",
+    "settings.ticketRouting.categoryRequired": "Select a category.",
+    "settings.ticketRouting.emailInvalid": "Enter a valid email.",
+    "settings.ticketRouting.slaPositive": "SLA hours must be a positive number.",
+    "settings.ticketRouting.ruleAdded": "Rule added.",
+    "settings.ticketRouting.addFailed": "Failed to add rule.",
+    "settings.ticketRouting.duplicateCategory":
+      "A rule already exists for this category.",
+    "settings.ticketRouting.outboxTitle": "Recent email notifications",
+    "settings.ticketRouting.outboxError": "Failed to load notification list.",
+    "settings.ticketRouting.outboxEmpty": "No email notifications yet.",
+    "settings.ticketRouting.outboxDate": "Date",
+    "settings.ticketRouting.outboxRecipient": "Recipient",
+    "settings.ticketRouting.outboxSubject": "Subject",
+    "settings.ticketRouting.outboxStatus": "Status",
+    "settings.ticketRouting.eventTicketOpened": "ticket opened",
+    "settings.ticketRouting.eventSlaBreach": "SLA breach",
+    "settings.ticketRouting.statusPending": "Pending",
+    "settings.ticketRouting.statusSent": "Sent",
+    "settings.ticketRouting.statusFailed": "Failed",
+    "settings.ticketRouting.smtpPendingNote":
+      "Emails wait in the queue until SMTP is configured.",
 
     // --- taxonomies (complaint categories) ---
     "settings.taxonomies.title": "Complaint Categories",
