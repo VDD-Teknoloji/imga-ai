@@ -20,6 +20,8 @@ import pytest
 from fastapi.testclient import TestClient
 from imga_core import review_text_hash
 from imga_db.models import (
+    AnalyzeBatchJob,
+    BatchJobStatus,
     ExecutiveBriefing,
     Review,
     ReviewDecision,
@@ -41,6 +43,8 @@ async def _seed_review(
     sentiment_score: float,
     primary_category: str = "kargo",
     created_at: datetime | None = None,
+    analyzed_at: datetime | None = None,
+    batch_job_id: UUID | None = None,
 ) -> None:
     async with admin_session.begin():
         await admin_session.execute(
@@ -60,8 +64,8 @@ async def _seed_review(
             "decision_reason": None,
             "ticket_id": None,
             "submitted_by_user_id": None,
-            "batch_job_id": None,
-            "analyzed_at": datetime.now(UTC),
+            "batch_job_id": batch_job_id,
+            "analyzed_at": analyzed_at or datetime.now(UTC),
         }
         if created_at is not None:
             kwargs["created_at"] = created_at
@@ -69,6 +73,31 @@ async def _seed_review(
         admin_session.add(row)
         await admin_session.flush()
         admin_session.expunge(row)
+
+
+async def _seed_batch_job(
+    admin_session: AsyncSession, *, tenant_id: UUID
+) -> UUID:
+    async with admin_session.begin():
+        await admin_session.execute(
+            text("SELECT set_config('app.current_tenant_id', :t, true)"),
+            {"t": str(tenant_id)},
+        )
+        job = AnalyzeBatchJob(
+            tenant_id=tenant_id,
+            status=BatchJobStatus.COMPLETED,
+            file_name="filtre-test.csv",
+            file_size_bytes=100,
+            file_path="/tmp/filtre-test.csv",
+            text_column="yorum",
+            total_rows=3,
+            created_at=datetime.now(UTC),
+        )
+        admin_session.add(job)
+        await admin_session.flush()
+        job_id = job.id
+        admin_session.expunge(job)
+    return job_id
 
 
 @pytest.mark.asyncio
@@ -361,3 +390,117 @@ async def test_overview_trend_compares_30_day_windows(
     assert trend["previous_positive_pct"] == 50.0
     assert trend["current_positive_pct"] == 75.0
     assert trend["delta_points"] == 25.0
+
+
+@pytest.mark.asyncio
+async def test_overview_filters_narrow_data_and_disable_trend(
+    batch_client: TestClient,
+    semi_auto_tenant: tuple[User, UUID, str],
+    admin_session: AsyncSession,
+) -> None:
+    """batch_job_id / date filtresi sentiment + top_problems + voice'u
+    daraltmalı, trend'i None'a çekmeli; last_data_at filtresiz kalmalı."""
+    user, tid, pw = semi_auto_tenant
+    now = datetime.now(UTC)
+    job_id = await _seed_batch_job(admin_session, tenant_id=tid)
+
+    batch_rows: list[tuple[str, str, float, str]] = [
+        (
+            "Batch yüklemesindeki kargo şikayeti: paket geç geldi ve "
+            "kutu ezik çıktı, çözüm de bulunamadı maalesef.",
+            "NEGATIF", -0.9, "kargo",
+        ),
+        (
+            "Batch yüklemesindeki ikinci kargo şikayeti: teslimat "
+            "adresi karıştırıldı, günlerce yeniden bekledik.",
+            "NEGATIF", -0.8, "kargo",
+        ),
+        (
+            "Batch yüklemesindeki olumlu yorum: destek ekibi hızlı "
+            "dönüş yaptı, sürecin sonunda gayet memnun kaldım.",
+            "POZITIF", 0.9, "musteri-hizmetleri",
+        ),
+    ]
+    for text_value, label, score, cat in batch_rows:
+        await _seed_review(
+            admin_session, tenant_id=tid, text_value=text_value,
+            sentiment_label=label, sentiment_score=score,
+            primary_category=cat, batch_job_id=job_id,
+        )
+
+    for i in range(3):
+        await _seed_review(
+            admin_session, tenant_id=tid,
+            text_value=(
+                f"Batch dışı ürün kalitesi şikayeti numara {i}: malzeme "
+                "ilk kullanımda deforme oldu, beklentiyi karşılamadı."
+            ),
+            sentiment_label="NEGATIF", sentiment_score=-0.7,
+            primary_category="urun-kalitesi",
+        )
+    # analyzed_at 90 gün önce — tarih filtresi bu satırı dışarıda
+    # bırakmalı (created_at şimdi kalır; last_data_at bundan etkilenmez).
+    await _seed_review(
+        admin_session, tenant_id=tid,
+        text_value=(
+            "Eski analiz dönemine ait fiyatlandırma şikayeti: kampanya "
+            "fiyatı kasada farklı çıktı, kimse ilgilenmedi."
+        ),
+        sentiment_label="NEGATIF", sentiment_score=-0.6,
+        primary_category="fiyatlandirma",
+        analyzed_at=now - timedelta(days=90),
+    )
+
+    token = login_token(batch_client, user.email, pw, tid)
+    headers = {"Authorization": f"Bearer {token}"}
+
+    # --- filtresiz taban çizgisi
+    r = batch_client.get("/tenants/me/executive/overview", headers=headers)
+    assert r.status_code == 200, r.text
+    baseline = r.json()
+    assert baseline["sentiment"]["NEGATIF"] == 6
+    assert baseline["sentiment"]["total"] == 7
+    assert baseline["top_problems"][0]["code"] == "urun-kalitesi"
+    baseline_last_data = baseline["last_data_at"]
+    assert baseline_last_data is not None
+
+    # --- batch filtresi: yalnız job'un 3 satırı
+    r = batch_client.get(
+        "/tenants/me/executive/overview",
+        headers=headers,
+        params={"batch_job_id": str(job_id)},
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["sentiment"] == {
+        "POZITIF": 1, "NEGATIF": 2, "NÖTR": 0, "total": 3,
+    }
+    problems = body["top_problems"]
+    assert len(problems) == 1
+    assert problems[0]["code"] == "kargo"
+    assert problems[0]["count"] == 2
+    assert problems[0]["share_pct"] == 100.0
+    assert problems[0]["sample_text"] is not None
+    assert problems[0]["sample_text"].startswith("Batch yüklemesindeki")
+    voice = body["voice_of_customer"]
+    assert len(voice) == 3
+    assert all(q["text"].startswith("Batch yüklemesindeki") for q in voice)
+    assert body["trend"] is None
+    assert body["last_data_at"] == baseline_last_data
+
+    # --- tarih filtresi: 90 gün önce analiz edilen satır dışarıda
+    r = batch_client.get(
+        "/tenants/me/executive/overview",
+        headers=headers,
+        params={"date_from": (now - timedelta(days=30)).isoformat()},
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["sentiment"]["NEGATIF"] == 5
+    assert body["sentiment"]["total"] == 6
+    codes = [p["code"] for p in body["top_problems"]]
+    assert "fiyatlandirma" not in codes
+    assert codes[0] == "urun-kalitesi"
+    assert "kargo" in codes
+    assert body["trend"] is None
+    assert body["last_data_at"] == baseline_last_data

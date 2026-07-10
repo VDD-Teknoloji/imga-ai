@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import logging
 import re
+from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from typing import Annotated, Any
 from uuid import UUID
@@ -42,7 +43,7 @@ from imga_db.models import (
     UserTenantRole,
 )
 from pydantic import BaseModel
-from sqlalchemy import case, func, select
+from sqlalchemy import Select, case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from imga_api.auth_deps import CurrentUser, bind_tenant, require_role
@@ -190,17 +191,43 @@ def _require_active_tenant(current: CurrentUser) -> UUID:
     return current.active_tenant_id
 
 
+_Scoped = Callable[[Select[Any]], Select[Any]]
+
+
+def _make_scoped(
+    date_from: datetime | None,
+    date_to: datetime | None,
+    batch_job_id: UUID | None,
+) -> _Scoped:
+    """Dashboard filtreleri (tarih aralığı + batch) için ortak where
+    seti. Tarih ekseni ``analyzed_at`` — sayfadaki analytics chart'ları
+    ile aynı (NPS bilerek ``created_at``; bkz. compute_nps_summary)."""
+
+    def _scoped(stmt: Select[Any]) -> Select[Any]:
+        if date_from is not None:
+            stmt = stmt.where(Review.analyzed_at >= date_from)
+        if date_to is not None:
+            stmt = stmt.where(Review.analyzed_at <= date_to)
+        if batch_job_id is not None:
+            stmt = stmt.where(Review.batch_job_id == batch_job_id)
+        return stmt
+
+    return _scoped
+
+
 async def _sentiment_totals(
-    session: AsyncSession, tenant_id: UUID
+    session: AsyncSession, tenant_id: UUID, scoped: _Scoped
 ) -> dict[str, int]:
     """Üç duygu etiketinin toplam sayıları + genel toplam. Anahtarlar
     frontend'in beklediği literal set: POZITIF / NEGATIF / NÖTR."""
     rows = (
         await session.execute(
-            select(Review.sentiment_label, func.count())
-            .where(Review.tenant_id == tenant_id)
-            .where(Review.deleted_at.is_(None))
-            .group_by(Review.sentiment_label)
+            scoped(
+                select(Review.sentiment_label, func.count())
+                .where(Review.tenant_id == tenant_id)
+                .where(Review.deleted_at.is_(None))
+                .group_by(Review.sentiment_label)
+            )
         )
     ).all()
     counts: dict[str, int] = {"POZITIF": 0, "NEGATIF": 0, "NÖTR": 0}
@@ -274,6 +301,7 @@ async def _top_problems(
     tenant_id: UUID,
     *,
     total_negative: int,
+    scoped: _Scoped,
     take: int = 3,
 ) -> list[TopProblem]:
     """Ana Sorunlar: en çok negatif yorum alan ``take`` kategori.
@@ -287,24 +315,26 @@ async def _top_problems(
     """
     rows = (
         await session.execute(
-            select(
-                Review.primary_category,
-                Category.label_tr,
-                func.count().label("cnt"),
+            scoped(
+                select(
+                    Review.primary_category,
+                    Category.label_tr,
+                    func.count().label("cnt"),
+                )
+                .select_from(Review)
+                .outerjoin(
+                    Category,
+                    (Category.code == Review.primary_category)
+                    & Category.tenant_id.is_(None),
+                )
+                .where(Review.tenant_id == tenant_id)
+                .where(Review.deleted_at.is_(None))
+                .where(Review.sentiment_label == "NEGATIF")
+                .where(Review.primary_category != "belirsiz")
+                .group_by(Review.primary_category, Category.label_tr)
+                .order_by(func.count().desc())
+                .limit(take)
             )
-            .select_from(Review)
-            .outerjoin(
-                Category,
-                (Category.code == Review.primary_category)
-                & Category.tenant_id.is_(None),
-            )
-            .where(Review.tenant_id == tenant_id)
-            .where(Review.deleted_at.is_(None))
-            .where(Review.sentiment_label == "NEGATIF")
-            .where(Review.primary_category != "belirsiz")
-            .group_by(Review.primary_category, Category.label_tr)
-            .order_by(func.count().desc())
-            .limit(take)
         )
     ).all()
 
@@ -312,16 +342,20 @@ async def _top_problems(
     for code, label_tr, count in rows:
         # Birkaç aday çek; URL temizliği sonrası kısalan/boşalan
         # metinleri atla, ilk hâlâ-anlamlı adayı kullan.
+        # Sample da aynı filtre setinden geçer — rakam filtreli,
+        # alıntı filtresiz olursa satır kendi içinde çelişir.
         sample_rows = (
             await session.execute(
-                select(Review.text)
-                .where(Review.tenant_id == tenant_id)
-                .where(Review.deleted_at.is_(None))
-                .where(Review.sentiment_label == "NEGATIF")
-                .where(Review.primary_category == code)
-                .where(func.length(Review.text) >= _QUOTE_MIN_CHARS)
-                .order_by(Review.sentiment_score.asc())
-                .limit(5)
+                scoped(
+                    select(Review.text)
+                    .where(Review.tenant_id == tenant_id)
+                    .where(Review.deleted_at.is_(None))
+                    .where(Review.sentiment_label == "NEGATIF")
+                    .where(Review.primary_category == code)
+                    .where(func.length(Review.text) >= _QUOTE_MIN_CHARS)
+                    .order_by(Review.sentiment_score.asc())
+                    .limit(5)
+                )
             )
         ).scalars().all()
         sample_text: str | None = None
@@ -348,7 +382,7 @@ async def _top_problems(
 
 
 async def _voice_of_customer(
-    session: AsyncSession, tenant_id: UUID
+    session: AsyncSession, tenant_id: UUID, scoped: _Scoped
 ) -> list[CustomerQuote]:
     """Gerçek müşteri alıntıları: 2 en negatif + 1 en pozitif.
 
@@ -376,23 +410,25 @@ async def _voice_of_customer(
         )
         rows = (
             await session.execute(
-                select(
-                    Review.id,
-                    Review.text,
-                    Review.sentiment_label,
-                    Review.primary_category,
-                    Review.analyzed_at,
+                scoped(
+                    select(
+                        Review.id,
+                        Review.text,
+                        Review.sentiment_label,
+                        Review.primary_category,
+                        Review.analyzed_at,
+                    )
+                    .where(Review.tenant_id == tenant_id)
+                    .where(Review.deleted_at.is_(None))
+                    .where(Review.sentiment_label == label)
+                    # 'belirsiz' alıntı kartında kategori chip'i olarak
+                    # görünür — sınıflandırılamayan yorum yönetici
+                    # vitrinine çıkmaz (Ana Sorunlar ile aynı ilke).
+                    .where(Review.primary_category != "belirsiz")
+                    .where(func.length(Review.text) >= _QUOTE_MIN_CHARS)
+                    .order_by(order_col, Review.analyzed_at.desc())
+                    .limit(10)
                 )
-                .where(Review.tenant_id == tenant_id)
-                .where(Review.deleted_at.is_(None))
-                .where(Review.sentiment_label == label)
-                # 'belirsiz' alıntı kartında kategori chip'i olarak
-                # görünür — sınıflandırılamayan yorum yönetici
-                # vitrinine çıkmaz (Ana Sorunlar ile aynı ilke).
-                .where(Review.primary_category != "belirsiz")
-                .where(func.length(Review.text) >= _QUOTE_MIN_CHARS)
-                .order_by(order_col, Review.analyzed_at.desc())
-                .limit(10)
             )
         ).all()
         picked: list[CustomerQuote] = []
@@ -570,20 +606,38 @@ async def _latest_okr(
 async def executive_overview(
     current: Annotated[CurrentUser, _AnyMember],
     app_session: Annotated[AsyncSession, Depends(get_app_session)],
+    date_from: datetime | None = None,
+    date_to: datetime | None = None,
+    batch_job_id: UUID | None = None,
 ) -> ExecutiveOverviewResponse:
     tenant_id = _require_active_tenant(current)
+    filters_active = (
+        date_from is not None
+        or date_to is not None
+        or batch_job_id is not None
+    )
+    scoped = _make_scoped(date_from, date_to, batch_job_id)
     try:
         async with app_session.begin():
             await bind_tenant(app_session, current)
 
-            sentiment = await _sentiment_totals(app_session, tenant_id)
-            trend = await _sentiment_trend(app_session, tenant_id)
+            sentiment = await _sentiment_totals(app_session, tenant_id, scoped)
+            # Trend sabit 30g/30g pencere üzerine tanımlı — filtreyle
+            # semantiği çakışır; herhangi bir filtre aktifken None.
+            trend = (
+                None
+                if filters_active
+                else await _sentiment_trend(app_session, tenant_id)
+            )
+            # last_data_at bilerek filtresiz: "son 24 saatte yükleme
+            # yok" kuralı tenant'ın tamamına bakar.
             last_data_at = await _last_data_at(app_session, tenant_id)
             top_problems = await _top_problems(
                 app_session, tenant_id,
                 total_negative=sentiment["NEGATIF"],
+                scoped=scoped,
             )
-            voice = await _voice_of_customer(app_session, tenant_id)
+            voice = await _voice_of_customer(app_session, tenant_id, scoped)
             briefing = await _latest_briefing(app_session, tenant_id)
             swot = await _latest_swot(app_session, tenant_id)
             okr = await _latest_okr(app_session, tenant_id)
@@ -591,6 +645,9 @@ async def executive_overview(
             # NPS: canonical formül — AnalyticsService.compute_nps_summary.
             nps = await AnalyticsService(app_session).compute_nps_summary(
                 tenant_id=tenant_id,
+                date_from=date_from,
+                date_to=date_to,
+                batch_job_id=batch_job_id,
             )
 
         return ExecutiveOverviewResponse(
