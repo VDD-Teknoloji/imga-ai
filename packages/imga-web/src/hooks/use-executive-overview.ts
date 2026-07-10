@@ -6,7 +6,7 @@
 // Dashboard'un eski hali 6+ ayrı hook ile boyanıyordu; tek çağrı
 // hem hızlı hem atomik bir görüntü verir.
 
-import { useQuery } from "@tanstack/react-query";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
 
 import { apiRequest } from "@/lib/api-client";
 
@@ -95,14 +95,48 @@ export interface ExecutiveOverview {
   last_data_at: string | null;
 }
 
-export function useExecutiveOverview() {
+/** date_from/date_to YYYY-MM-DD taşır (URL-dostu); ISO'ya burada
+ *  genişletilir. batch_job_id UUID string. */
+export interface ExecutiveOverviewFilters {
+  date_from?: string;
+  date_to?: string;
+  batch_job_id?: string;
+}
+
+// use-analytics.ts'teki helper'ın kopyası: backend ISO datetime
+// bekler, URL YYYY-MM-DD taşır; yerel gün-başı/gün-sonuna genişlet.
+// Bozuk değer sessizce düşer (URL bar'ı kullanıcı elle düzenleyebilir).
+function dateOnlyToLocalIso(
+  value: string | undefined,
+  endOfDay: boolean,
+): string | undefined {
+  if (!value) return undefined;
+  const d = new Date(`${value}${endOfDay ? "T23:59:59" : "T00:00:00"}`);
+  return Number.isNaN(d.getTime()) ? undefined : d.toISOString();
+}
+
+export function useExecutiveOverview(filters: ExecutiveOverviewFilters = {}) {
+  const params = new URLSearchParams();
+  const dateFrom = dateOnlyToLocalIso(filters.date_from, false);
+  const dateTo = dateOnlyToLocalIso(filters.date_to, true);
+  if (dateFrom) params.set("date_from", dateFrom);
+  if (dateTo) params.set("date_to", dateTo);
+  if (filters.batch_job_id) params.set("batch_job_id", filters.batch_job_id);
+  const query = params.toString();
   return useQuery<ExecutiveOverview>({
-    queryKey: ["executive-overview"],
+    // qs queryKey'de olmak ZORUNDA — sabit key filtre değişiminde
+    // cache'i tek görüntüde dondurur (recon brifi, madde 2).
+    queryKey: ["executive-overview", query],
     queryFn: () =>
-      apiRequest<ExecutiveOverview>("/tenants/me/executive/overview"),
+      apiRequest<ExecutiveOverview>(
+        `/tenants/me/executive/overview${query ? `?${query}` : ""}`,
+      ),
     // Yönetici sayfası: 60s tazelik yeterli; sekme değiştirip
     // dönüşte gereksiz refetch olmasın (global refetchOnWindowFocus
     // zaten kapalı).
     staleTime: 60_000,
+    // Filtre değişiminde önceki görüntü kalsın (skeleton flash yok) —
+    // analytics hook'larıyla aynı davranış.
+    placeholderData: keepPreviousData,
   });
 }

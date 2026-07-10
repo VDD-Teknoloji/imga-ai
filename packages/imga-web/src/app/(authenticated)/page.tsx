@@ -10,7 +10,9 @@
 //
 //   (VERİ YOK)  UploadFirst        24 saattir veri gelmediyse önce yükleme
 //   DURUM       ExecutiveHero      "Müşterileriniz memnun mu?" (cevap)
-//   DÖNEM       TimeWindowFilter   3 Ay / 6 Ay / Tümü (URL: ?window=)
+//   FİLTRE      DashboardFilterBar dönem presetleri + özel aralık +
+//                                  yükleme (URL: ?window / ?date_from /
+//                                  ?date_to / ?batch_job_id)
 //   GRAFİKLER   NPS + Kategori     yönetim görünümü dağılımları
 //   AKSİYON     PriorityAction     "Bu ay ne yapmalıyım?" (tek adım)
 //   SORUNLAR    TopProblems        "Neyden şikayetçiler?"
@@ -27,6 +29,7 @@ import { Suspense, useEffect, useState } from "react";
 import { AiInsightStrip } from "@/components/dashboard/ai-insight-strip";
 import { CategorySentimentBreakdown } from "@/components/dashboard/category-sentiment-breakdown";
 import { ClassificationQualityChip } from "@/components/dashboard/classification-quality-chip";
+import { DashboardFilterBar } from "@/components/dashboard/dashboard-filter-bar";
 import { ExecutiveHero } from "@/components/dashboard/executive-hero";
 import { ExperienceBreakdownCards } from "@/components/dashboard/experience-breakdown-cards";
 import { NpsBreakdownCard } from "@/components/dashboard/nps-breakdown-card";
@@ -38,7 +41,6 @@ import {
 } from "@/components/dashboard/strategy-snapshots";
 import {
   isTimeWindowKey,
-  TimeWindowFilter,
   timeWindowDateFrom,
   type TimeWindowKey,
 } from "@/components/dashboard/time-window-filter";
@@ -91,43 +93,107 @@ function DashboardInner() {
   const user = useAuthStore((s) => s.user);
   const activeContext = useAuthStore((s) => s.activeContext);
   const { canWrite } = useRoleFlags();
-  const overview = useExecutiveOverview();
   const { t, locale } = useTranslation();
 
   // URL → local state mirror (Path B — url-state-patterns.md).
+  // Tek gerçek kaynak: özel tarih girilince ?window silinir, preset
+  // seçilince ?date_from/?date_to silinir; ?batch_job_id bağımsız.
   const [windowKey, setWindowKey] = useState<TimeWindowKey>(() => {
     const raw = searchParams.get("window");
     return isTimeWindowKey(raw) ? raw : "all";
   });
+  const [customDateFrom, setCustomDateFrom] = useState<string>(
+    () => searchParams.get("date_from") ?? "",
+  );
+  const [customDateTo, setCustomDateTo] = useState<string>(
+    () => searchParams.get("date_to") ?? "",
+  );
+  const [batchJobId, setBatchJobId] = useState<string>(
+    () => searchParams.get("batch_job_id") ?? "",
+  );
+  /* eslint-disable react-hooks/set-state-in-effect */
+  // INTENT: URL is source of truth; mirror onto local state on
+  // navigation events. Path B pattern (Sprint 8.3.4 round-2).
   useEffect(() => {
     const raw = searchParams.get("window");
     const fromUrl: TimeWindowKey = isTimeWindowKey(raw) ? raw : "all";
     setWindowKey((prev) => (prev === fromUrl ? prev : fromUrl));
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    // INTENT: URL is source of truth; mirror onto local state on
-    // navigation events. Path B pattern (Sprint 8.3.4 round-2).
+    const urlFrom = searchParams.get("date_from") ?? "";
+    setCustomDateFrom((prev) => (prev === urlFrom ? prev : urlFrom));
+    const urlTo = searchParams.get("date_to") ?? "";
+    setCustomDateTo((prev) => (prev === urlTo ? prev : urlTo));
+    const urlBatch = searchParams.get("batch_job_id") ?? "";
+    setBatchJobId((prev) => (prev === urlBatch ? prev : urlBatch));
   }, [searchParams]);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
-  function handleWindowChange(next: TimeWindowKey) {
-    setWindowKey(next);
+  function pushParams(updates: Record<string, string | null>) {
     const params = new URLSearchParams(searchParams.toString());
-    if (next === "all") params.delete("window");
-    else params.set("window", next);
+    for (const [key, value] of Object.entries(updates)) {
+      if (value === null || value === "") params.delete(key);
+      else params.set(key, value);
+    }
     const qs = params.toString();
     router.push(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
   }
 
-  // Pencereli veri — hero + iki chart aynı dönemi anlatır.
-  const dateFrom = timeWindowDateFrom(windowKey);
-  const dist = useSentimentDistribution({ date_from: dateFrom });
-  const nps = useNpsSummary({ date_from: dateFrom });
-  const byCategory = useSentimentByCategory({ date_from: dateFrom }, 10);
+  function handleWindowChange(next: TimeWindowKey) {
+    setWindowKey(next);
+    setCustomDateFrom("");
+    setCustomDateTo("");
+    pushParams({
+      window: next === "all" ? null : next,
+      date_from: null,
+      date_to: null,
+    });
+  }
+
+  function handleDateFromChange(next: string) {
+    setCustomDateFrom(next);
+    setWindowKey("all");
+    pushParams({ date_from: next || null, window: null });
+  }
+
+  function handleDateToChange(next: string) {
+    setCustomDateTo(next);
+    setWindowKey("all");
+    pushParams({ date_to: next || null, window: null });
+  }
+
+  function handleBatchChange(next: string | undefined) {
+    setBatchJobId(next ?? "");
+    pushParams({ batch_job_id: next ?? null });
+  }
+
+  function handleClearFilters() {
+    setWindowKey("all");
+    setCustomDateFrom("");
+    setCustomDateTo("");
+    setBatchJobId("");
+    pushParams({ window: null, date_from: null, date_to: null, batch_job_id: null });
+  }
+
+  // Efektif aralık: özel tarih varsa o, yoksa dönem preseti.
+  // Hepsi YYYY-MM-DD taşır; ISO genişletmesi fetch hook'larında.
+  const filters = {
+    date_from: customDateFrom || timeWindowDateFrom(windowKey),
+    date_to: customDateTo || undefined,
+    batch_job_id: batchJobId || undefined,
+  };
+  const overview = useExecutiveOverview(filters);
+  const dist = useSentimentDistribution(filters);
+  const nps = useNpsSummary(filters);
+  const byCategory = useSentimentByCategory(filters, 10);
   // Deneyim kartları tüm kategorileri toplar — top-10 kesmesi
   // dağılımı yanıltmasın diye limit geniş.
-  const categoryDist = useCategoryDistribution({ date_from: dateFrom }, 50);
+  const categoryDist = useCategoryDistribution(filters, 50);
 
   const sentimentCounts = toSentimentCounts(dist.data);
-  const hasAnyData = (overview.data?.sentiment.total ?? 0) > 0;
+  // hasAnyData filtreye duyarsız olmalı (boş-pencere ≠ boş-tenant);
+  // filtreli overview'da sentiment.total artık pencereli, last_data_at
+  // ise tüm-zamanlar — ayrımı o yapar.
+  const hasAnyData =
+    overview.data !== undefined && overview.data.last_data_at !== null;
 
   // 24 saat kuralı: yalnız yükleme yetkisi olan roller için (viewer
   // yükleyemez — backend 403; ona bu çağrıyı yapmak anlamsız).
@@ -195,10 +261,21 @@ function DashboardInner() {
         npsScore={nps.data?.score}
         isLoading={isLoading || dist.isLoading}
         hasAnyData={hasAnyData}
+        batchFilterActive={batchJobId !== ""}
       />
 
-      {/* DÖNEM — hero'nun hemen altında zaman bazlı filtre. */}
-      <TimeWindowFilter value={windowKey} onChange={handleWindowChange} />
+      {/* FİLTRE — hero'nun hemen altında dönem + özel aralık + yükleme. */}
+      <DashboardFilterBar
+        windowKey={windowKey}
+        onWindowChange={handleWindowChange}
+        dateFrom={customDateFrom}
+        dateTo={customDateTo}
+        onDateFromChange={handleDateFromChange}
+        onDateToChange={handleDateToChange}
+        batchJobId={batchJobId}
+        onBatchChange={handleBatchChange}
+        onClear={handleClearFilters}
+      />
 
       {/* GRAFİKLER — yönetim görünümü: NPS + deneyim + kategori×duygu. */}
       <div className="rise-in space-y-6" style={{ animationDelay: "60ms" }}>

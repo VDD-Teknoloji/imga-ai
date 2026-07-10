@@ -127,6 +127,9 @@ interface Props {
   /** Tenant'ta (tüm zamanlar) hiç yorum var mı? Pencere-boş ile
    *  gerçekten-boş ayrımını bu yapar. */
   hasAnyData: boolean;
+  /** Yükleme (batch) filtresi seçiliyken boş-pencere metni "seçilen
+   *  dönem" değil "seçilen yükleme" der — dönemi genişletmek çare olmaz. */
+  batchFilterActive?: boolean;
 }
 
 export function ExecutiveHero({
@@ -135,6 +138,7 @@ export function ExecutiveHero({
   npsScore,
   isLoading,
   hasAnyData,
+  batchFilterActive = false,
 }: Props) {
   const { t } = useTranslation();
   if (isLoading || !sentiment) {
@@ -169,10 +173,14 @@ export function ExecutiveHero({
     return (
       <section className="rise-in shadow-soft bg-card ring-foreground/5 rounded-3xl p-8 ring-1 md:p-10">
         <h2 className="text-xl font-semibold tracking-tight md:text-2xl">
-          {t("dashboard.executiveHero.windowEmpty.title")}
+          {batchFilterActive
+            ? t("dashboard.executiveHero.batchEmpty.title")
+            : t("dashboard.executiveHero.windowEmpty.title")}
         </h2>
         <p className="text-muted-foreground mt-2 max-w-xl text-sm leading-relaxed">
-          {t("dashboard.executiveHero.windowEmpty.desc")}
+          {batchFilterActive
+            ? t("dashboard.executiveHero.batchEmpty.desc")
+            : t("dashboard.executiveHero.windowEmpty.desc")}
         </p>
       </section>
     );
@@ -332,7 +340,9 @@ function BigPercent({ pct, className }: { pct: number; className: string }) {
 }
 
 /** Apple-vari segmentli oran çubuğu: olumlu / nötr / olumsuz tek
- *  satırda. Açılışta soldan dolar. Altında sade lejant. */
+ *  satırda. Açılışta soldan dolar. Altında sade lejant.
+ *  Sprint 13: Deneyim Dağılımı kartları gibi büyük — segment içinde
+ *  yüzde etiketi (dar segmentte gizlenir, lejant zaten taşıyor). */
 function SatisfactionBar({
   posPct,
   notrPct,
@@ -345,21 +355,40 @@ function SatisfactionBar({
   t: Translate;
 }) {
   const mounted = useMounted();
+  const pctLabel = "text-lg font-semibold tabular-nums md:text-2xl";
   return (
     <div className="mt-8">
-      <div className="bg-muted flex h-3 w-full overflow-hidden rounded-full">
+      <div
+        className="bg-muted flex h-16 w-full overflow-hidden rounded-2xl md:h-20"
+        role="img"
+        aria-label={`${t("dashboard.executiveHero.legend.positive")} %${posPct}, ${t("dashboard.executiveHero.legend.neutral")} %${notrPct}, ${t("dashboard.executiveHero.legend.negative")} %${negPct}`}
+      >
         <div
-          className="h-full bg-emerald-500 transition-[width] duration-700 [transition-timing-function:var(--motion-ease)]"
+          className="flex h-full items-center justify-center overflow-hidden bg-gradient-to-br from-emerald-600 to-emerald-500 transition-[width] duration-700 [transition-timing-function:var(--motion-ease)]"
           style={{ width: mounted ? `${posPct}%` : "0%" }}
-        />
+        >
+          {posPct >= 8 && (
+            <span className={`${pctLabel} text-white`}>%{posPct}</span>
+          )}
+        </div>
         <div
-          className="h-full bg-zinc-300 transition-[width] duration-700 [transition-timing-function:var(--motion-ease)] dark:bg-zinc-600"
+          className="flex h-full items-center justify-center overflow-hidden bg-zinc-300 transition-[width] duration-700 [transition-timing-function:var(--motion-ease)] dark:bg-zinc-600"
           style={{ width: mounted ? `${notrPct}%` : "0%" }}
-        />
+        >
+          {notrPct >= 8 && (
+            <span className={`${pctLabel} text-zinc-700 dark:text-zinc-100`}>
+              %{notrPct}
+            </span>
+          )}
+        </div>
         <div
-          className="h-full bg-red-500 transition-[width] duration-700 [transition-timing-function:var(--motion-ease)]"
+          className="flex h-full items-center justify-center overflow-hidden bg-gradient-to-br from-red-600 to-red-500 transition-[width] duration-700 [transition-timing-function:var(--motion-ease)]"
           style={{ width: mounted ? `${negPct}%` : "0%" }}
-        />
+        >
+          {negPct >= 8 && (
+            <span className={`${pctLabel} text-white`}>%{negPct}</span>
+          )}
+        </div>
       </div>
       <div className="text-muted-foreground mt-3 flex flex-wrap items-center gap-x-5 gap-y-1.5 text-sm">
         <LegendDot

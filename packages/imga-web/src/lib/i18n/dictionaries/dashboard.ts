@@ -206,6 +206,9 @@ export const dashboard: Bundle = {
     "dashboard.executiveHero.windowEmpty.title": "Seçilen dönemde yorum yok",
     "dashboard.executiveHero.windowEmpty.desc":
       "Dönem filtresini genişletin veya yeni yorum verisi yükleyin.",
+    "dashboard.executiveHero.batchEmpty.title": "Seçilen yüklemede yorum yok",
+    "dashboard.executiveHero.batchEmpty.desc":
+      "Başka bir yükleme seçin veya yükleme filtresini temizleyin.",
     "dashboard.executiveHero.scoreInfo.aria":
       "Memnuniyet skoru nasıl hesaplanır?",
     "dashboard.executiveHero.scoreInfo.text":
@@ -217,6 +220,14 @@ export const dashboard: Bundle = {
     "dashboard.window.3m": "Son 3 Ay",
     "dashboard.window.6m": "Son 6 Ay",
     "dashboard.window.all": "Tüm Zamanlar",
+
+    // --- filtre çubuğu ---
+    "dashboard.filterBar.customRange": "Özel aralık",
+    "dashboard.filterBar.dateFromAria": "Başlangıç tarihi",
+    "dashboard.filterBar.dateToAria": "Bitiş tarihi",
+    "dashboard.filterBar.batchLabel": "Yükleme",
+    "dashboard.filterBar.batchChipRemove": "Yükleme filtresini kaldır",
+    "dashboard.filterBar.clear": "Filtreleri temizle",
 
     // --- NPS dağılımı kartı ---
     "dashboard.npsCard.title": "NPS Dağılımı",
@@ -683,6 +694,10 @@ export const dashboard: Bundle = {
       "No reviews in the selected period",
     "dashboard.executiveHero.windowEmpty.desc":
       "Widen the period filter or upload new review data.",
+    "dashboard.executiveHero.batchEmpty.title":
+      "No reviews in the selected upload",
+    "dashboard.executiveHero.batchEmpty.desc":
+      "Pick another upload or clear the upload filter.",
     "dashboard.executiveHero.scoreInfo.aria":
       "How is the satisfaction score calculated?",
     "dashboard.executiveHero.scoreInfo.text":
@@ -694,6 +709,14 @@ export const dashboard: Bundle = {
     "dashboard.window.3m": "Last 3 Months",
     "dashboard.window.6m": "Last 6 Months",
     "dashboard.window.all": "All Time",
+
+    // --- filter bar ---
+    "dashboard.filterBar.customRange": "Custom range",
+    "dashboard.filterBar.dateFromAria": "Start date",
+    "dashboard.filterBar.dateToAria": "End date",
+    "dashboard.filterBar.batchLabel": "Upload",
+    "dashboard.filterBar.batchChipRemove": "Remove upload filter",
+    "dashboard.filterBar.clear": "Clear filters",
 
     // --- NPS breakdown card ---
     "dashboard.npsCard.title": "NPS Distribution",
