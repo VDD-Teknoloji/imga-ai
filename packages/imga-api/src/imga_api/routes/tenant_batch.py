@@ -55,7 +55,10 @@ from imga_api.workers.file_parser import (
     peek_header,
 )
 from imga_api.workers.scheduler import enqueue_batch_job
-from imga_api.workers.upload_validation import validate_upload
+from imga_api.workers.upload_validation import (
+    _effective_text_column,
+    validate_upload,
+)
 from imga_core.text_utils import normalize_turkish
 
 log = logging.getLogger("imga-api.routes.batch")
@@ -444,9 +447,12 @@ async def preview_batch_columns(
     except HTTPException:
         raise
     except Exception:
+        # 'filename' LogRecord'un rezerve alanı — extra ile ezilmeye
+        # çalışılınca logging KeyError atıp asıl hatayı maskeliyordu
+        # (UAT HATA-01).
         log.exception(
             "preview_batch_columns failed",
-            extra={"filename": safe_name},
+            extra={"upload_filename": safe_name},
         )
         raise
     finally:
@@ -547,6 +553,13 @@ async def create_batch(
     # yeni kullanıcı şablondan başlasın diye mesajda yorum'a
     # yönlendiriyoruz.
     _ensure_template_compliance(header, file_path)
+
+    # FE artık text_column alanı göndermiyor — gerçek kolonu header'dan
+    # çöz (istenen → şablon 'yorum' → legacy 'text') ve ÇÖZÜLMÜŞ değeri
+    # job'a persist et; worker job.text_column'u olduğu gibi okur.
+    text_column = _effective_text_column(
+        header, text_column, TEMPLATE_REQUIRED_COLUMNS
+    )
 
     if total_rows <= 0:
         file_path.unlink(missing_ok=True)

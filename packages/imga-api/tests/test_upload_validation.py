@@ -10,8 +10,15 @@ from __future__ import annotations
 import csv
 from pathlib import Path
 
+import pytest
 from openpyxl import Workbook
 
+from imga_api.services.smart_parser.sampler import sample_columns
+from imga_api.workers.file_parser import (
+    FileParseError,
+    count_rows,
+    peek_header,
+)
 from imga_api.workers.upload_validation import validate_upload
 
 
@@ -117,3 +124,41 @@ def test_xlsx_clean_file(tmp_path: Path) -> None:
     report = validate_upload(path, text_column="yorum", max_rows=10_000)
     assert report.ok is True
     assert report.valid_rows == 3
+
+
+def _write_corrupt_xlsx(path: Path) -> Path:
+    # zip imzası olmayan rastgele baytlar — .xlsx uzantılı ama Excel'de
+    # açılmayan / yeniden adlandırılmış dosyayı taklit eder (UAT HATA-01).
+    path.write_bytes(b"\x89bozuk dosya \x00\xff\xfe bu bir zip degil")
+    return path
+
+
+def test_corrupt_xlsx_reports_parse_failed(tmp_path: Path) -> None:
+    path = _write_corrupt_xlsx(tmp_path / "bozuk.xlsx")
+    report = validate_upload(path, text_column="yorum", max_rows=10_000)
+    assert report.ok is False
+    assert report.error_count == 1
+    issue = report.issues[0]
+    assert issue.severity == "error"
+    assert issue.code == "parse_failed"
+    assert "geçerli bir .xlsx" in issue.message
+
+
+def test_corrupt_xlsx_raises_file_parse_error_for_upload_flow(
+    tmp_path: Path,
+) -> None:
+    # create_batch yalnız FileParseError yakalar; BadZipFile buna
+    # çevrilmezse upload 400 yerine 500 üretiyordu (UAT HATA-01).
+    path = _write_corrupt_xlsx(tmp_path / "bozuk.xlsx")
+    with pytest.raises(FileParseError):
+        peek_header(path)
+    with pytest.raises(FileParseError):
+        count_rows(path)
+
+
+def test_corrupt_xlsx_raises_file_parse_error_for_preview_sampler(
+    tmp_path: Path,
+) -> None:
+    path = _write_corrupt_xlsx(tmp_path / "bozuk.xlsx")
+    with pytest.raises(FileParseError):
+        sample_columns(path)

@@ -18,10 +18,9 @@ import csv
 from pathlib import Path
 from typing import Final
 
-from openpyxl import load_workbook
-
 from imga_api.workers.file_parser import (
     UnsupportedFormatError,
+    _load_xlsx,
     peek_header,
 )
 
@@ -77,7 +76,7 @@ def _sample_xlsx(
 ) -> tuple[dict[str, list[str]], int]:
     samples: dict[str, list[str]] = {h: [] for h in headers}
     total = 0
-    workbook = load_workbook(path, read_only=True, data_only=True)
+    workbook = _load_xlsx(path)
     try:
         sheet = workbook.active
         if sheet is None:

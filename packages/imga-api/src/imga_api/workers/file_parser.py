@@ -20,6 +20,7 @@ characters and spreadsheet exports default to UTF-8 today.
 from __future__ import annotations
 
 import csv
+import zipfile
 from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
@@ -27,7 +28,8 @@ from typing import Any
 
 from imga_core.parsers import detect_nps_column, parse_nps_value
 from imga_core.text_utils import normalize_turkish
-from openpyxl import load_workbook
+from openpyxl import Workbook, load_workbook
+from openpyxl.utils.exceptions import InvalidFileException
 
 
 class FileParseError(Exception):
@@ -84,6 +86,20 @@ class ParsedRow:
 
 def _normalize_header(name: str) -> str:
     return normalize_turkish(name.strip())
+
+
+def _load_xlsx(path: Path) -> Workbook:
+    """load_workbook sarmalayıcısı. read_only=True satırları diskten
+    stream'ler; data_only formülleri cache'lenmiş değerlerine indirger
+    (review'lar "=A1+B1" gibi çöp olmasın). Bozuk / yeniden adlandırılmış
+    .xlsx'te openpyxl BadZipFile fırlatır — FileParseError'a çevrilmezse
+    route catch'lerinden kaçıp 500 üretiyordu (UAT HATA-01)."""
+    try:
+        return load_workbook(path, read_only=True, data_only=True)
+    except (zipfile.BadZipFile, InvalidFileException) as exc:
+        raise FileParseError(
+            "Dosya okunamadı — geçerli bir .xlsx dosyası değil ya da bozuk."
+        ) from exc
 
 
 def _resolve_columns(
@@ -235,9 +251,7 @@ def _iter_xlsx(
     source_column: str | None,
     dimension_mapping: dict[str, str] | None = None,
 ) -> Iterator[ParsedRow]:
-    # read_only=True streams rows from disk; data_only collapses formulae
-    # to their cached values so reviews aren't garbage like "=A1+B1".
-    workbook = load_workbook(path, read_only=True, data_only=True)
+    workbook = _load_xlsx(path)
     try:
         sheet = workbook.active
         if sheet is None:
@@ -339,7 +353,7 @@ def count_rows(path: Path) -> int:
         with path.open("r", encoding="utf-8-sig", newline="") as fh:
             return max(0, sum(1 for _ in csv.reader(fh)) - 1)
     if suffix == ".xlsx":
-        workbook = load_workbook(path, read_only=True, data_only=True)
+        workbook = _load_xlsx(path)
         try:
             sheet = workbook.active
             if sheet is None:
@@ -366,7 +380,7 @@ def peek_header(path: Path) -> list[str]:
             except StopIteration:
                 return []
     if suffix == ".xlsx":
-        workbook = load_workbook(path, read_only=True, data_only=True)
+        workbook = _load_xlsx(path)
         try:
             sheet = workbook.active
             if sheet is None:
