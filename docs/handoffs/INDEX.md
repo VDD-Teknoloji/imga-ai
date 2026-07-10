@@ -2,6 +2,7 @@
 
 | Tarih      | Başlık                                                                                       | Yazar         | Hedef         | Durum    | Öncelik |
 |------------|----------------------------------------------------------------------------------------------|---------------|---------------|----------|---------|
+| 2026-07-10 | [ticket-routing-ve-uat-fixleri-deploy](2026-07-10-ticket-routing-ve-uat-fixleri-deploy.md)             | local-agent   | server-agent  | open     | yüksek  |
 | 2026-07-05 | [dashboard-redesign-deploy](2026-07-05-dashboard-redesign-deploy.md)                         | local-agent   | server-agent  | open     | yüksek  |
 | 2026-07-02 | [i18n-deploy](2026-07-02-i18n-deploy.md)                                                     | local-agent   | server-agent  | open     | yüksek  |
 | 2026-07-01 | [asakai-v1-delivery-report](2026-07-01-asakai-v1-delivery-report.md)                         | local-agent   | asakai-agent  | open     | yüksek  |
