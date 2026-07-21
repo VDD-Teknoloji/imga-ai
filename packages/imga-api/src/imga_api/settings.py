@@ -174,6 +174,11 @@ class Settings:
     # production→imga_live_, everything else→imga_stg_.
     token_pepper: str | None = None
     environment: str = "development"
+    # "Twitter'dan Çek" — twitterapi.io sunucu anahtarı. None → entegrasyon
+    # kapalı (/tenants/me/analyze/twitter-import 503 döner). Anahtar tenant'a
+    # değil sunucuya aittir; imga.ai pazarlama sitesinin TWITTERAPI_IO_KEY'i
+    # ile aynı hesaptan gelir.
+    twitterapi_io_key: str | None = None
 
     @classmethod
     def from_env(cls) -> Settings:
@@ -258,8 +263,7 @@ class Settings:
         )
 
         enable_public_demo_endpoints = (
-            os.environ.get("IMGA_ENABLE_PUBLIC_DEMO_ENDPOINTS", "false").lower()
-            == "true"
+            os.environ.get("IMGA_ENABLE_PUBLIC_DEMO_ENDPOINTS", "false").lower() == "true"
         )
 
         # Sprint 9.7 — trial proxy bearer. Refuse anything shorter
@@ -298,4 +302,5 @@ class Settings:
             imga_api_trial_key=trial_key_raw,
             token_pepper=token_pepper_raw,
             environment=env_name,
+            twitterapi_io_key=os.environ.get("IMGA_TWITTERAPI_IO_KEY") or None,
         )

@@ -77,18 +77,8 @@ from imga_api.routes import (
     tenant_ticket_routing as tenant_ticket_routing_routes,
 )
 from imga_api.routes import tenant_trend_alerts as tenant_trend_alerts_routes
+from imga_api.routes import tenant_twitter as tenant_twitter_routes
 from imga_api.routes import tickets as tickets_routes
-from imga_api.v1 import admin_tenants as v1_admin_tenants_routes
-from imga_api.v1 import admin_tokens as v1_admin_tokens_routes
-from imga_api.v1 import analyze as v1_analyze_routes
-from imga_api.v1 import data as v1_data_routes
-from imga_api.v1 import health as v1_health_routes
-from imga_api.v1 import stream as v1_stream_routes
-from imga_api.v1.errors import (
-    PartnerApiError,
-    partner_api_exception_handler,
-    v1_validation_exception_handler,
-)
 from imga_api.routes.admin import invitations as admin_invitation_routes
 from imga_api.routes.admin import (
     prompt_templates as admin_prompt_templates_routes,
@@ -102,6 +92,17 @@ from imga_api.schemas import (
     MetricsResponse,
 )
 from imga_api.settings import Settings, _load_dotenv
+from imga_api.v1 import admin_tenants as v1_admin_tenants_routes
+from imga_api.v1 import admin_tokens as v1_admin_tokens_routes
+from imga_api.v1 import analyze as v1_analyze_routes
+from imga_api.v1 import data as v1_data_routes
+from imga_api.v1 import health as v1_health_routes
+from imga_api.v1 import stream as v1_stream_routes
+from imga_api.v1.errors import (
+    PartnerApiError,
+    partner_api_exception_handler,
+    v1_validation_exception_handler,
+)
 
 # Load .env (and .env.local override) at module import time so CORS
 # origins below pick up dev defaults without a shell prefix.
@@ -114,6 +115,7 @@ def _parse_cors_origins() -> list[str]:
     if not raw:
         return ["http://localhost:3000", "http://127.0.0.1:3000"]
     return [origin.strip() for origin in raw.split(",") if origin.strip()]
+
 
 # Sprint 9.0.5-B J — explicit project-namespace logging via the
 # shared configure_logging helper. Replaces the bare basicConfig
@@ -295,7 +297,10 @@ _OPENAPI_TAGS = [
     {"name": "Admin: Tenants", "description": "Super-admin tenant CRUD (Sprint 7.5.5)."},
     {"name": "Admin: Users", "description": "Super-admin user CRUD + invitations (Sprint 7.5.5)."},
     {"name": "Tenant Config", "description": "Per-tenant settings, taxonomy, automation mode."},
-    {"name": "Tenant Directory", "description": "Active members of the current tenant (assignee picker, etc.)."},
+    {
+        "name": "Tenant Directory",
+        "description": "Active members of the current tenant (assignee picker, etc.).",
+    },
     {"name": "Analyze", "description": "Sentiment + categorization pipeline."},
     {"name": "Tickets", "description": "Ticket CRUD and lifecycle transitions."},
     {"name": "Health", "description": "Service health and readiness probes."},
@@ -368,6 +373,8 @@ app.include_router(tenant_config_routes.router)
 app.include_router(tenant_analyze_routes.router)
 app.include_router(tenant_batch_routes.router)
 app.include_router(tenant_batch_progress_routes.router)
+# "Twitter'dan Çek" — X'ten çekip aynı batch pipeline'a veren uç.
+app.include_router(tenant_twitter_routes.router)
 app.include_router(tenant_reviews_routes.router)
 app.include_router(tenant_reports_routes.router)
 app.include_router(tenant_analytics_routes.router)

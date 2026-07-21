@@ -196,6 +196,7 @@ services:
           tests/test_review_corrections.py \
           tests/test_ticket_routing.py \
           tests/test_upload_validation.py \
+          tests/test_twitter_import.py \
           tests/test_api_token_security.py \
           tests/test_api_tokens_service.py \
           tests/test_admin_session_regression.py \
