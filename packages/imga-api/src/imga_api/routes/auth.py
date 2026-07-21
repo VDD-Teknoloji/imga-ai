@@ -6,7 +6,7 @@ from typing import Annotated, Any
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
-from imga_db.models import User
+from imga_db.models import Tenant, User
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -473,6 +473,21 @@ async def me(
             if t["id"] == current.active_tenant_id:
                 active_tenant_summary = t
                 break
+    if (
+        active_tenant_summary is None
+        and current.active_tenant_id is not None
+        and user.is_super_admin
+    ):
+        # Süper yönetici switch-tenant ile üyesi OLMADIĞI bir kuruma
+        # geçebilir; üyelik listesi adı çözemeyince header "Kurum
+        # seçilmedi" gösteriyordu. Adı kurum satırından doldur.
+        tenant_row = await admin_session.get(Tenant, current.active_tenant_id)
+        if tenant_row is not None and tenant_row.deleted_at is None:
+            active_tenant_summary = {
+                "name": tenant_row.name,
+                "slug": tenant_row.slug,
+                "language": tenant_row.language or "tr",
+            }
     return MeResponse(
         user=UserSummary(
             id=user.id,
