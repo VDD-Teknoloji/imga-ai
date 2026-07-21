@@ -132,6 +132,37 @@ export const analyze: Bundle = {
     "analyze.upload.status.processing": "İşleniyor",
     "analyze.upload.status.queued": "Sıraya alındı",
 
+    // --- Twitter'dan Çek (analyze/twitter/page.tsx) ---
+    "analyze.twitter.back": "Toplu Yükleme",
+    "analyze.twitter.title": "Twitter'dan Çek",
+    "analyze.twitter.subtitle":
+      "X/Twitter'da markanız hakkında yazılan Türkçe gönderileri çekin; metinler toplu yükleme ile aynı boru hattında analiz edilir.",
+    "analyze.twitter.formTitle": "Arama",
+    "analyze.twitter.termLabel": "Arama terimi",
+    "analyze.twitter.termPlaceholder": "Örn. marka veya ürün adı",
+    "analyze.twitter.termHelp":
+      "Gönderi metinlerinde aranır; marka adı en iyi sonucu verir.",
+    "analyze.twitter.countLabel": "Kaç gönderi çekilsin?",
+    "analyze.twitter.countOption": "{n} gönderi",
+    "analyze.twitter.excludeLabel": "Hariç tutulacak hesap (opsiyonel)",
+    "analyze.twitter.excludePlaceholder": "resmi hesabınız",
+    "analyze.twitter.excludeHelp":
+      "Resmi hesabınızın kendi paylaşımları müşteri sesi değildir; kullanıcı adını yazarsanız elenir.",
+    "analyze.twitter.infoTitle": "Nasıl çalışır?",
+    "analyze.twitter.info":
+      "En yeni Türkçe gönderiler çekilir (retweet'ler hariç), bağlantılar temizlenir, kopyalar elenir ve sonuç Toplu Yükleme ilerleme ekranına düşer. Analizler diğer yüklemeler gibi Analiz Arşivi'nde ve ana sayfa yükleme filtresinde görünür.",
+    "analyze.twitter.durationHint":
+      "Çekim, istenen sayıya göre 10–60 saniye sürebilir.",
+    "analyze.twitter.submit": "Çek ve Analiz Et",
+    "analyze.twitter.submitting": "Gönderiler çekiliyor…",
+    "analyze.twitter.queued": "{found} gönderi bulundu — analiz kuyruğa alındı.",
+    "analyze.twitter.queuedPartial":
+      "{found} gönderi bulundu (X'te bu arama için daha fazla Türkçe sonuç yok) — analiz kuyruğa alındı.",
+    "analyze.twitter.notConfigured":
+      "Twitter entegrasyonu henüz bu sunucuda yapılandırılmamış. Sistem yöneticinize başvurun.",
+    "analyze.twitter.failed": "Gönderiler çekilemedi, lütfen tekrar deneyin.",
+    "analyze.twitter.termRequired": "Arama terimi en az 2 karakter olmalı.",
+
     // --- Geçmiş Yüklemeler (analyze/upload/history/page.tsx) ---
     "analyze.history.backUpload": "Toplu Yükleme",
     "analyze.history.title": "Geçmiş Yüklemeler",
@@ -309,6 +340,37 @@ export const analyze: Bundle = {
     "analyze.upload.status.cancelled": "Cancelled",
     "analyze.upload.status.processing": "Processing",
     "analyze.upload.status.queued": "Queued",
+
+    // --- Import from Twitter (analyze/twitter/page.tsx) ---
+    "analyze.twitter.back": "Bulk Upload",
+    "analyze.twitter.title": "Import from Twitter",
+    "analyze.twitter.subtitle":
+      "Pull Turkish posts about your brand from X/Twitter; the texts run through the same pipeline as bulk uploads.",
+    "analyze.twitter.formTitle": "Search",
+    "analyze.twitter.termLabel": "Search term",
+    "analyze.twitter.termPlaceholder": "e.g. brand or product name",
+    "analyze.twitter.termHelp":
+      "Matched inside post texts; a brand name works best.",
+    "analyze.twitter.countLabel": "How many posts?",
+    "analyze.twitter.countOption": "{n} posts",
+    "analyze.twitter.excludeLabel": "Account to exclude (optional)",
+    "analyze.twitter.excludePlaceholder": "your official handle",
+    "analyze.twitter.excludeHelp":
+      "Your official account's own posts aren't customer voice; enter the handle to filter them out.",
+    "analyze.twitter.infoTitle": "How it works:",
+    "analyze.twitter.info":
+      "The most recent Turkish posts are fetched (retweets excluded), links are stripped, duplicates removed, and the result lands on the Bulk Upload progress screen. Analyses appear in the Review Archive and the home-page upload filter like any other upload.",
+    "analyze.twitter.durationHint":
+      "Fetching takes roughly 10–60 seconds depending on the requested count.",
+    "analyze.twitter.submit": "Fetch & Analyze",
+    "analyze.twitter.submitting": "Fetching posts…",
+    "analyze.twitter.queued": "{found} posts found — analysis queued.",
+    "analyze.twitter.queuedPartial":
+      "{found} posts found (no more Turkish results on X for this search) — analysis queued.",
+    "analyze.twitter.notConfigured":
+      "The Twitter integration is not configured on this server yet. Contact your system administrator.",
+    "analyze.twitter.failed": "Could not fetch posts, please try again.",
+    "analyze.twitter.termRequired": "The search term must be at least 2 characters.",
 
     // --- Past Uploads (analyze/upload/history/page.tsx) ---
     "analyze.history.backUpload": "Bulk Upload",

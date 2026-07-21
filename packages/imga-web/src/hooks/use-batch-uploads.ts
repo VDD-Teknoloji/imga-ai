@@ -63,6 +63,47 @@ export function useBatchUploadMutation() {
   });
 }
 
+// --- "Twitter'dan Çek" (analyze/twitter/page.tsx) --------------------
+// Backend X'ten çekip normal batch işine kuyruklar; dönen job_id ile
+// kullanıcı /analyze/upload'a yönlenir ve useActiveBatchJob oradan
+// ilerlemeye bağlanır.
+
+export interface TwitterImportInput {
+  term: string;
+  count: number;
+  excludeHandle?: string;
+}
+
+export interface TwitterImportResult {
+  job: BatchJob;
+  requested: number;
+  found: number;
+  /** true → X'te bu sorgu için daha fazla Türkçe sonuç yok; found <
+   *  requested ise eksik çekim değil, kaynağın tamamı demektir. */
+  exhausted: boolean;
+}
+
+export function useTwitterImportMutation() {
+  const queryClient = useQueryClient();
+  return useMutation<TwitterImportResult, Error, TwitterImportInput>({
+    mutationFn: async ({ term, count, excludeHandle }) =>
+      apiRequest<TwitterImportResult>("/tenants/me/analyze/twitter-import", {
+        method: "POST",
+        body: {
+          term,
+          count,
+          exclude_handle: excludeHandle?.trim() || null,
+        },
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["batch-history"] });
+      // Upload sayfası mount'ta bu anahtardan aktif işi bulur —
+      // invalidation, yönlendirme sonrası yeniden bağlanmayı garantiler.
+      queryClient.invalidateQueries({ queryKey: ["batch-active"] });
+    },
+  });
+}
+
 export function useBatchJob(jobId: string | null) {
   return useQuery<BatchJob>({
     queryKey: ["batch-job", jobId],

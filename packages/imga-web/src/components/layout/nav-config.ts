@@ -19,6 +19,8 @@ import {
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
+import { XLogo } from "@/components/icons/x-logo";
+
 /**
  * Single source of truth for sidebar navigation.
  *
@@ -118,6 +120,13 @@ export const NAV_SECTIONS: ReadonlyArray<NavSection> = [
         label: "shell.nav.batchUpload",
         href: "/analyze/upload",
         icon: Upload,
+        subgroup: "shell.nav.subgroup.dataUpload",
+        minRole: "write",
+      },
+      {
+        label: "shell.nav.twitterImport",
+        href: "/analyze/twitter",
+        icon: XLogo,
         subgroup: "shell.nav.subgroup.dataUpload",
         minRole: "write",
       },
