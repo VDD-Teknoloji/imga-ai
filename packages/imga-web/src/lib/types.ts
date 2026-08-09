@@ -49,7 +49,9 @@ export interface TenantSummary {
   id: string;
   name: string;
   slug: string;
-  role: UserTenantRole;
+  /** "super_admin": süper yöneticinin üyeliği olmayan kurum —
+   *  /me tüm aktif kurumları bu etiketle listeler. */
+  role: UserTenantRole | "super_admin";
   /** Kurumun dili — tenant seçicide bilgi amaçlı. */
   language: Locale;
 }

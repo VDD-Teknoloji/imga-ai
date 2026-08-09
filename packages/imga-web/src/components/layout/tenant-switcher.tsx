@@ -108,7 +108,9 @@ export function TenantSwitcher({ collapsed }: TenantSwitcherProps) {
                     <span className="flex min-w-0 flex-col">
                       <span className="truncate font-medium">{tenant.name}</span>
                       <span className="text-muted-foreground truncate text-xs">
-                        {USER_ROLE_LABELS[tenant.role]}
+                        {tenant.role === "super_admin"
+                          ? t("shell.tenant.superRole")
+                          : USER_ROLE_LABELS[tenant.role]}
                       </span>
                     </span>
                     {tenant.id === activeTenantId ? (

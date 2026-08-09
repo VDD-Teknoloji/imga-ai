@@ -60,6 +60,7 @@ export const shell: Bundle = {
     "shell.tenant.searchPlaceholder": "Kurum ara...",
     "shell.tenant.empty": "Eşleşen kurum yok.",
     "shell.tenant.available": "Mevcut kurumlar",
+    "shell.tenant.superRole": "Süper Yönetici",
     "shell.tenant.acceptInvite": "Yeni davet kabul et",
 
     // Kullanıcı menüsü.
@@ -152,6 +153,7 @@ export const shell: Bundle = {
     "shell.tenant.searchPlaceholder": "Search organizations...",
     "shell.tenant.empty": "No matching organization.",
     "shell.tenant.available": "Your organizations",
+    "shell.tenant.superRole": "Super Admin",
     "shell.tenant.acceptInvite": "Accept new invitation",
 
     // User menu.
