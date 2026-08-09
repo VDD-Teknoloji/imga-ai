@@ -368,6 +368,23 @@ export function useActiveBatchJob() {
   });
 }
 
+/** Başarısız / iptal edilmiş işi checkpoint'ten devam ettir. Geçmiş
+ *  Yüklemeler tablosundaki "Tekrar Dene" düğmesi bunu çağırır. */
+export function useRetryBatchJobMutation() {
+  const queryClient = useQueryClient();
+  return useMutation<BatchJob, Error, string>({
+    mutationFn: async (jobId) =>
+      apiRequest<BatchJob>(`/tenants/me/analyze/batch/${jobId}/retry`, {
+        method: "POST",
+      }),
+    onSuccess: (_data, jobId) => {
+      queryClient.invalidateQueries({ queryKey: ["batch-job", jobId] });
+      queryClient.invalidateQueries({ queryKey: ["batch-history"] });
+      queryClient.invalidateQueries({ queryKey: ["batch-active"] });
+    },
+  });
+}
+
 export function useCancelBatchJobMutation() {
   const queryClient = useQueryClient();
   return useMutation<BatchJob, Error, string>({

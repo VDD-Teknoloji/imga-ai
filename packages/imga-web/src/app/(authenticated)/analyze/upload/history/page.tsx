@@ -1,7 +1,8 @@
 "use client";
 
-import { ChevronLeft, Loader2, Upload } from "lucide-react";
+import { ChevronLeft, Loader2, RotateCcw, Upload } from "lucide-react";
 import Link from "next/link";
+import { toast } from "sonner";
 
 import { RequireRole } from "@/components/auth/require-role";
 import { Badge } from "@/components/ui/badge";
@@ -14,7 +15,11 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { useBatchHistory } from "@/hooks/use-batch-uploads";
+import {
+  useBatchHistory,
+  useRetryBatchJobMutation,
+} from "@/hooks/use-batch-uploads";
+import { ApiError } from "@/lib/api-client";
 import { useTranslation } from "@/lib/i18n/use-translation";
 import type { BatchJobStatus } from "@/lib/types";
 
@@ -48,7 +53,18 @@ export default function BatchHistoryPage() {
 function BatchHistoryPageInner() {
   const { t } = useTranslation();
   const history = useBatchHistory(50);
+  const retry = useRetryBatchJobMutation();
   const jobs = history.data?.pages.flatMap((p) => p.jobs) ?? [];
+
+  function handleRetry(jobId: string) {
+    retry.mutate(jobId, {
+      onSuccess: () => toast.success(t("analyze.history.retryQueued")),
+      onError: (err) =>
+        toast.error(
+          err instanceof ApiError ? err.detail : t("analyze.history.retryFailed"),
+        ),
+    });
+  }
 
   return (
     <main className="mx-auto w-full max-w-6xl space-y-6 px-4 py-8">
@@ -124,13 +140,27 @@ function BatchHistoryPageInner() {
                     {job.tickets_created}
                   </TableCell>
                   <TableCell className="text-right">
-                    <Button
-                      variant="link"
-                      className="h-auto p-0"
-                      render={<Link href={`/reviews?batch_job_id=${job.job_id}`} />}
-                    >
-                      {t("analyze.history.viewAnalyses")}
-                    </Button>
+                    <span className="inline-flex items-center gap-3">
+                      {(job.status === "failed" ||
+                        job.status === "cancelled") && (
+                        <Button
+                          variant="link"
+                          className="text-primary h-auto gap-1 p-0"
+                          disabled={retry.isPending}
+                          onClick={() => handleRetry(job.job_id)}
+                        >
+                          <RotateCcw className="size-3.5" aria-hidden />
+                          {t("analyze.history.retry")}
+                        </Button>
+                      )}
+                      <Button
+                        variant="link"
+                        className="h-auto p-0"
+                        render={<Link href={`/reviews?batch_job_id=${job.job_id}`} />}
+                      >
+                        {t("analyze.history.viewAnalyses")}
+                      </Button>
+                    </span>
                   </TableCell>
                 </TableRow>
               );

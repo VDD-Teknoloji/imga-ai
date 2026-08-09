@@ -171,6 +171,10 @@ export const analyze: Bundle = {
     "analyze.history.emptyBefore": "Henüz toplu yükleme yok. İlk dosyanızı ",
     "analyze.history.emptyLink": "buradan",
     "analyze.history.emptyAfter": " yükleyebilirsiniz.",
+    "analyze.history.retry": "Tekrar Dene",
+    "analyze.history.retryQueued":
+      "Yükleme kuyruğa alındı — kaldığı satırdan devam edecek.",
+    "analyze.history.retryFailed": "Tekrar deneme başarısız.",
     "analyze.history.col.date": "Tarih",
     "analyze.history.col.file": "Dosya",
     "analyze.history.col.rows": "Satır",
@@ -381,6 +385,10 @@ export const analyze: Bundle = {
       "No bulk uploads yet. You can upload your first file ",
     "analyze.history.emptyLink": "here",
     "analyze.history.emptyAfter": ".",
+    "analyze.history.retry": "Retry",
+    "analyze.history.retryQueued":
+      "Upload queued — it will resume from where it left off.",
+    "analyze.history.retryFailed": "Retry failed.",
     "analyze.history.col.date": "Date",
     "analyze.history.col.file": "File",
     "analyze.history.col.rows": "Rows",
