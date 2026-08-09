@@ -223,7 +223,8 @@ GUID adıyla indi — Content-Disposition başlığı kontrol edilmeli.
 **Beklenen sonuç:**
 - Yanlış uzantı → **"Sadece .csv veya .xlsx dosyaları kabul edilir."**
 - Çok büyük dosya → **"Dosya 50 MB sınırını aşıyor."**
-- Alanın altında kural: *"CSV, XLSX — en fazla 50 MB, en fazla 10.000 satır"*.
+- Alanın altında kural: *"CSV, XLSX — en fazla 50 MB, en fazla 25.000 satır"*.
+  (2026-08-09: satır limiti 10.000 → 25.000 yükseltildi.)
 
 **Sonuç:** ☑ Geçti ☐ Kaldı · **Test eden:** Claude (otomasyon) · **Tarih:** 08.07.2026
 **Notlar:** Üç madde de birebir doğrulandı (.txt reddi, 51 MB sentetik

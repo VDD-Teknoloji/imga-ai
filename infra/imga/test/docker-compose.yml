@@ -139,6 +139,7 @@ services:
           tests/test_analytics_nps.py \
           tests/test_analytics_headline.py \
           tests/test_company_taxonomy.py \
+          tests/test_category_drilldown.py \
           tests/test_company_perspective_wire_in.py \
           tests/test_encryption_smoke.py \
           tests/test_stats_aggregator.py \
@@ -150,11 +151,13 @@ services:
           tests/test_tenant_profile_routes.py \
           tests/test_pdf_render.py \
           tests/test_tenant_taxonomies_crud.py \
+          tests/test_taxonomy_primary_category_mapping.py \
           tests/test_sla_engine.py \
           tests/test_tenant_sla_rules_routes.py \
           tests/test_smart_parser.py \
           tests/test_word_cloud_generator.py \
           tests/test_insights_routes.py \
+          tests/test_root_cause.py \
           tests/test_action_items_routes.py \
           tests/test_trend_alerts_routes.py \
           tests/test_webhook_dispatcher.py \
@@ -186,6 +189,9 @@ services:
           tests/test_action_items_idempotency.py \
           tests/test_reviews_list_heatmap_drilldown.py \
           tests/test_admin_invitations.py \
+          tests/test_admin_llm_credentials.py \
+          tests/test_file_parser.py \
+          tests/test_monthly_metrics_engagement.py \
           tests/test_default_model_name_constants.py \
           tests/test_batch_audit_token_capture.py \
           tests/test_swot_audit_path.py \
