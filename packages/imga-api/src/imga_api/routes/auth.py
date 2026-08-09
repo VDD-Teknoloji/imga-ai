@@ -8,6 +8,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from imga_db.models import Tenant, User
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from imga_api.auth_deps import (
@@ -467,27 +468,36 @@ async def me(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="user not found"
         )
     tenants = await auth.list_user_tenants(current.user_id)
+    if user.is_super_admin:
+        # Süper yönetici tüm aktif kurumları görür — switch-tenant zaten
+        # üyelik istemiyor, kurum seçici de istememeli. Üyeliği olan
+        # kurumda gerçek rolü, olmayanda "super_admin" etiketi döner.
+        # Bu birleşim aktif kurumun adını da çözer (eskiden üyelik
+        # listesi bulamayınca header "Kurum seçilmedi" gösteriyordu).
+        member_ids = {t["id"] for t in tenants}
+        rows = await admin_session.execute(
+            select(Tenant.id, Tenant.name, Tenant.slug, Tenant.language)
+            .where(Tenant.deleted_at.is_(None))
+            .order_by(Tenant.name)
+        )
+        tenants.extend(
+            {
+                "id": row[0],
+                "name": row[1],
+                "slug": row[2],
+                "role": "super_admin",
+                "language": row[3],
+            }
+            for row in rows.all()
+            if row[0] not in member_ids
+        )
+        tenants.sort(key=lambda t: str(t["name"]).casefold())
     active_tenant_summary: dict[str, Any] | None = None
     if current.active_tenant_id is not None:
         for t in tenants:
             if t["id"] == current.active_tenant_id:
                 active_tenant_summary = t
                 break
-    if (
-        active_tenant_summary is None
-        and current.active_tenant_id is not None
-        and user.is_super_admin
-    ):
-        # Süper yönetici switch-tenant ile üyesi OLMADIĞI bir kuruma
-        # geçebilir; üyelik listesi adı çözemeyince header "Kurum
-        # seçilmedi" gösteriyordu. Adı kurum satırından doldur.
-        tenant_row = await admin_session.get(Tenant, current.active_tenant_id)
-        if tenant_row is not None and tenant_row.deleted_at is None:
-            active_tenant_summary = {
-                "name": tenant_row.name,
-                "slug": tenant_row.slug,
-                "language": tenant_row.language or "tr",
-            }
     return MeResponse(
         user=UserSummary(
             id=user.id,

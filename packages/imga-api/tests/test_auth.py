@@ -219,6 +219,48 @@ def test_me_returns_user_active_context_and_available_tenants(
     assert str(tenant_id) in available_ids
 
 
+@pytest.mark.asyncio
+async def test_me_super_admin_lists_nonmember_tenants(
+    client: TestClient,
+    admin_session: AsyncSession,
+    seeded_user_and_tenant: tuple[User, UUID, str],
+) -> None:
+    """Süper yönetici, üyeliği olmayan kurumları da available_tenants
+    içinde 'super_admin' rol etiketiyle görmeli — kurum seçici bu
+    listeden beslenir ve switch-tenant zaten üyelik istemiyor."""
+    _user, tenant_id, _pw = seeded_user_and_tenant
+    audit = AuditService(admin_session)
+    usvc = UserService(admin_session, audit)
+    plain = "Root-Password-123!"
+    email = f"root-{uuid4().hex[:8]}@example.com"
+    async with admin_session.begin():
+        root = await usvc.create(
+            email=email,
+            password=plain,
+            full_name="Root User",
+            is_super_admin=True,
+        )
+        root_id = root.id
+        root_email = root.email
+    try:
+        login = client.post(
+            "/auth/login", json={"email": root_email, "password": plain}
+        ).json()
+        r = client.get(
+            "/auth/me",
+            headers={"Authorization": f"Bearer {login['access_token']}"},
+        )
+        assert r.status_code == 200, r.text
+        rows = {t["id"]: t for t in r.json()["available_tenants"]}
+        assert str(tenant_id) in rows
+        assert rows[str(tenant_id)]["role"] == "super_admin"
+    finally:
+        async with admin_session.begin():
+            await admin_session.execute(
+                text("DELETE FROM users WHERE id = :id"), {"id": str(root_id)}
+            )
+
+
 # --- refresh + chain detection ------------------------------------------
 
 
