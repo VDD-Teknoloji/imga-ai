@@ -1,11 +1,13 @@
 "use client";
 
-import { Building2, MailPlus, Pencil, Plus, Trash2 } from "lucide-react";
+import { Building2, Cpu, MailPlus, Pencil, Percent, Plus, Trash2 } from "lucide-react";
+import Link from "next/link";
 import { useState } from "react";
 
 import { TenantCreateDialog } from "@/components/admin/tenant-create-dialog";
 import { TenantDeleteDialog } from "@/components/admin/tenant-delete-dialog";
 import { TenantEditDialog } from "@/components/admin/tenant-edit-dialog";
+import { TenantEngagementDialog } from "@/components/admin/tenant-engagement-dialog";
 import { TenantInviteDialog } from "@/components/admin/tenant-invite-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -60,6 +62,7 @@ function AdminTenantsBody() {
   const [editTarget, setEditTarget] = useState<AdminTenantSummary | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<AdminTenantSummary | null>(null);
   const [inviteTarget, setInviteTarget] = useState<AdminTenantSummary | null>(null);
+  const [engagementTarget, setEngagementTarget] = useState<AdminTenantSummary | null>(null);
 
   const liveTenants = (tenants.data ?? []).filter((tenant) => tenant.deleted_at === null);
 
@@ -142,6 +145,29 @@ function AdminTenantsBody() {
                         <MailPlus className="size-3.5" aria-hidden />
                         <span className="hidden sm:inline">{t("admin.tenants.action.invite")}</span>
                       </Button>
+                      {/* LLM yönetimi dialog değil kendi sayfası: liste +
+                          form + sürükle-bırak sıralama bir modal'a
+                          sığmıyor. */}
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="gap-1.5"
+                        render={<Link href={`/admin/tenants/${tenant.id}/llm`} />}
+                      >
+                        <Cpu className="size-3.5" aria-hidden />
+                        <span className="hidden sm:inline">{t("admin.tenants.action.llm")}</span>
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => setEngagementTarget(tenant)}
+                        className="gap-1.5"
+                      >
+                        <Percent className="size-3.5" aria-hidden />
+                        <span className="hidden sm:inline">
+                          {t("admin.tenants.action.engagement")}
+                        </span>
+                      </Button>
                       <Button
                         size="sm"
                         variant="ghost"
@@ -180,6 +206,13 @@ function AdminTenantsBody() {
           open={inviteTarget !== null}
           onOpenChange={(o) => !o && setInviteTarget(null)}
           tenant={inviteTarget}
+        />
+      ) : null}
+      {engagementTarget ? (
+        <TenantEngagementDialog
+          open={engagementTarget !== null}
+          onOpenChange={(o) => !o && setEngagementTarget(null)}
+          tenant={engagementTarget}
         />
       ) : null}
     </main>

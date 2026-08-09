@@ -2,7 +2,8 @@
 
 import { ArrowRight, ChevronLeft, Loader2 } from "lucide-react";
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useSearchParams } from "next/navigation";
+import { Suspense } from "react";
 import { toast } from "sonner";
 
 import { CorrectReviewDialog } from "@/components/reviews/correct-review-dialog";
@@ -45,10 +46,37 @@ const SENTIMENT_LABEL_KEYS: Record<string, string> = {
 /**
  * Sprint 8.3.1 placeholder — full layout (override layer cards,
  * raw vs final score split, linked-ticket section) lands in 8.3.4.
+ *
+ * useSearchParams gereği Suspense sarmalayıcı zorunlu —
+ * docs/agent-rules/url-state-patterns.md.
  */
 export default function ReviewDetailPage() {
+  return (
+    <Suspense fallback={<ReviewDetailSkeleton />}>
+      <ReviewDetailInner />
+    </Suspense>
+  );
+}
+
+function ReviewDetailSkeleton() {
+  const { t } = useTranslation();
+  return (
+    <main className="mx-auto w-full max-w-3xl space-y-6 px-4 py-8">
+      <div className="flex items-center gap-2 p-6 text-sm">
+        <Loader2 className="size-4 animate-spin" /> {t("common.loading")}
+      </div>
+    </main>
+  );
+}
+
+function ReviewDetailInner() {
   const { t } = useTranslation();
   const params = useParams<{ id: string }>();
+  // Liste sayfasından taşınan filtre query-string'i — "Listeye dön"
+  // aynı filtrelerle geri döner (bare /reviews filtreleri sıfırlıyordu).
+  const searchParams = useSearchParams();
+  const listQs = searchParams.toString();
+  const backHref = listQs ? `/reviews?${listQs}` : "/reviews";
   const reviewId = params?.id ?? null;
   const detail = useReviewDetail(reviewId);
   const promote = useManualPromoteReview();
@@ -91,7 +119,7 @@ export default function ReviewDetailPage() {
   return (
     <main className="mx-auto w-full max-w-3xl space-y-6 px-4 py-8">
       <Link
-        href="/reviews"
+        href={backHref}
         className="text-muted-foreground hover:text-foreground inline-flex items-center gap-1 text-sm"
       >
         <ChevronLeft className="size-4" /> {t("reviews.detail.backToList")}
@@ -125,7 +153,7 @@ export default function ReviewDetailPage() {
                   {t("reviews.detail.date")}
                 </p>
                 <p className="text-sm">
-                  {new Date(detail.data.analyzed_at).toLocaleString("tr-TR")}
+                  {new Date(detail.data.review_date).toLocaleString("tr-TR")}
                   {" — "}
                   {detail.data.source_type === "batch"
                     ? t("reviews.detail.batchUpload")
@@ -137,6 +165,10 @@ export default function ReviewDetailPage() {
                       <span className="font-mono">{detail.data.batch_job_id.slice(0, 8)}</span>)
                     </>
                   )}
+                </p>
+                <p className="text-muted-foreground mt-1 text-xs">
+                  {t("reviews.detail.analyzedAt")}:{" "}
+                  {new Date(detail.data.analyzed_at).toLocaleString("tr-TR")}
                 </p>
               </div>
 

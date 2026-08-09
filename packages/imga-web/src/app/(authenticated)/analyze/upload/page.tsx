@@ -354,6 +354,9 @@ function TemplateBanner() {
           <p className="text-muted-foreground text-xs leading-relaxed">
             {t("analyze.upload.template.bodyBefore")}<strong>yorum</strong>{t("analyze.upload.template.bodyAfter")}
           </p>
+          <p className="text-muted-foreground text-xs leading-relaxed">
+            {t("analyze.upload.template.dateHint")}
+          </p>
         </div>
         <Button
           variant="outline"

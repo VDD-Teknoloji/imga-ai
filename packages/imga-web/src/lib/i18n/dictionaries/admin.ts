@@ -40,9 +40,86 @@ export const admin: Bundle = {
     "admin.tenants.col.actions": "Aksiyonlar",
     "admin.tenants.action.edit": "Düzenle",
     "admin.tenants.action.invite": "Davet",
+    "admin.tenants.action.llm": "LLM Ayarları",
+    "admin.tenants.action.engagement": "Katılım Eşikleri",
     "admin.tenants.action.delete": "Sil",
     "admin.tenants.empty.title": "Henüz kurum yok",
     "admin.tenants.empty.desc": "İlk kurumu oluştur ve admin davetini gönder.",
+
+    // --- katılım eşikleri (yalnız süper yönetici) -------------------------
+    "admin.engagement.title": "Katılım Eşikleri",
+    "admin.engagement.desc":
+      "{tenant} — katılım oranının hangi aralıkta ne anlama geldiğini belirleyin.",
+    "admin.engagement.usingDefaults":
+      "Bu kurum için henüz özel eşik tanımlanmadı; varsayılanlar gösteriliyor.",
+    "admin.engagement.field.minPct": "Alt sınır (%)",
+    "admin.engagement.field.label": "Etiket",
+    "admin.engagement.addBand": "Bant ekle",
+    "admin.engagement.removeBand": "Bandı kaldır",
+    "admin.engagement.help":
+      "Her bant kendi alt sınırından bir sonrakinin alt sınırına kadar geçerlidir. İlk bant %0'dan başlar; sınırdaki oran üst banda düşer.",
+    "admin.engagement.save": "Kaydet",
+    "admin.engagement.saving": "Kaydediliyor…",
+    "admin.engagement.toast.saved": "Katılım eşikleri güncellendi.",
+    "admin.engagement.toast.saveError": "Eşikler kaydedilemedi.",
+    "admin.engagement.error.minPctRange":
+      "Alt sınır 0 ile 100 arasında bir sayı olmalı.",
+    "admin.engagement.error.labelRequired": "Etiket boş olamaz.",
+    "admin.engagement.error.atLeastOne": "En az bir bant tanımlayın.",
+    "admin.engagement.error.startsAtZero": "İlk bandın alt sınırı %0 olmalı.",
+    "admin.engagement.error.ascending":
+      "Alt sınırlar artan sırada ve birbirinden farklı olmalı.",
+
+    // --- llm (kurum başına model + API anahtarı yönetimi) -----------------
+    // 2026-08-09: yönetim kurumdan alınıp süper yöneticiye verildi;
+    // kurum tarafında yalnız salt-okur görünüm kaldı.
+    "admin.llm.title": "Yapay Zekâ Ayarları",
+    "admin.llm.subtitle":
+      "Kurumun yapay zekâ sağlayıcısı, modeli ve API anahtarları. En üstteki aktif kayıt kazanır; alttakiler sırayla yedektir.",
+    "admin.llm.subtitleFor":
+      "{tenant} — yapay zekâ sağlayıcısı, modeli ve API anahtarları. En üstteki aktif kayıt kazanır; alttakiler sırayla yedektir.",
+    "admin.llm.backToTenants": "Kurumlar",
+    "admin.llm.loadError": "Anahtarlar yüklenemedi.",
+    "admin.llm.empty":
+      "Bu kurum için henüz anahtar eklenmemiş. Aşağıdaki formdan ilk anahtarı ekleyin.",
+    "admin.llm.primary": "Birincil",
+    "admin.llm.backup": "Yedek {n}",
+    "admin.llm.lastFailed": "Son başarısız: {date}",
+    "admin.llm.warning": "dikkat",
+    "admin.llm.toggleActive": "Etkinleştir/Devre dışı",
+    "admin.llm.editLabel": "Etiketi düzenle",
+    "admin.llm.dragHandle": "Sıralama tutamağı",
+    "admin.llm.reorderFailed": "Sıralama kaydedilemedi.",
+    "admin.llm.labelUpdateFailed": "Etiket güncellenemedi.",
+    "admin.llm.statusUpdateFailed": "Durum güncellenemedi.",
+    "admin.llm.keyDeleted": "Anahtar silindi.",
+    "admin.llm.deleteFailed": "Silme başarısız.",
+    "admin.llm.delete": "Sil",
+    "admin.llm.add": "Ekle",
+    "admin.llm.deleteAria": "{label} sil",
+    "admin.llm.deleteConfirmTitle": "API anahtarı silinsin mi?",
+    "admin.llm.deleteConfirmDesc":
+      "anahtarı kalıcı olarak silinecek. Bu işlem geri alınamaz; anahtar sağlayıcı tarafında geçerli kalmaya devam eder, isterseniz tekrar ekleyebilirsiniz.",
+    "admin.llm.addTitle": "Yeni anahtar ekle",
+    "admin.llm.labelField": "Etiket",
+    "admin.llm.labelPlaceholder": "Örn. Birincil Hesap",
+    "admin.llm.apiKeyField": "API anahtarı",
+    "admin.llm.hideKey": "Anahtarı gizle",
+    "admin.llm.showKey": "Anahtarı göster",
+    "admin.llm.keyPrefixWarning": "Gemini anahtarları \"AIza\" ile başlar.",
+    "admin.llm.orKeyPrefixWarning":
+      "OpenRouter anahtarları \"sk-or-\" ile başlar.",
+    "admin.llm.keyAdded": "Anahtar eklendi.",
+    "admin.llm.addFailed": "Anahtar eklenemedi.",
+    "admin.llm.providerField": "Sağlayıcı",
+    "admin.llm.modelField": "Model",
+    "admin.llm.modelDefault": "Varsayılan model",
+    "admin.llm.modelSearchPlaceholder": "Model ara…",
+    "admin.llm.modelRecommended": "Önerilenler",
+    "admin.llm.modelAll": "Tüm modeller",
+    "admin.llm.modelEmpty": "Eşleşen model yok.",
+    "admin.llm.modelChanged": "Model güncellendi.",
+    "admin.llm.modelChangeFailed": "Model güncellenemedi.",
 
     // --- LLM Denetimi -----------------------------------------------------
     "admin.llmAudit.callType.all": "Tümü",
@@ -251,9 +328,84 @@ export const admin: Bundle = {
     "admin.tenants.col.actions": "Actions",
     "admin.tenants.action.edit": "Edit",
     "admin.tenants.action.invite": "Invite",
+    "admin.tenants.action.llm": "LLM settings",
+    "admin.tenants.action.engagement": "Engagement bands",
     "admin.tenants.action.delete": "Delete",
     "admin.tenants.empty.title": "No organizations yet",
     "admin.tenants.empty.desc": "Create the first organization and send the admin invitation.",
+
+    // --- engagement bands (super admin only) ------------------------------
+    "admin.engagement.title": "Engagement Bands",
+    "admin.engagement.desc":
+      "{tenant} — define what each engagement-rate range means.",
+    "admin.engagement.usingDefaults":
+      "No custom bands defined for this organization yet; showing the defaults.",
+    "admin.engagement.field.minPct": "Lower bound (%)",
+    "admin.engagement.field.label": "Label",
+    "admin.engagement.addBand": "Add band",
+    "admin.engagement.removeBand": "Remove band",
+    "admin.engagement.help":
+      "Each band applies from its own lower bound up to the next one's. The first band starts at 0%; a rate exactly on a bound falls into the higher band.",
+    "admin.engagement.save": "Save",
+    "admin.engagement.saving": "Saving…",
+    "admin.engagement.toast.saved": "Engagement bands updated.",
+    "admin.engagement.toast.saveError": "Failed to save bands.",
+    "admin.engagement.error.minPctRange":
+      "The lower bound must be a number between 0 and 100.",
+    "admin.engagement.error.labelRequired": "Label cannot be empty.",
+    "admin.engagement.error.atLeastOne": "Define at least one band.",
+    "admin.engagement.error.startsAtZero":
+      "The first band's lower bound must be 0%.",
+    "admin.engagement.error.ascending":
+      "Lower bounds must be in ascending order and distinct.",
+
+    // --- llm (per-organization model + API key management) ----------------
+    "admin.llm.title": "AI Settings",
+    "admin.llm.subtitle":
+      "The organization's AI provider, model, and API keys. The topmost active row wins; the ones below are fallbacks in order.",
+    "admin.llm.subtitleFor":
+      "{tenant} — AI provider, model, and API keys. The topmost active row wins; the ones below are fallbacks in order.",
+    "admin.llm.backToTenants": "Organizations",
+    "admin.llm.loadError": "Failed to load keys.",
+    "admin.llm.empty":
+      "No keys added for this organization yet. Add the first one using the form below.",
+    "admin.llm.primary": "Primary",
+    "admin.llm.backup": "Backup {n}",
+    "admin.llm.lastFailed": "Last failure: {date}",
+    "admin.llm.warning": "caution",
+    "admin.llm.toggleActive": "Enable/Disable",
+    "admin.llm.editLabel": "Edit label",
+    "admin.llm.dragHandle": "Reorder handle",
+    "admin.llm.reorderFailed": "Failed to save the ordering.",
+    "admin.llm.labelUpdateFailed": "Failed to update label.",
+    "admin.llm.statusUpdateFailed": "Failed to update status.",
+    "admin.llm.keyDeleted": "Key deleted.",
+    "admin.llm.deleteFailed": "Delete failed.",
+    "admin.llm.delete": "Delete",
+    "admin.llm.add": "Add",
+    "admin.llm.deleteAria": "Delete {label}",
+    "admin.llm.deleteConfirmTitle": "Delete API key?",
+    "admin.llm.deleteConfirmDesc":
+      "will be permanently deleted. This action cannot be undone; the key remains valid on the provider's side, and you can add it again if you wish.",
+    "admin.llm.addTitle": "Add new key",
+    "admin.llm.labelField": "Label",
+    "admin.llm.labelPlaceholder": "e.g. Primary Account",
+    "admin.llm.apiKeyField": "API key",
+    "admin.llm.hideKey": "Hide key",
+    "admin.llm.showKey": "Show key",
+    "admin.llm.keyPrefixWarning": "Gemini keys start with \"AIza\".",
+    "admin.llm.orKeyPrefixWarning": "OpenRouter keys start with \"sk-or-\".",
+    "admin.llm.keyAdded": "Key added.",
+    "admin.llm.addFailed": "Failed to add key.",
+    "admin.llm.providerField": "Provider",
+    "admin.llm.modelField": "Model",
+    "admin.llm.modelDefault": "Default model",
+    "admin.llm.modelSearchPlaceholder": "Search models…",
+    "admin.llm.modelRecommended": "Recommended",
+    "admin.llm.modelAll": "All models",
+    "admin.llm.modelEmpty": "No matching models.",
+    "admin.llm.modelChanged": "Model updated.",
+    "admin.llm.modelChangeFailed": "Failed to update model.",
 
     // --- LLM Denetimi -----------------------------------------------------
     "admin.llmAudit.callType.all": "All",

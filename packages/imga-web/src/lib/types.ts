@@ -416,6 +416,9 @@ export interface ReviewListItem {
   batch_job_id: string | null;
   source_type: ReviewSourceType;
   analyzed_at: string;
+  // Yorumun kendi tarihi (yüklemedeki `tarih` kolonu; yoksa ingest anı).
+  // Analizlerin ve listenin tarih ekseni bu.
+  review_date: string;
   submitted_by_user_id: string | null;
   override_count: number;
   // Sprint 8.3.5.6 — heuristic match for the review. ``code`` null when
@@ -437,6 +440,7 @@ export interface ReviewDetail {
   text: string;
   text_hash: string;
   analyzed_at: string;
+  review_date: string;
   source_type: ReviewSourceType;
   batch_job_id: string | null;
   sentiment: {
@@ -955,6 +959,11 @@ export interface TaxonomyEntry {
   keywords: string[];
   priority: number;
   parent_code: string | null;
+  /** Sprint 13.1 — bağlı olduğu ANA kategori kodu (reviews
+   *  .primary_category ile aynı kod uzayı). null = eşlenmemiş.
+   *  parent_code ile karıştırılmamalı: o aynı kurumdaki başka bir
+   *  taksonomi satırını gösterir. */
+  primary_category_code: string | null;
   is_default_seed: boolean;
   is_active: boolean;
   created_at: string;
@@ -967,6 +976,7 @@ export interface TaxonomyCreateRequest {
   keywords?: string[];
   priority?: number;
   parent_code?: string | null;
+  primary_category_code?: string | null;
 }
 
 export interface TaxonomyUpdateRequest {
@@ -974,6 +984,7 @@ export interface TaxonomyUpdateRequest {
   keywords?: string[];
   priority?: number;
   parent_code?: string | null;
+  primary_category_code?: string | null;
 }
 
 export interface TaxonomyReorderRequest {

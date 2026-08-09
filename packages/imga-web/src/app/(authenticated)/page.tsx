@@ -287,6 +287,7 @@ function DashboardInner() {
         <CategorySentimentBreakdown
           data={byCategory.data}
           isLoading={byCategory.isLoading}
+          filters={filters}
         />
       </div>
 

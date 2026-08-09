@@ -25,9 +25,9 @@ export const settings: Bundle = {
     "settings.index.profile.title": "Şirket Profili",
     "settings.index.profile.desc":
       "Sektör, büyüklük ve iş tanımı — strateji raporları için bağlam.",
-    "settings.index.integrations.title": "Gemini API Anahtarları",
+    "settings.index.integrations.title": "Yapay Zekâ Modeli",
     "settings.index.integrations.desc":
-      "Strateji raporları için API anahtar yönetimi ve önceliklendirme.",
+      "Kurumunuz için tanımlı model ve API anahtarları — IMGA tarafından yönetilir.",
     "settings.index.prompts.title": "Yapay Zeka Prompt'ları",
     "settings.index.prompts.desc":
       "SWOT, OKR, Yönetici Özeti ve yorum sınıflandırma prompt'larını düzenleyin — deploy gerekmez.",
@@ -40,6 +40,9 @@ export const settings: Bundle = {
     "settings.index.kpi.title": "KPI Hedefleri",
     "settings.index.kpi.desc":
       "NPS / hacim / manuel inceleme oranı için dönemsel hedef koy; dashboard kartları başarımı bu sayıyla ölçer.",
+    "settings.index.engagement.title": "Katılım Oranı",
+    "settings.index.engagement.desc":
+      "Aylık işlem adedinizi girin; sistem yorum/işlem oranını hesaplayıp değerlendirir.",
     "settings.index.dimensions.title": "İş Boyutları",
     "settings.index.dimensions.desc":
       "Segment / ürün hattı / kanal / müşteri tier'ı — CSV upload eşleştirmesi + dashboard kırılımı.",
@@ -48,7 +51,7 @@ export const settings: Bundle = {
       "Kurum üyeleri + davet gönderme / iptal etme.",
     "settings.index.briefings.title": "Zamanlanmış Brifingler",
     "settings.index.briefings.desc":
-      "Haftalık / aylık otomatik yönetici brifingi; alıcı listesi + manuel \"Şimdi gönder\" testi.",
+      'Haftalık / aylık otomatik yönetici brifingi; alıcı listesi + manuel "Şimdi gönder" testi.',
 
     // --- profile ---
     "settings.profile.title": "Şirket Profili",
@@ -69,48 +72,55 @@ export const settings: Bundle = {
     "settings.profile.invalidField": "Geçersiz alan: {detail}",
     "settings.profile.saveFailed": "Kayıt başarısız.",
 
-    // --- integrations (Gemini API anahtarları) ---
-    "settings.integrations.title": "Gemini API Anahtarları",
+    // --- integrations (yapay zekâ bağlantısı — 2026-08-09'dan beri
+    // salt okunur; yönetim IMGA/süper-yönetici tarafında) ---
+    "settings.integrations.title": "Yapay Zekâ Modeli",
     "settings.integrations.subtitle":
-      "Strateji raporları için Gemini API anahtarlarınızı buradan yönetirsiniz. İlk anahtar birincil; sonrakiler birincil başarısız olduğunda sırayla denenir. Anahtarın tamamı asla ekranda gösterilmez — yalnızca son 4 karakter önizlemesi.",
-    "settings.integrations.loadError": "Anahtarlar yüklenemedi.",
+      "Kurumunuz için tanımlı yapay zekâ sağlayıcısı ve modeli. Anahtarın tamamı asla ekranda gösterilmez — yalnızca son 4 karakter önizlemesi.",
+    "settings.integrations.managedTitle": "IMGA tarafından yönetilir",
+    "settings.integrations.managedDesc":
+      "Yapay zekâ modeli ve API anahtarları IMGA tarafından yönetilir. Değişiklik gerekiyorsa IMGA ekibiyle iletişime geçin.",
+    "settings.integrations.loadError": "Yapılandırma yüklenemedi.",
     "settings.integrations.empty":
-      "Henüz API anahtarı eklenmemiş. Aşağıdaki formdan ilk anahtarınızı ekleyin.",
+      "Bu kurum için henüz yapay zekâ bağlantısı tanımlanmamış. IMGA ekibi tanımladığında burada görünür.",
     "settings.integrations.primary": "Birincil",
     "settings.integrations.backup": "Yedek {n}",
+    "settings.integrations.statusActive": "Aktif",
+    "settings.integrations.statusInactive": "Devre dışı",
     "settings.integrations.lastFailed": "Son başarısız: {date}",
     "settings.integrations.warning": "dikkat",
-    "settings.integrations.toggleActive": "Etkinleştir/Devre dışı",
-    "settings.integrations.editLabel": "Etiketi düzenle",
-    "settings.integrations.labelUpdateFailed": "Etiket güncellenemedi.",
-    "settings.integrations.statusUpdateFailed": "Durum güncellenemedi.",
-    "settings.integrations.keyDeleted": "Anahtar silindi.",
-    "settings.integrations.deleteFailed": "Silme başarısız.",
-    "settings.integrations.deleteAria": "{label} sil",
-    "settings.integrations.deleteConfirmTitle": "API anahtarı silinsin mi?",
-    "settings.integrations.deleteConfirmDesc":
-      "anahtarı kalıcı olarak silinecek. Bu işlem geri alınamaz; anahtar Gemini tarafında geçerli kalmaya devam eder, isterseniz tekrar ekleyebilirsiniz.",
-    "settings.integrations.addTitle": "Yeni anahtar ekle",
-    "settings.integrations.labelField": "Etiket",
-    "settings.integrations.labelPlaceholder": "Örn. Birincil Hesap",
-    "settings.integrations.apiKeyField": "API anahtarı",
-    "settings.integrations.hideKey": "Anahtarı gizle",
-    "settings.integrations.showKey": "Anahtarı göster",
-    "settings.integrations.keyPrefixWarning":
-      "Gemini anahtarları \"AIza\" ile başlar.",
-    "settings.integrations.orKeyPrefixWarning":
-      "OpenRouter anahtarları \"sk-or-\" ile başlar.",
-    "settings.integrations.keyAdded": "Anahtar eklendi.",
-    "settings.integrations.addFailed": "Anahtar eklenemedi.",
-    "settings.integrations.providerField": "Sağlayıcı",
     "settings.integrations.modelField": "Model",
     "settings.integrations.modelDefault": "Varsayılan model",
-    "settings.integrations.modelSearchPlaceholder": "Model ara…",
-    "settings.integrations.modelRecommended": "Önerilenler",
-    "settings.integrations.modelAll": "Tüm modeller",
-    "settings.integrations.modelEmpty": "Eşleşen model yok.",
-    "settings.integrations.modelChanged": "Model güncellendi.",
-    "settings.integrations.modelChangeFailed": "Model güncellenemedi.",
+
+    // --- engagement (katılım oranı) ---
+    "settings.engagement.title": "Katılım Oranı",
+    "settings.engagement.subtitle":
+      "Aylık işlem adedinizi girin; sistem o ayın yorum sayısını sayıp katılım oranını (yorum / işlem) hesaplar.",
+    "settings.engagement.loadError": "Katılım tablosu alınamadı.",
+    "settings.engagement.noData": "Girilmedi",
+    "settings.engagement.deleteConfirm":
+      "Bu ayın işlem adedi kaydını silmek istediğinizden emin misiniz?",
+    "settings.engagement.deleted": "Kayıt silindi.",
+    "settings.engagement.saved": "İşlem adedi kaydedildi.",
+    "settings.engagement.countMustBeInteger": "İşlem adedi 0 veya daha büyük bir tam sayı olmalı.",
+    "settings.engagement.col.month": "Ay",
+    "settings.engagement.col.transactions": "İşlem adedi",
+    "settings.engagement.col.reviews": "Yorum sayısı",
+    "settings.engagement.col.pct": "Katılım %",
+    "settings.engagement.col.rating": "Değerlendirme",
+    "settings.engagement.col.actions": "İşlem",
+    "settings.engagement.form.title": "Aylık işlem adedi",
+    "settings.engagement.form.help": "Aynı ay yeniden girilirse önceki değer güncellenir.",
+    "settings.engagement.form.month": "Ay",
+    "settings.engagement.form.transactions": "İşlem adedi",
+    "settings.engagement.form.notes": "Not (opsiyonel)",
+    "settings.engagement.form.notesPlaceholder": "Kaynak, revizyon nedeni…",
+    "settings.engagement.form.submit": "Kaydet",
+    "settings.engagement.bands.title": "Değerlendirme bantları",
+    "settings.engagement.bands.managedByImga":
+      "Bantlar sektörünüze göre IMGA tarafından belirlenir.",
+    "settings.engagement.csv.download": "CSV indir",
+    "settings.engagement.csv.header": "Ay;İşlem adedi;Yorum sayısı;Katılım %;Değerlendirme",
 
     // --- kpi-goals ---
     "settings.kpi.title": "KPI Hedefleri",
@@ -195,8 +205,7 @@ export const settings: Bundle = {
     "settings.sla.showInactive": "Devre dışı kuralları göster",
     "settings.sla.ruleCount": "{n} kural",
     "settings.sla.loadError": "Kurallar yüklenemedi.",
-    "settings.sla.empty":
-      "Henüz SLA kuralı yok. \"Kural ekle\" ile ilkini tanımlayın.",
+    "settings.sla.empty": 'Henüz SLA kuralı yok. "Kural ekle" ile ilkini tanımlayın.',
     "settings.sla.actionNotActive": "(bu aksiyon henüz aktif değil)",
     "settings.sla.conditionLabel": "Koşul:",
     "settings.sla.allAnalyses": "tüm analizler",
@@ -340,6 +349,9 @@ export const settings: Bundle = {
     "settings.taxonomies.label": "Etiket",
     "settings.taxonomies.labelPlaceholder": "Örn. Beklenmeyen Konu",
     "settings.taxonomies.parentCategory": "Üst kategori (opsiyonel)",
+    "settings.taxonomies.primaryCategory": "Ana kategori (opsiyonel)",
+    "settings.taxonomies.primaryCategoryHelp":
+      "Bu alt kategori panoda hangi ana kategorinin altında gruplanacak? Sayımlar yorum kayıtlarından gelir; bu eşleme yalnız gruplama ve sınıflandırıcı için kullanılır.",
     "settings.taxonomies.none": "(yok)",
     "settings.taxonomies.added": "Kategori eklendi.",
     "settings.taxonomies.addFailed": "Kategori eklenemedi.",
@@ -429,9 +441,9 @@ export const settings: Bundle = {
     "settings.index.profile.title": "Company Profile",
     "settings.index.profile.desc":
       "Industry, size, and business description — context for strategy reports.",
-    "settings.index.integrations.title": "Gemini API Keys",
+    "settings.index.integrations.title": "AI Model",
     "settings.index.integrations.desc":
-      "API key management and prioritization for strategy reports.",
+      "The model and API keys configured for your organization — managed by IMGA.",
     "settings.index.prompts.title": "AI Prompts",
     "settings.index.prompts.desc":
       "Edit the SWOT, OKR, Executive Summary, and review-classification prompts — no deploy required.",
@@ -444,6 +456,9 @@ export const settings: Bundle = {
     "settings.index.kpi.title": "KPI Goals",
     "settings.index.kpi.desc":
       "Set periodic goals for NPS / volume / manual-review rate; dashboard cards measure achievement against this number.",
+    "settings.index.engagement.title": "Engagement Rate",
+    "settings.index.engagement.desc":
+      "Enter your monthly transaction counts; the system computes and rates the review/transaction ratio.",
     "settings.index.dimensions.title": "Business Dimensions",
     "settings.index.dimensions.desc":
       "Segment / product line / channel / customer tier — CSV upload mapping + dashboard breakdown.",
@@ -452,7 +467,7 @@ export const settings: Bundle = {
       "Organization members + sending / canceling invitations.",
     "settings.index.briefings.title": "Scheduled Briefings",
     "settings.index.briefings.desc":
-      "Weekly / monthly automatic executive briefing; recipient list + manual \"Send now\" test.",
+      'Weekly / monthly automatic executive briefing; recipient list + manual "Send now" test.',
 
     // --- profile ---
     "settings.profile.title": "Company Profile",
@@ -473,48 +488,54 @@ export const settings: Bundle = {
     "settings.profile.invalidField": "Invalid field: {detail}",
     "settings.profile.saveFailed": "Save failed.",
 
-    // --- integrations (Gemini API keys) ---
-    "settings.integrations.title": "Gemini API Keys",
+    // --- integrations (AI connection — read-only since 2026-08-09;
+    // management lives on the IMGA / super-admin side) ---
+    "settings.integrations.title": "AI Model",
     "settings.integrations.subtitle":
-      "Manage your Gemini API keys for strategy reports here. The first key is primary; the rest are tried in order when the primary fails. The full key is never shown on screen — only a preview of the last 4 characters.",
-    "settings.integrations.loadError": "Failed to load keys.",
+      "The AI provider and model configured for your organization. The full key is never shown on screen — only a preview of the last 4 characters.",
+    "settings.integrations.managedTitle": "Managed by IMGA",
+    "settings.integrations.managedDesc":
+      "The AI model and API keys are managed by IMGA. Contact the IMGA team if a change is needed.",
+    "settings.integrations.loadError": "Failed to load the configuration.",
     "settings.integrations.empty":
-      "No API keys added yet. Add your first key using the form below.",
+      "No AI connection has been configured for this organization yet. It will appear here once the IMGA team sets one up.",
     "settings.integrations.primary": "Primary",
     "settings.integrations.backup": "Backup {n}",
+    "settings.integrations.statusActive": "Active",
+    "settings.integrations.statusInactive": "Disabled",
     "settings.integrations.lastFailed": "Last failure: {date}",
     "settings.integrations.warning": "caution",
-    "settings.integrations.toggleActive": "Enable/Disable",
-    "settings.integrations.editLabel": "Edit label",
-    "settings.integrations.labelUpdateFailed": "Failed to update label.",
-    "settings.integrations.statusUpdateFailed": "Failed to update status.",
-    "settings.integrations.keyDeleted": "Key deleted.",
-    "settings.integrations.deleteFailed": "Delete failed.",
-    "settings.integrations.deleteAria": "Delete {label}",
-    "settings.integrations.deleteConfirmTitle": "Delete API key?",
-    "settings.integrations.deleteConfirmDesc":
-      "will be permanently deleted. This action cannot be undone; the key remains valid on Gemini's side, and you can add it again if you wish.",
-    "settings.integrations.addTitle": "Add new key",
-    "settings.integrations.labelField": "Label",
-    "settings.integrations.labelPlaceholder": "e.g. Primary Account",
-    "settings.integrations.apiKeyField": "API key",
-    "settings.integrations.hideKey": "Hide key",
-    "settings.integrations.showKey": "Show key",
-    "settings.integrations.keyPrefixWarning":
-      "Gemini keys start with \"AIza\".",
-    "settings.integrations.orKeyPrefixWarning":
-      "OpenRouter keys start with \"sk-or-\".",
-    "settings.integrations.keyAdded": "Key added.",
-    "settings.integrations.addFailed": "Failed to add key.",
-    "settings.integrations.providerField": "Provider",
     "settings.integrations.modelField": "Model",
     "settings.integrations.modelDefault": "Default model",
-    "settings.integrations.modelSearchPlaceholder": "Search models…",
-    "settings.integrations.modelRecommended": "Recommended",
-    "settings.integrations.modelAll": "All models",
-    "settings.integrations.modelEmpty": "No matching models.",
-    "settings.integrations.modelChanged": "Model updated.",
-    "settings.integrations.modelChangeFailed": "Failed to update model.",
+
+    // --- engagement (katılım oranı) ---
+    "settings.engagement.title": "Engagement Rate",
+    "settings.engagement.subtitle":
+      "Enter your monthly transaction count; the system counts that month's reviews and computes the engagement rate (reviews / transactions).",
+    "settings.engagement.loadError": "Failed to load the engagement table.",
+    "settings.engagement.noData": "Not entered",
+    "settings.engagement.deleteConfirm":
+      "Are you sure you want to delete this month's transaction count?",
+    "settings.engagement.deleted": "Record deleted.",
+    "settings.engagement.saved": "Transaction count saved.",
+    "settings.engagement.countMustBeInteger": "Transaction count must be an integer of 0 or more.",
+    "settings.engagement.col.month": "Month",
+    "settings.engagement.col.transactions": "Transactions",
+    "settings.engagement.col.reviews": "Reviews",
+    "settings.engagement.col.pct": "Engagement %",
+    "settings.engagement.col.rating": "Rating",
+    "settings.engagement.col.actions": "Actions",
+    "settings.engagement.form.title": "Monthly transaction count",
+    "settings.engagement.form.help": "Re-entering the same month updates the previous value.",
+    "settings.engagement.form.month": "Month",
+    "settings.engagement.form.transactions": "Transaction count",
+    "settings.engagement.form.notes": "Note (optional)",
+    "settings.engagement.form.notesPlaceholder": "Source, reason for revision…",
+    "settings.engagement.form.submit": "Save",
+    "settings.engagement.bands.title": "Rating bands",
+    "settings.engagement.bands.managedByImga": "Bands are set by IMGA based on your sector.",
+    "settings.engagement.csv.download": "Download CSV",
+    "settings.engagement.csv.header": "Month;Transactions;Reviews;Engagement %;Rating",
 
     // --- kpi-goals ---
     "settings.kpi.title": "KPI Goals",
@@ -595,13 +616,12 @@ export const settings: Bundle = {
     // --- sla-rules ---
     "settings.sla.title": "SLA Rules",
     "settings.sla.subtitle":
-      "Track response/resolution times for analyses or Tickets that match the defined conditions. Only the \"Warning\" action is active for now; Ticket creation and email notification will come in future sprints.",
+      'Track response/resolution times for analyses or Tickets that match the defined conditions. Only the "Warning" action is active for now; Ticket creation and email notification will come in future sprints.',
     "settings.sla.addRule": "Add rule",
     "settings.sla.showInactive": "Show inactive rules",
     "settings.sla.ruleCount": "{n} rule(s)",
     "settings.sla.loadError": "Failed to load rules.",
-    "settings.sla.empty":
-      "No SLA rules yet. Define the first one with \"Add rule\".",
+    "settings.sla.empty": 'No SLA rules yet. Define the first one with "Add rule".',
     "settings.sla.actionNotActive": "(this action is not active yet)",
     "settings.sla.conditionLabel": "Condition:",
     "settings.sla.allAnalyses": "all analyses",
@@ -747,6 +767,9 @@ export const settings: Bundle = {
     "settings.taxonomies.label": "Label",
     "settings.taxonomies.labelPlaceholder": "e.g. Unexpected Topic",
     "settings.taxonomies.parentCategory": "Parent category (optional)",
+    "settings.taxonomies.primaryCategory": "Main category (optional)",
+    "settings.taxonomies.primaryCategoryHelp":
+      "Which main category should this sub-category be grouped under on the dashboard? Counts always come from the review records; this mapping only drives grouping and the classifier.",
     "settings.taxonomies.none": "(none)",
     "settings.taxonomies.added": "Category added.",
     "settings.taxonomies.addFailed": "Failed to add category.",

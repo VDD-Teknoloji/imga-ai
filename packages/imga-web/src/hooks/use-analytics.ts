@@ -106,6 +106,48 @@ export function useSentimentByCategory(filters: AnalyticsFilters, topN = 10) {
   });
 }
 
+// Sprint 13.1 — hiyerarşik drill-down 2. seviye. Kovalar backend'de
+// YALNIZ review kolonlarından kurulur, bu yüzden her satır birebir
+// /reviews?primary_categories=X&perspective_codes=Y bağlantısına
+// çevrilebilir (sayılar tutar).
+export interface CategoryDrilldownRow {
+  code: string;
+  label_tr: string;
+  total: number;
+  negative_count: number;
+  negative_share: number;
+  share: number;
+}
+
+export interface CategoryDrilldownResponse {
+  primary_category: string;
+  total: number;
+  negative_total: number;
+  data: CategoryDrilldownRow[];
+}
+
+export function useCategoryDrilldown(
+  filters: AnalyticsFilters,
+  primaryCategory: string | null,
+) {
+  const query = qs({
+    ...dateRangeParams(filters),
+    source_types: filters.source_types,
+    batch_job_id: filters.batch_job_id,
+    primary_category: primaryCategory ?? undefined,
+  });
+  return useQuery<CategoryDrilldownResponse>({
+    queryKey: ["analytics-category-drilldown", query],
+    // Yalnız satır açıldığında istek atılır.
+    enabled: primaryCategory !== null,
+    queryFn: () =>
+      apiRequest<CategoryDrilldownResponse>(
+        `/tenants/me/analytics/category-drilldown?${query}`,
+      ),
+    placeholderData: keepPreviousData,
+  });
+}
+
 export function useOverrideStats(filters: AnalyticsFilters) {
   const query = qs({
     ...dateRangeParams(filters),

@@ -79,6 +79,10 @@ export const analyze: Bundle = {
     "analyze.upload.template.bodyBefore": "Yorumlarınızı şablondaki ",
     "analyze.upload.template.bodyAfter":
       " kolonuna yapıştırın. Şablona uymayan dosyalar reddedilir.",
+    "analyze.upload.template.dateHint":
+      "Dosyadaki tarih kolonu yorumun kendi tarihi olarak kullanılır — " +
+      "analizler ve trendler bu tarihe göre gruplanır. Boşsa yükleme " +
+      "zamanı kullanılır. Biçim: YYYY-AA-GG veya gg.aa.yyyy.",
     "analyze.upload.template.downloadFailedRetry":
       "Şablon indirilemedi. Lütfen daha sonra tekrar deneyin.",
     "analyze.upload.template.downloadFailed": "Şablon indirilemedi.",
@@ -88,7 +92,7 @@ export const analyze: Bundle = {
     "analyze.upload.fileTooLarge": "Dosya 50 MB sınırını aşıyor.",
     "analyze.upload.dropzone": "Dosyayı buraya bırakın veya tıklayarak seçin",
     "analyze.upload.dropzoneHint":
-      "CSV, XLSX — en fazla 50 MB, en fazla 10.000 satır",
+      "CSV, XLSX — en fazla 50 MB, en fazla 25.000 satır",
     "analyze.upload.step2Title": "Adım 2 — Sütun Eşleştirme",
     "analyze.upload.rowCount": "{n} satır",
     "analyze.upload.analyzingColumns": "Sütunlar analiz ediliyor…",
@@ -292,6 +296,10 @@ export const analyze: Bundle = {
     "analyze.upload.template.bodyBefore": "Paste your comments into the ",
     "analyze.upload.template.bodyAfter":
       " column of the template. Files that don't match the template are rejected.",
+    "analyze.upload.template.dateHint":
+      "The date column in your file is used as the review's own date — " +
+      "analyses and trends are grouped by it. Left empty, the upload " +
+      "time is used. Format: YYYY-MM-DD or dd.mm.yyyy.",
     "analyze.upload.template.downloadFailedRetry":
       "Template could not be downloaded. Please try again later.",
     "analyze.upload.template.downloadFailed": "Template could not be downloaded.",
@@ -301,7 +309,7 @@ export const analyze: Bundle = {
     "analyze.upload.fileTooLarge": "File exceeds the 50 MB limit.",
     "analyze.upload.dropzone": "Drop the file here or click to select",
     "analyze.upload.dropzoneHint":
-      "CSV, XLSX — up to 50 MB, up to 10,000 rows",
+      "CSV, XLSX — up to 50 MB, up to 25,000 rows",
     "analyze.upload.step2Title": "Step 2 — Column Mapping",
     "analyze.upload.rowCount": "{n} rows",
     "analyze.upload.analyzingColumns": "Analyzing columns…",

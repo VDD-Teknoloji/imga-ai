@@ -288,7 +288,7 @@ function ReviewsPageInner() {
         <ul className="space-y-2.5">
           {items.map((r) => (
             <li key={r.id}>
-              <ReviewRow review={r} />
+              <ReviewRow review={r} listQuery={searchParams.toString()} />
             </li>
           ))}
         </ul>
@@ -312,8 +312,16 @@ function ReviewsPageInner() {
 }
 
 /** Tek analiz satırı — okunur, sakin kart. Metin önde; duygu sol
- *  renk şeridinde; kategori/tarih/kaynak ikincil. Tıklama → detay. */
-function ReviewRow({ review: r }: { review: ReviewListItem }) {
+ *  renk şeridinde; kategori/tarih/kaynak ikincil. Tıklama → detay.
+ *  listQuery: aktif filtre query-string'i detay URL'ine taşınır ki
+ *  "Listeye dön" filtreleri geri getirebilsin. */
+function ReviewRow({
+  review: r,
+  listQuery,
+}: {
+  review: ReviewListItem;
+  listQuery: string;
+}) {
   const { t } = useTranslation();
   // Ham BERT kodu (kargo_teslimat) yerine kurum sözlüğündeki etiket;
   // sorgu tek anahtar altında cache'lenir, satır başına maliyet yok.
@@ -326,7 +334,7 @@ function ReviewRow({ review: r }: { review: ReviewListItem }) {
     (r.company_perspective_code ? t("reviews.review.removed") : null);
   return (
     <Link
-      href={`/reviews/${r.id}`}
+      href={`/reviews/${r.id}${listQuery ? `?${listQuery}` : ""}`}
       className={`hover-lift shadow-soft bg-card ring-foreground/5 group flex items-start gap-4 rounded-2xl border-l-2 p-4 ring-1 md:p-5 ${SENTIMENT_ACCENT[r.sentiment_label] ?? "border-l-zinc-300"}`}
     >
       <div className="min-w-0 flex-1">
@@ -344,7 +352,7 @@ function ReviewRow({ review: r }: { review: ReviewListItem }) {
           <span className="font-medium">{categoryLabel}</span>
           {perspective && <span>{perspective}</span>}
           <span className="tabular-nums">
-            {DATE_FORMATTER.format(new Date(r.analyzed_at))}
+            {DATE_FORMATTER.format(new Date(r.review_date))}
           </span>
           <span>{t(SOURCE_LABEL_KEYS[r.source_type])}</span>
           {r.ticket_id && (

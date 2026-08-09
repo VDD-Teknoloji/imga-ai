@@ -7,6 +7,7 @@ import {
   KeyRound,
   Layers,
   Mail,
+  Percent,
   ShieldAlert,
   Tags,
   Target,
@@ -168,6 +169,21 @@ function SettingsPageInner() {
             <p className="text-sm font-medium">{t("settings.index.kpi.title")}</p>
             <p className="text-muted-foreground text-xs">
               {t("settings.index.kpi.desc")}
+            </p>
+          </div>
+          <ArrowRight className="text-muted-foreground size-4" aria-hidden />
+        </Link>
+        <Link
+          href="/settings/engagement"
+          className="bg-card hover:bg-accent ring-foreground/5 shadow-soft flex items-start gap-3 rounded-2xl p-5 ring-1 transition-colors"
+        >
+          <Percent className="text-primary mt-0.5 size-5" aria-hidden />
+          <div className="flex-1">
+            <p className="text-sm font-medium">
+              {t("settings.index.engagement.title")}
+            </p>
+            <p className="text-muted-foreground text-xs">
+              {t("settings.index.engagement.desc")}
             </p>
           </div>
           <ArrowRight className="text-muted-foreground size-4" aria-hidden />

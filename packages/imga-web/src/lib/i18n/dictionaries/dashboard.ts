@@ -248,6 +248,28 @@ export const dashboard: Bundle = {
       "En sorunlu kategori en üstte — her kategorideki olumsuz / nötr / olumlu payı. Bir dilime tıklayınca ilgili yorumlar açılır.",
     "dashboard.categoryBreakdown.empty": "Bu dönemde kategori verisi yok.",
     "dashboard.categoryBreakdown.rowTotal": "Toplam {n} yorum",
+    // --- alt kategori kırılımı + kök neden (Sprint 13.1) ---
+    "dashboard.categoryBreakdown.expand": "{category} alt kategorilerini aç",
+    "dashboard.categoryBreakdown.drilldownTitle": "{category} — alt kategoriler",
+    "dashboard.categoryBreakdown.drilldownEmpty":
+      "Bu ana kategoride alt kategori kırılımı yok.",
+    "dashboard.categoryBreakdown.unmatched": "Alt kategori atanmamış",
+    "dashboard.categoryBreakdown.negativeShare": "Olumsuz payı %{pct}",
+    "dashboard.rootCause.action": "Kök Neden Analizi",
+    "dashboard.rootCause.title": "Kök Neden Analizi",
+    "dashboard.rootCause.generate": "Analiz Oluştur",
+    "dashboard.rootCause.regenerate": "Yeniden Oluştur",
+    "dashboard.rootCause.close": "Kapat",
+    "dashboard.rootCause.empty":
+      "Bu alt kategori için henüz analiz oluşturulmadı.",
+    "dashboard.rootCause.meta": "{n} yorum incelendi • {model}",
+    "dashboard.rootCause.affectedSurface": "Etkilenen temas noktası",
+    "dashboard.rootCause.suggestedAction": "Önerilen aksiyon",
+    "dashboard.rootCause.noCredentials":
+      "LLM API anahtarı tanımlanmamış. Ayarlar > Entegrasyonlar üzerinden ekleyin.",
+    "dashboard.rootCause.providerUnavailable":
+      "LLM sağlayıcısına şu an ulaşılamıyor. Biraz sonra tekrar deneyin.",
+    "dashboard.rootCause.generateFailed": "Kök neden analizi oluşturulamadı.",
 
     // --- deneyim dağılımı kartları ---
     "dashboard.experience.title": "Deneyim Dağılımı",
@@ -737,6 +759,29 @@ export const dashboard: Bundle = {
       "Most problematic category first — negative / neutral / positive share per category. Click a slice to open the matching reviews.",
     "dashboard.categoryBreakdown.empty": "No category data in this period.",
     "dashboard.categoryBreakdown.rowTotal": "{n} reviews in total",
+    // --- sub-category drill-down + root cause (Sprint 13.1) ---
+    "dashboard.categoryBreakdown.expand": "Expand {category} sub-categories",
+    "dashboard.categoryBreakdown.drilldownTitle": "{category} — sub-categories",
+    "dashboard.categoryBreakdown.drilldownEmpty":
+      "No sub-category breakdown for this main category.",
+    "dashboard.categoryBreakdown.unmatched": "No sub-category assigned",
+    "dashboard.categoryBreakdown.negativeShare": "Negative share {pct}%",
+    "dashboard.rootCause.action": "Root Cause Analysis",
+    "dashboard.rootCause.title": "Root Cause Analysis",
+    "dashboard.rootCause.generate": "Generate analysis",
+    "dashboard.rootCause.regenerate": "Regenerate",
+    "dashboard.rootCause.close": "Close",
+    "dashboard.rootCause.empty":
+      "No analysis has been generated for this sub-category yet.",
+    "dashboard.rootCause.meta": "{n} reviews analysed • {model}",
+    "dashboard.rootCause.affectedSurface": "Affected touchpoint",
+    "dashboard.rootCause.suggestedAction": "Suggested action",
+    "dashboard.rootCause.noCredentials":
+      "No LLM API key configured. Add one under Settings > Integrations.",
+    "dashboard.rootCause.providerUnavailable":
+      "The LLM provider is unavailable right now. Please try again shortly.",
+    "dashboard.rootCause.generateFailed":
+      "Could not generate the root cause analysis.",
 
     // --- experience breakdown cards ---
     "dashboard.experience.title": "Experience Breakdown",

@@ -69,6 +69,7 @@ import {
   useUpdateTaxonomy,
 } from "@/hooks/use-taxonomies";
 import { ApiError } from "@/lib/api-client";
+import { useCategories } from "@/hooks/use-categories";
 import { useTranslation } from "@/lib/i18n/use-translation";
 import type { TaxonomyEntry } from "@/lib/types";
 
@@ -479,6 +480,8 @@ function CreateModal({
   const [label, setLabel] = useState("");
   const [keywords, setKeywords] = useState<string[]>([]);
   const [parentCode, setParentCode] = useState<string>("");
+  const [primaryCategory, setPrimaryCategory] = useState<string>("");
+  const categories = useCategories();
 
   // Reset on open so reopening starts from a clean form. Same form-
   // mirror pattern as /settings/profile + /settings/integrations.
@@ -489,6 +492,7 @@ function CreateModal({
       setLabel("");
       setKeywords([]);
       setParentCode("");
+      setPrimaryCategory("");
     }
   }, [open]);
   /* eslint-enable react-hooks/set-state-in-effect */
@@ -507,6 +511,7 @@ function CreateModal({
     if (!canSubmit) return;
     create.mutate(
       {
+        primary_category_code: primaryCategory || null,
         code,
         label_tr: label.trim(),
         keywords,
@@ -575,6 +580,33 @@ function CreateModal({
           <KeywordsEditor value={keywords} onChange={setKeywords} />
 
           <div className="space-y-2">
+            <Label htmlFor="new-primary-category">
+              {t("settings.taxonomies.primaryCategory")}
+            </Label>
+            <Select
+              value={primaryCategory || undefined}
+              onValueChange={(v) => setPrimaryCategory(v ?? "")}
+            >
+              <SelectTrigger id="new-primary-category">
+                <SelectValue placeholder={t("settings.taxonomies.none")} />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="">{t("settings.taxonomies.none")}</SelectItem>
+                {(categories.data ?? [])
+                  .filter((c) => c.is_enabled && !c.is_archived)
+                  .map((c) => (
+                    <SelectItem key={c.code} value={c.code}>
+                      {c.label_tr}
+                    </SelectItem>
+                  ))}
+              </SelectContent>
+            </Select>
+            <p className="text-muted-foreground text-xs">
+              {t("settings.taxonomies.primaryCategoryHelp")}
+            </p>
+          </div>
+
+          <div className="space-y-2">
             <Label htmlFor="new-parent">
               {t("settings.taxonomies.parentCategory")}
             </Label>
@@ -630,12 +662,17 @@ function EditModal({
   const [label, setLabel] = useState(target.label_tr);
   const [keywords, setKeywords] = useState<string[]>(target.keywords);
   const [parentCode, setParentCode] = useState<string>(target.parent_code ?? "");
+  const [primaryCategory, setPrimaryCategory] = useState<string>(
+    target.primary_category_code ?? "",
+  );
+  const categories = useCategories();
 
   /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
     setLabel(target.label_tr);
     setKeywords(target.keywords);
     setParentCode(target.parent_code ?? "");
+    setPrimaryCategory(target.primary_category_code ?? "");
   }, [target]);
   /* eslint-enable react-hooks/set-state-in-effect */
 
@@ -650,6 +687,7 @@ function EditModal({
           label_tr: label.trim(),
           keywords,
           parent_code: parentCode || null,
+          primary_category_code: primaryCategory || null,
         },
       },
       {
@@ -695,6 +733,33 @@ function EditModal({
           </div>
 
           <KeywordsEditor value={keywords} onChange={setKeywords} />
+
+          <div className="space-y-2">
+            <Label htmlFor="edit-primary-category">
+              {t("settings.taxonomies.primaryCategory")}
+            </Label>
+            <Select
+              value={primaryCategory || undefined}
+              onValueChange={(v) => setPrimaryCategory(v ?? "")}
+            >
+              <SelectTrigger id="edit-primary-category">
+                <SelectValue placeholder={t("settings.taxonomies.none")} />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="">{t("settings.taxonomies.none")}</SelectItem>
+                {(categories.data ?? [])
+                  .filter((c) => c.is_enabled && !c.is_archived)
+                  .map((c) => (
+                    <SelectItem key={c.code} value={c.code}>
+                      {c.label_tr}
+                    </SelectItem>
+                  ))}
+              </SelectContent>
+            </Select>
+            <p className="text-muted-foreground text-xs">
+              {t("settings.taxonomies.primaryCategoryHelp")}
+            </p>
+          </div>
 
           <div className="space-y-2">
             <Label htmlFor="edit-parent">
