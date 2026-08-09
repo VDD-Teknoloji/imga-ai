@@ -185,9 +185,18 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # previous process that died holding the in-memory lock. Mark them
     # failed so the UI surfaces an actionable state instead of a
     # stalled progress bar.
-    orphans = await recover_orphans(worker_context)
-    if orphans:
-        log.warning("startup: marked %s orphaned batch jobs as failed", orphans)
+    #
+    # 2026-08-09 — arq modunda (REDIS_URL bağlı) batch job'ların sahibi
+    # api-worker'dır; api'nin açılışı KOŞAN işi "orphan" sanıp FAILED
+    # işaretliyordu — her api deploy'u aktif yüklemeyi öldürüyordu.
+    # Gerçek orphan tespiti arq worker'ın kendi açılışında zaten var
+    # (arq_worker.py); api yalnız in-process scheduler modunda kurtarır.
+    if not os.environ.get("REDIS_URL"):
+        orphans = await recover_orphans(worker_context)
+        if orphans:
+            log.warning(
+                "startup: marked %s orphaned batch jobs as failed", orphans
+            )
     report_orphans = await recover_report_orphans(report_context)
     if report_orphans:
         log.warning("startup: marked %s orphaned report jobs as failed", report_orphans)
