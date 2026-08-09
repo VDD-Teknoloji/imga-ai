@@ -212,7 +212,13 @@ services:
           # openpyxl parse maliyeti 4xBERT'in ustune biniyor). Host 23G
           # RAM / ~15G available; 6G tavani 10k-satir XLSX'e headroom
           # birakir, chunk concurrency 4 korunur.
-          memory: 6G
+          # 2026-08-09 (2) — 6G -> 8G: ayni is 6G'de de ~3400 satir
+          # isledikten sonra OOM (anon-rss ~6.3G). Bellek TEK KOSUDA
+          # islenen satirla buyuyor — worker'da satir-orantili sizinti
+          # suphesi (BACKLOG: profillenecek). 8G, checkpoint'li retry
+          # ile 10k-satir isleri bitirmeye yetiyor; kalici cozum
+          # sizintinin kapatilmasi.
+          memory: 8G
           cpus: '2'
 
   web:
