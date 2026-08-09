@@ -27,6 +27,7 @@ from fastapi import (
     UploadFile,
     status,
 )
+from imga_core.text_utils import normalize_turkish
 from imga_db.models import AnalyzeBatchJob, BatchJobStatus, UserTenantRole
 from pydantic import BaseModel, Field
 from sqlalchemy import update
@@ -59,7 +60,6 @@ from imga_api.workers.upload_validation import (
     _effective_text_column,
     validate_upload,
 )
-from imga_core.text_utils import normalize_turkish
 
 log = logging.getLogger("imga-api.routes.batch")
 
@@ -778,11 +778,17 @@ async def retry_batch(
                 status_code=status.HTTP_409_CONFLICT, detail=str(exc)
             ) from exc
         tenant_id_for_dispatch = job.tenant_id
+        retry_attempt = job.retry_count
 
     # Re-submit via the same dispatch path as create — arq if wired,
-    # else in-process scheduler. Sprint 9.0.5-A.
+    # else in-process scheduler. Sprint 9.0.5-A. attempt: çöken önceki
+    # denemenin Redis'te kalan arq kaydıyla kimlik çakışmasın (bkz.
+    # enqueue_batch_job docstring).
     worker_job_id, queued_at = await enqueue_batch_job(
-        request.app, job_id=job.id, tenant_id=tenant_id_for_dispatch,
+        request.app,
+        job_id=job.id,
+        tenant_id=tenant_id_for_dispatch,
+        attempt=retry_attempt,
     )
     if worker_job_id is not None or queued_at is not None:
         async with app_session.begin():

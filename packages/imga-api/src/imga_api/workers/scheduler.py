@@ -176,6 +176,7 @@ async def enqueue_batch_job(
     *,
     job_id: UUID,
     tenant_id: UUID,
+    attempt: int = 0,
 ) -> tuple[str | None, datetime | None]:
     """Sprint 9.0.5-A — pick the right dispatch path.
 
@@ -190,11 +191,20 @@ async def enqueue_batch_job(
     as before this sprint, no regression for the existing test seam
     (``run_worker`` / ``RecordingScheduler``).
 
+    ``attempt`` (2026-08-09): arq görev kimliği deneme-numaralıdır
+    (``batch:{id}:r{n}``). Çöken bir koşunun Redis'te bıraktığı görev
+    kaydı, retry'ın AYNI kimlikle kuyruklamasını engelliyordu; arq'nın
+    dedup-None dönüşü de sessizce in-process yedeğine düşüyordu — 3G
+    limitli api konteyneri BERT koşturup OOM riskine giriyordu. Deneme
+    kimliği çakışmayı bitirir; dedup yalnız aynı denemenin çift
+    tıklamasını süzer ve o durumda in-process'e DÜŞÜLMEZ.
+
     Returns:
         ``(worker_job_id, queued_at)``. Both ``None`` on the
         scheduler-fallback path so the route doesn't accidentally
         persist a fake arq id.
     """
+    arq_job_id = f"batch:{job_id}" + (f":r{attempt}" if attempt else "")
     arq_pool = getattr(app.state, "arq_pool", None)
     if arq_pool is not None:
         try:
@@ -202,7 +212,7 @@ async def enqueue_batch_job(
                 "process_batch_task",
                 str(job_id),
                 str(tenant_id),
-                _job_id=f"batch:{job_id}",
+                _job_id=arq_job_id,
                 _queue_name="imga-batch",
             )
         except Exception:
@@ -220,6 +230,15 @@ async def enqueue_batch_job(
                     worker_job_id,
                 )
                 return worker_job_id, queued_at
+            # Dedup: aynı deneme zaten kuyrukta/işleniyor. In-process'e
+            # düşme — çift dispatch hem yanlış hem api'yi şişirir.
+            log.warning(
+                "scheduler: arq dedup hit for %s (attempt %d); job is "
+                "already queued, not re-enqueueing",
+                job_id,
+                attempt,
+            )
+            return arq_job_id, None
 
     scheduler = getattr(app.state, "batch_scheduler", None)
     worker_context = getattr(app.state, "batch_worker_context", None)
