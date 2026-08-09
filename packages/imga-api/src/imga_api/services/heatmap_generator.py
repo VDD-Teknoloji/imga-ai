@@ -24,6 +24,7 @@ from imga_db.models import CategoryTaxonomy, Review
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from imga_api.services.date_bounds import day_ceil
 from imga_api.services.insights_cache import cache_get_or_compute
 
 
@@ -175,7 +176,8 @@ class HeatmapGenerator:
         if date_from is not None:
             stmt = stmt.where(Review.created_at >= date_from)
         if date_to is not None:
-            stmt = stmt.where(Review.created_at <= date_to)
+            # Gun sonu siniri (bkz. services.date_bounds).
+            stmt = stmt.where(Review.created_at <= day_ceil(date_to))
         if batch_id is not None:
             stmt = stmt.where(Review.batch_job_id == batch_id)
         # NPS metric ignores rows where nps_score is NULL — without

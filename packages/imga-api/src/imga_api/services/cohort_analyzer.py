@@ -33,6 +33,7 @@ from imga_db.models import CategoryTaxonomy, Review
 from sqlalchemy import desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from imga_api.services.date_bounds import day_ceil
 from imga_api.services.insights_cache import cache_get_or_compute
 
 _logger = logging.getLogger(__name__)
@@ -149,8 +150,10 @@ class CohortAnalyzer:
                 Review.created_at >= date_from
             )
         if date_to is not None:
+            # Gun sonu siniri — ciplak date geceyarisina cozulur ve
+            # bitis gununu dusurur (bkz. services.date_bounds).
             cohort_totals_stmt = cohort_totals_stmt.where(
-                Review.created_at <= date_to
+                Review.created_at <= day_ceil(date_to)
             )
         if batch_id is not None:
             cohort_totals_stmt = cohort_totals_stmt.where(
@@ -188,7 +191,7 @@ class CohortAnalyzer:
             )
         if date_to is not None:
             per_period_stmt = per_period_stmt.where(
-                Review.created_at <= date_to
+                Review.created_at <= day_ceil(date_to)
             )
         if batch_id is not None:
             per_period_stmt = per_period_stmt.where(

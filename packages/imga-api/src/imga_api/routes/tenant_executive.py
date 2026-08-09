@@ -31,6 +31,7 @@ import logging
 import re
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
+from datetime import time as dt_time
 from typing import Annotated, Any
 from uuid import UUID
 
@@ -207,7 +208,13 @@ def _make_scoped(
         if date_from is not None:
             stmt = stmt.where(Review.analyzed_at >= date_from)
         if date_to is not None:
-            stmt = stmt.where(Review.analyzed_at <= date_to)
+            # FE YYYY-MM-DD gönderir, FastAPI geceyarısına çözer —
+            # bitiş gününü tam kapsa; aksi hâlde bitiş=bugün seçimi
+            # bugünün verisini dışlıyordu (bkz. services.date_bounds).
+            end = date_to
+            if end.time() == dt_time():
+                end = end + timedelta(days=1) - timedelta(microseconds=1)
+            stmt = stmt.where(Review.analyzed_at <= end)
         if batch_job_id is not None:
             stmt = stmt.where(Review.batch_job_id == batch_job_id)
         return stmt
@@ -391,16 +398,17 @@ async def _voice_of_customer(
     near-duplicate yorumları üst üste binmesin diye ilk farklı
     metinleri alıyoruz.
     """
-    label_map = dict(
-        (
-            await session.execute(
-                select(Category.code, Category.label_tr).where(
-                    Category.tenant_id.is_(None),
-                    Category.deleted_at.is_(None),
-                )
+    label_rows = (
+        await session.execute(
+            select(Category.code, Category.label_tr).where(
+                Category.tenant_id.is_(None),
+                Category.deleted_at.is_(None),
             )
-        ).all()
-    )
+        )
+    ).all()
+    label_map: dict[str, str] = {
+        str(row[0]): str(row[1]) for row in label_rows
+    }
 
     async def _pick(label: str, order_desc: bool, take: int) -> list[CustomerQuote]:
         order_col = (

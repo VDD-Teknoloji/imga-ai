@@ -17,7 +17,7 @@ import json
 import logging
 import time
 from dataclasses import dataclass
-from datetime import date, timedelta
+from datetime import UTC, date, datetime, timedelta
 from typing import Any
 from uuid import UUID
 
@@ -37,6 +37,7 @@ from imga_api.llm.prompts.executive_briefing_v1 import (
     EXECUTIVE_BRIEFING_SYSTEM_PROMPT,
     render_executive_briefing_user_prompt,
 )
+from imga_api.services.date_bounds import day_ceil, day_floor
 from imga_api.services.llm_credentials import (
     NoCredentialsError,
     load_active_llm_keys,
@@ -150,7 +151,7 @@ class ExecutiveBriefingService:
         # Resolve the date window. If the caller didn't pin one,
         # use the trailing N days ending today.
         if date_to is None:
-            date_to = date.today()
+            date_to = datetime.now(UTC).date()
         if date_from is None:
             date_from = date_to - timedelta(days=_PERIOD_DAYS[period])
 
@@ -425,8 +426,12 @@ class ExecutiveBriefingService:
         ).where(
             Review.tenant_id == self._tenant_id,
             Review.deleted_at.is_(None),
-            Review.created_at >= date_from,
-            Review.created_at <= date_to,
+            # Gun-sinirli datetime bound'lar (date_bounds docstring'i):
+            # ciplak `<= date` geceyarisina cozulup bitis gununu (bugunu)
+            # pencereden dusuruyordu — bugun analiz edilen veriyle brifing
+            # "hic yorum yok" uretiyordu.
+            Review.created_at >= day_floor(date_from),
+            Review.created_at <= day_ceil(date_to),
         )
         if batch_id is not None:
             stmt = stmt.where(Review.batch_job_id == batch_id)
@@ -441,8 +446,8 @@ class ExecutiveBriefingService:
             .where(
                 Review.tenant_id == self._tenant_id,
                 Review.deleted_at.is_(None),
-                Review.created_at >= date_from,
-                Review.created_at <= date_to,
+                Review.created_at >= day_floor(date_from),
+                Review.created_at <= day_ceil(date_to),
             )
             .group_by(Review.primary_category)
             .order_by(func.count().desc())
