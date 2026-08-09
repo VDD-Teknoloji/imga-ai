@@ -325,12 +325,17 @@ class BatchAnalyzeService:
             raise BatchJobNotCancellableError(
                 f"job {job_id} is not retryable in state {job.status}"
             )
+        previous_error = job.last_error
         job.status = BatchJobStatus.QUEUED
         job.completed_at = None
         job.cancelled_at = None
         job.retry_count = (job.retry_count or 0) + 1
-        # last_error and error_summary are kept for the audit trail —
-        # the worker overwrites them as new errors land.
+        # Eski hata özeti retry sonrasında UI'da "hâlâ bozuk" izlenimi
+        # veriyordu (2026-08-09 OOM vakası) — satırdaki hata temizlenir,
+        # denetim izi aşağıdaki batch.retry audit kaydında saklanır;
+        # yeni hatalar worker'dan taze gelir.
+        job.last_error = None
+        job.error_summary = []
         await self._session.flush()
         await self._audit.log(
             action="batch.retry",
@@ -342,6 +347,7 @@ class BatchAnalyzeService:
             details={
                 "retry_count": job.retry_count,
                 "resume_from_row": job.last_checkpoint_row,
+                "previous_error": previous_error,
             },
         )
         return job

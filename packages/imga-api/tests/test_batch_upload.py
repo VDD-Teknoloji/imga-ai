@@ -570,3 +570,53 @@ async def test_rls_isolates_batch_jobs_across_tenants(
 
 
 _ = AnalyzeBatchJob  # exported for future tests
+
+
+@pytest.mark.asyncio
+async def test_retry_clears_stale_error_state(
+    batch_client: TestClient,
+    semi_auto_tenant: tuple[User, UUID, str],
+    tmp_path: Path,
+    admin_session: AsyncSession,
+) -> None:
+    """Retry, eski last_error + error_summary'yi temizler (2026-08-09
+    OOM vakasi: is devam ederken UI eski hatayi gostermeye devam
+    ediyordu). Denetim izi batch.retry audit kaydinda saklanir."""
+    user, tid, pw = semi_auto_tenant
+    token = login_token(batch_client, user.email, pw, tid)
+
+    csv_path = write_csv(
+        tmp_path / "retry.csv", ["yorum"], [["bir"], ["iki"]]
+    )
+    r = upload_csv(batch_client, token=token, path=csv_path, text_column="yorum")
+    assert r.status_code == 201, r.text
+    job_id = UUID(r.json()["job_id"])
+
+    cancel = batch_client.delete(
+        f"/tenants/me/analyze/batch/{job_id}",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert cancel.status_code == 200, cancel.text
+
+    async with admin_session.begin():
+        await admin_session.execute(
+            text(
+                "UPDATE analyze_batch_jobs SET last_error = :e, "
+                "error_summary = CAST(:s AS jsonb) WHERE id = :id"
+            ),
+            {
+                "e": "worker process restarted before this job finished",
+                "s": '[{"row": null, "error": "worker restarted"}]',
+                "id": str(job_id),
+            },
+        )
+
+    retry = batch_client.post(
+        f"/tenants/me/analyze/batch/{job_id}/retry",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert retry.status_code == 200, retry.text
+    body = retry.json()
+    assert body["status"] == "queued"
+    assert body["last_error"] is None
+    assert body["error_summary"] == []
