@@ -1,11 +1,16 @@
 """Read-only admin view of system-level prompt templates.
 
-Sprint 8.3.6.5.E. Future-ready: Sprint 9.x lands a real admin role +
-edit endpoints; today this is a list-only surface so an operator can
-inspect which templates the LLM stack is using. No tenant override
-yet — every tenant sees the same module-resident system prompts via
-the SWOT/OKR services; the DB rows exist for the registry table to
-have a place when overrides ship.
+Sprint 8.3.6.5.E. List-only surface so an operator can inspect which
+templates the LLM stack is using. No tenant override yet — every
+tenant sees the same module-resident system prompts via the SWOT/OKR
+services; the DB rows exist for the registry table to have a place
+when overrides ship.
+
+2026-08-09: yetki super-admin'e daraltildi. Onceki hali sistem
+genelindeki (tenant'siz) satirlari HERHANGI bir kurumun
+tenant_admin'ine aciyordu — kurum sinirini asan bir okuma yoluydu.
+Kurum-kapsamli sablon duzenleme yuzeyi ayri:
+``/tenants/me/prompt-templates``.
 
 The ``response_schema`` JSONB column is bigger than what's useful in
 a list view, so this endpoint surfaces the meta fields only. A future
@@ -19,21 +24,17 @@ from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends
-from imga_db.models import PromptTemplate, UserTenantRole
+from imga_db.models import PromptTemplate
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from imga_api.auth_deps import CurrentUser, require_role
+from imga_api.auth_deps import CurrentUser, require_super_admin
 from imga_api.db_deps import get_admin_session
 
 router = APIRouter(prefix="/admin/prompt-templates", tags=["Admin"])
 
-# No system-admin role yet. Sprint 9.x adds one; until then any
-# tenant_admin from any tenant can read the system templates. The
-# registry is non-sensitive (placeholders today, version metadata
-# tomorrow).
-_AnyTenantAdmin = Depends(require_role(UserTenantRole.TENANT_ADMIN))
+_SuperAdmin = Depends(require_super_admin)
 
 
 class PromptTemplateMeta(BaseModel):
@@ -54,18 +55,21 @@ class PromptTemplateMeta(BaseModel):
     summary="List system-level prompt templates (read-only).",
 )
 async def list_prompt_templates(
-    current: Annotated[CurrentUser, _AnyTenantAdmin],
+    current: Annotated[CurrentUser, _SuperAdmin],
     admin_session: Annotated[AsyncSession, Depends(get_admin_session)],
 ) -> list[PromptTemplateMeta]:
-    """System-level — no RLS, no tenant scope. Tenant-admins from any
-    tenant can read. Sprint 9.x replaces this with a proper admin role."""
+    """System-level — no RLS, no tenant scope, super-admin only."""
     del current  # auth dependency only; no per-user filtering.
-    async with admin_session.begin():
-        rows = (
-            await admin_session.execute(
-                select(PromptTemplate).order_by(PromptTemplate.template_key)
-            )
-        ).scalars().all()
+    # ``async with admin_session.begin()`` YOK: get_current_user ayni
+    # session'da (FastAPI dependency cache) bir SELECT kosup autobegin
+    # ile transaction'i acik birakiyor; ikinci bir begin() "A
+    # transaction is already begun on this Session" 500'u verir —
+    # bkz. tests/test_admin_session_regression.py.
+    rows = (
+        await admin_session.execute(
+            select(PromptTemplate).order_by(PromptTemplate.template_key)
+        )
+    ).scalars().all()
     return [
         PromptTemplateMeta(
             id=row.id,

@@ -7,6 +7,8 @@ Redis-cached at the service layer:
   * ``/word-cloud`` — token frequency + sentiment skew (6h cache)
   * ``/heatmap``    — 2D matrix over count / avg_sentiment / avg_nps
                       (1h cache)
+  * ``/root-cause`` — GET okur (cache/DB), POST üretir (12h cache +
+                      LLM). Sprint 13.1 drill-down 3. seviye.
 
 The ``/insights`` prefix is deliberately separate from
 ``/analytics``: those are pre-existing review-centric aggregations
@@ -25,6 +27,7 @@ from typing import Annotated, Any
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from imga_core.llm import AllKeysExhaustedError, LLMError
 from imga_db.models import UserTenantRole
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -42,6 +45,13 @@ from imga_api.services.heatmap_generator import (
     ALLOWED_Y_AXES,
     HeatmapGenerator,
 )
+from imga_api.services.root_cause_service import (
+    InvalidCategoryError,
+    NoCredentialsError,
+    NotEnoughReviewsError,
+    RootCauseResponseInvalidError,
+    RootCauseService,
+)
 from imga_api.services.word_cloud import WordCloudGenerator
 from imga_api.services.word_cloud.generator import ALLOWED_SENTIMENTS
 
@@ -53,6 +63,12 @@ _AnyMember = Depends(require_role(
     UserTenantRole.TENANT_ADMIN,
     UserTenantRole.ANALYST,
     UserTenantRole.VIEWER,
+))
+# Kök neden ÜRETİMİ para harcayan bir LLM çağrısı — okuma her üyeye
+# açık, tetikleme yönetici + analiste.
+_AdminOrAnalyst = Depends(require_role(
+    UserTenantRole.TENANT_ADMIN,
+    UserTenantRole.ANALYST,
 ))
 
 
@@ -97,6 +113,41 @@ class WordCloudWord(BaseModel):
 class WordCloudResponse(BaseModel):
     words: list[WordCloudWord]
     total_reviews_analyzed: int
+
+
+class RootCauseItemResponse(BaseModel):
+    title: str
+    description: str
+    evidence_quotes: list[str]
+    affected_surface: str
+    suggested_action: str
+    share_estimate_pct: float | None
+
+
+class RootCausePayloadResponse(BaseModel):
+    summary: str
+    root_causes: list[RootCauseItemResponse]
+
+
+class RootCauseResponse(BaseModel):
+    id: str
+    primary_category_code: str
+    perspective_code: str
+    date_from: str | None
+    date_to: str | None
+    review_count: int
+    model_provider: str
+    model_name: str
+    payload: RootCausePayloadResponse
+    created_at: str
+
+
+class RootCauseGenerateRequest(BaseModel):
+    primary_category: str
+    perspective_code: str
+    date_from: date | None = None
+    date_to: date | None = None
+    force_refresh: bool = False
 
 
 class HeatmapResponse(BaseModel):
@@ -294,6 +345,137 @@ async def get_heatmap(
             extra={"tenant_id": str(tenant_id)},
         )
         raise
+
+
+# --- kök neden (Sprint 13.1) ------------------------------------------
+
+
+@router.get(
+    "/root-cause",
+    response_model=RootCauseResponse,
+    summary="Alt kategori için en son üretilmiş kök neden analizi.",
+)
+async def get_root_cause(
+    current: Annotated[CurrentUser, _AnyMember],
+    app_session: Annotated[AsyncSession, Depends(get_app_session)],
+    primary_category: Annotated[str, Query(description="Ana kategori kodu.")],
+    perspective_code: Annotated[
+        str,
+        Query(
+            description=(
+                "Alt kategori kodu. '__unmatched__' alt kategorisi "
+                "atanmamış yorumların kovası."
+            )
+        ),
+    ],
+    date_from: date | None = None,
+    date_to: date | None = None,
+) -> RootCauseResponse:
+    """Cache -> DB sırasıyla okur. Hiç üretilmemişse 404 — frontend o
+    durumda "Analiz Oluştur" CTA'sını gösterir."""
+    tenant_id = _require_active_tenant(current)
+    try:
+        async with app_session.begin():
+            await bind_tenant(app_session, current)
+            result = await RootCauseService(
+                app_session, tenant_id, current.user_id
+            ).get_latest(
+                primary_category=primary_category,
+                perspective_code=perspective_code,
+                date_from=date_from,
+                date_to=date_to,
+            )
+    except HTTPException:
+        raise
+    except Exception:
+        _logger.exception(
+            "root-cause read failed", extra={"tenant_id": str(tenant_id)}
+        )
+        raise
+    if result is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Bu alt kategori için henüz kök neden analizi üretilmemiş.",
+        )
+    return RootCauseResponse(**result)
+
+
+@router.post(
+    "/root-cause",
+    response_model=RootCauseResponse,
+    summary="Alt kategori için kök neden analizi üret (LLM).",
+)
+async def generate_root_cause(
+    body: RootCauseGenerateRequest,
+    current: Annotated[CurrentUser, _AdminOrAnalyst],
+    app_session: Annotated[AsyncSession, Depends(get_app_session)],
+) -> RootCauseResponse:
+    """Kovadaki yorumları modele verip kök nedenleri üretir, kalıcı bir
+    satır açar ve 12 saat cache'ler.
+
+    Hata haritası:
+      * 412 — kurumun aktif LLM anahtarı yok (frontend ayarlar CTA'sı)
+      * 400 — kovada 10'dan az yorum var
+      * 422 — geçersiz ana kategori kodu
+      * 503 — tüm anahtarlar tükendi / sağlayıcı hatası
+    """
+    tenant_id = _require_active_tenant(current)
+    # Deferred raise: denetim satırı kendi savepoint'inde flush
+    # edilebilsin diye önce transaction kapanır, HTTP hatası sonra
+    # yükselir (briefing servisiyle aynı desen).
+    deferred: HTTPException | None = None
+    result: dict[str, Any] | None = None
+    try:
+        async with app_session.begin():
+            await bind_tenant(app_session, current)
+            service = RootCauseService(app_session, tenant_id, current.user_id)
+            try:
+                result = await service.generate(
+                    primary_category=body.primary_category,
+                    perspective_code=body.perspective_code,
+                    date_from=body.date_from,
+                    date_to=body.date_to,
+                    force_refresh=body.force_refresh,
+                )
+            except NoCredentialsError:
+                deferred = HTTPException(
+                    status_code=status.HTTP_412_PRECONDITION_FAILED,
+                    detail=(
+                        "LLM API anahtarı tanımlanmamış. Ayarlar > "
+                        "Entegrasyonlar üzerinden ekleyin."
+                    ),
+                )
+            except NotEnoughReviewsError as exc:
+                deferred = HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=str(exc),
+                )
+            except InvalidCategoryError as exc:
+                deferred = HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail=str(exc),
+                )
+            except (AllKeysExhaustedError, LLMError) as exc:
+                deferred = HTTPException(
+                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                    detail=f"LLM sağlayıcısına ulaşılamadı: {exc}",
+                )
+            except RootCauseResponseInvalidError as exc:
+                deferred = HTTPException(
+                    status_code=status.HTTP_502_BAD_GATEWAY,
+                    detail=f"LLM yanıtı beklenen şekilde değil: {exc}",
+                )
+    except HTTPException:
+        raise
+    except Exception:
+        _logger.exception(
+            "root-cause generate failed", extra={"tenant_id": str(tenant_id)}
+        )
+        raise
+    if deferred is not None:
+        raise deferred
+    assert result is not None  # deferred is None => generate() returned
+    return RootCauseResponse(**result)
 
 
 def _strip_for_response(payload: dict[str, Any]) -> dict[str, Any]:

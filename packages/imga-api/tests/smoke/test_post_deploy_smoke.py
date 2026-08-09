@@ -136,6 +136,7 @@ async def test_smoke_kpi_progress_reads_period_window(
                 decision_reason=None,
                 analyzed_at=in_window,
                 created_at=in_window,
+                review_date=in_window,
                 nps_score=9,
             )
             admin_session.add(r)
@@ -162,6 +163,7 @@ async def test_smoke_kpi_progress_reads_period_window(
                 decision_reason=None,
                 analyzed_at=out_window,
                 created_at=out_window,
+                review_date=out_window,
                 nps_score=0,
             )
             admin_session.add(r)

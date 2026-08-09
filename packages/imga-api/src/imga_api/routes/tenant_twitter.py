@@ -2,7 +2,7 @@
 
 "Twitter'dan Çek" entegrasyonu: kullanıcının verdiği arama terimiyle
 twitterapi.io'dan en yeni Türkçe gönderiler çekilir, şablon uyumlu bir
-CSV'ye (yorum + kaynak) yazılır ve NORMAL batch pipeline'a teslim edilir
+CSV'ye (yorum + tarih + kaynak) yazılır ve NORMAL batch pipeline'a teslim edilir
 — ilerleme/SSE/geçmiş/batch-filtresi olduğu gibi çalışır. Bu uç yalnızca
 "dosyayı kullanıcı yerine biz üretiyoruz" katmanıdır.
 """
@@ -121,7 +121,7 @@ async def import_from_twitter(
             detail="Twitter API'ye şu anda ulaşılamıyor, lütfen tekrar deneyin.",
         ) from exc
 
-    if not result.texts:
+    if not result.tweets:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=(
@@ -129,9 +129,12 @@ async def import_from_twitter(
             ),
         )
 
-    # Şablonla birebir aynı kolonlar: yorum (zorunlu) + kaynak. Dosya
-    # normal yüklemelerle aynı dizin düzenine iner; retention/reaper
-    # cron'ları ekstra kural olmadan kapsar.
+    # Şablonla birebir aynı kolonlar: yorum (zorunlu) + tarih + kaynak.
+    # ``tarih`` tweet'in atılma anıdır — parser bunu Review.review_date
+    # olarak çözer, böylece analizler gerçek gönderim tarihine oturur
+    # (çekim anına değil). Tarih çözülemeyen tweet boş bırakılır.
+    # Dosya normal yüklemelerle aynı dizin düzenine iner;
+    # retention/reaper cron'ları ekstra kural olmadan kapsar.
     dir_id = uuid4()
     job_dir = settings.batch.upload_dir / str(tenant_id) / str(dir_id)
     job_dir.mkdir(parents=True, exist_ok=True)
@@ -140,9 +143,10 @@ async def import_from_twitter(
     file_path = job_dir / file_name
     with file_path.open("w", encoding="utf-8-sig", newline="") as fh:
         writer = csv.writer(fh)
-        writer.writerow(["yorum", "kaynak"])
-        for text in result.texts:
-            writer.writerow([text, "twitter"])
+        writer.writerow(["yorum", "tarih", "kaynak"])
+        for tweet in result.tweets:
+            posted = tweet.created_at.isoformat() if tweet.created_at else ""
+            writer.writerow([tweet.text, posted, "twitter"])
     file_size = file_path.stat().st_size
 
     async with app_session.begin():
@@ -157,7 +161,7 @@ async def import_from_twitter(
             text_column="yorum",
             source_column="kaynak",
             auto_create_tickets=body.auto_create_tickets,
-            total_rows=len(result.texts),
+            total_rows=len(result.tweets),
             ip_address=_client_ip(request),
         )
 
@@ -183,13 +187,13 @@ async def import_from_twitter(
         "twitter import queued: tenant=%s term=%r found=%d/%d pages=%d",
         tenant_id,
         term,
-        len(result.texts),
+        len(result.tweets),
         body.count,
         result.pages,
     )
     return TwitterImportResponse(
         job=view,
         requested=body.count,
-        found=len(result.texts),
+        found=len(result.tweets),
         exhausted=result.exhausted,
     )

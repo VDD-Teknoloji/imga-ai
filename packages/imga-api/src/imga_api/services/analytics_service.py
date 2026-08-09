@@ -20,7 +20,7 @@ from typing import Any, Literal
 from uuid import UUID
 from zoneinfo import ZoneInfo
 
-from imga_core.config import CRISIS_SCORE_THRESHOLD
+from imga_core.config import CRISIS_SCORE_THRESHOLD, LABEL_NEGATIVE
 from imga_db.models import Category, CategoryTaxonomy, Review, Ticket, TicketState
 from sqlalchemy import and_, case, func, or_, select, text
 from sqlalchemy.dialects.postgresql import JSONB
@@ -242,6 +242,45 @@ class CompanyPerspectiveDist:
     total: int
     unmatched_count: int
     data: list[CompanyPerspectiveDistRow] = field(default_factory=list)
+
+
+# Sprint 13.1 — NULL ``company_perspective_code`` kovası. /reviews
+# filtre sözleşmesi aynı sentinel'i tanıyor (review_list_service), bu
+# yüzden drill-down satırı doğrudan derin bağlantıya çevrilebiliyor.
+UNMATCHED_PERSPECTIVE_SENTINEL = "__unmatched__"
+
+
+@dataclass(frozen=True, slots=True)
+class CategoryDrilldownRow:
+    """One sub-category bucket under a selected main category."""
+
+    code: str
+    label_tr: str
+    total: int
+    negative_count: int
+    negative_share: float
+    share: float
+
+
+@dataclass(frozen=True, slots=True)
+class CategoryDrilldown:
+    """Sub-category breakdown of ONE main category.
+
+    SAYIM SÖZLEŞMESİ (kritik): kovalar yalnız ``reviews`` kolonlarından
+    kurulur — ``WHERE primary_category = :x GROUP BY
+    company_perspective_code``. ``category_taxonomies.
+    primary_category_code`` eşlemesi burada KULLANILMAZ: tarihsel
+    perspektif kodları ana kategoriden bağımsız bir keyword
+    sezgiseliyle atandığı için (bir yorum primary=faturalama +
+    perspektif=shipment_not_arrived olabilir) eşleme üzerinden sayım
+    almak, grafikteki sayı ile satıra tıklayınca açılan /reviews
+    listesinin sayısını birbirinden ayırırdı.
+    """
+
+    primary_category: str
+    total: int
+    negative_total: int
+    data: list[CategoryDrilldownRow] = field(default_factory=list)
 
 
 @dataclass(frozen=True, slots=True)
@@ -771,14 +810,13 @@ class AnalyticsService:
 
         ``score`` is None when no NPS-bearing rows match the filter; the
         frontend renders the empty state instead of a confusing "0.0".
-        Date filtering uses ``Review.created_at`` per the partial index
-        ``ix_reviews_tenant_nps_created`` — semantically "when did we
-        ingest this NPS feedback", which is the dimension dashboards
-        track. The fold-down filter helper used by the other endpoints
-        keys on ``analyzed_at`` so we deliberately don't reuse it here.
+        Date filtering uses ``Review.review_date`` (the review's own
+        date) per the partial index ``ix_reviews_tenant_nps_review_date``
+        — a 3-month archive uploaded in one batch must spread across its
+        real months, not collapse onto the ingest day.
 
         Coverage = NPS-bearing rows / all-tenant-rows in the same window;
-        the all-rows count uses the same created_at + batch_job_id
+        the all-rows count uses the same review_date + batch_job_id
         filters so callers comparing it to total_count don't hit an
         apples-to-oranges denominator.
         """
@@ -853,8 +891,8 @@ class AnalyticsService:
         not a 0 that would smash the trend line.
 
         Now-anchored at the caller's ``now`` (or UTC now). Buckets are
-        UTC calendar months (date_trunc('month', created_at)) — same
-        timezone the partial index ``ix_reviews_tenant_nps_created``
+        UTC calendar months (date_trunc('month', review_date)) — same
+        timezone the partial index ``ix_reviews_tenant_nps_review_date``
         operates on, so the planner can stay on it.
         """
         anchor = (now or datetime.now(UTC)).date()
@@ -866,7 +904,7 @@ class AnalyticsService:
             next_month_after_anchor, datetime.min.time(), tzinfo=UTC
         )
 
-        bucket_expr = func.date_trunc("month", Review.created_at).label("bucket")
+        bucket_expr = func.date_trunc("month", Review.review_date).label("bucket")
         stmt = (
             select(
                 bucket_expr,
@@ -876,8 +914,8 @@ class AnalyticsService:
             .where(Review.tenant_id == tenant_id)
             .where(Review.deleted_at.is_(None))
             .where(Review.nps_score.is_not(None))
-            .where(Review.created_at >= window_start)
-            .where(Review.created_at < window_end_exclusive)
+            .where(Review.review_date >= window_start)
+            .where(Review.review_date < window_end_exclusive)
             .group_by(bucket_expr, Review.nps_category)
         )
         rows = (await self._session.execute(stmt)).all()
@@ -1179,6 +1217,96 @@ class AnalyticsService:
         )
 
     # ------------------------------------------------------------------
+    # 12. Hierarchical category drill-down (Sprint 13.1)
+    # ------------------------------------------------------------------
+
+    async def compute_category_drilldown(
+        self,
+        *,
+        tenant_id: UUID,
+        primary_category: str,
+        filters: AnalyticsFilters,
+        limit: int = 25,
+    ) -> CategoryDrilldown:
+        """Sub-category (company-perspective) breakdown for ONE main
+        category, with per-bucket negative counts.
+
+        Every number here comes from ``reviews`` columns only — see
+        ``CategoryDrilldown``'s docstring for why the taxonomy's
+        ``primary_category_code`` mapping is deliberately NOT part of
+        the WHERE clause. The mapping's only job is grouping the
+        classifier prompt and the settings UI.
+
+        NULL ``company_perspective_code`` rows land in the
+        ``__unmatched__`` bucket rather than being dropped — the same
+        sentinel the /reviews filter understands, so the row stays
+        click-through-able.
+        """
+        bucket = func.coalesce(
+            Review.company_perspective_code, UNMATCHED_PERSPECTIVE_SENTINEL
+        ).label("code")
+        negative = func.count().filter(
+            Review.sentiment_label == LABEL_NEGATIVE
+        ).label("neg")
+
+        rows_stmt = (
+            select(
+                bucket,
+                CategoryTaxonomy.label_tr.label("label_tr"),
+                func.count().label("cnt"),
+                negative,
+            )
+            .select_from(Review)
+            .outerjoin(
+                CategoryTaxonomy,
+                and_(
+                    CategoryTaxonomy.tenant_id == Review.tenant_id,
+                    CategoryTaxonomy.code == Review.company_perspective_code,
+                ),
+            )
+            .where(Review.tenant_id == tenant_id)
+            .where(Review.deleted_at.is_(None))
+            .where(Review.primary_category == primary_category)
+            .group_by(bucket, CategoryTaxonomy.label_tr)
+            .order_by(func.count().desc())
+            .limit(limit)
+        )
+        rows_stmt = self._apply_review_filters(rows_stmt, filters)
+        rows = (await self._session.execute(rows_stmt)).all()
+
+        totals_stmt = (
+            select(func.count().label("cnt"), negative)
+            .select_from(Review)
+            .where(Review.tenant_id == tenant_id)
+            .where(Review.deleted_at.is_(None))
+            .where(Review.primary_category == primary_category)
+        )
+        totals_stmt = self._apply_review_filters(totals_stmt, filters)
+        totals = (await self._session.execute(totals_stmt)).one()
+        total = int(totals.cnt or 0)
+        negative_total = int(totals.neg or 0)
+
+        data = [
+            CategoryDrilldownRow(
+                code=r.code,
+                label_tr=r.label_tr or r.code,
+                total=int(r.cnt),
+                negative_count=int(r.neg or 0),
+                negative_share=(
+                    round(100 * (r.neg or 0) / r.cnt, 2) if r.cnt else 0.0
+                ),
+                share=round(100 * r.cnt / total, 2) if total else 0.0,
+            )
+            for r in rows
+        ]
+        return CategoryDrilldown(
+            primary_category=primary_category,
+            total=total,
+            negative_total=negative_total,
+            data=data,
+        )
+
+    # ------------------------------------------------------------------
     # Filter helpers
     # ------------------------------------------------------------------
 
@@ -1190,16 +1318,17 @@ class AnalyticsService:
         date_to: date | None,
     ) -> Any:
         """Headline metrics + NPS endpoints filter reviews on
-        ``created_at`` (when ingested), inclusive UTC midnight bounds.
-        Same widening rule as ``_apply_nps_window``: pass a date and
-        the upper bound becomes end-of-day so 2026-03-31 captures
+        ``review_date`` (the review's own date — upload's ``tarih``
+        column, ingest moment when absent), inclusive UTC midnight
+        bounds. Same widening rule as ``_apply_nps_window``: pass a date
+        and the upper bound becomes end-of-day so 2026-03-31 captures
         2026-03-31T23:59:59Z."""
         if date_from is not None:
             from_dt = datetime.combine(date_from, datetime.min.time(), tzinfo=UTC)
-            stmt = stmt.where(Review.created_at >= from_dt)
+            stmt = stmt.where(Review.review_date >= from_dt)
         if date_to is not None:
             to_dt = datetime.combine(date_to, datetime.max.time(), tzinfo=UTC)
-            stmt = stmt.where(Review.created_at <= to_dt)
+            stmt = stmt.where(Review.review_date <= to_dt)
         return stmt
 
     def _apply_nps_window(
@@ -1223,9 +1352,9 @@ class AnalyticsService:
 
     def _apply_review_filters(self, stmt: Any, filters: AnalyticsFilters) -> Any:
         if filters.date_from is not None:
-            stmt = stmt.where(Review.analyzed_at >= filters.date_from)
+            stmt = stmt.where(Review.review_date >= filters.date_from)
         if filters.date_to is not None:
-            stmt = stmt.where(Review.analyzed_at <= filters.date_to)
+            stmt = stmt.where(Review.review_date <= filters.date_to)
         if filters.sentiment_labels:
             stmt = stmt.where(Review.sentiment_label.in_(filters.sentiment_labels))
         if filters.batch_job_id is not None:
@@ -1250,7 +1379,9 @@ class AnalyticsService:
         return stmt
 
     def _date_bucket(self, granularity: Granularity) -> Any:
-        return func.date_trunc(granularity, Review.analyzed_at)
+        # Duygu trendi ekseni yorumun kendi tarihidir; 3 aylık arşivi tek
+        # seferde yükleyen kurum tek çubuk değil gerçek dağılımı görsün.
+        return func.date_trunc(granularity, Review.review_date)
 
     def _format_bucket(self, dt: datetime, granularity: Granularity) -> str:
         if granularity == "day":

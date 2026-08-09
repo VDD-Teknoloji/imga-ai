@@ -153,6 +153,8 @@ class ReviewService:
         product_line: str | None = None,
         channel: str | None = None,
         customer_tier: str | None = None,
+        review_date: datetime | None = None,
+        perspective_override: tuple[str, str] | None = None,
     ) -> ReviewBridgeResult:
         """Persist one review row and (on the CREATE branch) one ticket.
 
@@ -165,7 +167,17 @@ class ReviewService:
         Sprint 9.4 D — the four dimension kwargs come from the batch
         upload's per-row ParsedRow (or the single-review POST body's
         dimension fields). Default None preserves the pre-9.4 contract
-        for callers that don't carry dimensions yet."""
+        for callers that don't carry dimensions yet.
+
+        ``review_date`` is the review's own date (upload's ``tarih``
+        column). None — the manual /analyze path and uploads without a
+        date column — falls back to ``moment``, i.e. ingest time.
+
+        Sprint 13.1 — ``perspective_override`` is the ``(code,
+        label_tr)`` pair the unified LLM classifier already picked for
+        this row. When present it replaces the keyword heuristic so the
+        batch worker and this bridge agree on one answer; None keeps
+        the 8.3.5.6 behaviour (compute the heuristic here)."""
         moment = now or datetime.now(UTC)
         text_hash = review_text_hash(text)
 
@@ -184,9 +196,16 @@ class ReviewService:
         # "Şirket Perspektifi" column. Both fields are None when the
         # tenant's taxonomy is empty or no keyword matched (the latter
         # is the dominant case for short / off-topic reviews).
-        perspective_code, perspective_label_tr = await self._compute_company_perspective(
-            tenant_id=tenant_id, text=text
-        )
+        perspective_code: str | None
+        perspective_label_tr: str | None
+        if perspective_override is not None:
+            perspective_code, perspective_label_tr = perspective_override
+        else:
+            perspective_code, perspective_label_tr = (
+                await self._compute_company_perspective(
+                    tenant_id=tenant_id, text=text
+                )
+            )
 
         # --- decision tree (order matters; see module docstring) ---
         decision: ReviewDecision
@@ -256,6 +275,7 @@ class ReviewService:
             ticket_id=ticket_id,
             submitted_by_user_id=actor_user_id,
             analyzed_at=moment,
+            review_date=review_date or moment,
             overrides_applied=[hit.model_dump() for hit in analysis.overrides_applied],
             nps_score=nps_score,
             company_perspective_code=perspective_code,

@@ -45,10 +45,11 @@ class ReviewListFilters:
     primary_categories: tuple[str, ...] = ()
     # Sprint 9.5 B1 — time-extract filters for the /insights heatmap
     # cell-click drilldown. Each is an integer or None; non-None
-    # values are compared against ``EXTRACT(<part> FROM created_at)``.
-    # The heatmap_generator emits matching x_keys / y_keys on the
-    # response so the frontend can wire the click without
-    # re-deriving the axis numerics.
+    # values are compared against ``EXTRACT(<part> FROM ...)`` on the
+    # same column the heatmap axis uses (saat: created_at, gun/hafta/
+    # ay: review_date). The heatmap_generator emits matching x_keys /
+    # y_keys on the response so the frontend can wire the click
+    # without re-deriving the axis numerics.
     hour_of_day: int | None = None  # 0..23
     day_of_week: int | None = None  # 0..6 (postgres DOW: 0=Sun..6=Sat)
     week_of_year: int | None = None  # 1..53
@@ -74,6 +75,9 @@ class ReviewListItem:
     batch_job_id: UUID | None
     source_type: str
     analyzed_at: datetime
+    # Yorumun kendi tarihi — liste bu kolonu gösterir, analyzed_at
+    # "ne zaman analiz edildi" olarak ikincil kalır.
+    review_date: datetime
     submitted_by_user_id: UUID | None
     # Sprint 8.3.4 — count of override layers that fired during analysis.
     # The list view only needs the count for the chip; the full trace is
@@ -105,9 +109,9 @@ class ReviewListService:
         # paginated SELECT so they stay consistent.
         conditions = [Review.tenant_id == tenant_id, Review.deleted_at.is_(None)]
         if filters.date_from is not None:
-            conditions.append(Review.analyzed_at >= filters.date_from)
+            conditions.append(Review.review_date >= filters.date_from)
         if filters.date_to is not None:
-            conditions.append(Review.analyzed_at <= filters.date_to)
+            conditions.append(Review.review_date <= filters.date_to)
         if filters.sentiment_labels:
             conditions.append(Review.sentiment_label.in_(filters.sentiment_labels))
         if filters.decisions:
@@ -154,8 +158,9 @@ class ReviewListService:
         # Sprint 9.5 B1 — heatmap cell-click drilldown. The four
         # extract conditions mirror the heatmap_generator's axis
         # expressions (``_axis_expr``) so the cell's "rows in this
-        # bucket" equation matches exactly. Created_at (not
-        # analyzed_at) is the heatmap's source column.
+        # bucket" equation matches exactly — including its column
+        # split: saat ``created_at``ten (yuklenen tarihler gun
+        # hassasiyetinde, saat yok), gun/hafta/ay ``review_date``ten.
         if filters.hour_of_day is not None:
             conditions.append(
                 func.extract("hour", Review.created_at)
@@ -163,17 +168,17 @@ class ReviewListService:
             )
         if filters.day_of_week is not None:
             conditions.append(
-                func.extract("dow", Review.created_at)
+                func.extract("dow", Review.review_date)
                 == filters.day_of_week
             )
         if filters.week_of_year is not None:
             conditions.append(
-                func.extract("week", Review.created_at)
+                func.extract("week", Review.review_date)
                 == filters.week_of_year
             )
         if filters.month is not None:
             conditions.append(
-                func.extract("month", Review.created_at)
+                func.extract("month", Review.review_date)
                 == filters.month
             )
 
@@ -182,8 +187,12 @@ class ReviewListService:
         count_stmt = select(func.count()).select_from(Review).where(where_clause)
         total: int = (await self._session.execute(count_stmt)).scalar_one()
 
+        # "created_at" sıralaması artık review_date üzerinde: liste
+        # yorumun kendi tarihini gösteriyor, ingest anına göre sıralamak
+        # kullanıcıya sırasız görünürdü. Query-string adı geriye dönük
+        # uyumluluk için korundu.
         order_col = (
-            Review.created_at
+            Review.review_date
             if filters.order_by == "created_at"
             else Review.sentiment_score
         )
@@ -224,6 +233,7 @@ class ReviewListService:
                 batch_job_id=r.Review.batch_job_id,
                 source_type="batch" if r.Review.batch_job_id is not None else "manual",
                 analyzed_at=r.Review.analyzed_at,
+                review_date=r.Review.review_date,
                 submitted_by_user_id=r.Review.submitted_by_user_id,
                 override_count=len(r.Review.overrides_applied)
                 if r.Review.overrides_applied

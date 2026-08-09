@@ -13,7 +13,8 @@ auto-records on exit if neither was called explicitly.
 
 Wire-shape for the audit row:
   * call_type — 'classification' | 'briefing' |
-    'strategic_report' | 'action_extraction' | 'okr'
+    'strategic_report' | 'action_extraction' | 'okr' |
+    'root_cause'
   * related_entity_type / related_entity_id — points at the
     review / briefing / report row this call produced.
   * prompt_template_key / version — None when the call uses the
@@ -55,6 +56,10 @@ CALL_TYPE_BRIEFING = "briefing"
 CALL_TYPE_STRATEGIC_REPORT = "strategic_report"
 CALL_TYPE_ACTION_EXTRACTION = "action_extraction"
 CALL_TYPE_OKR = "okr"
+# Sprint 13.1 — alt kategori kök neden analizi. ck_llm_call_audit_call_type
+# kısıtı migration 0040 ile genişletildi; yeni bir tip eklemeden önce
+# aynı kısıtı da güncelle.
+CALL_TYPE_ROOT_CAUSE = "root_cause"
 
 ERROR_TIMEOUT = "timeout"
 ERROR_RATE_LIMIT = "rate_limit"
@@ -304,6 +309,7 @@ __all__ = [
     "CALL_TYPE_BRIEFING",
     "CALL_TYPE_CLASSIFICATION",
     "CALL_TYPE_OKR",
+    "CALL_TYPE_ROOT_CAUSE",
     "CALL_TYPE_STRATEGIC_REPORT",
     "ERROR_ALL_KEYS_EXHAUSTED",
     "ERROR_API",

@@ -89,6 +89,7 @@ async def _seed_review_with_nps(
         }
         if created_at is not None:
             kwargs["created_at"] = created_at
+            kwargs["review_date"] = created_at
         review = Review(**kwargs)
         admin_session.add(review)
         await admin_session.flush()

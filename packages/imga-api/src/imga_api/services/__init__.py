@@ -77,6 +77,14 @@ from imga_api.services.dimension_service import (
     UnknownDimension,
     compute_metric_by_dimension,
 )
+from imga_api.services.engagement_service import (
+    DEFAULT_BANDS,
+    EngagementError,
+    EngagementRow,
+    EngagementService,
+    MonthlyMetricNotFound,
+    normalize_month,
+)
 from imga_api.services.llm_audit_service import (
     CALL_TYPE_ACTION_EXTRACTION,
     CALL_TYPE_BRIEFING,
@@ -169,6 +177,7 @@ __all__ = [
     "ACTOR_USER",
     "COMMENT_MAX_BODY_LENGTH",
     "DEDUP_WINDOW",
+    "DEFAULT_BANDS",
     "INVITATION_TTL",
     "ActionItemAlreadyArchived",
     "ActionItemError",
@@ -195,6 +204,9 @@ __all__ = [
     "CommentService",
     "CommentServiceError",
     "DuplicateTicketError",
+    "EngagementError",
+    "EngagementRow",
+    "EngagementService",
     "ForbiddenTransitionError",
     "GroupBy",
     "InvalidTransitionError",
@@ -211,6 +223,7 @@ __all__ = [
     "KpiGoalError",
     "KpiGoalNotFound",
     "KpiGoalService",
+    "MonthlyMetricNotFound",
     "ScheduleNotFound",
     "ScheduleSpec",
     "SnapshotPayload",
@@ -253,4 +266,5 @@ __all__ = [
     "UserService",
     "WindowExpiredError",
     "decide_auto_create_state",
+    "normalize_month",
 ]

@@ -201,12 +201,12 @@ def _make_scoped(
     batch_job_id: UUID | None,
 ) -> _Scoped:
     """Dashboard filtreleri (tarih aralığı + batch) için ortak where
-    seti. Tarih ekseni ``analyzed_at`` — sayfadaki analytics chart'ları
-    ile aynı (NPS bilerek ``created_at``; bkz. compute_nps_summary)."""
+    seti. Tarih ekseni ``review_date`` (yorumun kendi tarihi) —
+    sayfadaki analytics chart'ları ve NPS ile aynı eksen."""
 
     def _scoped(stmt: Select[Any]) -> Select[Any]:
         if date_from is not None:
-            stmt = stmt.where(Review.analyzed_at >= date_from)
+            stmt = stmt.where(Review.review_date >= date_from)
         if date_to is not None:
             # FE YYYY-MM-DD gönderir, FastAPI geceyarısına çözer —
             # bitiş gününü tam kapsa; aksi hâlde bitiş=bugün seçimi
@@ -214,7 +214,7 @@ def _make_scoped(
             end = date_to
             if end.time() == dt_time():
                 end = end + timedelta(days=1) - timedelta(microseconds=1)
-            stmt = stmt.where(Review.analyzed_at <= end)
+            stmt = stmt.where(Review.review_date <= end)
         if batch_job_id is not None:
             stmt = stmt.where(Review.batch_job_id == batch_job_id)
         return stmt
@@ -263,7 +263,7 @@ async def _sentiment_trend(
     session: AsyncSession, tenant_id: UUID
 ) -> SentimentTrend | None:
     """Son 30 gün vs önceki 30 gün pozitif oranı. İki pencere de
-    ``created_at`` üzerinden; önceki pencere boşsa None (trend
+    ``review_date`` üzerinden; önceki pencere boşsa None (trend
     iddia etme)."""
     now = datetime.now(UTC)
     cur_start = now - timedelta(days=30)
@@ -279,10 +279,10 @@ async def _sentiment_trend(
             )
             .where(Review.tenant_id == tenant_id)
             .where(Review.deleted_at.is_(None))
-            .where(Review.created_at >= start)
+            .where(Review.review_date >= start)
         )
         if end is not None:
-            stmt = stmt.where(Review.created_at < end)
+            stmt = stmt.where(Review.review_date < end)
         row = (await session.execute(stmt)).first()
         if row is None:
             return 0, 0

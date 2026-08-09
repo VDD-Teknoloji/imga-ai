@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import csv
 from dataclasses import replace
+from datetime import UTC, datetime
 from pathlib import Path
 from uuid import UUID
 
@@ -24,8 +25,10 @@ from imga_api.routes import tenant_twitter
 from imga_api.services import AuditService, UserService
 from imga_api.services.twitter_import import (
     TwitterFetchResult,
+    TwitterTweet,
     build_search_query,
     clean_tweet_text,
+    parse_tweet_created_at,
 )
 from imga_db.models import User, UserTenantRole
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -48,6 +51,21 @@ def test_build_search_query_excludes_official_handle() -> None:
 def test_clean_tweet_text_strips_urls_and_leading_mentions() -> None:
     raw = "@destek @kargo  Paket hâlâ gelmedi https://t.co/abc123 çok kötü"
     assert clean_tweet_text(raw) == "Paket hâlâ gelmedi çok kötü"
+
+
+def test_parse_tweet_created_at_twitter_classic_format() -> None:
+    parsed = parse_tweet_created_at("Tue Dec 10 07:00:30 +0000 2024")
+    assert parsed == datetime(2024, 12, 10, 7, 0, 30, tzinfo=UTC)
+
+
+def test_parse_tweet_created_at_iso_fallback() -> None:
+    parsed = parse_tweet_created_at("2026-05-12T10:30:00Z")
+    assert parsed == datetime(2026, 5, 12, 10, 30, tzinfo=UTC)
+
+
+@pytest.mark.parametrize("raw", [None, "", "bilinmeyen"])
+def test_parse_tweet_created_at_unparseable_is_none(raw: object) -> None:
+    assert parse_tweet_created_at(raw) is None
 
 
 # --- route yardımcıları ----------------------------------------------
@@ -98,7 +116,13 @@ async def test_twitter_import_happy_path(
         assert term == "Navlungo"
         assert count == 100
         return TwitterFetchResult(
-            texts=["kargo çok iyi geldi", "teslimat kötü ve geç"],
+            tweets=[
+                TwitterTweet(
+                    text="kargo çok iyi geldi",
+                    created_at=datetime(2026, 5, 12, 8, 15, tzinfo=UTC),
+                ),
+                TwitterTweet(text="teslimat kötü ve geç", created_at=None),
+            ],
             fetched_total=3,
             pages=1,
             exhausted=True,
@@ -126,8 +150,15 @@ async def test_twitter_import_happy_path(
     assert file_path.exists()
     with file_path.open(encoding="utf-8-sig", newline="") as fh:
         rows = list(csv.reader(fh))
-    assert rows[0] == ["yorum", "kaynak"]
-    assert rows[1] == ["kargo çok iyi geldi", "twitter"]
+    assert rows[0] == ["yorum", "tarih", "kaynak"]
+    assert rows[1] == [
+        "kargo çok iyi geldi",
+        "2026-05-12T08:15:00+00:00",
+        "twitter",
+    ]
+    # Tarihi çözülemeyen tweet boş 'tarih' hücresiyle iner — parser
+    # bunu None'a çevirir, satır yine analiz edilir.
+    assert rows[2] == ["teslimat kötü ve geç", "", "twitter"]
     assert len(rows) == 3
 
     scheduler = app.state.batch_scheduler
@@ -147,7 +178,7 @@ async def test_twitter_import_empty_results_is_422(
     async def fake_fetch(
         *, api_key: str, term: str, count: int, exclude_handle: str | None = None
     ) -> TwitterFetchResult:
-        return TwitterFetchResult(texts=[], fetched_total=0, pages=1, exhausted=True)
+        return TwitterFetchResult(tweets=[], fetched_total=0, pages=1, exhausted=True)
 
     monkeypatch.setattr(tenant_twitter, "fetch_tweets", fake_fetch)
 

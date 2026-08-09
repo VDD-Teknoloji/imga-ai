@@ -35,9 +35,11 @@ async def _insert_at(
     created_at: datetime,
     category: str = "kargo",
 ) -> Review:
-    """Direct INSERT at a controlled ``created_at`` — the heatmap
-    drilldown filters all run off ``EXTRACT(... FROM created_at)``
-    so the seeded timestamp is load-bearing."""
+    """Direct INSERT at a controlled timestamp — the heatmap drilldown
+    filters run off ``EXTRACT(...)`` so the seeded value is
+    load-bearing. ``created_at`` (saat ekseni) ve ``review_date``
+    (gün/hafta/ay ekseni) aynı ana kurulur ki tek parametreyle her
+    iki filtre de sınanabilsin."""
     async with admin_session.begin():
         await admin_session.execute(
             text("SELECT set_config('app.current_tenant_id', :t, true)"),
@@ -58,6 +60,7 @@ async def _insert_at(
             batch_job_id=None,
             analyzed_at=created_at,
             created_at=created_at,
+            review_date=created_at,
         )
         admin_session.add(r)
         await admin_session.flush()

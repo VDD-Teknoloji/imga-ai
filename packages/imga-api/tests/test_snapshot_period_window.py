@@ -37,7 +37,8 @@ async def _seed_review(
     nps_score: int | None = None,
 ) -> Review:
     """Seed one Review at a controlled created_at — direct SQL so
-    we sidestep the analyze pipeline's "now()" stamp."""
+    we sidestep the analyze pipeline's "now()" stamp. ``review_date``
+    aynı ana kurulur: snapshot penceresi bu eksende çalışıyor."""
     async with admin_session.begin():
         await admin_session.execute(
             text("SELECT set_config('app.current_tenant_id', :t, true)"),
@@ -60,6 +61,7 @@ async def _seed_review(
             analyzed_at=created_at,
             nps_score=nps_score,
             created_at=created_at,
+            review_date=created_at,
         )
         admin_session.add(review)
         await admin_session.flush()

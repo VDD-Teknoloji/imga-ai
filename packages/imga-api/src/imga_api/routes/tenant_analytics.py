@@ -17,6 +17,7 @@ from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from imga_core.categories.taxonomy import GLOBAL_CATEGORY_CODES
 from imga_db.models import UserTenantRole
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -183,6 +184,22 @@ class CompanyPerspectiveDistResponse(BaseModel):
     total: int
     unmatched_count: int
     data: list[CompanyPerspectiveDistRowResponse]
+
+
+class CategoryDrilldownRowResponse(BaseModel):
+    code: str
+    label_tr: str
+    total: int
+    negative_count: int
+    negative_share: float
+    share: float
+
+
+class CategoryDrilldownResponse(BaseModel):
+    primary_category: str
+    total: int
+    negative_total: int
+    data: list[CategoryDrilldownRowResponse]
 
 
 # --- helpers ------------------------------------------------------------
@@ -434,10 +451,12 @@ async def nps_summary(
     date_to: date | None = None,
     batch_job_id: UUID | None = None,
 ) -> NPSSummaryResponse:
-    """Aggregate NPS for the tenant + filter window. The pipeline date
-    filter for NPS keys on Review.created_at (when ingested), distinct
-    from the sentiment endpoints which key on analyzed_at — see
-    AnalyticsService.compute_nps_summary docstring."""
+    """Aggregate NPS for the tenant + filter window. Every analytics
+    endpoint — NPS included — now keys on Review.review_date (yorumun
+    kendi tarihi; ``tarih`` kolonu yoksa ingest anı). ``created_at`` /
+    ``analyzed_at`` yalnızca ingest anlamı taşıyan yerlerde kaldı:
+    dedup penceresi, "son veri girişi" ve heatmap'in SAAT ekseni
+    (yüklenen tarihler gün hassasiyetinde, saat bilgisi yok)."""
     tenant_id = _require_active_tenant(current)
     async with app_session.begin():
         await bind_tenant(app_session, current)
@@ -543,3 +562,63 @@ async def company_perspective_distribution(
         unmatched_count=result.unmatched_count,
         data=[CompanyPerspectiveDistRowResponse(**asdict(r)) for r in result.data],
     )
+
+
+@router.get(
+    "/category-drilldown",
+    response_model=CategoryDrilldownResponse,
+    summary="Alt kategori kirilimi (tek ana kategori altinda).",
+)
+async def category_drilldown(
+    current: Annotated[CurrentUser, _AnyMember],
+    app_session: Annotated[AsyncSession, Depends(get_app_session)],
+    primary_category: str = Query(
+        description="Ana kategori kodu (reviews.primary_category)."
+    ),
+    date_from: datetime | None = None,
+    date_to: datetime | None = None,
+    sentiment_labels: str | None = None,
+    source_types: str | None = None,
+    batch_job_id: UUID | None = None,
+    limit: int = Query(default=25, ge=1, le=50),
+) -> CategoryDrilldownResponse:
+    """Hiyerarsik drill-down'in ikinci seviyesi: secili ana kategori
+    altindaki alt kategoriler, her biri icin toplam + olumsuz sayisi.
+
+    Kovalar YALNIZ review kolonlarindan kurulur (primary_category
+    filtresi + company_perspective_code grubu). Taksonominin ana
+    kategori eslemesi burada kullanilmaz — bkz. AnalyticsService.
+    compute_category_drilldown. Bu sayede her satir dogrudan
+    /reviews?primary_categories=X&perspective_codes=Y baglantisina
+    cevrilebilir ve sayilar birebir tutar.
+
+    NULL perspektifli yorumlar ``__unmatched__`` kovasinda doner.
+    """
+    if primary_category not in GLOBAL_CATEGORY_CODES:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=(
+                "primary_category gecersiz; gecerli kodlar: "
+                + ", ".join(sorted(GLOBAL_CATEGORY_CODES))
+            ),
+        )
+    tenant_id = _require_active_tenant(current)
+    filters = _build_filters(
+        date_from, date_to, sentiment_labels=sentiment_labels,
+        source_types=source_types, batch_job_id=batch_job_id,
+    )
+    async with app_session.begin():
+        await bind_tenant(app_session, current)
+        result = await AnalyticsService(app_session).compute_category_drilldown(
+            tenant_id=tenant_id,
+            primary_category=primary_category,
+            filters=filters,
+            limit=limit,
+        )
+    return CategoryDrilldownResponse(
+        primary_category=result.primary_category,
+        total=result.total,
+        negative_total=result.negative_total,
+        data=[CategoryDrilldownRowResponse(**asdict(r)) for r in result.data],
+    )
+

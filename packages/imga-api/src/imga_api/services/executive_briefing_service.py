@@ -430,8 +430,8 @@ class ExecutiveBriefingService:
             # ciplak `<= date` geceyarisina cozulup bitis gununu (bugunu)
             # pencereden dusuruyordu — bugun analiz edilen veriyle brifing
             # "hic yorum yok" uretiyordu.
-            Review.created_at >= day_floor(date_from),
-            Review.created_at <= day_ceil(date_to),
+            Review.review_date >= day_floor(date_from),
+            Review.review_date <= day_ceil(date_to),
         )
         if batch_id is not None:
             stmt = stmt.where(Review.batch_job_id == batch_id)
@@ -446,8 +446,8 @@ class ExecutiveBriefingService:
             .where(
                 Review.tenant_id == self._tenant_id,
                 Review.deleted_at.is_(None),
-                Review.created_at >= day_floor(date_from),
-                Review.created_at <= day_ceil(date_to),
+                Review.review_date >= day_floor(date_from),
+                Review.review_date <= day_ceil(date_to),
             )
             .group_by(Review.primary_category)
             .order_by(func.count().desc())

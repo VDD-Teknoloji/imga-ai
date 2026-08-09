@@ -69,6 +69,7 @@ async def _seed_n_reviews(
                     ticket_id=None,
                     submitted_by_user_id=None,
                     analyzed_at=moment,
+                    review_date=moment,
                 )
             )
         admin_session.add_all(rows)

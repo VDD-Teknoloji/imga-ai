@@ -166,10 +166,10 @@ class WordCloudGenerator:
         if taxonomy_code is not None:
             stmt = stmt.where(Review.primary_category == taxonomy_code)
         if date_from is not None:
-            stmt = stmt.where(Review.created_at >= date_from)
+            stmt = stmt.where(Review.review_date >= date_from)
         if date_to is not None:
             # Gun sonu siniri (bkz. services.date_bounds).
-            stmt = stmt.where(Review.created_at <= day_ceil(date_to))
+            stmt = stmt.where(Review.review_date <= day_ceil(date_to))
         if batch_id is not None:
             stmt = stmt.where(Review.batch_job_id == batch_id)
 

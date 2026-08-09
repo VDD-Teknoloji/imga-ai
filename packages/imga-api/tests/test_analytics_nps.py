@@ -47,6 +47,9 @@ async def _seed_nps_review(
     Sets the RLS context inside the same transaction so the row lands
     in the tenant scope — mirrors test_analytics._seed for the existing
     aggregation tests.
+
+    ``created_at`` verildiğinde ``review_date`` de aynı ana kurulur:
+    NPS pencereleri/aylık trend artık review_date ekseninde.
     """
     async with admin_session.begin():
         await admin_session.execute(
@@ -72,6 +75,7 @@ async def _seed_nps_review(
         }
         if created_at is not None:
             kwargs["created_at"] = created_at
+            kwargs["review_date"] = created_at
         review = Review(**kwargs)
         admin_session.add(review)
         await admin_session.flush()

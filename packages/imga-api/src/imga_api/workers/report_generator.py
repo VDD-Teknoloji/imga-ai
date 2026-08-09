@@ -267,7 +267,7 @@ async def _fetch_rows(
             Review.deleted_at.is_(None),
         )
         review_stmt = service.apply_review_filters(review_stmt, filters).order_by(
-            Review.analyzed_at.desc()
+            Review.review_date.desc()
         )
         review_rows = list((await session.execute(review_stmt)).scalars())
 
@@ -355,10 +355,14 @@ def _sheet_reviews(
     num_fmt: Any,
 ) -> None:
     sheet = workbook.add_worksheet("Tüm Analizler")
+    # İki tarih ayrı kolonda: "Yorum Tarihi" analizin ekseni (yüklenen
+    # ``tarih`` kolonu), "Analiz Tarihi" ise yorumun ne zaman işlendiği.
     headers = [
-        "Tarih", "Metin", "Duygu", "Skor (raw)", "Skor (final)",
-        "Kategori", "Güven", "Override Katmanları", "Bilet #", "Kaynak",
+        "Yorum Tarihi", "Analiz Tarihi", "Metin", "Duygu", "Skor (raw)",
+        "Skor (final)", "Kategori", "Güven", "Override Katmanları",
+        "Bilet #", "Kaynak",
     ]
+    widths = [18, 18, 60, 12, 12, 12, 18, 10, 24, 16, 12]
     for col, label in enumerate(headers):
         sheet.write(0, col, label, header_fmt)
     sheet.freeze_panes(1, 0)
@@ -366,25 +370,26 @@ def _sheet_reviews(
 
     if not rows:
         sheet.write(1, 0, "Bu filtrelerle veri bulunamadı.")
-        _set_widths(sheet, [18, 60, 12, 12, 12, 18, 10, 24, 16, 12])
+        _set_widths(sheet, widths)
         return
 
     for r, review in enumerate(rows, start=1):
-        sheet.write_datetime(r, 0, review.analyzed_at.replace(tzinfo=None), date_fmt)
-        sheet.write_string(r, 1, review.text)
-        sheet.write_string(r, 2, review.sentiment_label)
+        sheet.write_datetime(r, 0, review.review_date.replace(tzinfo=None), date_fmt)
+        sheet.write_datetime(r, 1, review.analyzed_at.replace(tzinfo=None), date_fmt)
+        sheet.write_string(r, 2, review.text)
+        sheet.write_string(r, 3, review.sentiment_label)
         score = float(review.sentiment_score)
-        sheet.write_number(r, 3, score, num_fmt)
         sheet.write_number(r, 4, score, num_fmt)
+        sheet.write_number(r, 5, score, num_fmt)
         sheet.write_string(
-            r, 5, category_lookup.get(review.primary_category, review.primary_category),
+            r, 6, category_lookup.get(review.primary_category, review.primary_category),
         )
-        sheet.write_number(r, 6, float(review.primary_confidence), num_fmt)
-        sheet.write_string(r, 7, "")  # 8.3.4 populates override trace
-        sheet.write_string(r, 8, str(review.ticket_id) if review.ticket_id else "")
-        sheet.write_string(r, 9, "Toplu" if review.batch_job_id else "Manuel")
+        sheet.write_number(r, 7, float(review.primary_confidence), num_fmt)
+        sheet.write_string(r, 8, "")  # 8.3.4 populates override trace
+        sheet.write_string(r, 9, str(review.ticket_id) if review.ticket_id else "")
+        sheet.write_string(r, 10, "Toplu" if review.batch_job_id else "Manuel")
 
-    _set_widths(sheet, [18, 60, 12, 12, 12, 18, 10, 24, 16, 12])
+    _set_widths(sheet, widths)
 
 
 def _sheet_sentiment_summary(
@@ -580,10 +585,12 @@ def _csv_reviews(rows: list[Review], category_lookup: Mapping[str, str]) -> byte
     buf.write("﻿")  # UTF-8 BOM
     writer = csv.writer(buf)
     writer.writerow([
-        "Tarih", "Metin", "Duygu", "Skor", "Kategori", "Güven", "Bilet #", "Kaynak",
+        "Yorum Tarihi", "Analiz Tarihi", "Metin", "Duygu", "Skor",
+        "Kategori", "Güven", "Bilet #", "Kaynak",
     ])
     for r in rows:
         writer.writerow([
+            r.review_date.strftime("%d.%m.%Y %H:%M"),
             r.analyzed_at.strftime("%d.%m.%Y %H:%M"),
             r.text,
             r.sentiment_label,

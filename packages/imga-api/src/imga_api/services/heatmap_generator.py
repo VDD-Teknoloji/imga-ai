@@ -174,10 +174,10 @@ class HeatmapGenerator:
             .group_by("x", "y")
         )
         if date_from is not None:
-            stmt = stmt.where(Review.created_at >= date_from)
+            stmt = stmt.where(Review.review_date >= date_from)
         if date_to is not None:
             # Gun sonu siniri (bkz. services.date_bounds).
-            stmt = stmt.where(Review.created_at <= day_ceil(date_to))
+            stmt = stmt.where(Review.review_date <= day_ceil(date_to))
         if batch_id is not None:
             stmt = stmt.where(Review.batch_job_id == batch_id)
         # NPS metric ignores rows where nps_score is NULL — without
@@ -266,15 +266,23 @@ class HeatmapGenerator:
     @staticmethod
     def _axis_expr(axis: HeatmapAxis) -> tuple[Any, str]:
         """Return ``(SQL expression, resolver_kind)``. ``resolver_kind``
-        tells _resolve_axis_labels which label table to use."""
+        tells _resolve_axis_labels which label table to use.
+
+        Eksen ayrimi bilerek: gun/hafta/ay yorumun kendi tarihinden
+        (``review_date``) okunur; SAAT ise ``created_at``te kalir.
+        Yuklenen ``tarih`` kolonu gun hassasiyetinde — saat bilgisi
+        yok, hepsi 00:00'a duser ve saat heatmap'i tek satira cokerdi.
+        Saat ekseni bu yuzden ingest anini gostermeye devam eder.
+        ``review_list_service`` drilldown filtreleri bu ayrimi birebir
+        aynalar."""
         if axis == "hour_of_day":
             return func.extract("hour", Review.created_at), "hour"
         if axis == "day_of_week":
-            return func.extract("dow", Review.created_at), "dow"
+            return func.extract("dow", Review.review_date), "dow"
         if axis == "week_of_year":
-            return func.extract("week", Review.created_at), "week"
+            return func.extract("week", Review.review_date), "week"
         if axis == "month":
-            return func.extract("month", Review.created_at), "month"
+            return func.extract("month", Review.review_date), "month"
         if axis == "taxonomy_code":
             return Review.primary_category, "taxonomy"
         raise ValueError(f"unknown axis {axis!r}")

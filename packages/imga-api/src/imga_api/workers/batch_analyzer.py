@@ -54,6 +54,7 @@ from imga_core.llm import LLMProvider, RotatingGeminiProvider
 from imga_core.llm.unified_classifier import (
     FewShotExample,
     GeminiUnifiedEngine,
+    PerspectiveOptions,
 )
 from imga_core.text_utils import review_text_hash
 from imga_db import create_engine, create_session_factory, set_current_tenant
@@ -781,6 +782,10 @@ async def _process_chunk(
         # örnekleriyle). Motor üretemezse klasik yola düşülür: BERT
         # zinciri (uzak Modal → lazy lokal) + keyword/LLM classifier.
         semantic_hits: dict[int, Any] = {}
+        # Sprint 13.1 — LLM'in seçtiği alt kategori kodları, satır
+        # sırasına göre. Klasik yola düşülürse boş kalır ve persist
+        # döngüsü tümüyle keyword sezgiseline güvenir.
+        unified_perspectives: list[str | None] = []
         if unified_ctx is not None:
             try:
                 few_shot, semantic_hits = await _few_shot_for_chunk(
@@ -792,6 +797,8 @@ async def _process_chunk(
                     available_categories=unified_ctx.available_categories,
                     few_shot=few_shot,
                     stats_sink=classifier_stats,
+                    perspective_options=unified_ctx.perspective_options,
+                    perspective_sink=unified_perspectives,
                 )
             except Exception as exc:
                 log.warning(
@@ -800,6 +807,7 @@ async def _process_chunk(
                     exc,
                 )
                 analyses = None
+                unified_perspectives = []
         if analyses is None:
             analyses = await pipeline.analyze_batch_async(
                 texts,
@@ -952,12 +960,17 @@ async def _process_chunk(
         # which has its own fetch — duplicate work, but keeps both
         # paths self-sufficient and the read is cheap (21 rows max,
         # B-tree index on tenant_id).
-        taxonomy_payload = await _load_taxonomy_payload(app_session, tenant_id)
+        taxonomy_snapshot = await _load_taxonomy_payload(app_session, tenant_id)
 
-        for parsed, analysis in zip(valid_rows, analyses, strict=True):
+        for row_index, (parsed, analysis) in enumerate(
+            zip(valid_rows, analyses, strict=True)
+        ):
             from imga_core import review_text_hash
 
             text_hash = review_text_hash(parsed.text)
+            # Tek an, üç dal: yorumun kendi tarihi yoksa review_date de
+            # analyzed_at de aynı ingest anına düşsün.
+            row_moment = datetime.now(UTC)
 
             # Sprint 8.3.5.6. Compute the heuristic perspective once per
             # row, reused below for whichever insertion path fires. The
@@ -965,12 +978,33 @@ async def _process_chunk(
             # its own taxonomy load + heuristic pass; we let that path
             # win for the row it owns and only persist this value on the
             # two direct-insert branches (intra-batch dedup + opt-out).
-            perspective_hit = apply_company_heuristic(
-                parsed.text, taxonomy=taxonomy_payload
+            # Sprint 13.1 — birleşik sınıflandırıcı bir alt kategori
+            # kodu verdiyse (ve kod hâlâ kurumun taksonomisindeyse) o
+            # kazanır; aksi halde davranış 8.3.5.6'daki gibi kalır.
+            llm_perspective = (
+                unified_perspectives[row_index]
+                if row_index < len(unified_perspectives)
+                else None
             )
-            perspective_code = (
-                perspective_hit.code if perspective_hit is not None else None
-            )
+            perspective_code: str | None
+            perspective_label: str | None
+            if llm_perspective is not None and (
+                llm_perspective in taxonomy_snapshot.labels
+            ):
+                perspective_code = llm_perspective
+                perspective_label = taxonomy_snapshot.labels[llm_perspective]
+            else:
+                perspective_hit = apply_company_heuristic(
+                    parsed.text, taxonomy=taxonomy_snapshot.heuristic_entries
+                )
+                perspective_code = (
+                    perspective_hit.code if perspective_hit is not None else None
+                )
+                perspective_label = (
+                    perspective_hit.label_tr
+                    if perspective_hit is not None
+                    else None
+                )
 
             # Intra-batch dedup — already seen this text in this job.
             # Sprint 9.0.5-A — wrap the check-and-add in dedup_lock so
@@ -1006,7 +1040,8 @@ async def _process_chunk(
                     ticket_id=None,
                     submitted_by_user_id=triggered_by_user_id,
                     batch_job_id=job_id,
-                    analyzed_at=datetime.now(UTC),
+                    analyzed_at=row_moment,
+                    review_date=parsed.review_date or row_moment,
                     overrides_applied=[hit.model_dump() for hit in analysis.overrides_applied],
                     nps_score=parsed.nps_score,
                     company_perspective_code=perspective_code,
@@ -1034,6 +1069,14 @@ async def _process_chunk(
                         product_line=parsed.product_line,
                         channel=parsed.channel,
                         customer_tier=parsed.customer_tier,
+                        review_date=parsed.review_date,
+                        perspective_override=(
+                            (perspective_code, perspective_label)
+                            if llm_perspective is not None
+                            and perspective_code is not None
+                            and perspective_label is not None
+                            else None
+                        ),
                     )
                 except Exception as exc:
                     log.exception("row %s record_and_decide", parsed.row_number)
@@ -1086,7 +1129,8 @@ async def _process_chunk(
                     ticket_id=None,
                     submitted_by_user_id=triggered_by_user_id,
                     batch_job_id=job_id,
-                    analyzed_at=datetime.now(UTC),
+                    analyzed_at=row_moment,
+                    review_date=parsed.review_date or row_moment,
                     overrides_applied=[hit.model_dump() for hit in analysis.overrides_applied],
                     nps_score=parsed.nps_score,
                     company_perspective_code=perspective_code,
@@ -1347,6 +1391,11 @@ class UnifiedJobContext:
     available_categories: list[str]
     store: Any  # CorrectionStore — imga_api.services.correction_store
     keys: list[Any]  # list[GeminiKey] — embedding çağrıları için
+    # Sprint 13.1 — ana kategori başına alt kategori seçenekleri;
+    # prompt'a girer, motor da dönen kodu bu listeye karşı doğrular.
+    # Boş sözlük = kurumun eşlenmiş alt kategorisi yok; prompt bölümü
+    # hiç yazılmaz ve her satır keyword sezgiseline düşer.
+    perspective_options: PerspectiveOptions = field(default_factory=dict)
 
 
 def _unified_enabled() -> bool:
@@ -1393,6 +1442,11 @@ async def _build_unified_context(
                 session, tenant_id
             )
             store = await load_correction_store(session, tenant_id)
+            # Sprint 13.1 — alt kategori seçenekleri job başında bir
+            # kez okunur (prompt payload'ı, chunk'lar arası sabit).
+            taxonomy_snapshot = await _load_taxonomy_payload(
+                session, tenant_id
+            )
             # Sprint 11.3 — /settings/prompts override'ı: tenant
             # 'unified_classifier' şablonunu düzenlediyse system
             # prompt oradan akar (user prompt yapısını kod kurar).
@@ -1461,6 +1515,7 @@ async def _build_unified_context(
         available_categories=list(GLOBAL_CATEGORY_CODES),
         store=store,
         keys=embedding_keys,
+        perspective_options=taxonomy_snapshot.perspective_options,
     )
 
 
@@ -1621,32 +1676,67 @@ async def _fetch_dimension_mapping(
     return {dim: col for dim, col in rows if col}
 
 
+@dataclass(frozen=True, slots=True)
+class TenantTaxonomySnapshot:
+    """One read of ``category_taxonomies``, shaped for its three
+    consumers (Sprint 13.1).
+
+      * ``heuristic_entries`` — ``apply_company_heuristic``'in
+        beklediği list-of-dicts. Tarihsel davranışı korumak için
+        ``is_active`` filtresi YOK (sezgisel bu payload'ı 8.3.5.6'dan
+        beri böyle görüyor).
+      * ``perspective_options`` — birleşik sınıflandırıcı prompt'u:
+        ana kategori -> [(alt kod, etiket)]. Yalnız AKTİF ve ana
+        kategoriye eşlenmiş satırlar.
+      * ``labels`` — kod -> Türkçe etiket; LLM'den gelen alt kategori
+        kodunun ``company_perspective_label_tr`` karşılığı için.
+    """
+
+    heuristic_entries: list[TaxonomyEntry]
+    perspective_options: PerspectiveOptions
+    labels: dict[str, str]
+
+
 async def _load_taxonomy_payload(
     session: AsyncSession, tenant_id: UUID
-) -> list[TaxonomyEntry]:
-    """Read the tenant's CategoryTaxonomy rows and shape them as the
-    list-of-dicts payload ``apply_company_heuristic`` expects.
+) -> TenantTaxonomySnapshot:
+    """Read the tenant's CategoryTaxonomy rows once per chunk / job.
 
-    Returns ``[]`` when the tenant has no taxonomy (legacy / pre-8.3.5.5
-    tenants that never landed via ``TenantService.create``); the
-    heuristic short-circuits to ``None`` on an empty list.
+    Returns an empty snapshot when the tenant has no taxonomy (legacy /
+    pre-8.3.5.5 tenants that never landed via ``TenantService.create``);
+    the heuristic short-circuits to ``None`` on an empty list and the
+    classifier prompt simply omits the sub-category section.
     """
     stmt = select(
         CategoryTaxonomy.code,
         CategoryTaxonomy.label_tr,
         CategoryTaxonomy.keywords,
         CategoryTaxonomy.priority,
+        CategoryTaxonomy.primary_category_code,
+        CategoryTaxonomy.is_active,
     ).where(CategoryTaxonomy.tenant_id == tenant_id)
     rows = (await session.execute(stmt)).all()
-    return [
-        TaxonomyEntry(
-            code=r.code,
-            label_tr=r.label_tr,
-            keywords=list(r.keywords),
-            priority=r.priority,
+
+    entries: list[TaxonomyEntry] = []
+    options: PerspectiveOptions = {}
+    labels: dict[str, str] = {}
+    for r in rows:
+        entries.append(
+            TaxonomyEntry(
+                code=r.code,
+                label_tr=r.label_tr,
+                keywords=list(r.keywords),
+                priority=r.priority,
+            )
         )
-        for r in rows
-    ]
+        labels[r.code] = r.label_tr
+        if r.is_active and r.primary_category_code:
+            options.setdefault(r.primary_category_code, []).append(
+                (r.code, r.label_tr)
+            )
+    return TenantTaxonomySnapshot(
+        heuristic_entries=entries, perspective_options=options, labels=labels
+    )
 
 
 __all__ = [

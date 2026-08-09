@@ -85,6 +85,9 @@ class ReviewItemResponse(BaseModel):
     batch_job_id: UUID | None
     source_type: str
     analyzed_at: datetime
+    # Yorumun kendi tarihi (yüklemedeki ``tarih`` kolonu; yoksa ingest
+    # anı). Liste bu tarihi gösterir, analyzed_at ikincil kalır.
+    review_date: datetime
     submitted_by_user_id: UUID | None
     override_count: int
     company_perspective_code: str | None = None
@@ -128,6 +131,7 @@ class ReviewDetailResponse(BaseModel):
     text: str
     text_hash: str
     analyzed_at: datetime
+    review_date: datetime
     source_type: str
     batch_job_id: UUID | None
     sentiment: SentimentBlock
@@ -290,6 +294,7 @@ async def get_review(
             text=review.text,
             text_hash=review.text_hash,
             analyzed_at=review.analyzed_at,
+            review_date=review.review_date,
             source_type="batch" if review.batch_job_id else "manual",
             batch_job_id=review.batch_job_id,
             sentiment=SentimentBlock(
@@ -489,6 +494,7 @@ def _to_item_response(item: ReviewListItem) -> ReviewItemResponse:
         batch_job_id=item.batch_job_id,
         source_type=item.source_type,
         analyzed_at=item.analyzed_at,
+        review_date=item.review_date,
         submitted_by_user_id=item.submitted_by_user_id,
         override_count=item.override_count,
         company_perspective_code=item.company_perspective_code,

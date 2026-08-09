@@ -68,6 +68,9 @@ async def _seed(
             submitted_by_user_id=None,
             batch_job_id=batch_job_id,
             analyzed_at=analyzed_at or datetime.now(UTC),
+            # Analitik ekseni review_date; testler tarihi analyzed_at
+            # ile kurguladığı için ikisi aynı ana sabitleniyor.
+            review_date=analyzed_at or datetime.now(UTC),
             overrides_applied=overrides_applied,
         )
         admin_session.add(review)

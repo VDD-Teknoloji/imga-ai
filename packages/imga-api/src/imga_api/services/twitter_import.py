@@ -11,6 +11,7 @@ from __future__ import annotations
 import asyncio
 import re
 from dataclasses import dataclass
+from datetime import UTC, datetime
 
 import httpx
 
@@ -25,19 +26,53 @@ _URL_RE = re.compile(r"https?://\S+")
 _LEADING_MENTIONS_RE = re.compile(r"^(?:@\w+\s+)+")
 _WS_RE = re.compile(r"\s+")
 
+# twitterapi.io tweet'in atılma anını Twitter'ın klasik biçiminde
+# döner ("Tue Dec 10 07:00:30 +0000 2024"). ISO da görülebiliyor, o
+# yüzden iki deneme.
+_TWITTER_DATE_FORMAT = "%a %b %d %H:%M:%S %z %Y"
+
 
 class TwitterFetchError(Exception):
     """twitterapi.io'ya ilk sayfada bile ulaşılamadı (ağ / auth / kota)."""
 
 
 @dataclass(frozen=True, slots=True)
+class TwitterTweet:
+    """Tek tweet: temizlenmiş metin + atılma anı.
+
+    ``created_at`` None ise tarih çözülemedi — batch pipeline yorumun
+    kendi tarihi olarak ingest anına düşer (yorum kaybolmaz)."""
+
+    text: str
+    created_at: datetime | None
+
+
+@dataclass(frozen=True, slots=True)
 class TwitterFetchResult:
-    texts: list[str]
+    tweets: list[TwitterTweet]
     fetched_total: int
     pages: int
     # True → sayfalama bitti; istenen sayıya ulaşılamadıysa X'te bu
     # sorgu için daha fazla Türkçe sonuç yok demektir.
     exhausted: bool
+
+
+def parse_tweet_created_at(raw: object) -> datetime | None:
+    """Tweet zaman damgasını UTC datetime'a çevir; olmuyorsa None."""
+    if raw is None:
+        return None
+    text = str(raw).strip()
+    if not text:
+        return None
+    try:
+        return datetime.strptime(text, _TWITTER_DATE_FORMAT).astimezone(UTC)
+    except ValueError:
+        pass
+    try:
+        parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=UTC)
 
 
 def build_search_query(term: str, exclude_handle: str | None) -> str:
@@ -65,14 +100,14 @@ async def fetch_tweets(
     count: int,
     exclude_handle: str | None = None,
 ) -> TwitterFetchResult:
-    """En yeni tweetlerden ``count`` temiz metin topla.
+    """En yeni tweetlerden ``count`` temiz metin + tarih topla.
 
     İlk sayfa hatası ``TwitterFetchError`` olarak yükselir; sonraki
     sayfalardaki hatalar eldeki kısmi sonuçla sessizce döner (yarım
     veri, sıfır veriden iyidir — batch pipeline gerisini halleder).
     """
     query = build_search_query(term, exclude_handle)
-    texts: list[str] = []
+    tweets: list[TwitterTweet] = []
     seen: set[str] = set()
     fetched_total = 0
     pages = 0
@@ -80,7 +115,7 @@ async def fetch_tweets(
     exhausted = False
 
     async with httpx.AsyncClient(timeout=httpx.Timeout(25.0)) as client:
-        while len(texts) < count and pages < MAX_PAGES:
+        while len(tweets) < count and pages < MAX_PAGES:
             params: dict[str, str] = {"query": query, "queryType": "Latest"}
             if cursor:
                 params["cursor"] = cursor
@@ -100,8 +135,15 @@ async def fetch_tweets(
                 key = cleaned.lower()
                 if len(cleaned) >= MIN_TEXT_LENGTH and key not in seen:
                     seen.add(key)
-                    texts.append(cleaned)
-                    if len(texts) >= count:
+                    tweets.append(
+                        TwitterTweet(
+                            text=cleaned,
+                            created_at=parse_tweet_created_at(
+                                item.get("createdAt") or item.get("created_at")
+                            ),
+                        )
+                    )
+                    if len(tweets) >= count:
                         break
             pages += 1
 
@@ -112,7 +154,7 @@ async def fetch_tweets(
             await asyncio.sleep(PAGE_DELAY_SECONDS)
 
     return TwitterFetchResult(
-        texts=texts,
+        tweets=tweets,
         fetched_total=fetched_total,
         pages=pages,
         exhausted=exhausted,

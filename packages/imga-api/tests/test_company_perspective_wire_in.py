@@ -225,6 +225,7 @@ async def _seed_review_with_perspective(
             ticket_id=None,
             submitted_by_user_id=None,
             analyzed_at=when or datetime.now(UTC),
+            review_date=when or datetime.now(UTC),
             company_perspective_code=perspective_code,
         )
         admin_session.add(review)

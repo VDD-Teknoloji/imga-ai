@@ -308,7 +308,8 @@ async def _resolve_current_values(
     The compute path is metric-specific: NPS hits AnalyticsService
     (which already understands ``date_from`` / ``date_to``);
     review_volume + manual_review_rate run small inline queries
-    that filter on ``Review.created_at`` against the goal's window."""
+    that filter on ``Review.review_date`` (yorumun kendi tarihi)
+    against the goal's window."""
     out: dict[UUID, float] = {}
     # Sprint 9.4 B — AnalyticsService.__init__ now takes (session,)
     # only (the second arg historically held an AuditService that the
@@ -335,8 +336,8 @@ async def _resolve_current_values(
                     .select_from(Review)
                     .where(Review.tenant_id == tenant_id)
                     .where(Review.deleted_at.is_(None))
-                    .where(func.date(Review.created_at) >= date_from)
-                    .where(func.date(Review.created_at) <= date_to)
+                    .where(func.date(Review.review_date) >= date_from)
+                    .where(func.date(Review.review_date) <= date_to)
                 )
             ).scalar_one() or 0
             out[goal.id] = float(total)
@@ -351,8 +352,8 @@ async def _resolve_current_values(
                     .select_from(Review)
                     .where(Review.tenant_id == tenant_id)
                     .where(Review.deleted_at.is_(None))
-                    .where(func.date(Review.created_at) >= date_from)
-                    .where(func.date(Review.created_at) <= date_to)
+                    .where(func.date(Review.review_date) >= date_from)
+                    .where(func.date(Review.review_date) <= date_to)
                     .where(
                         Review.decision.in_(
                             ("skipped_threshold", "skipped_belirsiz")
@@ -366,8 +367,8 @@ async def _resolve_current_values(
                     .select_from(Review)
                     .where(Review.tenant_id == tenant_id)
                     .where(Review.deleted_at.is_(None))
-                    .where(func.date(Review.created_at) >= date_from)
-                    .where(func.date(Review.created_at) <= date_to)
+                    .where(func.date(Review.review_date) >= date_from)
+                    .where(func.date(Review.review_date) <= date_to)
                 )
             ).scalar_one() or 0
             out[goal.id] = (

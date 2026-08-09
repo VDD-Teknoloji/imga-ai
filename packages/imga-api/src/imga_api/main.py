@@ -60,6 +60,9 @@ from imga_api.routes import tenant_kpi_goals as tenant_kpi_goals_routes
 from imga_api.routes import tenant_llm_audit as tenant_llm_audit_routes
 from imga_api.routes import tenant_llm_credentials as tenant_llm_credentials_routes
 from imga_api.routes import (
+    tenant_monthly_metrics as tenant_monthly_metrics_routes,
+)
+from imga_api.routes import (
     tenant_pending_webhooks as tenant_pending_webhooks_routes,
 )
 from imga_api.routes import tenant_profile as tenant_profile_routes
@@ -79,7 +82,13 @@ from imga_api.routes import (
 from imga_api.routes import tenant_trend_alerts as tenant_trend_alerts_routes
 from imga_api.routes import tenant_twitter as tenant_twitter_routes
 from imga_api.routes import tickets as tickets_routes
+from imga_api.routes.admin import (
+    engagement_bands as admin_engagement_bands_routes,
+)
 from imga_api.routes.admin import invitations as admin_invitation_routes
+from imga_api.routes.admin import (
+    llm_credentials as admin_llm_credentials_routes,
+)
 from imga_api.routes.admin import (
     prompt_templates as admin_prompt_templates_routes,
 )
@@ -399,6 +408,8 @@ app.include_router(tenant_executive_briefings_routes.router)
 app.include_router(tenant_briefing_schedules_routes.router)
 app.include_router(tenant_action_items_routes.router)
 app.include_router(tenant_kpi_goals_routes.router)
+app.include_router(tenant_monthly_metrics_routes.router)
+app.include_router(tenant_monthly_metrics_routes.engagement_router)
 app.include_router(tenant_trend_alerts_routes.router)
 app.include_router(tickets_routes.router)
 # Sprint 8.3.6.5 — strategic reports + LLM credentials + tenant profile.
@@ -407,7 +418,9 @@ app.include_router(tenant_llm_credentials_routes.router)
 app.include_router(tenant_strategic_reports_routes.router)
 app.include_router(tenant_pending_webhooks_routes.router)
 app.include_router(admin_tenant_routes.router)
+app.include_router(admin_engagement_bands_routes.router)
 app.include_router(admin_invitation_routes.router)
+app.include_router(admin_llm_credentials_routes.router)
 app.include_router(admin_prompt_templates_routes.router)
 app.include_router(public_invitation_routes.router)
 # Sprint 9.7 — imga.ai marketing-site trial proxy.

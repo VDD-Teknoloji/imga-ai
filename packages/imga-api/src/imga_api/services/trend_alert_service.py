@@ -279,8 +279,8 @@ class TrendAlertService:
         ).where(
             Review.tenant_id == tenant_id,
             Review.deleted_at.is_(None),
-            Review.created_at >= start,
-            Review.created_at < end,
+            Review.review_date >= start,
+            Review.review_date < end,
         )
         row = (await self._session.execute(stmt)).one()
         cnt = int(row.cnt or 0)

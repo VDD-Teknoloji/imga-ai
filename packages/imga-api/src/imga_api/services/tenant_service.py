@@ -106,6 +106,7 @@ class TenantService:
                     label_tr=entry["label_tr"],
                     keywords=list(entry["keywords"]),
                     priority=entry["priority"],
+                    primary_category_code=entry["primary_category_code"],
                     is_default_seed=True,
                 )
             )

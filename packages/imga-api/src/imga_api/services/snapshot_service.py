@@ -131,7 +131,12 @@ class SnapshotService:
         cached: ExecutiveSnapshot,
     ) -> bool:
         """Stale if a Review row newer than the cached cursor exists.
-        Empty tenants stay fresh (cursor None, no upstream rows)."""
+        Empty tenants stay fresh (cursor None, no upstream rows).
+
+        Cursor bilerek ``created_at`` (ingest anı) üzerinde: geçmiş
+        tarihli bir arşiv yüklendiğinde en büyük ``review_date`` hâlâ
+        eski satır olabilirdi ve cache "taze" sanılıp hiç
+        yenilenmezdi."""
         stmt = (
             select(Review.id)
             .where(Review.tenant_id == tenant_id)
@@ -156,9 +161,9 @@ class SnapshotService:
         days = _PERIOD_DAYS[period]
         date_from = snapshot_date - timedelta(days=days)
         # Sprint 9.4 C — full-day inclusion. Pre-9.4 the SQL bound
-        # ``Review.created_at <= snapshot_date`` cast date → midnight
-        # so reviews created at 14:00 on the snapshot day fell out.
-        # Use explicit datetime bounds covering the entire day.
+        # ``Review.review_date <= snapshot_date`` cast date → midnight
+        # so reviews dated 14:00 on the snapshot day fell out. Use
+        # explicit datetime bounds covering the entire day.
         date_from_dt = datetime.combine(
             date_from, datetime.min.time(), tzinfo=UTC
         )
@@ -175,8 +180,8 @@ class SnapshotService:
             .where(Review.tenant_id == tenant_id)
             .where(Review.deleted_at.is_(None))
             .where(Review.nps_score.is_not(None))
-            .where(Review.created_at >= date_from_dt)
-            .where(Review.created_at <= date_to_dt)
+            .where(Review.review_date >= date_from_dt)
+            .where(Review.review_date <= date_to_dt)
             .group_by(Review.nps_category)
         )
         per_bucket = {"detractor": 0, "passive": 0, "promoter": 0}
@@ -195,8 +200,8 @@ class SnapshotService:
             .select_from(Review)
             .where(Review.tenant_id == tenant_id)
             .where(Review.deleted_at.is_(None))
-            .where(Review.created_at >= date_from_dt)
-            .where(Review.created_at <= date_to_dt)
+            .where(Review.review_date >= date_from_dt)
+            .where(Review.review_date <= date_to_dt)
         )
         period_count = (
             await self._session.execute(period_total_stmt)

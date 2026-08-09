@@ -60,6 +60,8 @@ async def _insert_review(
         submitted_by_user_id=None,
         batch_job_id=batch_job_id,
         analyzed_at=analyzed_at or datetime.now(UTC),
+        # Liste sıralaması/tarih filtresi review_date ekseninde.
+        review_date=analyzed_at or datetime.now(UTC),
         overrides_applied=overrides_applied,
     )
     session.add(review)

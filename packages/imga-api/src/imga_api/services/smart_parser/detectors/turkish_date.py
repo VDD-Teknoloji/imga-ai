@@ -4,13 +4,21 @@ Sprint 8.3.8. Recognises the three formats real Türkçe CSV exports
 ship: ``DD/MM/YYYY``, ``DD.MM.YYYY``, and ``DD <Türkçe ay> YYYY``
 (``1 Ocak 2026``). 4-digit year is mandatory — ``DD/MM/YY`` is
 ambiguous enough that we'd rather miss the column than guess wrong.
+
+``DATE_HEADER_PATTERNS`` + ``parse_date_value`` are public because the
+batch parser (``workers.file_parser``) resolves the upload's ``tarih``
+kolonunu aynı kurallarla çözüyor — önizlemede "bu kolon tarih" diyip
+gerçek parse'ta başka bir liste kullanmak kaçınılmaz olarak
+sapardı, o yüzden tek kaynak burası.
 """
 
 from __future__ import annotations
 
 import re
+from datetime import UTC, date, datetime
 from typing import Final
 
+from imga_api.services.date_bounds import day_floor
 from imga_api.services.smart_parser.base import (
     Detector,
     header_matches_any,
@@ -18,7 +26,7 @@ from imga_api.services.smart_parser.base import (
 )
 from imga_api.services.smart_parser.types import DetectorResult, FieldName
 
-_HEADER_PATTERNS: Final[tuple[str, ...]] = (
+DATE_HEADER_PATTERNS: Final[tuple[str, ...]] = (
     "tarih",
     "date",
     "created at",
@@ -56,6 +64,86 @@ _TR_MONTH_RE: Final[re.Pattern[str]] = re.compile(
     r"^\d{1,2}\s+(?:" + "|".join(_TR_MONTHS) + r")\s+\d{4}$"
 )
 
+# Parse tarafı: gün-ilk sayısal biçimler, isteğe bağlı saat ekiyle.
+_DAY_FIRST_FORMATS: Final[tuple[str, ...]] = (
+    "%d.%m.%Y",
+    "%d.%m.%Y %H:%M",
+    "%d.%m.%Y %H:%M:%S",
+    "%d/%m/%Y",
+    "%d/%m/%Y %H:%M",
+    "%d/%m/%Y %H:%M:%S",
+)
+_TR_MONTH_CAPTURE_RE: Final[re.Pattern[str]] = re.compile(
+    r"^(\d{1,2})\s+(" + "|".join(_TR_MONTHS) + r")\s+(\d{4})$"
+)
+_ASCII_FOLD: Final[tuple[tuple[str, str], ...]] = (
+    ("ı", "i"),
+    ("ö", "o"),
+    ("ü", "u"),
+    ("ç", "c"),
+    ("ş", "s"),
+    ("ğ", "g"),
+)
+
+
+def _fold(value: str) -> str:
+    folded = value.lower()
+    for tr_ch, ascii_ch in _ASCII_FOLD:
+        folded = folded.replace(tr_ch, ascii_ch)
+    return folded
+
+
+def parse_date_value(raw: object) -> datetime | None:
+    """Tek bir hücreyi timezone-aware UTC datetime'a çevir; olmuyorsa None.
+
+    Kabul edilenler: openpyxl'in döndürdüğü native ``datetime``/``date``
+    hücreleri, ISO (``YYYY-MM-DD`` ve tam timestamp), ``DD.MM.YYYY``,
+    ``DD/MM/YYYY`` (ikisi de isteğe bağlı saatle) ve ``DD <Türkçe ay>
+    YYYY``. Naive değerler UTC sayılır; saat taşımayan değerler gün
+    başına (``day_floor``) sabitlenir ki aynı günün satırları aynı
+    bucket'a düşsün.
+
+    None dönmesi hata değildir — çağıran satırı reddetmez, yalnızca
+    yorumun kendi tarihi bilinmiyor demektir.
+    """
+    if raw is None:
+        return None
+    if isinstance(raw, datetime):
+        return raw if raw.tzinfo is not None else raw.replace(tzinfo=UTC)
+    if isinstance(raw, date):
+        return day_floor(raw)
+
+    text = str(raw).strip()
+    if not text:
+        return None
+
+    try:
+        iso = datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError:
+        iso = None
+    if iso is not None:
+        return iso if iso.tzinfo is not None else iso.replace(tzinfo=UTC)
+
+    for fmt in _DAY_FIRST_FORMATS:
+        try:
+            # DTZ007: biçimlerde %z yok çünkü yüklenen dosyalar saat
+            # dilimi taşımıyor; naive sonuç hemen altta UTC'ye bağlanıyor.
+            parsed = datetime.strptime(text, fmt)  # noqa: DTZ007
+        except ValueError:
+            continue
+        return parsed.replace(tzinfo=UTC)
+
+    match = _TR_MONTH_CAPTURE_RE.match(_fold(text))
+    if match is not None:
+        day, month_name, year = match.groups()
+        try:
+            return day_floor(
+                date(int(year), _TR_MONTHS.index(month_name) + 1, int(day))
+            )
+        except ValueError:
+            return None
+    return None
+
 
 class TurkishDateDetector(Detector):
     @property
@@ -69,7 +157,7 @@ class TurkishDateDetector(Detector):
         all_columns: list[str],
     ) -> DetectorResult | None:
         del all_columns
-        header_hit = header_matches_any(column_name, _HEADER_PATTERNS)
+        header_hit = header_matches_any(column_name, DATE_HEADER_PATTERNS)
         cleaned = [v.strip() for v in sample_values if v and v.strip()]
 
         if not cleaned:
@@ -120,17 +208,7 @@ class TurkishDateDetector(Detector):
             # Lowercase + ASCII-fold the month-name path so "Mayıs"
             # / "MAYIS" / "mayis" all match. The regex itself is
             # ASCII-only by design.
-            folded = stripped.lower()
-            for tr_ch, ascii_ch in (
-                ("ı", "i"),
-                ("ö", "o"),
-                ("ü", "u"),
-                ("ç", "c"),
-                ("ş", "s"),
-                ("ğ", "g"),
-            ):
-                folded = folded.replace(tr_ch, ascii_ch)
-            if _TR_MONTH_RE.match(folded):
+            if _TR_MONTH_RE.match(_fold(stripped)):
                 formats.add("DD MMM YYYY (TR)")
                 hits += 1
         return hits / len(values), formats

@@ -320,9 +320,9 @@ class ReportService:
 
     def _apply_review_filters(self, stmt: Any, filters: ReportFilters) -> Any:
         if filters.date_from is not None:
-            stmt = stmt.where(Review.analyzed_at >= filters.date_from)
+            stmt = stmt.where(Review.review_date >= filters.date_from)
         if filters.date_to is not None:
-            stmt = stmt.where(Review.analyzed_at <= filters.date_to)
+            stmt = stmt.where(Review.review_date <= filters.date_to)
         if filters.sentiment_labels:
             stmt = stmt.where(Review.sentiment_label.in_(filters.sentiment_labels))
         if filters.batch_job_id is not None:

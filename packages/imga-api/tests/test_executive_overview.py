@@ -66,6 +66,9 @@ async def _seed_review(
             "submitted_by_user_id": None,
             "batch_job_id": batch_job_id,
             "analyzed_at": analyzed_at or datetime.now(UTC),
+            # Dashboard tarih filtresi review_date ekseninde; testler
+            # pencereyi created_at ya da analyzed_at ile kurguluyor.
+            "review_date": created_at or analyzed_at or datetime.now(UTC),
         }
         if created_at is not None:
             kwargs["created_at"] = created_at
@@ -438,7 +441,7 @@ async def test_overview_filters_narrow_data_and_disable_trend(
             sentiment_label="NEGATIF", sentiment_score=-0.7,
             primary_category="urun-kalitesi",
         )
-    # analyzed_at 90 gün önce — tarih filtresi bu satırı dışarıda
+    # Yorum tarihi 90 gün önce — tarih filtresi bu satırı dışarıda
     # bırakmalı (created_at şimdi kalır; last_data_at bundan etkilenmez).
     await _seed_review(
         admin_session, tenant_id=tid,

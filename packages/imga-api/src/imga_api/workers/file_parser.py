@@ -23,6 +23,7 @@ import csv
 import zipfile
 from collections.abc import Iterator
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -30,6 +31,12 @@ from imga_core.parsers import detect_nps_column, parse_nps_value
 from imga_core.text_utils import normalize_turkish
 from openpyxl import Workbook, load_workbook
 from openpyxl.utils.exceptions import InvalidFileException
+
+from imga_api.services.smart_parser.base import header_matches_any
+from imga_api.services.smart_parser.detectors.turkish_date import (
+    DATE_HEADER_PATTERNS,
+    parse_date_value,
+)
 
 
 class FileParseError(Exception):
@@ -46,6 +53,11 @@ class UnsupportedFormatError(FileParseError):
     """File extension is not .csv / .xlsx (we don't try to sniff bytes —
     spreadsheet authors should rename, not us)."""
 
+
+# Şablonun opsiyonel tarih kolonu. Tek kaynak services.batch_template
+# (TEMPLATE_OPTIONAL_COLUMNS); upload_validation'daki 'yorum' aynası
+# gibi burada da literal duruyor.
+_TEMPLATE_DATE_COLUMN: str = "tarih"
 
 _DIMENSION_KEYS: tuple[str, ...] = (
     "business_segment",
@@ -72,6 +84,11 @@ class ParsedRow:
     pulled from the upload. Each is None when (a) the tenant doesn't
     have a CSV column mapping for that dimension or (b) the row's cell
     is empty.
+
+    ``review_date`` is the review's own date from the optional ``tarih``
+    column. None when the upload has no date column or the cell didn't
+    parse — the row is still analysed; the insert site falls back to the
+    ingest moment.
     """
 
     row_number: int
@@ -82,6 +99,7 @@ class ParsedRow:
     product_line: str | None = None
     channel: str | None = None
     customer_tier: str | None = None
+    review_date: datetime | None = None
 
 
 def _normalize_header(name: str) -> str:
@@ -108,12 +126,17 @@ def _resolve_columns(
     text_column: str,
     source_column: str | None,
     dimension_mapping: dict[str, str] | None = None,
-) -> tuple[int, int | None, int | None, dict[str, int]]:
+) -> tuple[int, int | None, int | None, dict[str, int], int | None]:
     """Return ``(text_idx, source_idx | None, nps_idx | None,
-    dimension_idx_by_key)``. Raises UnknownColumnError if text/source
-    column is absent. NPS is auto-detected via the imga-core pattern
-    set; missing NPS is fine (returns None) — the upload doesn't have
-    to carry an NPS column.
+    dimension_idx_by_key, date_idx | None)``. Raises UnknownColumnError
+    if text/source column is absent. NPS is auto-detected via the
+    imga-core pattern set; missing NPS is fine (returns None) — the
+    upload doesn't have to carry an NPS column.
+
+    The date column (``review_date``) is auto-detected the same way:
+    şablondaki ``tarih`` kolonu birebir eşleşmeyle önce denenir, sonra
+    smart_parser'ın tarih başlık desenleri. Bulunamazsa None — yorumun
+    kendi tarihi yok demektir, satır yine analiz edilir.
 
     Sprint 9.4 D — ``dimension_mapping`` is ``{dimension_key:
     csv_column_name}`` (e.g. ``{"customer_tier": "tier"}``). A
@@ -172,7 +195,34 @@ def _resolve_columns(
             if target in norm_header:
                 dimension_idx_by_key[dim_key] = norm_header.index(target)
 
-    return text_idx, source_idx, nps_idx, dimension_idx_by_key
+    skip_idx = {text_idx}
+    if source_idx is not None:
+        skip_idx.add(source_idx)
+    date_idx = _detect_date_column(header, norm_header, skip=skip_idx)
+
+    return text_idx, source_idx, nps_idx, dimension_idx_by_key, date_idx
+
+
+def _detect_date_column(
+    header: list[str],
+    norm_header: list[str],
+    *,
+    skip: set[int],
+) -> int | None:
+    """Index of the review-date column, or None.
+
+    Şablonun ``tarih`` kolonu birebir eşleşmeyle önceliklidir; dosyada
+    hem ``tarih`` hem ``sipariş tarihi`` varsa şablona uyan kazanır.
+    ``skip`` kullanıcının açıkça metin/kaynak olarak seçtiği kolonların
+    tarih sanılmasını engeller."""
+    template_target = _normalize_header(_TEMPLATE_DATE_COLUMN)
+    for idx, name in enumerate(norm_header):
+        if idx not in skip and name == template_target:
+            return idx
+    for idx, name in enumerate(header):
+        if idx not in skip and header_matches_any(name, DATE_HEADER_PATTERNS):
+            return idx
+    return None
 
 
 def _extract_dimensions(
@@ -211,7 +261,13 @@ def _iter_csv(
                 "yorumlarınızı doldurun ve yeniden deneyin."
             ) from exc
 
-        text_idx, source_idx, nps_idx, dim_idx_by_key = _resolve_columns(
+        (
+            text_idx,
+            source_idx,
+            nps_idx,
+            dim_idx_by_key,
+            date_idx,
+        ) = _resolve_columns(
             header,
             text_column=text_column,
             source_column=source_column,
@@ -231,6 +287,9 @@ def _iter_csv(
             nps_score: int | None = None
             if nps_idx is not None and nps_idx < len(row):
                 nps_score = parse_nps_value(row[nps_idx])
+            review_date: datetime | None = None
+            if date_idx is not None and date_idx < len(row):
+                review_date = parse_date_value(row[date_idx])
             dims = _extract_dimensions(row, dim_idx_by_key)
             yield ParsedRow(
                 row_number=i,
@@ -241,6 +300,7 @@ def _iter_csv(
                 product_line=dims["product_line"],
                 channel=dims["channel"],
                 customer_tier=dims["customer_tier"],
+                review_date=review_date,
             )
 
 
@@ -270,7 +330,13 @@ def _iter_xlsx(
             ) from exc
 
         header = [str(c) if c is not None else "" for c in raw_header]
-        text_idx, source_idx, nps_idx, dim_idx_by_key = _resolve_columns(
+        (
+            text_idx,
+            source_idx,
+            nps_idx,
+            dim_idx_by_key,
+            date_idx,
+        ) = _resolve_columns(
             header,
             text_column=text_column,
             source_column=source_column,
@@ -289,6 +355,11 @@ def _iter_xlsx(
             nps_score: int | None = None
             if nps_idx is not None and nps_idx < len(row):
                 nps_score = parse_nps_value(row[nps_idx])
+            # Excel tarih hücreleri openpyxl'den native datetime gelir;
+            # parse_date_value bunu metin denemeden önce yakalıyor.
+            review_date: datetime | None = None
+            if date_idx is not None and date_idx < len(row):
+                review_date = parse_date_value(row[date_idx])
             dims = _extract_dimensions(list(row), dim_idx_by_key)
             yield ParsedRow(
                 row_number=i,
@@ -299,6 +370,7 @@ def _iter_xlsx(
                 product_line=dims["product_line"],
                 channel=dims["channel"],
                 customer_tier=dims["customer_tier"],
+                review_date=review_date,
             )
     finally:
         workbook.close()
@@ -322,6 +394,10 @@ def iter_rows(
     fetched mapping in once at job start; the iterator does the per-
     row column lookup. ``None`` (default) preserves the pre-9.4
     behaviour for callers that haven't been migrated.
+
+    ``ParsedRow.review_date`` comes from the auto-detected ``tarih``
+    column; None when the upload has no date column or the cell
+    doesn't parse.
     """
     suffix = path.suffix.lower()
     if suffix == ".csv":

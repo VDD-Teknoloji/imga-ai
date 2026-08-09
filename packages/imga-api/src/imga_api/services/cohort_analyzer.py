@@ -134,7 +134,7 @@ class CohortAnalyzer:
         #    the entire window. Without this pre-filter, a
         #    long-tail dimension (e.g. 200 distinct taxonomy codes)
         #    would render an unreadable chart.
-        period_expr = func.date_trunc(period, Review.created_at)
+        period_expr = func.date_trunc(period, Review.review_date)
 
         cohort_totals_stmt = (
             select(dim_col.label("key"), func.count().label("cnt"))
@@ -147,13 +147,13 @@ class CohortAnalyzer:
         )
         if date_from is not None:
             cohort_totals_stmt = cohort_totals_stmt.where(
-                Review.created_at >= date_from
+                Review.review_date >= date_from
             )
         if date_to is not None:
             # Gun sonu siniri — ciplak date geceyarisina cozulur ve
             # bitis gununu dusurur (bkz. services.date_bounds).
             cohort_totals_stmt = cohort_totals_stmt.where(
-                Review.created_at <= day_ceil(date_to)
+                Review.review_date <= day_ceil(date_to)
             )
         if batch_id is not None:
             cohort_totals_stmt = cohort_totals_stmt.where(
@@ -187,11 +187,11 @@ class CohortAnalyzer:
         )
         if date_from is not None:
             per_period_stmt = per_period_stmt.where(
-                Review.created_at >= date_from
+                Review.review_date >= date_from
             )
         if date_to is not None:
             per_period_stmt = per_period_stmt.where(
-                Review.created_at <= day_ceil(date_to)
+                Review.review_date <= day_ceil(date_to)
             )
         if batch_id is not None:
             per_period_stmt = per_period_stmt.where(

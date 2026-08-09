@@ -31,6 +31,7 @@ from typing import Annotated, Any
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from imga_core.categories.taxonomy import GLOBAL_CATEGORY_CODES
 from imga_db.models import (
     CategoryTaxonomy,
     TaxonomyEditAudit,
@@ -62,6 +63,24 @@ _KEYWORD_MAX = 64
 _KEYWORDS_LIMIT = 50
 
 
+def _validate_primary_category_code(v: str | None) -> str | None:
+    """Sprint 13.1 — ana kategori eşlemesi. NULL = eşlenmemiş; dolu
+    ise ``reviews.primary_category`` ile aynı global kod uzayından
+    olmak zorunda, aksi halde drill-down gruplaması sessizce boş
+    kovalar üretir."""
+    if v is None:
+        return None
+    v = v.strip()
+    if not v:
+        return None
+    if v not in GLOBAL_CATEGORY_CODES:
+        raise ValueError(
+            "primary_category_code gecersiz; gecerli kodlar: "
+            + ", ".join(sorted(GLOBAL_CATEGORY_CODES))
+        )
+    return v
+
+
 # --------------------------------------------------------------------- #
 # Pydantic schemas                                                      #
 # --------------------------------------------------------------------- #
@@ -82,6 +101,7 @@ class TaxonomyEntryResponse(BaseModel):
     keywords: list[str]
     priority: int
     parent_code: str | None
+    primary_category_code: str | None
     is_default_seed: bool
     is_active: bool
     created_at: datetime
@@ -94,6 +114,12 @@ class TaxonomyCreateRequest(BaseModel):
     keywords: list[str] = Field(default_factory=list)
     priority: int = 100
     parent_code: str | None = None
+    primary_category_code: str | None = None
+
+    @field_validator("primary_category_code")
+    @classmethod
+    def _validate_primary(cls, v: str | None) -> str | None:
+        return _validate_primary_category_code(v)
 
     @field_validator("code")
     @classmethod
@@ -133,6 +159,12 @@ class TaxonomyUpdateRequest(BaseModel):
     keywords: list[str] | None = None
     priority: int | None = None
     parent_code: str | None = None
+    primary_category_code: str | None = None
+
+    @field_validator("primary_category_code")
+    @classmethod
+    def _validate_primary(cls, v: str | None) -> str | None:
+        return _validate_primary_category_code(v)
 
     @field_validator("label_tr")
     @classmethod
@@ -211,6 +243,7 @@ def _row_to_response(row: CategoryTaxonomy) -> TaxonomyEntryResponse:
         keywords=list(row.keywords),
         priority=row.priority,
         parent_code=row.parent_code,
+        primary_category_code=row.primary_category_code,
         is_default_seed=row.is_default_seed,
         is_active=row.is_active,
         created_at=row.created_at,
@@ -227,6 +260,7 @@ def _row_to_audit_state(row: CategoryTaxonomy) -> dict[str, Any]:
         "keywords": list(row.keywords),
         "priority": row.priority,
         "parent_code": row.parent_code,
+        "primary_category_code": row.primary_category_code,
         "is_default_seed": row.is_default_seed,
         "is_active": row.is_active,
     }
@@ -347,6 +381,7 @@ async def create_taxonomy(
                 keywords=body.keywords,
                 priority=body.priority,
                 parent_code=body.parent_code,
+                primary_category_code=body.primary_category_code,
                 is_default_seed=False,
                 is_active=True,
             )
@@ -377,7 +412,7 @@ async def create_taxonomy(
 @router.patch(
     "/{taxonomy_id}",
     response_model=TaxonomyEntryResponse,
-    summary="Edit label / keywords / priority / parent_code.",
+    summary="Edit label / keywords / priority / parent_code / primary_category_code.",
 )
 async def update_taxonomy(
     taxonomy_id: UUID,
@@ -406,6 +441,9 @@ async def update_taxonomy(
             elif body.parent_code is None and "parent_code" in body.model_fields_set:
                 # Explicit null clears the parent.
                 row.parent_code = None
+            # Ana kategori eşlemesi: acik null esleme'yi kaldirir.
+            if "primary_category_code" in body.model_fields_set:
+                row.primary_category_code = body.primary_category_code
 
             await app_session.flush()
             # Sprint 8.3.7-A — server-computed ``updated_at``
