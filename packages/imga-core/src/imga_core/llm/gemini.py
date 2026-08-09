@@ -322,6 +322,32 @@ class GeminiProvider(LLMProvider):
             max_output_tokens=max_output_tokens,
         )
 
+    async def generate_root_cause(
+        self,
+        *,
+        api_key: str,
+        system_prompt: str,
+        user_prompt: str,
+        response_schema: dict[str, Any],
+        model_name: str = "gemini-3-flash-preview",  # Sprint 9.5.4 cutover
+        # Sprint 13.1 — kök neden analizi ham yorum metinlerinden
+        # alıntı çıkarır; düşük sıcaklık uydurma alıntı riskini
+        # azaltır (SWOT/OKR'den daha düşük bilinçli seçim).
+        temperature: float = 0.15,
+        top_p: float = 0.9,
+        max_output_tokens: int = 8192,
+    ) -> tuple[dict[str, Any], dict[str, int] | None]:
+        return await self._generate_structured(
+            api_key=api_key,
+            system_prompt=system_prompt,
+            user_prompt=user_prompt,
+            response_schema=response_schema,
+            model_name=model_name,
+            temperature=temperature,
+            top_p=top_p,
+            max_output_tokens=max_output_tokens,
+        )
+
     async def generate_executive_briefing(
         self,
         *,

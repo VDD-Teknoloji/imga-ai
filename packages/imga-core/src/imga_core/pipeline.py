@@ -36,6 +36,7 @@ if TYPE_CHECKING:
     from imga_core.llm.unified_classifier import (
         FewShotExample,
         GeminiUnifiedEngine,
+        PerspectiveOptions,
     )
 
 _logger = logging.getLogger(__name__)
@@ -79,6 +80,8 @@ class AnalysisPipeline:
         available_categories: list[str],
         few_shot: tuple["FewShotExample", ...] = (),
         stats_sink: dict[str, int] | None = None,
+        perspective_options: PerspectiveOptions | None = None,
+        perspective_sink: list[str | None] | None = None,
     ) -> list[AnalysisResult]:
         """Sprint 11.0 — birleşik LLM yolu: sentiment + kategori tek
         Gemini batch çağrı setinden gelir; BERT ve keyword/LLM-fallback
@@ -93,6 +96,13 @@ class AnalysisPipeline:
         çağıran (worker/route) klasik ``analyze_batch_async``'e düşer.
         Few-shot örnekleri tenant düzeltmelerinden gelir — "modelin
         öğrenmesi" bu enjeksiyondur.
+
+        Sprint 13.1 — ``perspective_options`` ana kategori başına alt
+        kategori kodlarını prompt'a taşır; ``perspective_sink``
+        (``stats_sink`` ile aynı out-param deseni) modelin seçtiği
+        alt kategori kodunu satır sırasına göre çağırana geri verir.
+        ``AnalysisResult`` genişletilmedi: alt kategori bir DB
+        kolonudur, çekirdek analiz sonucunun parçası değil.
         """
         n = len(texts)
         if n == 0:
@@ -107,7 +117,11 @@ class AnalysisPipeline:
             normalized,
             available_categories=available_categories,
             few_shot=few_shot,
+            perspective_options=perspective_options,
         )
+        if perspective_sink is not None:
+            perspective_sink.clear()
+            perspective_sink.extend(p.perspective_code for p in predictions)
         if stats_sink is not None:
             stats_sink["llm_total_input_tokens"] = stats.input_tokens
             stats_sink["llm_total_output_tokens"] = stats.output_tokens

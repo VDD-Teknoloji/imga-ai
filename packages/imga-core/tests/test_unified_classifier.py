@@ -57,7 +57,7 @@ async def test_engine_preserves_order_and_fills_missing(monkeypatch) -> None:
         _keys(), model_name="test-model", call_batch_size=2
     )
 
-    def fake_generate(api_key, prompt, chunk, categories, stats):
+    def fake_generate(api_key, prompt, chunk, categories, stats, options=None):
         stats.calls += 1
         out = {}
         for i, text in enumerate(chunk):
@@ -114,7 +114,7 @@ class _StubUnifiedEngine:
     model_name = "stub"
 
     async def classify_unified_batch_async(
-        self, texts, *, available_categories, few_shot=()
+        self, texts, *, available_categories, few_shot=(), perspective_options=None
     ):
         from imga_core.llm.unified_classifier import UnifiedBatchStats
 
@@ -124,6 +124,7 @@ class _StubUnifiedEngine:
                 sentiment_score=0.9,
                 category="urun_kalitesi",
                 category_confidence=0.85,
+                perspective_code="product_quality_material",
             )
             for _ in texts
         ]
@@ -157,3 +158,106 @@ async def test_pipeline_unified_path_pre_override_wins() -> None:
     assert results[0].categorization.primary == "urun_kalitesi"
     assert results[1].sentiment_label == "POZITIF"
     assert stats["llm_calls"] == 1
+
+
+# --- Sprint 13.1 — alt kategori (p) alanı --------------------------------
+
+
+_OPTIONS = {
+    "kargo": [
+        ("shipment_not_arrived", "Kargom ulaşmadı"),
+        ("address_change", "Teslimat adresini değiştirebilir miyim?"),
+    ],
+    "faturalama": [("invoice_request", "Fatura Talebi")],
+}
+
+
+def test_build_prompt_lists_subcategories_per_main_category() -> None:
+    prompt = _build_prompt(
+        ["Kargom gelmedi"],
+        ["kargo", "faturalama", "belirsiz"],
+        (),
+        None,
+        _OPTIONS,
+    )
+    assert "ALT KATEGORİ" in prompt
+    assert "- kargo: shipment_not_arrived = Kargom ulaşmadı" in prompt
+    assert "invoice_request = Fatura Talebi" in prompt
+    # Alt kategorisi olmayan ana kategori satır AÇMAZ.
+    assert "- belirsiz:" not in prompt
+
+
+def _parse_with_raw(raw: str, options=None):
+    """``_generate_sync``'i ham JSON üstünde koştur (ağ yok)."""
+    engine = GeminiUnifiedEngine(_keys(), model_name="test-model")
+    from imga_core.llm.unified_classifier import UnifiedBatchStats
+
+    stats = UnifiedBatchStats()
+    engine._generate_raw_gemini = lambda api_key, prompt, s: raw  # type: ignore[method-assign]
+    return engine._generate_sync(
+        "key", "prompt", ["metin"], ["kargo", "faturalama", "belirsiz"],
+        stats, options,
+    )
+
+
+def test_parse_threads_valid_perspective_code() -> None:
+    parsed = _parse_with_raw(
+        '[{"i": 0, "s": "NEGATIF", "sc": -0.7, "c": "kargo", "cc": 0.9, '
+        '"p": "shipment_not_arrived"}]',
+        _OPTIONS,
+    )
+    assert parsed[0].perspective_code == "shipment_not_arrived"
+
+
+def test_parse_missing_or_null_perspective_is_none() -> None:
+    without = _parse_with_raw(
+        '[{"i": 0, "s": "NEGATIF", "sc": -0.7, "c": "kargo", "cc": 0.9}]',
+        _OPTIONS,
+    )
+    assert without[0].perspective_code is None
+
+    explicit_null = _parse_with_raw(
+        '[{"i": 0, "s": "NEGATIF", "sc": -0.7, "c": "kargo", "cc": 0.9, '
+        '"p": null}]',
+        _OPTIONS,
+    )
+    assert explicit_null[0].perspective_code is None
+
+
+def test_parse_rejects_code_outside_selected_main_category() -> None:
+    # invoice_request faturalama'ya ait; ana kategori kargo geldiği için
+    # kabul edilmez — çağıran keyword sezgiseline düşer.
+    cross = _parse_with_raw(
+        '[{"i": 0, "s": "NEGATIF", "sc": -0.7, "c": "kargo", "cc": 0.9, '
+        '"p": "invoice_request"}]',
+        _OPTIONS,
+    )
+    assert cross[0].perspective_code is None
+
+    unknown = _parse_with_raw(
+        '[{"i": 0, "s": "NEGATIF", "sc": -0.7, "c": "kargo", "cc": 0.9, '
+        '"p": "uydurma_kod"}]',
+        _OPTIONS,
+    )
+    assert unknown[0].perspective_code is None
+
+    # Hiç seçenek verilmemişse (kurum taksonomisi eşlenmemiş) her kod düşer.
+    no_options = _parse_with_raw(
+        '[{"i": 0, "s": "NEGATIF", "sc": -0.7, "c": "kargo", "cc": 0.9, '
+        '"p": "shipment_not_arrived"}]',
+        None,
+    )
+    assert no_options[0].perspective_code is None
+
+
+@pytest.mark.asyncio
+async def test_pipeline_fills_perspective_sink() -> None:
+    pipeline = AnalysisPipeline(analyzer=_NeverCalledAnalyzer())
+    sink: list[str | None] = []
+    await pipeline.analyze_batch_unified_async(
+        ["Kumaş çok ince", "Dikişler açıldı"],
+        engine=_StubUnifiedEngine(),  # type: ignore[arg-type]
+        available_categories=["urun_kalitesi", "belirsiz"],
+        perspective_sink=sink,
+    )
+    assert sink == ["product_quality_material", "product_quality_material"]

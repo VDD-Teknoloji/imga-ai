@@ -72,6 +72,10 @@ class UnifiedPrediction:
     sentiment_score: float
     category: str
     category_confidence: float
+    # Sprint 13.1 — alt kategori (kurum-perspektifi taksonomi kodu).
+    # None = model bir alt kategori seçmedi ya da seçtiği kod kurumun
+    # listesinde yok; çağıran taraf keyword sezgiseline düşer.
+    perspective_code: str | None = None
 
 
 @dataclass(slots=True)
@@ -94,6 +98,13 @@ _RESPONSE_SCHEMA: dict[str, Any] = {
             "sc": {"type": "number"},
             "c": {"type": "string"},
             "cc": {"type": "number"},
+            # Sprint 13.1 — alt kategori kodu. "required" DIŞINDA ve
+            # ``nullable`` bayrağı YOK: Gemini SDK'sının proto Schema
+            # tipi tanımadığı anahtarda 400 atıyor (bkz. swot_v1'deki
+            # minItems / enum-without-type tarihçesi). Model uygun bir
+            # alt kategori bulamazsa alanı hiç yazmaz; parse tarafı
+            # eksik/boş/tanınmayan kodu None'a düşürür.
+            "p": {"type": "string"},
         },
     },
 }
@@ -107,15 +118,22 @@ Sen Türkçe müşteri yorumlarını analiz eden kıdemli bir sınıflandırıc�
 Her yorum için döndür:
   s  — duygu: POZITIF, NEGATIF veya NÖTR
   sc — duygu skoru: -1.0 (çok olumsuz) ile 1.0 (çok olumlu) arası
-  c  — kategori: SADECE verilen listeden bir kod
+  c  — ana kategori: SADECE verilen listeden bir kod
   cc — kategori güveni: 0.0-1.0
+  p  — alt kategori: SADECE seçtiğin ana kategorinin alt kategori
+       listesinden bir kod (aşağıda verilir)
 
 Kurallar:
 - Kararsızsan kategori için "belirsiz" kodunu kullan (listede varsa).
 - Alaycı/ironik ifadelerde gerçek niyeti puanla.
 - Karma duygularda baskın olanı seç; sc'yi orta bantta tut.
 - Her girdi yorumu için TAM BİR sonuç döndür; index (i) girdiyle eşleşmeli.
+- p alanını SADECE seçtiğin ana kategoriye (c) ait listeden doldur.
+  Hiçbiri uymuyorsa veya c "belirsiz" ise p alanını hiç yazma.
 """
+
+#: Alt kategori yükü: ana kategori kodu -> [(alt kod, Türkçe etiket)].
+PerspectiveOptions = dict[str, list[tuple[str, str]]]
 
 
 def _build_prompt(
@@ -123,9 +141,22 @@ def _build_prompt(
     available_categories: list[str],
     few_shot: tuple[FewShotExample, ...],
     system_prompt: str | None = None,
+    perspective_options: PerspectiveOptions | None = None,
 ) -> str:
     parts: list[str] = [system_prompt or UNIFIED_SYSTEM_PROMPT]
     parts.append("Kategori kodları: " + ", ".join(available_categories))
+
+    if perspective_options:
+        parts.append(
+            "\nAna kategori başına ALT KATEGORİ kodları (p alanı için) — "
+            "listede olmayan bir kod ASLA yazma:"
+        )
+        for main_code in available_categories:
+            options = perspective_options.get(main_code)
+            if not options:
+                continue
+            rendered = "; ".join(f"{code} = {label}" for code, label in options)
+            parts.append(f"- {main_code}: {rendered}")
 
     if few_shot:
         parts.append(
@@ -145,7 +176,7 @@ def _build_prompt(
         parts.append(f"{i}: {single_line[:600]}")
     parts.append(
         "\nJSON dizisi döndür; her öğe {\"i\", \"s\", \"sc\", \"c\", \"cc\"} "
-        "alanlarını taşımalı."
+        "alanlarını taşımalı, uygunsa \"p\" alanını da ekle."
     )
     return "\n".join(parts)
 
@@ -205,6 +236,7 @@ class GeminiUnifiedEngine:
         *,
         available_categories: list[str],
         few_shot: tuple[FewShotExample, ...] = (),
+        perspective_options: PerspectiveOptions | None = None,
     ) -> tuple[list[UnifiedPrediction], UnifiedBatchStats]:
         """Tüm metinler için birleşik tahmin. Herhangi bir alt-çağrı
         kalıcı olarak başarısızsa exception fırlatır — kısmi/sessiz
@@ -222,7 +254,11 @@ class GeminiUnifiedEngine:
         async def _one_call(offset: int, chunk: list[str]) -> None:
             async with semaphore:
                 predictions = await self._call_with_rotation(
-                    chunk, available_categories, few_shot, stats
+                    chunk,
+                    available_categories,
+                    few_shot,
+                    stats,
+                    perspective_options,
                 )
             for local_idx, prediction in predictions.items():
                 results[offset + local_idx] = prediction
@@ -257,9 +293,14 @@ class GeminiUnifiedEngine:
         available_categories: list[str],
         few_shot: tuple[FewShotExample, ...],
         stats: UnifiedBatchStats,
+        perspective_options: PerspectiveOptions | None = None,
     ) -> dict[int, UnifiedPrediction]:
         prompt = _build_prompt(
-            chunk, available_categories, few_shot, self._system_prompt
+            chunk,
+            available_categories,
+            few_shot,
+            self._system_prompt,
+            perspective_options,
         )
 
         async def _operation(api_key: str) -> dict[int, UnifiedPrediction]:
@@ -272,6 +313,7 @@ class GeminiUnifiedEngine:
                         chunk,
                         available_categories,
                         stats,
+                        perspective_options,
                     ),
                     timeout=_HARD_TIMEOUT_SECONDS,
                 )
@@ -296,6 +338,7 @@ class GeminiUnifiedEngine:
         chunk: list[str],
         available_categories: list[str],
         stats: UnifiedBatchStats,
+        perspective_options: PerspectiveOptions | None = None,
     ) -> dict[int, UnifiedPrediction]:
         if self._provider == "openrouter":
             raw = self._generate_raw_openrouter(api_key, prompt, stats)
@@ -313,6 +356,13 @@ class GeminiUnifiedEngine:
             )
 
         valid_categories = set(available_categories)
+        # Alt kategori kodu YALNIZCA seçilen ana kategorinin listesinden
+        # kabul edilir: model "kargo" der ama faturalama alt kodu
+        # yazarsa None'a düşer ve çağıran keyword sezgiseline geçer.
+        valid_perspectives: dict[str, set[str]] = {
+            main: {code for code, _ in options}
+            for main, options in (perspective_options or {}).items()
+        }
         parsed: dict[int, UnifiedPrediction] = {}
         for entry in data:
             if not isinstance(entry, dict):
@@ -337,11 +387,18 @@ class GeminiUnifiedEngine:
                 confidence = max(0.0, min(1.0, float(entry.get("cc", 0.0))))
             except (TypeError, ValueError):
                 confidence = 0.0
+            raw_perspective = entry.get("p")
+            perspective: str | None = None
+            if isinstance(raw_perspective, str) and raw_perspective.strip():
+                candidate = raw_perspective.strip()
+                if candidate in valid_perspectives.get(category, frozenset()):
+                    perspective = candidate
             parsed[idx] = UnifiedPrediction(
                 sentiment_label=label,
                 sentiment_score=score,
                 category=category,
                 category_confidence=confidence,
+                perspective_code=perspective,
             )
         if not parsed:
             raise LLMProviderError(
@@ -450,6 +507,7 @@ __all__ = [
     "DEFAULT_CALL_BATCH_SIZE",
     "FewShotExample",
     "GeminiUnifiedEngine",
+    "PerspectiveOptions",
     "UnifiedBatchStats",
     "UnifiedPrediction",
 ]
