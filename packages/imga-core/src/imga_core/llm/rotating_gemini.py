@@ -162,6 +162,24 @@ class RotatingGeminiProvider(LLMProvider):
         self._keys_used = set()
         self._rate_limit_events = 0
 
+    def _make_provider(
+        self,
+        api_key: str,
+        *,
+        timeout_seconds: float | None = None,
+    ) -> LLMProvider:
+        """Tek-anahtarlı iç sağlayıcıyı kur. OpenRouter varyantı yalnız
+        bu fabrikayı override eder — rotasyon/telemetri mantığı ortak."""
+        return GeminiProvider(
+            api_key=api_key,
+            model_name=self._model_name,
+            timeout_seconds=(
+                timeout_seconds
+                if timeout_seconds is not None
+                else self._timeout_seconds
+            ),
+        )
+
     def classify(
         self,
         text: str,
@@ -202,11 +220,7 @@ class RotatingGeminiProvider(LLMProvider):
             # Per-call ephemeral provider — see module docstring for
             # the why. Construction cost is ~ms; it's the rotator's
             # only sane way to swap keys without smuggling state.
-            provider = GeminiProvider(
-                api_key=api_key,
-                model_name=self._model_name,
-                timeout_seconds=self._timeout_seconds,
-            )
+            provider = self._make_provider(api_key)
             try:
                 # Sprint 9.0.5-A R6 — sync ``provider.classify`` runs
                 # inside the Gemini SDK's blocking
@@ -228,7 +242,7 @@ class RotatingGeminiProvider(LLMProvider):
                     ),
                     timeout=_HARD_ASYNCIO_TIMEOUT_SECONDS,
                 )
-            except asyncio.TimeoutError as exc:
+            except TimeoutError as exc:
                 # Server timed out / SDK hung. Server-side, NOT a
                 # per-key issue — propagate as plain
                 # LLMProviderError so the rotator passes it through
@@ -310,10 +324,8 @@ class RotatingGeminiProvider(LLMProvider):
             return False
         try:
             primary = self._rotator.keys[0]
-            return GeminiProvider(
-                api_key=primary.value,
-                model_name=self._model_name,
-                timeout_seconds=2.0,
+            return self._make_provider(
+                primary.value, timeout_seconds=2.0
             ).health_check()
         except Exception:
             _logger.exception(

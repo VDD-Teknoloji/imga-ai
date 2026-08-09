@@ -26,7 +26,7 @@ import asyncio
 import json
 import logging
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from imga_core.config import (
@@ -155,7 +155,7 @@ def _map_sdk_error(exc: Exception) -> Exception:
     rotasyonu tetikler, kalanlar LLMProviderError olarak akar.
     (rotating_gemini._maybe_rotate ile aynı sniff semantiği.)"""
     text = str(exc).lower()
-    if "429" in text or "resource_exhausted" in text or "rate" in text and "limit" in text:
+    if "429" in text or "resource_exhausted" in text or ("rate" in text and "limit" in text):
         return RateLimitError()
     if "api key" in text or "api_key" in text or "401" in text or "403" in text:
         return InvalidKeyError(str(exc))
@@ -177,6 +177,10 @@ class GeminiUnifiedEngine:
         # Sprint 11.3 — /settings/prompts'tan tenant override'ı;
         # None = koddaki UNIFIED_SYSTEM_PROMPT.
         system_prompt: str | None = None,
+        # OpenRouter entegrasyonu — "gemini" | "openrouter". Prompt,
+        # şema ve parse sağlayıcı-nötr; yalnız ham üretim çağrısı
+        # dallanır (_generate_sync).
+        provider: str = "gemini",
     ) -> None:
         if not keys:
             raise ValueError("GeminiUnifiedEngine requires at least one key")
@@ -185,10 +189,15 @@ class GeminiUnifiedEngine:
         self._call_batch_size = max(1, call_batch_size)
         self._concurrency = max(1, concurrency)
         self._system_prompt = system_prompt
+        self._provider = provider
 
     @property
     def model_name(self) -> str:
         return self._model_name
+
+    @property
+    def provider(self) -> str:
+        return self._provider
 
     async def classify_unified_batch_async(
         self,
@@ -288,42 +297,15 @@ class GeminiUnifiedEngine:
         available_categories: list[str],
         stats: UnifiedBatchStats,
     ) -> dict[int, UnifiedPrediction]:
-        from google import genai
-        from google.genai import types as genai_types
-
-        client = genai.Client(api_key=api_key)
-        try:
-            response = client.models.generate_content(
-                model=self._model_name,
-                contents=prompt,
-                config=genai_types.GenerateContentConfig(
-                    response_mime_type="application/json",
-                    response_schema=_RESPONSE_SCHEMA,
-                    temperature=0.1,
-                ),
-            )
-        except Exception as exc:  # noqa: BLE001 — SDK hatası eşlenir
-            stats.failed_calls += 1
-            raise _map_sdk_error(exc) from exc
-
-        stats.calls += 1
-        usage = getattr(response, "usage_metadata", None)
-        if usage is not None:
-            stats.input_tokens += int(
-                getattr(usage, "prompt_token_count", 0) or 0
-            )
-            stats.output_tokens += int(
-                getattr(usage, "candidates_token_count", 0) or 0
-            )
-
-        raw = getattr(response, "text", None)
-        if not raw:
-            raise LLMProviderError("Empty response text from Gemini (unified)")
+        if self._provider == "openrouter":
+            raw = self._generate_raw_openrouter(api_key, prompt, stats)
+        else:
+            raw = self._generate_raw_gemini(api_key, prompt, stats)
         try:
             data = json.loads(raw)
         except json.JSONDecodeError as exc:
             raise LLMProviderError(
-                f"Gemini unified returned non-JSON: {raw[:200]!r}"
+                f"{self._provider} unified returned non-JSON: {raw[:200]!r}"
             ) from exc
         if not isinstance(data, list):
             raise LLMProviderError(
@@ -366,6 +348,102 @@ class GeminiUnifiedEngine:
                 "Gemini unified response contained no usable entries"
             )
         return parsed
+
+    def _generate_raw_gemini(
+        self,
+        api_key: str,
+        prompt: str,
+        stats: UnifiedBatchStats,
+    ) -> str:
+        from google import genai
+        from google.genai import types as genai_types
+
+        client = genai.Client(api_key=api_key)
+        try:
+            response = client.models.generate_content(
+                model=self._model_name,
+                contents=prompt,
+                config=genai_types.GenerateContentConfig(
+                    response_mime_type="application/json",
+                    response_schema=_RESPONSE_SCHEMA,
+                    temperature=0.1,
+                ),
+            )
+        except Exception as exc:
+            stats.failed_calls += 1
+            raise _map_sdk_error(exc) from exc
+
+        stats.calls += 1
+        usage = getattr(response, "usage_metadata", None)
+        if usage is not None:
+            stats.input_tokens += int(
+                getattr(usage, "prompt_token_count", 0) or 0
+            )
+            stats.output_tokens += int(
+                getattr(usage, "candidates_token_count", 0) or 0
+            )
+
+        raw = getattr(response, "text", None)
+        if not raw:
+            raise LLMProviderError("Empty response text from Gemini (unified)")
+        return str(raw)
+
+    def _generate_raw_openrouter(
+        self,
+        api_key: str,
+        prompt: str,
+        stats: UnifiedBatchStats,
+    ) -> str:
+        # httpx + OpenRouter REST — sağlayıcı yardımcıları openrouter
+        # modülünden paylaşılır (hata eşleme + usage şekli oradakiyle
+        # birebir aynı kalsın diye).
+        import httpx
+
+        from imga_core.llm.openrouter import (
+            OPENROUTER_BASE_URL,
+            _attribution_headers,
+            _extract_usage,
+            _first_choice_content,
+            _read_body,
+        )
+
+        payload = {
+            "model": self._model_name,
+            "messages": [{"role": "user", "content": prompt}],
+            "temperature": 0.1,
+            "response_format": {
+                "type": "json_schema",
+                "json_schema": {
+                    "name": "imga_unified_batch",
+                    "strict": False,
+                    "schema": _RESPONSE_SCHEMA,
+                },
+            },
+        }
+        try:
+            with httpx.Client(timeout=httpx.Timeout(40.0)) as client:
+                resp = client.post(
+                    f"{OPENROUTER_BASE_URL}/chat/completions",
+                    headers=_attribution_headers(api_key),
+                    json=payload,
+                )
+            body = _read_body(resp)
+            raw = _first_choice_content(body)
+        except (RateLimitError, InvalidKeyError, LLMProviderError):
+            stats.failed_calls += 1
+            raise
+        except Exception as exc:
+            stats.failed_calls += 1
+            raise LLMProviderError(
+                f"OpenRouter unified call failed: {exc}"
+            ) from exc
+
+        stats.calls += 1
+        usage = _extract_usage(body)
+        if usage is not None:
+            stats.input_tokens += usage["input"]
+            stats.output_tokens += usage["output"]
+        return raw
 
 
 __all__ = [

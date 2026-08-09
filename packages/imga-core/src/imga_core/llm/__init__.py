@@ -32,9 +32,15 @@ from imga_core.llm.errors import (
 )
 from imga_core.llm.factory import create_llm_provider
 from imga_core.llm.key_rotation import GeminiKey, GeminiKeyRotator
+from imga_core.llm.openrouter import (
+    DEFAULT_OPENROUTER_MODEL,
+    OpenRouterProvider,
+    RotatingOpenRouterProvider,
+)
 from imga_core.llm.rotating_gemini import RotatingGeminiProvider
 
 __all__ = [
+    "DEFAULT_OPENROUTER_MODEL",
     "AllKeysExhaustedError",
     "GeminiKey",
     "GeminiKeyRotator",
@@ -45,7 +51,9 @@ __all__ = [
     "LLMResponseBlockedError",
     "LLMTokenLimitError",
     "MalformedResponseError",
+    "OpenRouterProvider",
     "RateLimitError",
     "RotatingGeminiProvider",
+    "RotatingOpenRouterProvider",
     "create_llm_provider",
 ]
