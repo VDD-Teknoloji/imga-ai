@@ -795,10 +795,15 @@ export interface TenantProfileUpdateRequest {
 
 // --- LLM credentials -------------------------------------------------
 
+export type LlmProviderName = "gemini" | "openrouter";
+
 export interface LlmCredential {
   id: string;
   label: string;
   provider: string;
+  /** OpenRouter model kimliği (örn. "openai/gpt-5-mini");
+   *  null → sağlayıcı varsayılanı. */
+  model: string | null;
   priority: number;
   is_active: boolean;
   /** ``"...AB12"`` — last 4 chars of the plaintext, prefixed with
@@ -812,15 +817,34 @@ export interface LlmCredential {
 export interface LlmCredentialCreateRequest {
   label: string;
   api_key: string;
+  provider: LlmProviderName;
+  model?: string | null;
 }
 
 export interface LlmCredentialUpdateRequest {
   label?: string;
   is_active?: boolean;
+  /** Açık null → sağlayıcı varsayılanına dön. */
+  model?: string | null;
 }
 
 export interface LlmCredentialReorderRequest {
   ordered_ids: string[];
+}
+
+export interface OpenRouterModelInfo {
+  id: string;
+  name: string;
+  context_length: number | null;
+  prompt_price_per_million: number | null;
+  completion_price_per_million: number | null;
+  structured_outputs: boolean;
+  recommended: boolean;
+}
+
+export interface OpenRouterModelListResponse {
+  models: OpenRouterModelInfo[];
+  live: boolean;
 }
 
 // --- Strategic reports -----------------------------------------------

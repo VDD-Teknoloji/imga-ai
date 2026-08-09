@@ -21,9 +21,25 @@ import type {
   LlmCredentialCreateRequest,
   LlmCredentialReorderRequest,
   LlmCredentialUpdateRequest,
+  OpenRouterModelListResponse,
 } from "@/lib/types";
 
 const QUERY_KEY = ["llm-credentials"] as const;
+
+/** OpenRouter canlı model kataloğu (backend 1 saat önbellekler; FE de
+ *  aynı ufukta stale tutar). Model seçici açılmadan istek atılmasın
+ *  diye ``enabled`` parametresiyle tembel. */
+export function useOpenRouterModels(enabled: boolean) {
+  return useQuery<OpenRouterModelListResponse>({
+    queryKey: ["openrouter-models"],
+    queryFn: () =>
+      apiRequest<OpenRouterModelListResponse>(
+        "/tenants/me/llm-credentials/openrouter-models",
+      ),
+    enabled,
+    staleTime: 3600_000,
+  });
+}
 
 export function useLlmCredentials() {
   return useQuery<LlmCredential[]>({

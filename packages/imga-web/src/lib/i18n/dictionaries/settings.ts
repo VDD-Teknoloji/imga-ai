@@ -98,8 +98,19 @@ export const settings: Bundle = {
     "settings.integrations.showKey": "Anahtarı göster",
     "settings.integrations.keyPrefixWarning":
       "Gemini anahtarları \"AIza\" ile başlar.",
+    "settings.integrations.orKeyPrefixWarning":
+      "OpenRouter anahtarları \"sk-or-\" ile başlar.",
     "settings.integrations.keyAdded": "Anahtar eklendi.",
     "settings.integrations.addFailed": "Anahtar eklenemedi.",
+    "settings.integrations.providerField": "Sağlayıcı",
+    "settings.integrations.modelField": "Model",
+    "settings.integrations.modelDefault": "Varsayılan model",
+    "settings.integrations.modelSearchPlaceholder": "Model ara…",
+    "settings.integrations.modelRecommended": "Önerilenler",
+    "settings.integrations.modelAll": "Tüm modeller",
+    "settings.integrations.modelEmpty": "Eşleşen model yok.",
+    "settings.integrations.modelChanged": "Model güncellendi.",
+    "settings.integrations.modelChangeFailed": "Model güncellenemedi.",
 
     // --- kpi-goals ---
     "settings.kpi.title": "KPI Hedefleri",
@@ -491,8 +502,19 @@ export const settings: Bundle = {
     "settings.integrations.showKey": "Show key",
     "settings.integrations.keyPrefixWarning":
       "Gemini keys start with \"AIza\".",
+    "settings.integrations.orKeyPrefixWarning":
+      "OpenRouter keys start with \"sk-or-\".",
     "settings.integrations.keyAdded": "Key added.",
     "settings.integrations.addFailed": "Failed to add key.",
+    "settings.integrations.providerField": "Provider",
+    "settings.integrations.modelField": "Model",
+    "settings.integrations.modelDefault": "Default model",
+    "settings.integrations.modelSearchPlaceholder": "Search models…",
+    "settings.integrations.modelRecommended": "Recommended",
+    "settings.integrations.modelAll": "All models",
+    "settings.integrations.modelEmpty": "No matching models.",
+    "settings.integrations.modelChanged": "Model updated.",
+    "settings.integrations.modelChangeFailed": "Failed to update model.",
 
     // --- kpi-goals ---
     "settings.kpi.title": "KPI Goals",

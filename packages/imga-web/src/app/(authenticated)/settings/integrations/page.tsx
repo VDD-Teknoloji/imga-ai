@@ -29,6 +29,8 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 import {
   AlertTriangle,
+  Check,
+  ChevronsUpDown,
   Eye,
   EyeOff,
   GripVertical,
@@ -53,21 +55,183 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import {
   useCreateLlmCredential,
   useDeleteLlmCredential,
   useLlmCredentials,
+  useOpenRouterModels,
   useReorderLlmCredentials,
   useUpdateLlmCredential,
 } from "@/hooks/use-llm-credentials";
 import { ApiError } from "@/lib/api-client";
 import { useTranslation } from "@/lib/i18n/use-translation";
-import type { LlmCredential } from "@/lib/types";
+import type { LlmCredential, LlmProviderName } from "@/lib/types";
+import { cn } from "@/lib/utils";
 
 const GEMINI_KEY_PREFIX = "AIza";
+const OPENROUTER_KEY_PREFIX = "sk-or-";
+
+const PROVIDER_BADGE: Record<string, string> = {
+  gemini: "Gemini",
+  openrouter: "OpenRouter",
+};
+
+/** Aranabilir OpenRouter model secicisi — hem Add formu hem satir ici
+ *  degisiklik ayni bileseni kullanir. Katalog canli endpoint'ten gelir
+ *  (kuratorlu onerilenler ustte); yeni model ciktiginda kod degisikligi
+ *  gerekmez. */
+function ModelPicker({
+  value,
+  onSelect,
+  disabled,
+  compact,
+}: {
+  value: string | null;
+  onSelect: (model: string | null) => void;
+  disabled?: boolean;
+  compact?: boolean;
+}) {
+  const { t } = useTranslation();
+  const [open, setOpen] = useState(false);
+  const catalog = useOpenRouterModels(open);
+  const models = catalog.data?.models ?? [];
+  const recommended = models.filter((m) => m.recommended);
+  const others = models.filter((m) => !m.recommended);
+
+  function pick(model: string | null) {
+    onSelect(model);
+    setOpen(false);
+  }
+
+  function priceHint(prompt: number | null, completion: number | null) {
+    if (prompt === null || completion === null) return null;
+    return `$${prompt.toFixed(2)} / $${completion.toFixed(2)} · 1M`;
+  }
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger
+        render={
+          <Button
+            type="button"
+            variant="outline"
+            disabled={disabled}
+            className={cn(
+              "justify-between gap-2 font-normal",
+              compact ? "h-7 max-w-[260px] px-2 text-xs" : "w-full",
+            )}
+          >
+            <span className="truncate font-mono">
+              {value ?? t("settings.integrations.modelDefault")}
+            </span>
+            <ChevronsUpDown className="size-3.5 shrink-0 opacity-60" aria-hidden />
+          </Button>
+        }
+      />
+      <PopoverContent align="start" className="w-[340px] p-0">
+        <Command>
+          <CommandInput
+            placeholder={t("settings.integrations.modelSearchPlaceholder")}
+          />
+          <CommandList className="max-h-[320px]">
+            <CommandEmpty>
+              {catalog.isLoading
+                ? t("common.loading")
+                : t("settings.integrations.modelEmpty")}
+            </CommandEmpty>
+            <CommandGroup>
+              <CommandItem
+                value="__default__ varsayilan default"
+                onSelect={() => pick(null)}
+                className="flex items-center justify-between gap-2"
+              >
+                <span>{t("settings.integrations.modelDefault")}</span>
+                {value === null && (
+                  <Check className="text-primary size-4" aria-hidden />
+                )}
+              </CommandItem>
+            </CommandGroup>
+            {recommended.length > 0 && (
+              <CommandGroup
+                heading={t("settings.integrations.modelRecommended")}
+              >
+                {recommended.map((m) => (
+                  <CommandItem
+                    key={m.id}
+                    value={m.id}
+                    onSelect={() => pick(m.id)}
+                    className="flex items-center justify-between gap-2"
+                  >
+                    <span className="flex min-w-0 flex-col">
+                      <span className="truncate font-mono text-xs">{m.id}</span>
+                      <span className="text-muted-foreground text-[10px]">
+                        {priceHint(
+                          m.prompt_price_per_million,
+                          m.completion_price_per_million,
+                        )}
+                      </span>
+                    </span>
+                    {value === m.id && (
+                      <Check className="text-primary size-4 shrink-0" aria-hidden />
+                    )}
+                  </CommandItem>
+                ))}
+              </CommandGroup>
+            )}
+            {others.length > 0 && (
+              <CommandGroup heading={t("settings.integrations.modelAll")}>
+                {others.map((m) => (
+                  <CommandItem
+                    key={m.id}
+                    value={m.id}
+                    onSelect={() => pick(m.id)}
+                    className="flex items-center justify-between gap-2"
+                  >
+                    <span className="flex min-w-0 flex-col">
+                      <span className="truncate font-mono text-xs">{m.id}</span>
+                      <span className="text-muted-foreground text-[10px]">
+                        {priceHint(
+                          m.prompt_price_per_million,
+                          m.completion_price_per_million,
+                        )}
+                      </span>
+                    </span>
+                    {value === m.id && (
+                      <Check className="text-primary size-4 shrink-0" aria-hidden />
+                    )}
+                  </CommandItem>
+                ))}
+              </CommandGroup>
+            )}
+          </CommandList>
+        </Command>
+      </PopoverContent>
+    </Popover>
+  );
+}
 
 export default function IntegrationsPage() {
   return (
@@ -278,6 +442,17 @@ function KeyRow({
               ? t("settings.integrations.primary")
               : t("settings.integrations.backup", { n: index })}
           </Badge>
+          <Badge
+            variant="outline"
+            className={cn(
+              "text-xs",
+              credential.provider === "openrouter"
+                ? "border-violet-300 bg-violet-50 text-violet-700"
+                : "border-sky-300 bg-sky-50 text-sky-700",
+            )}
+          >
+            {PROVIDER_BADGE[credential.provider] ?? credential.provider}
+          </Badge>
           {credential.last_failed_at && (
             <Badge
               variant="outline"
@@ -294,6 +469,32 @@ function KeyRow({
         <p className="text-muted-foreground font-mono text-xs">
           {credential.value_preview}
         </p>
+        {credential.provider === "openrouter" && (
+          <div className="pt-1">
+            <ModelPicker
+              compact
+              value={credential.model}
+              disabled={update.isPending}
+              onSelect={(model) => {
+                if ((model ?? null) === (credential.model ?? null)) return;
+                update.mutate(
+                  {
+                    id: credential.id,
+                    body: { model },
+                  },
+                  {
+                    onSuccess: () =>
+                      toast.success(t("settings.integrations.modelChanged")),
+                    onError: () =>
+                      toast.error(
+                        t("settings.integrations.modelChangeFailed"),
+                      ),
+                  },
+                );
+              }}
+            />
+          </div>
+        )}
       </div>
       <Switch
         checked={credential.is_active}
@@ -375,30 +576,42 @@ function DeleteKeyButton({
 function AddKeyForm() {
   const create = useCreateLlmCredential();
   const { t } = useTranslation();
+  // Yeni eklemelerde varsayilan OpenRouter (urun karari — "Gemini
+  // yerine OpenRouter"): mevcut Gemini kayitlari calismaya devam eder.
+  const [provider, setProvider] = useState<LlmProviderName>("openrouter");
+  const [model, setModel] = useState<string | null>(null);
   const [label, setLabel] = useState("");
   const [apiKey, setApiKey] = useState("");
   const [reveal, setReveal] = useState(false);
 
   const trimmed = apiKey.trim();
-  const looksLikeGeminiKey =
-    trimmed.length === 0 || trimmed.startsWith(GEMINI_KEY_PREFIX);
+  const expectedPrefix =
+    provider === "gemini" ? GEMINI_KEY_PREFIX : OPENROUTER_KEY_PREFIX;
+  const keyPrefixOk =
+    trimmed.length === 0 || trimmed.startsWith(expectedPrefix);
   const canSubmit =
     !create.isPending &&
     label.trim().length > 0 &&
     trimmed.length >= 10 &&
-    looksLikeGeminiKey;
+    keyPrefixOk;
 
   function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!canSubmit) return;
     create.mutate(
-      { label: label.trim(), api_key: trimmed },
+      {
+        label: label.trim(),
+        api_key: trimmed,
+        provider,
+        model: provider === "openrouter" ? model : null,
+      },
       {
         onSuccess: () => {
           // Clear plaintext immediately so a screenshare or scroll-up
           // can't surface the key.
           setLabel("");
           setApiKey("");
+          setModel(null);
           setReveal(false);
           toast.success(t("settings.integrations.keyAdded"));
         },
@@ -418,6 +631,44 @@ function AddKeyForm() {
       <h2 className="text-base font-semibold">
         {t("settings.integrations.addTitle")}
       </h2>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <div className="space-y-2">
+          <Label htmlFor="key-provider">
+            {t("settings.integrations.providerField")}
+          </Label>
+          <Select
+            value={provider}
+            onValueChange={(v) => {
+              if (v === "gemini" || v === "openrouter") {
+                setProvider(v);
+                setModel(null);
+              }
+            }}
+          >
+            <SelectTrigger id="key-provider" disabled={create.isPending}>
+              <SelectValue>
+                {(value: string | null) =>
+                  PROVIDER_BADGE[value ?? provider] ?? value
+                }
+              </SelectValue>
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="openrouter">OpenRouter</SelectItem>
+              <SelectItem value="gemini">Gemini</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+        {provider === "openrouter" && (
+          <div className="space-y-2">
+            <Label>{t("settings.integrations.modelField")}</Label>
+            <ModelPicker
+              value={model}
+              onSelect={setModel}
+              disabled={create.isPending}
+            />
+          </div>
+        )}
+      </div>
       <div className="space-y-2">
         <Label htmlFor="key-label">{t("settings.integrations.labelField")}</Label>
         <Input
@@ -437,7 +688,7 @@ function AddKeyForm() {
             type={reveal ? "text" : "password"}
             value={apiKey}
             onChange={(e) => setApiKey(e.target.value)}
-            placeholder="AIza…"
+            placeholder={provider === "gemini" ? "AIza…" : "sk-or-…"}
             autoComplete="off"
             spellCheck={false}
             disabled={create.isPending}
@@ -462,9 +713,11 @@ function AddKeyForm() {
             )}
           </Button>
         </div>
-        {!looksLikeGeminiKey && (
+        {!keyPrefixOk && (
           <p className="text-destructive text-xs">
-            {t("settings.integrations.keyPrefixWarning")}
+            {provider === "gemini"
+              ? t("settings.integrations.keyPrefixWarning")
+              : t("settings.integrations.orKeyPrefixWarning")}
           </p>
         )}
       </div>
