@@ -56,7 +56,7 @@ export function useCorrectReview() {
     mutationFn: async ({ reviewId, ...body }) =>
       apiRequest<CorrectReviewResponse>(
         `/tenants/me/reviews/${reviewId}/correct`,
-        { method: "POST", body: JSON.stringify(body) },
+        { method: "POST", body },
       ),
     onSuccess: (_data, { reviewId }) => {
       queryClient.invalidateQueries({ queryKey: ["review-detail", reviewId] });
