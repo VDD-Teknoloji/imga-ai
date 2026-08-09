@@ -63,6 +63,9 @@ class TenantLlmCredential(Base):
 
     provider: Mapped[str] = mapped_column(String(32), nullable=False)
     label: Mapped[str] = mapped_column(String(64), nullable=False)
+    # 0037 — kurum başına model seçimi (örn. "openai/gpt-5-mini").
+    # NULL → sağlayıcının kod içi varsayılanı.
+    model: Mapped[str | None] = mapped_column(String(128), nullable=True)
     encrypted_value: Mapped[bytes] = mapped_column(LargeBinary(), nullable=False)
     priority: Mapped[int] = mapped_column(Integer(), nullable=False, default=0)
     is_active: Mapped[bool] = mapped_column(
