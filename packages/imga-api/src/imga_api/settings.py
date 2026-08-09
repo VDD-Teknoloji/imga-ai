@@ -100,7 +100,8 @@ class BatchSettings:
 
     upload_dir: Path = Path("/var/imga/uploads")
     max_file_bytes: int = 50 * 1024 * 1024  # 50 MB
-    max_rows: int = 10_000
+    # 2026-08-09 — 10k → 25k müşteri talebi (çok aylık tek yükleme).
+    max_rows: int = 25_000
     # Sprint 9.0.5-A R6 — was 1000; see from_env() comment.
     chunk_size: int = 200
     retention_hours: int = 24
@@ -237,7 +238,7 @@ class Settings:
         batch = BatchSettings(
             upload_dir=Path(batch_upload_dir) if batch_upload_dir else Path("/var/imga/uploads"),
             max_file_bytes=_int("IMGA_BATCH_MAX_FILE_BYTES", 50 * 1024 * 1024),
-            max_rows=_int("IMGA_BATCH_MAX_ROWS", 10_000),
+            max_rows=_int("IMGA_BATCH_MAX_ROWS", 25_000),
             # Sprint 9.0.5-A R6 — default 1000 -> 200. The earlier
             # default produced one chunk-end progress write every
             # ~9 minutes on a 2852-row LLM-bound run, leaving the

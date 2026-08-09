@@ -199,9 +199,10 @@ class WorkerSettings:
     worker process so the pool is fully owned. Multiple workers (a
     second container) can share the queue if throughput needs it.
 
-    ``job_timeout`` is generous: a 10K-row batch at the new
-    parallel/non-blocking baseline targets 15-30 min; 2h covers worst-
-    case Gemini retries + Postgres back-pressure. ``keep_result``
+    ``job_timeout`` is generous: a 10K-row batch at the parallel/
+    non-blocking baseline targets 15-30 min; 25K (2026-08-09 limit
+    bump) scales that to ~40-75 min, and 4h covers worst-case LLM
+    retries + Postgres back-pressure. ``keep_result``
     retains arq's result record for a day so /retry can re-enqueue
     via the same job id without a stale-key warning.
     """
@@ -211,7 +212,7 @@ class WorkerSettings:
     on_shutdown = staticmethod(shutdown)
     redis_settings = _redis_settings()
     max_jobs = 1
-    job_timeout = 7200  # 2h
+    job_timeout = 14400  # 4h — 25k satır worst-case payı
     keep_result = 86400  # 24h
     queue_name = "imga-batch"
     # Sprint 9.2 D — every-5-min cron tick for scheduled briefings.

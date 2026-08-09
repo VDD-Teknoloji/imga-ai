@@ -208,7 +208,7 @@ def _build_instruction_sheet(wb: Workbook) -> None:
         "• Tarih kolonunda Excel'in otomatik tarih formatlaması bozucu "
         "olabilir. Yüklemeden önce hücreleri 'Metin' formatına çevirin "
         "veya YYYY-MM-DD biçimini kullanın.",
-        "• Maksimum 10.000 satır. Daha büyük dosyaları bölün.",
+        "• Maksimum 25.000 satır. Daha büyük dosyaları bölün.",
     )
     for line in pitfalls:
         cell = ws.cell(row=row, column=2, value=line)
