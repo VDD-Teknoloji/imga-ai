@@ -32,7 +32,7 @@ Two contracts pinned here:
 
 from __future__ import annotations
 
-from datetime import UTC, date, datetime
+from datetime import UTC, datetime
 from uuid import UUID
 
 import pytest
@@ -46,6 +46,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from imga_api.services.executive_briefing_service import (
     ExecutiveBriefingService,
 )
+from imga_api.services.llm_credentials import LlmKeySelection
 from tests.batch_helpers import login_token
 
 
@@ -59,13 +60,21 @@ async def test_audit_row_lands_when_rotator_exhausts(
 
     # 1) Bypass the DB credentials load — return one fake key so the
     #    service constructs a rotator without hitting tenant_llm_credentials.
-    async def _fake_load_keys(_session: object, _tid: UUID) -> list[GeminiKey]:
-        return [
-            GeminiKey(id="fake-id", value="fake-value", label="fake", priority=0),
-        ]
+    async def _fake_load_keys(
+        _session: object, _tid: UUID
+    ) -> LlmKeySelection:
+        return LlmKeySelection(
+            provider="gemini",
+            model=None,
+            keys=[
+                GeminiKey(
+                    id="fake-id", value="fake-value", label="fake", priority=0
+                ),
+            ],
+        )
 
     monkeypatch.setattr(
-        "imga_api.services.executive_briefing_service.load_active_gemini_keys",
+        "imga_api.services.executive_briefing_service.load_active_llm_keys",
         _fake_load_keys,
     )
 
@@ -145,8 +154,14 @@ async def test_generate_route_audit_survives_503_response(
     out of the transaction and rolling the SAVEPOINT row back."""
     user, tid, pw = semi_auto_tenant
 
-    async def _fake_load_keys(_session: object, _tid: UUID) -> list[GeminiKey]:
-        return [GeminiKey(id="fid", value="fval", label="fake", priority=0)]
+    async def _fake_load_keys(
+        _session: object, _tid: UUID
+    ) -> LlmKeySelection:
+        return LlmKeySelection(
+            provider="gemini",
+            model=None,
+            keys=[GeminiKey(id="fid", value="fval", label="fake", priority=0)],
+        )
 
     async def _fake_rotation(_self: object, _operation: object) -> None:
         raise AllKeysExhaustedError(
@@ -154,7 +169,7 @@ async def test_generate_route_audit_survives_503_response(
         )
 
     monkeypatch.setattr(
-        "imga_api.services.executive_briefing_service.load_active_gemini_keys",
+        "imga_api.services.executive_briefing_service.load_active_llm_keys",
         _fake_load_keys,
     )
     monkeypatch.setattr(

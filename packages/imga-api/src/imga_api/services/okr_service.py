@@ -46,7 +46,6 @@ from imga_core.llm import (
     InvalidKeyError,
     LLMError,
 )
-from imga_core.llm.gemini import GeminiProvider
 from imga_db.models import StrategicReport, Tenant
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -58,13 +57,18 @@ from imga_api.llm.prompts.okr_v1 import (
 )
 from imga_api.services.llm_credentials import (
     NoCredentialsError,
-    load_active_gemini_keys,
+    load_active_llm_keys,
     mark_keys_failed,
 )
+from imga_api.services.llm_provider_factory import (
+    StructuredProvider,
+    build_structured_provider,
+    resolve_model_name,
+)
 from imga_api.services.strategic_constants import (
-    language_directive,
     company_size_label,
     industry_label,
+    language_directive,
 )
 
 _logger = logging.getLogger(__name__)
@@ -105,12 +109,13 @@ class OkrService:
         tenant_id: UUID,
         user_id: UUID | None,
         *,
-        provider: GeminiProvider | None = None,
+        provider: StructuredProvider | None = None,
     ) -> None:
         self._session = session
         self._tenant_id = tenant_id
         self._user_id = user_id
-        self._provider = provider or _build_provider_without_key()
+        # None -> generate() kurar (saglayici tenant kimligine bagli).
+        self._provider = provider
 
     async def generate(self, source_report_id: UUID) -> dict[str, Any]:
         """Generate one OKR row off ``source_report_id`` (must be a
@@ -123,11 +128,17 @@ class OkrService:
 
         # 2. Credentials → rotator. Same path as SwotService; shared
         # helper means the "no creds" UI flow is identical.
-        keys = await load_active_gemini_keys(self._session, self._tenant_id)
-        if not keys:
+        key_selection = await load_active_llm_keys(
+            self._session, self._tenant_id
+        )
+        if key_selection is None:
             raise NoCredentialsError(
                 "Tenant has no active LLM API keys configured"
             )
+        keys = key_selection.keys
+        provider_name = key_selection.provider
+        model_name = resolve_model_name(provider_name, key_selection.model)
+        provider = self._provider or build_structured_provider(provider_name)
         rotator = GeminiKeyRotator(keys)
 
         # 3. Render the OKR user prompt from the SWOT payload + the
@@ -155,11 +166,12 @@ class OkrService:
 
         async def _call(api_key: str) -> tuple[dict[str, Any], dict[str, int] | None]:
             try:
-                return await self._provider.generate_okr(
+                return await provider.generate_okr(
                     api_key=api_key,
                     system_prompt=system_prompt,
                     user_prompt=user_prompt,
                     response_schema=OKR_RESPONSE_SCHEMA,
+                    model_name=model_name,
                 )
             except InvalidKeyError:
                 for k in keys:
@@ -183,8 +195,8 @@ class OkrService:
         audit_ctx = LLMCallContext(
             tenant_id=self._tenant_id,
             call_type=CALL_TYPE_OKR,
-            model_name=DEFAULT_MODEL_NAME,
-            model_provider="gemini",
+            model_name=model_name,
+            model_provider=provider_name,
             prompt_template_key="okr",
             prompt_template_version="v1",
             actor_user_id=self._user_id,
@@ -244,7 +256,7 @@ class OkrService:
         report_dict = await self._persist_report(
             response=response,
             source=source,
-            model_name=DEFAULT_MODEL_NAME,
+            model_name=model_name,
             duration_ms=duration_ms,
             token_usage=token_usage,
         )
@@ -398,12 +410,6 @@ class OkrService:
                 str(self._user_id) if self._user_id is not None else None
             ),
         }
-
-
-def _build_provider_without_key() -> GeminiProvider:
-    """Same trick as SwotService — placeholder constructor key, every
-    actual call passes a real per-attempt key via the rotator."""
-    return GeminiProvider(api_key="x", model_name=DEFAULT_MODEL_NAME)
 
 
 __all__ = [

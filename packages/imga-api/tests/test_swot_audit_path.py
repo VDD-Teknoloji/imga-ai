@@ -35,6 +35,7 @@ from imga_db.models import LlmCallAudit, User
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from imga_api.services.llm_credentials import LlmKeySelection
 from imga_api.services.swot_service import SwotService
 
 
@@ -48,13 +49,21 @@ async def test_swot_audit_row_lands_when_rotator_exhausts(
 
     # 1) Bypass the DB credentials load — return one fake key so the
     #    service constructs a rotator without hitting tenant_llm_credentials.
-    async def _fake_load_keys(_session: object, _tid: UUID) -> list[GeminiKey]:
-        return [
-            GeminiKey(id="fake-id", value="fake-value", label="fake", priority=0),
-        ]
+    async def _fake_load_keys(
+        _session: object, _tid: UUID
+    ) -> LlmKeySelection:
+        return LlmKeySelection(
+            provider="gemini",
+            model=None,
+            keys=[
+                GeminiKey(
+                    id="fake-id", value="fake-value", label="fake", priority=0
+                ),
+            ],
+        )
 
     monkeypatch.setattr(
-        "imga_api.services.swot_service.load_active_gemini_keys",
+        "imga_api.services.swot_service.load_active_llm_keys",
         _fake_load_keys,
     )
 

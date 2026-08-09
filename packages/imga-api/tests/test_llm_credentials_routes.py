@@ -28,7 +28,7 @@ async def test_create_credential_encrypts_value_in_db(
     batch_client: TestClient,
     semi_auto_tenant: tuple[User, UUID, str],
     admin_session: AsyncSession,
-    encryption_helper: Any,  # noqa: ARG001
+    encryption_helper: Any,
 ) -> None:
     """POST encrypts the plaintext key. The DB column never carries
     plaintext; the response only shows the last-4 preview."""
@@ -70,7 +70,7 @@ async def test_create_credential_encrypts_value_in_db(
 async def test_list_credentials_shows_only_preview(
     batch_client: TestClient,
     semi_auto_tenant: tuple[User, UUID, str],
-    encryption_helper: Any,  # noqa: ARG001
+    encryption_helper: Any,
 ) -> None:
     """Listing returns preview, never the full key."""
     user, tid, pw = semi_auto_tenant
@@ -97,7 +97,7 @@ async def test_list_credentials_shows_only_preview(
 async def test_create_second_credential_sets_priority_one(
     batch_client: TestClient,
     semi_auto_tenant: tuple[User, UUID, str],
-    encryption_helper: Any,  # noqa: ARG001
+    encryption_helper: Any,
 ) -> None:
     """Second create gets priority = max + 1 = 1."""
     user, tid, pw = semi_auto_tenant
@@ -122,7 +122,7 @@ async def test_create_second_credential_sets_priority_one(
 async def test_reorder_updates_priorities(
     batch_client: TestClient,
     semi_auto_tenant: tuple[User, UUID, str],
-    encryption_helper: Any,  # noqa: ARG001
+    encryption_helper: Any,
 ) -> None:
     """Drag-reorder: full ordered list rewrites priorities 0..N. The
     primary moves to the back."""
@@ -164,7 +164,7 @@ async def test_reorder_updates_priorities(
 async def test_reorder_with_missing_id_returns_400(
     batch_client: TestClient,
     semi_auto_tenant: tuple[User, UUID, str],
-    encryption_helper: Any,  # noqa: ARG001
+    encryption_helper: Any,
 ) -> None:
     """Reorder rejects partial lists — caller must include every
     active credential. Missing one would orphan its priority slot."""
@@ -197,7 +197,7 @@ async def test_reorder_with_missing_id_returns_400(
 async def test_delete_credential_removes_row(
     batch_client: TestClient,
     semi_auto_tenant: tuple[User, UUID, str],
-    encryption_helper: Any,  # noqa: ARG001
+    encryption_helper: Any,
 ) -> None:
     user, tid, pw = semi_auto_tenant
     token = login_token(batch_client, user.email, pw, tid)
@@ -221,3 +221,99 @@ async def test_delete_credential_removes_row(
     )
     assert after.status_code == 200
     assert after.json() == []
+
+
+@pytest.mark.asyncio
+async def test_create_openrouter_credential_with_model(
+    batch_client: TestClient,
+    semi_auto_tenant: tuple[User, UUID, str],
+    encryption_helper: Any,
+) -> None:
+    """OpenRouter kaydi provider + model tasir; liste ayni alanlari doner."""
+    user, tid, pw = semi_auto_tenant
+    token = login_token(batch_client, user.email, pw, tid)
+    r = batch_client.post(
+        "/tenants/me/llm-credentials",
+        headers={"Authorization": f"Bearer {token}"},
+        json={
+            "label": "OpenRouter",
+            "api_key": "sk-or-test-key-9999",
+            "provider": "openrouter",
+            "model": "openai/gpt-5-mini",
+        },
+    )
+    assert r.status_code == 201, r.text
+    body = r.json()
+    assert body["provider"] == "openrouter"
+    assert body["model"] == "openai/gpt-5-mini"
+
+    listed = batch_client.get(
+        "/tenants/me/llm-credentials",
+        headers={"Authorization": f"Bearer {token}"},
+    ).json()
+    assert any(
+        c["provider"] == "openrouter" and c["model"] == "openai/gpt-5-mini"
+        for c in listed
+    )
+
+
+@pytest.mark.asyncio
+async def test_llm_key_selection_prefers_top_priority_provider(
+    batch_client: TestClient,
+    semi_auto_tenant: tuple[User, UUID, str],
+    admin_session: AsyncSession,
+    encryption_helper: Any,
+) -> None:
+    """Kazanan saglayici = en ustteki aktif kayit; reorder ile
+    OpenRouter'a gecis load_active_llm_keys ciktisini degistirir."""
+    from imga_api.services.llm_credentials import load_active_llm_keys
+
+    user, tid, pw = semi_auto_tenant
+    token = login_token(batch_client, user.email, pw, tid)
+    headers = {"Authorization": f"Bearer {token}"}
+
+    r_gem = batch_client.post(
+        "/tenants/me/llm-credentials",
+        headers=headers,
+        json={"label": "Gemini", "api_key": "AIzaSy-key-1111"},
+    )
+    r_or = batch_client.post(
+        "/tenants/me/llm-credentials",
+        headers=headers,
+        json={
+            "label": "OpenRouter",
+            "api_key": "sk-or-key-2222",
+            "provider": "openrouter",
+            "model": "anthropic/claude-haiku-4.5",
+        },
+    )
+    gem_id = r_gem.json()["id"]
+    or_id = r_or.json()["id"]
+
+    async with admin_session.begin():
+        await admin_session.execute(
+            text("SELECT set_config('app.current_tenant_id', :t, true)"),
+            {"t": str(tid)},
+        )
+        selection = await load_active_llm_keys(admin_session, tid)
+    assert selection is not None
+    assert selection.provider == "gemini"
+    assert len(selection.keys) == 1
+
+    r_reorder = batch_client.put(
+        "/tenants/me/llm-credentials/reorder",
+        headers=headers,
+        json={"ordered_ids": [or_id, gem_id]},
+    )
+    assert r_reorder.status_code == 200, r_reorder.text
+
+    async with admin_session.begin():
+        await admin_session.execute(
+            text("SELECT set_config('app.current_tenant_id', :t, true)"),
+            {"t": str(tid)},
+        )
+        selection = await load_active_llm_keys(admin_session, tid)
+    assert selection is not None
+    assert selection.provider == "openrouter"
+    assert selection.model == "anthropic/claude-haiku-4.5"
+    assert [k.value for k in selection.keys] == ["sk-or-key-2222"]

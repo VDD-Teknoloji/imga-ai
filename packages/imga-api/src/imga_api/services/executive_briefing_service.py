@@ -27,7 +27,6 @@ from imga_core.llm import (
     InvalidKeyError,
     LLMError,
 )
-from imga_core.llm.gemini import GeminiProvider
 from imga_db.models import ExecutiveBriefing, Review, Tenant
 from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -40,13 +39,18 @@ from imga_api.llm.prompts.executive_briefing_v1 import (
 )
 from imga_api.services.llm_credentials import (
     NoCredentialsError,
-    load_active_gemini_keys,
+    load_active_llm_keys,
     mark_keys_failed,
 )
+from imga_api.services.llm_provider_factory import (
+    StructuredProvider,
+    build_structured_provider,
+    resolve_model_name,
+)
 from imga_api.services.strategic_constants import (
-    language_directive,
     company_size_label,
     industry_label,
+    language_directive,
 )
 
 _logger = logging.getLogger(__name__)
@@ -121,12 +125,13 @@ class ExecutiveBriefingService:
         tenant_id: UUID,
         user_id: UUID | None,
         *,
-        provider: GeminiProvider | None = None,
+        provider: StructuredProvider | None = None,
     ) -> None:
         self._session = session
         self._tenant_id = tenant_id
         self._user_id = user_id
-        self._provider = provider or _build_provider_without_key()
+        # None -> generate() kurar (saglayici tenant kimligine bagli).
+        self._provider = provider
 
     async def generate(
         self,
@@ -211,13 +216,20 @@ class ExecutiveBriefingService:
             "executive_snapshot": snapshot_payload,
         }
 
-        # Credentials → rotator.
-        keys = await load_active_gemini_keys(self._session, self._tenant_id)
-        if not keys:
+        # Credentials → rotator. Kazanan saglayici + model kurum
+        # kimlik kayitlarindan gelir (OpenRouter entegrasyonu).
+        key_selection = await load_active_llm_keys(
+            self._session, self._tenant_id
+        )
+        if key_selection is None:
             raise NoCredentialsError(
                 "Tenant has no active LLM API keys configured"
             )
+        keys = key_selection.keys
         rotator = GeminiKeyRotator(keys)
+        provider_name = key_selection.provider
+        model_name = resolve_model_name(provider_name, key_selection.model)
+        provider = self._provider or build_structured_provider(provider_name)
 
         from imga_api.services.prompt_override import select_prompt
 
@@ -240,11 +252,12 @@ class ExecutiveBriefingService:
 
         async def _call(api_key: str) -> tuple[dict[str, Any], dict[str, int] | None]:
             try:
-                return await self._provider.generate_executive_briefing(
+                return await provider.generate_executive_briefing(
                     api_key=api_key,
                     system_prompt=system_prompt,
                     user_prompt=user_prompt,
                     response_schema=EXECUTIVE_BRIEFING_RESPONSE_SCHEMA,
+                    model_name=model_name,
                 )
             except InvalidKeyError:
                 for k in keys:
@@ -268,8 +281,8 @@ class ExecutiveBriefingService:
         audit_ctx = LLMCallContext(
             tenant_id=self._tenant_id,
             call_type=CALL_TYPE_BRIEFING,
-            model_name=DEFAULT_MODEL_NAME,
-            model_provider="gemini",
+            model_name=model_name,
+            model_provider=provider_name,
             prompt_template_key="executive_briefing",
             prompt_template_version="v1",
             actor_user_id=self._user_id,
@@ -366,6 +379,7 @@ class ExecutiveBriefingService:
             input_stats=prompt_ctx,
             duration_ms=duration_ms,
             token_usage=token_usage,
+            model_name=model_name,
         )
         await self._cache_set(cache_key, report_dict)
         _logger.info(
@@ -555,6 +569,7 @@ class ExecutiveBriefingService:
         input_stats: dict[str, Any],
         duration_ms: int,
         token_usage: dict[str, int] | None,
+        model_name: str,
     ) -> dict[str, Any]:
         top_actions = list(response.get("top_actions") or [])
         row = ExecutiveBriefing(
@@ -568,7 +583,7 @@ class ExecutiveBriefingService:
             critical_insights=list(response.get("critical_insights") or []),
             top_actions=top_actions,
             input_stats=input_stats,
-            model_name=DEFAULT_MODEL_NAME,
+            model_name=model_name,
             token_usage=token_usage,
             generation_duration_ms=duration_ms,
             created_by_user_id=self._user_id,
@@ -671,10 +686,6 @@ class ExecutiveBriefingService:
             )
         except Exception as exc:
             _logger.warning("briefing cache set failed (%s)", exc)
-
-
-def _build_provider_without_key() -> GeminiProvider:
-    return GeminiProvider(api_key="x", model_name=DEFAULT_MODEL_NAME)
 
 
 # Sprint 8.3.11 R2 — server-computed KPI deltas. The LLM occasionally

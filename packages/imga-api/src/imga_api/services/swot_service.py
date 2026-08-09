@@ -56,7 +56,6 @@ from imga_core.llm import (
     InvalidKeyError,
     LLMError,
 )
-from imga_core.llm.gemini import GeminiProvider
 from imga_db.models import StrategicReport
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -68,17 +67,22 @@ from imga_api.llm.prompts.swot_v1 import (
 )
 from imga_api.services.llm_credentials import (
     NoCredentialsError,
-    load_active_gemini_keys,
+    load_active_llm_keys,
     mark_keys_failed,
+)
+from imga_api.services.llm_provider_factory import (
+    StructuredProvider,
+    build_structured_provider,
+    resolve_model_name,
 )
 from imga_api.services.stats_aggregator import (
     StatsAggregator,
     StrategicStatsSnapshot,
 )
 from imga_api.services.strategic_constants import (
-    language_directive,
     company_size_label,
     industry_label,
+    language_directive,
 )
 
 _logger = logging.getLogger(__name__)
@@ -113,15 +117,15 @@ class SwotService:
         tenant_id: UUID,
         user_id: UUID | None,
         *,
-        provider: GeminiProvider | None = None,
+        provider: StructuredProvider | None = None,
     ) -> None:
         self._session = session
         self._tenant_id = tenant_id
         self._user_id = user_id
-        # Provider injected for test isolation; production code path
-        # builds one with no constructor key (every call passes its
-        # own key via the rotator).
-        self._provider = provider or _build_provider_without_key()
+        # Provider injected for test isolation; production yolunda
+        # sağlayıcı kurumun kazanan kimlik kaydına bağlı olduğu için
+        # generate() içinde (DB'den seçim geldikten sonra) kurulur.
+        self._provider = provider
 
     async def generate(
         self,
@@ -157,13 +161,20 @@ class SwotService:
                 )
                 return cached
 
-        # 4. Credentials → rotator
-        keys = await load_active_gemini_keys(self._session, self._tenant_id)
-        if not keys:
+        # 4. Credentials → rotator. Kazanan sağlayıcı + model kurum
+        # kimlik kayıtlarından gelir (OpenRouter entegrasyonu).
+        key_selection = await load_active_llm_keys(
+            self._session, self._tenant_id
+        )
+        if key_selection is None:
             raise NoCredentialsError(
                 "Tenant has no active LLM API keys configured"
             )
+        keys = key_selection.keys
         rotator = GeminiKeyRotator(keys)
+        provider_name = key_selection.provider
+        model_name = resolve_model_name(provider_name, key_selection.model)
+        provider = self._provider or build_structured_provider(provider_name)
 
         # 5. Prompt rendering — Sprint 11.3: DB override (tenant >
         # global) varsa onu kullan, yoksa kod sabitleri. /settings/
@@ -193,11 +204,12 @@ class SwotService:
 
         async def _call(api_key: str) -> tuple[dict[str, Any], dict[str, int] | None]:
             try:
-                return await self._provider.generate_swot(
+                return await provider.generate_swot(
                     api_key=api_key,
                     system_prompt=system_prompt,
                     user_prompt=user_prompt,
                     response_schema=SWOT_RESPONSE_SCHEMA,
+                    model_name=model_name,
                 )
             except InvalidKeyError:
                 # Attribute the failure to the key the rotator passed
@@ -227,8 +239,8 @@ class SwotService:
         audit_ctx = LLMCallContext(
             tenant_id=self._tenant_id,
             call_type=CALL_TYPE_STRATEGIC_REPORT,
-            model_name=DEFAULT_MODEL_NAME,
-            model_provider="gemini",
+            model_name=model_name,
+            model_provider=provider_name,
             prompt_template_key="swot",
             prompt_template_version=selection.version,
             actor_user_id=self._user_id,
@@ -301,7 +313,7 @@ class SwotService:
             stats=stats,
             date_from=date_from,
             date_to=date_to,
-            model_name=DEFAULT_MODEL_NAME,
+            model_name=model_name,
             duration_ms=duration_ms,
             token_usage=token_usage,
         )
@@ -484,20 +496,6 @@ class SwotService:
 # ---------------------------------------------------------------------------
 # Module helpers
 # ---------------------------------------------------------------------------
-
-
-def _build_provider_without_key() -> GeminiProvider:
-    """Construct a GeminiProvider with a placeholder key. The SWOT
-    path always passes ``api_key`` per call (rotator-driven), so the
-    constructor key is unused — but the provider's ``__init__`` still
-    rejects empty keys + imports the SDK eagerly.
-
-    We pass a single-character placeholder so the constructor's
-    "non-empty" guard passes. genai.configure(api_key="x") is harmless
-    because every actual generate_swot call reconfigures with the real
-    key before the SDK reaches out.
-    """
-    return GeminiProvider(api_key="x", model_name=DEFAULT_MODEL_NAME)
 
 
 def _snapshot_to_input_stats(stats: StrategicStatsSnapshot) -> dict[str, Any]:

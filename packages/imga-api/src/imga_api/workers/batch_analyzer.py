@@ -50,12 +50,11 @@ from imga_core import (
     KeywordCategoryClassifier,
 )
 from imga_core.categorizers import TaxonomyEntry, apply_company_heuristic
-from imga_core.llm import RotatingGeminiProvider
+from imga_core.llm import LLMProvider, RotatingGeminiProvider
 from imga_core.llm.unified_classifier import (
     FewShotExample,
     GeminiUnifiedEngine,
 )
-from imga_core.models import OverrideHit
 from imga_core.text_utils import review_text_hash
 from imga_db import create_engine, create_session_factory, set_current_tenant
 from imga_db.models import (
@@ -609,7 +608,10 @@ async def _run_chunks_parallel(
 
         task = asyncio.create_task(_bounded_chunk(chunk_index, chunk))
         in_flight.add(task)
-        chunk_index += 1
+        # SIM113 bilinçli susturuldu: _chunked tembel bir jeneratör ve
+        # döngü gövdesi erken return/drain içeriyor — sayaç akışı elle
+        # tutuluyor, enumerate okunurluğu artırmıyor.
+        chunk_index += 1  # noqa: SIM113
 
         # Drain finished tasks to surface exceptions early + bound
         # the in-flight queue size.
@@ -791,7 +793,7 @@ async def _process_chunk(
                     few_shot=few_shot,
                     stats_sink=classifier_stats,
                 )
-            except Exception as exc:  # noqa: BLE001 — fallback zinciri
+            except Exception as exc:
                 log.warning(
                     "unified classifier failed for chunk; falling back "
                     "to classic pipeline: %s",
@@ -879,11 +881,30 @@ async def _process_chunk(
             f"{p.row_number}:{p.text[:200]}"
             for p in valid_rows[: min(20, len(valid_rows))]
         )
+        # OpenRouter entegrasyonu — audit satırı artık gerçek kazanan
+        # sağlayıcı/modeli taşır (eskiden kod sabitinden geliyordu).
+        # Unified motor varsa onun kimliği; yoksa klasik rotating
+        # provider'ınki. Chunk-level yaklaşıklık (dokümante trade-off).
+        audit_model_name = DEFAULT_MODEL_NAME
+        audit_provider = "gemini"
+        if unified_ctx is not None:
+            audit_model_name = unified_ctx.engine.model_name
+            audit_provider = unified_ctx.engine.provider
+        elif classifier_override is not None:
+            _llm = getattr(classifier_override, "llm", None)
+            if _llm is not None:
+                audit_model_name = getattr(
+                    _llm, "model_name", DEFAULT_MODEL_NAME
+                )
+                _pname = str(getattr(_llm, "PROVIDER_NAME", "gemini"))
+                audit_provider = (
+                    "openrouter" if "openrouter" in _pname else "gemini"
+                )
         audit_ctx = LLMCallContext(
             tenant_id=tenant_id,
             call_type=CALL_TYPE_CLASSIFICATION,
-            model_name=DEFAULT_MODEL_NAME,
-            model_provider="gemini",
+            model_name=audit_model_name,
+            model_provider=audit_provider,
             actor_user_id=triggered_by_user_id,
             related_entity_type="analyze_batch_job",
             related_entity_id=job_id,
@@ -1255,27 +1276,28 @@ async def _build_tenant_classifier(
     worker restart. Cost is one admin-session DB query +
     decryption — milliseconds against a multi-minute batch.
     """
-    from imga_api.services.llm_credentials import load_active_gemini_keys
+    from imga_api.services.llm_credentials import load_active_llm_keys
 
     try:
         async with context.admin_session_factory() as session, session.begin():
             await set_current_tenant(session, tenant_id)
-            keys = await load_active_gemini_keys(session, tenant_id)
+            selection = await load_active_llm_keys(session, tenant_id)
     except Exception:
         log.exception(
-            "batch worker: failed to load tenant Gemini keys; "
+            "batch worker: failed to load tenant LLM keys; "
             "falling back to default classifier",
             extra={"tenant_id": str(tenant_id)},
         )
         return None
 
-    if not keys:
+    if selection is None:
         log.info(
-            "batch worker: tenant has no active Gemini credentials; "
+            "batch worker: tenant has no active LLM credentials; "
             "falling back to keyword-only classifier",
             extra={"tenant_id": str(tenant_id)},
         )
         return None
+    keys = selection.keys
 
     # Sprint 9.0.5-A R7 — pull the parallel-LLM cap from
     # BatchSettings so a deploy can override
@@ -1283,16 +1305,31 @@ async def _build_tenant_classifier(
     # (R7 down from 8) keeps in-flight state bounded during a
     # provider outage so the circuit breaker can react fast.
     llm_concurrency = context.settings.llm_concurrency
+    from imga_api.services.llm_provider_factory import resolve_model_name
+
+    model_name = resolve_model_name(selection.provider, selection.model)
+    if selection.provider == "openrouter":
+        from imga_core.llm import RotatingOpenRouterProvider
+
+        llm_provider: LLMProvider = RotatingOpenRouterProvider(
+            keys=keys, model_name=model_name
+        )
+    else:
+        llm_provider = RotatingGeminiProvider(
+            keys=keys, model_name=model_name
+        )
     log.info(
-        "batch worker: tenant classifier built with %d Gemini key(s) "
-        "(rotator active, llm_concurrency=%d)",
+        "batch worker: tenant classifier built with %d %s key(s) "
+        "(model=%s, rotator active, llm_concurrency=%d)",
         len(keys),
+        selection.provider,
+        model_name,
         llm_concurrency,
         extra={"tenant_id": str(tenant_id)},
     )
     return HybridClassifier(
         keyword_classifier=KeywordCategoryClassifier(),
-        llm_provider=RotatingGeminiProvider(keys=keys),
+        llm_provider=llm_provider,
         llm_concurrency=llm_concurrency,
     )
 
@@ -1340,12 +1377,21 @@ async def _build_unified_context(
         return None
 
     from imga_api.services.correction_store import load_correction_store
-    from imga_api.services.llm_credentials import load_active_gemini_keys
+    from imga_api.services.llm_credentials import (
+        load_active_gemini_keys,
+        load_active_llm_keys,
+    )
 
     try:
         async with context.admin_session_factory() as session, session.begin():
             await set_current_tenant(session, tenant_id)
-            keys = await load_active_gemini_keys(session, tenant_id)
+            selection = await load_active_llm_keys(session, tenant_id)
+            # Embedding API'si Gemini'ye özgü — kazanan sağlayıcı
+            # OpenRouter olsa bile RAG embedding'leri Gemini anahtarı
+            # ister; yoksa boş liste (embed yolu sessizce atlanır).
+            embedding_keys = await load_active_gemini_keys(
+                session, tenant_id
+            )
             store = await load_correction_store(session, tenant_id)
             # Sprint 11.3 — /settings/prompts override'ı: tenant
             # 'unified_classifier' şablonunu düzenlediyse system
@@ -1366,7 +1412,7 @@ async def _build_unified_context(
                 )
                 if template_row is not None:
                     system_prompt_override = template_row.system_prompt
-            except Exception:  # noqa: BLE001 — override best-effort
+            except Exception:
                 log.warning(
                     "unified prompt override lookup failed; using "
                     "code default system prompt",
@@ -1378,21 +1424,29 @@ async def _build_unified_context(
             extra={"tenant_id": str(tenant_id)},
         )
         return None
-    if not keys:
+    if selection is None:
         log.info(
-            "batch worker: no Gemini keys; unified classifier disabled "
+            "batch worker: no LLM keys; unified classifier disabled "
             "for this job (classic BERT+keyword path)",
             extra={"tenant_id": str(tenant_id)},
         )
         return None
+    keys = selection.keys
 
     from imga_core.categories.taxonomy import GLOBAL_CATEGORY_CODES
 
+    from imga_api.services.llm_provider_factory import resolve_model_name
+
+    if selection.provider == "openrouter":
+        unified_model = resolve_model_name("openrouter", selection.model)
+    else:
+        unified_model = selection.model or _unified_model_name()
     engine = GeminiUnifiedEngine(
         keys,
-        model_name=_unified_model_name(),
+        model_name=unified_model,
         concurrency=max(1, context.settings.llm_concurrency // 2),
         system_prompt=system_prompt_override,
+        provider=selection.provider,
     )
     log.info(
         "batch worker: unified classifier active (model=%s, keys=%d, "
@@ -1406,7 +1460,7 @@ async def _build_unified_context(
         engine=engine,
         available_categories=list(GLOBAL_CATEGORY_CODES),
         store=store,
-        keys=keys,
+        keys=embedding_keys,
     )
 
 
@@ -1466,7 +1520,7 @@ async def _few_shot_for_chunk(
                             )
                             if decision is not None:
                                 semantic_hits[i] = decision
-        except Exception as exc:  # noqa: BLE001 — RAG best-effort
+        except Exception as exc:
             log.warning("semantic few-shot lookup failed: %s", exc)
     merged = merge_few_shot(list(recent), list(semantic))
     few_shot = tuple(

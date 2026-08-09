@@ -13,6 +13,7 @@ this class so existing imports + tests keep working unchanged.
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from uuid import UUID
 
@@ -28,6 +29,23 @@ _logger = logging.getLogger(__name__)
 class NoCredentialsError(Exception):
     """Tenant has no active LLM credential rows. Surfaces as 412
     Precondition Failed; frontend redirects to /settings/integrations."""
+
+
+@dataclass(frozen=True, slots=True)
+class LlmKeySelection:
+    """Kurumun kazanan LLM yapılandırması.
+
+    Kural: en yüksek öncelikli (priority=0'a en yakın) AKTİF kimlik
+    kaydının sağlayıcısı kazanır; rotasyon listesi yalnız o sağlayıcının
+    aktif anahtarlarından kurulur. ``model`` kazanan satırın model
+    seçimi (NULL → sağlayıcı varsayılanı). Böylece Gemini'den
+    OpenRouter'a geçiş, seçicide OpenRouter satırını en üste taşımaktan
+    ibarettir — eski kayıtları silmek gerekmez.
+    """
+
+    provider: str
+    model: str | None
+    keys: list[GeminiKey]
 
 
 async def load_active_gemini_keys(
@@ -68,6 +86,64 @@ async def load_active_gemini_keys(
             )
         )
     return out
+
+
+async def load_active_llm_keys(
+    session: AsyncSession, tenant_id: UUID
+) -> LlmKeySelection | None:
+    """Sağlayıcı-farkındalıklı yükleyici: SWOT/OKR/brifing + batch
+    sınıflandırma yolları bunu kullanır. En yüksek öncelikli aktif
+    satırın sağlayıcısı kazanır (bkz. LlmKeySelection docstring).
+
+    ``load_active_gemini_keys`` embedding yolu için ayrı yaşamaya devam
+    eder — embedding API'si Gemini'ye özgü, kazanan sağlayıcı OpenRouter
+    olsa bile embedding'ler Gemini anahtarı ister.
+
+    None → hiç aktif kimlik yok (çağıran keyword-only'e düşer veya
+    NoCredentialsError yükseltir).
+    """
+    stmt = (
+        select(TenantLlmCredential)
+        .where(TenantLlmCredential.tenant_id == tenant_id)
+        .where(TenantLlmCredential.is_active.is_(True))
+        # created_at ikincil sıralama: eski (yalnız-Gemini dönemi)
+        # verisinde iki sağlayıcı aynı önceliği paylaşabilir; kazanan
+        # deterministik kalsın.
+        .order_by(
+            TenantLlmCredential.priority.asc(),
+            TenantLlmCredential.created_at.asc(),
+        )
+    )
+    rows = (await session.execute(stmt)).scalars().all()
+    if not rows:
+        return None
+    winning_provider = rows[0].provider
+    winning_model = rows[0].model
+    keys: list[GeminiKey] = []
+    for row in rows:
+        if row.provider != winning_provider:
+            continue
+        try:
+            plaintext = decrypt(row.encrypted_value)
+        except EncryptionError as exc:
+            _logger.warning(
+                "llm_credentials: skipping credential id=%s — decrypt failed (%s)",
+                row.id, exc,
+            )
+            continue
+        keys.append(
+            GeminiKey(
+                id=str(row.id),
+                value=plaintext,
+                label=row.label,
+                priority=row.priority,
+            )
+        )
+    if not keys:
+        return None
+    return LlmKeySelection(
+        provider=winning_provider, model=winning_model, keys=keys
+    )
 
 
 async def mark_keys_failed(
