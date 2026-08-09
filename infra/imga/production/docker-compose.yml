@@ -206,14 +206,13 @@ services:
           # OOM-killed a 2852-row CSV. Peak RSS hit ~2.4 GiB:
           # 4 × per-chunk BERT model (~1.6 GiB) + transformers cache
           # the R2 eager-import keeps resident (~200 MiB) + idle
-          # baseline (~320 MiB) + Python overhead. 2 GiB ceiling
-          # leaves no headroom; the kernel OOM-killer fired before
-          # any review row was inserted. 4 GiB matches the 17 GiB
-          # free VPS budget and keeps the IMGA_BATCH_CHUNK_CONCURRENCY=4
-          # demo target (10K-row in 15-30 min) intact. The
-          # alternative — drop concurrency to 3 + cap at 3G — was
-          # rejected because it slows the demo throughput by 25%.
-          memory: 4G
+          # baseline (~320 MiB) + Python overhead.
+          # 2026-08-09 — 4G -> 6G: 9903 satirlik XLSX (sablon dosyasi,
+          # 10k sinirinin dibi) 4G'de de OOM-kill yedi (anon-rss ~4.2G;
+          # openpyxl parse maliyeti 4xBERT'in ustune biniyor). Host 23G
+          # RAM / ~15G available; 6G tavani 10k-satir XLSX'e headroom
+          # birakir, chunk concurrency 4 korunur.
+          memory: 6G
           cpus: '2'
 
   web:
