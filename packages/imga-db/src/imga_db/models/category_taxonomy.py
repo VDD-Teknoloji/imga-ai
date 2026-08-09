@@ -66,6 +66,15 @@ class CategoryTaxonomy(Base):
     parent_code: Mapped[str | None] = mapped_column(
         String(64), nullable=True
     )
+    # Sprint 13.1 — ana kategori eşlemesi (drill-down gruplaması +
+    # sınıflandırıcı prompt'u için; SAYIMLAR review kolonlarından
+    # gelir). ``reviews.primary_category`` ile aynı global kod
+    # uzayı (imga_core.categories GLOBAL_CATEGORY_CODES); NULL =
+    # henüz eşlenmemiş. ``parent_code`` ile karıştırılmamalı: o
+    # aynı tenant içi bir alt-taksonomi satırını işaret eder.
+    primary_category_code: Mapped[str | None] = mapped_column(
+        String(64), nullable=True
+    )
     # Soft delete — Sprint 8.3.7-A. Rows are flipped to ``False`` via
     # the DELETE endpoint and restored via the POST /restore endpoint;
     # the heuristic reranker filters on ``is_active`` so retired rows

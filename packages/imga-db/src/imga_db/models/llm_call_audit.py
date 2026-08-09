@@ -41,7 +41,8 @@ class LlmCallAudit(Base):
     __table_args__ = (
         CheckConstraint(
             "call_type IN ('classification', 'briefing', "
-            "'strategic_report', 'action_extraction', 'okr')",
+            "'strategic_report', 'action_extraction', 'okr', "
+            "'root_cause')",
             name="ck_llm_call_audit_call_type",
         ),
     )

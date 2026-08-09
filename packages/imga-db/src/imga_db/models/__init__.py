@@ -39,6 +39,7 @@ from imga_db.models.report_job import (
 )
 from imga_db.models.review import Review, ReviewDecision
 from imga_db.models.review_correction import ReviewCorrection
+from imga_db.models.root_cause_analysis import RootCauseAnalysis
 from imga_db.models.sla_rule import SlaRule
 from imga_db.models.strategic_report import StrategicReport
 from imga_db.models.taxonomy_edit_audit import TaxonomyEditAudit
@@ -49,8 +50,10 @@ from imga_db.models.tenant import (
     TenantPlanTier,
 )
 from imga_db.models.tenant_business_dimension import TenantBusinessDimension
+from imga_db.models.tenant_engagement_setting import TenantEngagementSetting
 from imga_db.models.tenant_kpi_goal import TenantKpiGoal
 from imga_db.models.tenant_llm_credential import TenantLlmCredential
+from imga_db.models.tenant_monthly_metric import TenantMonthlyMetric
 from imga_db.models.ticket import (
     CancellationReason,
     Ticket,
@@ -101,6 +104,7 @@ __all__ = [
     "Review",
     "ReviewCorrection",
     "ReviewDecision",
+    "RootCauseAnalysis",
     "SlaRule",
     "SlaWebhookDispatchMode",
     "SoftDeleteMixin",
@@ -110,8 +114,10 @@ __all__ = [
     "TenantBusinessDimension",
     "TenantCategory",
     "TenantDeletionAudit",
+    "TenantEngagementSetting",
     "TenantKpiGoal",
     "TenantLlmCredential",
+    "TenantMonthlyMetric",
     "TenantOwnedMixin",
     "TenantPlanTier",
     "Ticket",

@@ -27,6 +27,7 @@ from sqlalchemy import (
     SmallInteger,
     String,
     Text,
+    func,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
@@ -114,6 +115,15 @@ class Review(Base, TimestampMixin, SoftDeleteMixin):
 
     analyzed_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False
+    )
+
+    # Yorumun kendi tarihi — yükleme dosyasındaki ``tarih`` kolonundan
+    # gelir, kolon yoksa/parse edilemezse ingest anına düşer. Analitik
+    # pencereleri ve trend bucket'ları bunu kullanır: 3 aylık arşivi tek
+    # seferde yükleyen kurum gerçek ay-ay dağılımı görsün. ``analyzed_at``
+    # / ``created_at`` "ne zaman bize girdi" anlamını korur.
+    review_date: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
     )
 
     # Sprint 8.3.4. Pipeline override trace — list of OverrideHit dicts
