@@ -111,10 +111,13 @@ _CATALOG_TTL_SECONDS = 3600.0
 # Kuratorlu onerilenler — secicide en ustte gorunur. 2026-08 canli
 # katalogdan dogrulanan, yapisal cikti destekli secki.
 CURATED_OPENROUTER_MODELS: tuple[str, ...] = (
+    # 2026-08-10 Navlungo benchmark birincisi — sistem varsayilani.
+    "z-ai/glm-5.2",
     "openai/gpt-5-mini",
     "anthropic/claude-sonnet-4.5",
     "anthropic/claude-haiku-4.5",
     "google/gemini-2.5-pro",
+    "google/gemini-3.6-flash",
     "google/gemini-3.5-flash-lite",
     "openai/gpt-5.6-terra",
     "openai/gpt-5.6-luna",

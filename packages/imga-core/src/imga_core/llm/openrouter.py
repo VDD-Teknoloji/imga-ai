@@ -45,9 +45,11 @@ from imga_core.llm.rotating_gemini import RotatingGeminiProvider
 from imga_core.models import LLMClassificationResult
 
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
-# Kurum model seçmediyse kullanılacak varsayılan: yapılandırılmış çıktı
-# destekli, ucuz ve güçlü bir orta sınıf model.
-DEFAULT_OPENROUTER_MODEL = "openai/gpt-5-mini"
+# Kurum model seçmediyse kullanılacak varsayılan. 2026-08-10 Navlungo
+# benchmark'ı (docs/benchmarks/2026-08-10-navlungo-llm-benchmark.md):
+# GLM 5.2 %92,8 doğruluk + tam kapsam + ~$0,24/10k yorum ile fiyat/
+# performans birincisi; gpt-5-mini'nin yerini aldı.
+DEFAULT_OPENROUTER_MODEL = "z-ai/glm-5.2"
 
 # Gemini ile aynı yumuşak-retry politikası: yalnız LLMProviderError
 # (ağ / 5xx) yeniden denenir; RateLimit/InvalidKey rotator'a gider.
