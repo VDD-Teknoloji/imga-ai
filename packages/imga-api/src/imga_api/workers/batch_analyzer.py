@@ -422,6 +422,25 @@ async def _run_job(
     # Sprint 11.0 — birleşik LLM bağlamı (motor + düzeltme deposu).
     unified_ctx = await _build_unified_context(tenant_id, context)
 
+    # 2026-08-10 — BERT yedeği kapatılabilir (prod: kapalı). 21k'lık
+    # vakada parse reddi her chunk'ı BERT'e düşürüp worker'ı OOM'a
+    # götürdü; ayrıca sessiz kalite düşüşü isteniyor değil. Bayrak
+    # kapalıyken LLM bağlamı kurulamıyorsa iş baştan, net gerekçeyle
+    # başarısız olur — operatör anahtarı düzeltip Yeniden Dene der.
+    if unified_ctx is None and not _bert_fallback_enabled():
+        await _record_catastrophic_failure(
+            job_id,
+            tenant_id,
+            context,
+            reason=(
+                "Yapay zekâ sınıflandırma başlatılamadı (kurumda aktif "
+                "LLM anahtarı yok ya da birleşik yol kapalı) ve BERT "
+                "yedeği devre dışı (IMGA_BATCH_BERT_FALLBACK=false). "
+                "Anahtar tanımlayıp işi Yeniden Dene ile başlatın."
+            ),
+        )
+        return
+
     # Sprint 9.0 — resume filter. When resume_from_row > 0 we drop
     # already-processed rows from the iterator before they hit
     # _chunked, so the worker only burns BERT inference on rows
@@ -801,6 +820,16 @@ async def _process_chunk(
                     perspective_sink=unified_perspectives,
                 )
             except Exception as exc:
+                if not _bert_fallback_enabled():
+                    # BERT yedeği kapalı: sessiz kalite düşüşü yerine
+                    # işi net gerekçeyle durdur. Checkpoint'e kadar
+                    # işlenen satırlar kalıcı — Yeniden Dene kaldığı
+                    # yerden sürer.
+                    raise BertFallbackDisabledError(
+                        "LLM sınıflandırma bu parça için kalıcı olarak "
+                        "başarısız oldu ve BERT yedeği devre dışı "
+                        f"(IMGA_BATCH_BERT_FALLBACK=false): {exc}"
+                    ) from exc
                 log.warning(
                     "unified classifier failed for chunk; falling back "
                     "to classic pipeline: %s",
@@ -821,6 +850,11 @@ async def _process_chunk(
                 analyses, texts, unified_ctx, semantic_hits
             )
         bert_seconds = time.monotonic() - bert_started_at
+    except BertFallbackDisabledError:
+        # Chunk-yerel "satırları failed say, devam et" düzeneğine
+        # DÜŞMEZ: iş seviyesinde durdurulur (catastrophic path) ki
+        # yüzlerce chunk tek tek başarısızlık geçidine dönmesin.
+        raise
     except Exception as exc:
         log.exception("batch chunk inference failed: %s", exc)
         for parsed in valid_rows:
@@ -1396,6 +1430,22 @@ class UnifiedJobContext:
     # Boş sözlük = kurumun eşlenmiş alt kategorisi yok; prompt bölümü
     # hiç yazılmaz ve her satır keyword sezgiseline düşer.
     perspective_options: PerspectiveOptions = field(default_factory=dict)
+
+
+class BertFallbackDisabledError(RuntimeError):
+    """LLM yolu başarısız ve BERT yedeği bayrakla kapalı — iş, chunk
+    başına satır-failed geçidi yerine tek seferde durdurulur."""
+
+
+def _bert_fallback_enabled() -> bool:
+    """2026-08-10 — prod'da false: BERT yedeği hem sessiz kalite
+    düşüşü hem (21k vakasında) worker OOM'u üretti. Testler ve LLM'siz
+    geliştirme ortamları için varsayılan açık kalır."""
+    import os
+
+    return os.environ.get(
+        "IMGA_BATCH_BERT_FALLBACK", "true"
+    ).strip().lower() in ("1", "true", "yes")
 
 
 def _unified_enabled() -> bool:

@@ -92,6 +92,12 @@ services:
     environment:
       IMGA_MASTER_KEY_PATH: /run/secrets/imga/master.key
       REDIS_URL: redis://redis:6379/0
+      # 2026-08-10 — BERT yedegi kapali: LLM yolu coken is, sessiz
+      # dusuk-kalite etikete (ve 21k vakasindaki OOM'a) dusmek yerine
+      # net gerekceyle durur; Yeniden Dene checkpoint'ten surer.
+      # In-process scheduler fallback'i de ayni sozlesmeye uysun diye
+      # api'de de set edilir.
+      IMGA_BATCH_BERT_FALLBACK: "false"
     secrets:
       - source: imga_master_key
         target: imga/master.key
@@ -162,6 +168,8 @@ services:
     environment:
       IMGA_MASTER_KEY_PATH: /run/secrets/imga/master.key
       REDIS_URL: redis://redis:6379/0
+      # 2026-08-10 — BERT yedegi kapali (bkz. api service'teki not).
+      IMGA_BATCH_BERT_FALLBACK: "false"
       # Default 4 parallel chunks; bump only if you also bump the
       # memory limit below (each pipeline ≈ 350-400 MiB).
       IMGA_BATCH_CHUNK_CONCURRENCY: "4"

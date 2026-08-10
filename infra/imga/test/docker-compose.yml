@@ -126,6 +126,7 @@ services:
         echo "[test-stack] running pytest"
         python -m pytest \
           tests/test_batch_upload.py \
+          tests/test_bert_fallback_disabled.py \
           tests/test_batch_dedup.py \
           tests/test_batch_concurrency.py \
           tests/test_reviews_list.py \
