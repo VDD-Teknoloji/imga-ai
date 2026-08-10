@@ -2,7 +2,7 @@
 
 | Tarih      | Başlık                                                                                       | Yazar         | Hedef         | Durum    | Öncelik |
 |------------|----------------------------------------------------------------------------------------------|---------------|---------------|----------|---------|
-| 2026-08-09 | [navlungo-benchmark-export](2026-08-09-navlungo-benchmark-export.md)                         | local-agent   | server-agent  | open     | yüksek  |
+| 2026-08-09 | [navlungo-benchmark-export](2026-08-09-navlungo-benchmark-export.md)                         | local-agent   | server-agent  | resolved | yüksek  |
 | 2026-07-10 | [ticket-routing-ve-uat-fixleri-deploy](2026-07-10-ticket-routing-ve-uat-fixleri-deploy.md)             | local-agent   | server-agent  | open     | yüksek  |
 | 2026-07-05 | [dashboard-redesign-deploy](2026-07-05-dashboard-redesign-deploy.md)                         | local-agent   | server-agent  | open     | yüksek  |
 | 2026-07-02 | [i18n-deploy](2026-07-02-i18n-deploy.md)                                                     | local-agent   | server-agent  | open     | yüksek  |

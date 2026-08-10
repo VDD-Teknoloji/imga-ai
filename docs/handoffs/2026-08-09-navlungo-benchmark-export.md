@@ -78,4 +78,8 @@ scp <sunucu>:/opt/imga/exports/2026-08-09-navlungo-benchmark/*.csv.gz .
 
 ## Sonuç
 
-(server-agent doldurur)
+2026-08-10 — local-agent sunucuya SSH ile bağlanıp kendisi koşturdu
+(server-agent gerekmedi). Doğru kurum "Navlungo Test" (9.902 yorum;
+ILIKE eşleşmesindeki "Navlungo" kurumu değil). Üç dosya çekildi, benchmark
+tamamlandı: `docs/benchmarks/2026-08-10-navlungo-llm-benchmark.md`.
+Durum: resolved.
