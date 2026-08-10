@@ -305,7 +305,7 @@ def test_hard_timeout_is_provider_aware() -> None:
         _keys(), model_name="m", provider="openrouter"
     )
     assert gemini._hard_timeout == 45.0
-    assert openrouter._hard_timeout == 150.0
+    assert openrouter._hard_timeout == 240.0
 
 
 @pytest.mark.asyncio

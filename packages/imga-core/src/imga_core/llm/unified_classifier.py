@@ -59,9 +59,13 @@ _HARD_TIMEOUT_SECONDS = 45.0
 # 2026-08-10 — OpenRouter modelleri (GLM 5.2 vb.) uzun yorumlu 25'lik
 # paketlerde 45 sn'yi asabiliyor; Gemini-flash'a gore ayarlanmis emniyet
 # agi tek-anahtarli rotasyonu aninda tuketip 21k'lik isi dusurdu.
-# OpenRouterProvider._call_with_soft_retry'daki 120 sn tabaniyla uyumlu,
-# ustune pay birakilmis deger.
-_HARD_TIMEOUT_SECONDS_OPENROUTER = 150.0
+# 150 sn de yetmedi: 21k kosumunda saglayici surekli yuk altinda agir
+# kuyruk gecikmesi gosterdi (r3, 13k'da 3x150s ust uste). 240 sn +
+# asagidaki kademeli bekleme listesi birlikte calisir.
+_HARD_TIMEOUT_SECONDS_OPENROUTER = 240.0
+# Rotasyon tukenince chunk'a verilen ek sanslarin bekleme suresi (sn).
+# Uzunluk = ek deneme sayisi; toplam deneme = len + 1.
+_ROTATION_RETRY_DELAYS: tuple[float, ...] = (5.0, 15.0, 30.0)
 
 
 @dataclass(frozen=True, slots=True)
@@ -346,7 +350,7 @@ class GeminiUnifiedEngine:
         # sans ver (benchmark harness'i ayni modeli 4 denemeyle
         # sorunsuz bitirdi). Surekli kesinti yine is-seviyesi hataya
         # gider — sessiz dusuk-kalite yol yok.
-        attempts = 3
+        attempts = len(_ROTATION_RETRY_DELAYS) + 1
         for attempt in range(attempts):
             try:
                 result, winning_key = await self._rotator.call_with_rotation(
@@ -356,7 +360,7 @@ class GeminiUnifiedEngine:
             except AllKeysExhaustedError:
                 if attempt == attempts - 1:
                     raise
-                delay = 5.0 * (attempt + 1)
+                delay = _ROTATION_RETRY_DELAYS[attempt]
                 _logger.warning(
                     "GeminiUnifiedEngine: rotation exhausted "
                     "(attempt %d/%d), retrying chunk in %.0fs",
