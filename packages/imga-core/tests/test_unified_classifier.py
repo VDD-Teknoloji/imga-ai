@@ -306,3 +306,71 @@ def test_hard_timeout_is_provider_aware() -> None:
     )
     assert gemini._hard_timeout == 45.0
     assert openrouter._hard_timeout == 150.0
+
+
+@pytest.mark.asyncio
+async def test_rotation_exhaustion_is_retried_before_giving_up(
+    monkeypatch,
+) -> None:
+    """21k vakasi 2. perde: ~870 cagrida tek bir saglayici takilmasi
+    tek-anahtarli rotasyonu tuketip isi olduruyordu. Chunk 3 denemeye
+    kadar ayni anahtarla tekrar denenir; kalici kesinti yine yukari
+    firlar."""
+    engine = GeminiUnifiedEngine(
+        _keys(), model_name="m", provider="openrouter", call_batch_size=4
+    )
+    calls = {"n": 0}
+
+    def flaky(api_key, prompt, chunk, categories, stats, options=None):
+        calls["n"] += 1
+        if calls["n"] < 3:
+            raise LLMProviderError("transient upstream stall")
+        return {
+            0: UnifiedPrediction(
+                sentiment_label="POZITIF",
+                sentiment_score=0.8,
+                category="kargo",
+                category_confidence=0.9,
+            )
+        }
+
+    monkeypatch.setattr(engine, "_generate_sync", flaky)
+
+    async def no_sleep(_delay: float) -> None:
+        return None
+
+    import imga_core.llm.unified_classifier as uc
+
+    monkeypatch.setattr(uc.asyncio, "sleep", no_sleep)
+
+    predictions, _stats = await engine.classify_unified_batch_async(
+        ["harika urun"], available_categories=["kargo", "belirsiz"]
+    )
+    assert calls["n"] == 3
+    assert predictions[0].sentiment_label == "POZITIF"
+
+
+@pytest.mark.asyncio
+async def test_rotation_exhaustion_raises_after_final_attempt(
+    monkeypatch,
+) -> None:
+    from imga_core.llm.errors import AllKeysExhaustedError
+
+    engine = GeminiUnifiedEngine(_keys(), model_name="m", call_batch_size=4)
+
+    def always_down(api_key, prompt, chunk, categories, stats, options=None):
+        raise LLMProviderError("hard down")
+
+    monkeypatch.setattr(engine, "_generate_sync", always_down)
+
+    async def no_sleep(_delay: float) -> None:
+        return None
+
+    import imga_core.llm.unified_classifier as uc
+
+    monkeypatch.setattr(uc.asyncio, "sleep", no_sleep)
+
+    with pytest.raises(AllKeysExhaustedError):
+        await engine.classify_unified_batch_async(
+            ["metin"], available_categories=["kargo"]
+        )

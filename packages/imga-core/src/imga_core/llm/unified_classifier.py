@@ -35,7 +35,11 @@ from imga_core.config import (
     LABEL_POSITIVE,
 )
 from imga_core.llm.base import LLMProviderError
-from imga_core.llm.errors import InvalidKeyError, RateLimitError
+from imga_core.llm.errors import (
+    AllKeysExhaustedError,
+    InvalidKeyError,
+    RateLimitError,
+)
 from imga_core.llm.key_rotation import GeminiKey, GeminiKeyRotator
 
 if TYPE_CHECKING:
@@ -335,7 +339,32 @@ class GeminiUnifiedEngine:
                     f"safety net ({self._hard_timeout:.0f}s)"
                 ) from exc
 
-        result, winning_key = await self._rotator.call_with_rotation(_operation)
+        # 2026-08-10 — tek-anahtarli kurumda ~870 cagrinin birinde tek
+        # bir saglayici takilmasi (timeout/5xx) rotasyonu aninda
+        # tuketip 21k'lik isi olduruyordu. Rotasyon anahtar durumunu
+        # cagrilar arasi sifirlar; ayni anahtara kisa bekleme ile 3
+        # sans ver (benchmark harness'i ayni modeli 4 denemeyle
+        # sorunsuz bitirdi). Surekli kesinti yine is-seviyesi hataya
+        # gider — sessiz dusuk-kalite yol yok.
+        attempts = 3
+        for attempt in range(attempts):
+            try:
+                result, winning_key = await self._rotator.call_with_rotation(
+                    _operation
+                )
+                break
+            except AllKeysExhaustedError:
+                if attempt == attempts - 1:
+                    raise
+                delay = 5.0 * (attempt + 1)
+                _logger.warning(
+                    "GeminiUnifiedEngine: rotation exhausted "
+                    "(attempt %d/%d), retrying chunk in %.0fs",
+                    attempt + 1,
+                    attempts,
+                    delay,
+                )
+                await asyncio.sleep(delay)
         _logger.debug(
             "GeminiUnifiedEngine: chunk served by key label=%s",
             winning_key.label,
