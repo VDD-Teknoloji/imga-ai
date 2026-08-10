@@ -52,6 +52,12 @@ DEFAULT_CALL_BATCH_SIZE = 25
 # Rotator free-tier RPM'ine saygı: aynı anda en çok bu kadar çağrı.
 DEFAULT_CONCURRENCY = 4
 _HARD_TIMEOUT_SECONDS = 45.0
+# 2026-08-10 — OpenRouter modelleri (GLM 5.2 vb.) uzun yorumlu 25'lik
+# paketlerde 45 sn'yi asabiliyor; Gemini-flash'a gore ayarlanmis emniyet
+# agi tek-anahtarli rotasyonu aninda tuketip 21k'lik isi dusurdu.
+# OpenRouterProvider._call_with_soft_retry'daki 120 sn tabaniyla uyumlu,
+# ustune pay birakilmis deger.
+_HARD_TIMEOUT_SECONDS_OPENROUTER = 150.0
 
 
 @dataclass(frozen=True, slots=True)
@@ -221,6 +227,11 @@ class GeminiUnifiedEngine:
         self._concurrency = max(1, concurrency)
         self._system_prompt = system_prompt
         self._provider = provider
+        self._hard_timeout = (
+            _HARD_TIMEOUT_SECONDS_OPENROUTER
+            if provider == "openrouter"
+            else _HARD_TIMEOUT_SECONDS
+        )
 
     @property
     def model_name(self) -> str:
@@ -315,13 +326,13 @@ class GeminiUnifiedEngine:
                         stats,
                         perspective_options,
                     ),
-                    timeout=_HARD_TIMEOUT_SECONDS,
+                    timeout=self._hard_timeout,
                 )
             except TimeoutError as exc:
                 stats.failed_calls += 1
                 raise LLMProviderError(
-                    "Gemini unified call timed out at asyncio safety net "
-                    f"({_HARD_TIMEOUT_SECONDS:.0f}s)"
+                    f"{self._provider} unified call timed out at asyncio "
+                    f"safety net ({self._hard_timeout:.0f}s)"
                 ) from exc
 
         result, winning_key = await self._rotator.call_with_rotation(_operation)

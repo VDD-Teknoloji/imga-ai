@@ -295,3 +295,14 @@ def test_parse_still_rejects_garbage() -> None:
 
     with pytest.raises(LLMProviderError):
         _parse_with_raw("tamamen serbest metin, json yok", _OPTIONS)
+
+
+def test_hard_timeout_is_provider_aware() -> None:
+    """45 sn Gemini-flash'a gore ayarliydi; GLM 5.2 uzun paketlerde
+    asiyor ve tek-anahtarli rotasyon aninda tukeniyordu (21k vakasi)."""
+    gemini = GeminiUnifiedEngine(_keys(), model_name="m")
+    openrouter = GeminiUnifiedEngine(
+        _keys(), model_name="m", provider="openrouter"
+    )
+    assert gemini._hard_timeout == 45.0
+    assert openrouter._hard_timeout == 150.0
