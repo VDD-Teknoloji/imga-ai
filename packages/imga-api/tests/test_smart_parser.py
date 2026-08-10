@@ -16,9 +16,11 @@ from imga_api.services.smart_parser import (
 )
 from imga_api.services.smart_parser.detectors import (
     CustomerNameDetector,
+    NpsScoreDetector,
     OrderIdDetector,
     PriceDetector,
     ProductNameDetector,
+    ReviewTextDetector,
     TurkishDateDetector,
 )
 
@@ -222,3 +224,104 @@ def test_pii_metadata_propagates_through_orchestrator() -> None:
     result = detector.detect(headers, samples, row_count=3)
     column = result.detected[0]
     assert column.metadata.get("is_pii") is True
+
+
+# --- 2026-08-10: sablon kolonlari "Yoksay" gorunuyordu (kullanici raporu) --
+
+
+def test_review_text_template_header_is_certain() -> None:
+    """Sablonun 'yorum' kolonu — kullanicinin bildirdigi hata birebir:
+    dedektor yokken onizleme Yoksay oneriyordu. Artik guven 1.0."""
+    result = _detect_one(
+        ReviewTextDetector(),
+        "yorum",
+        ["Kargom 5 gündür gelmedi, mağdurum.", "Çok memnun kaldım teşekkürler."],
+    )
+    assert result is not None
+    assert result.field_name == FieldName.REVIEW_TEXT
+    assert result.confidence == 1.0
+    assert result.metadata["template_header"] is True
+
+
+def test_review_text_template_header_case_and_space_variants() -> None:
+    """'Yorum', ' YORUM ' gibi varyantlar da sablon esli sayilir
+    (parse yolundaki Turkce-duyarsiz fold ile ayni sozlesme)."""
+    for header in ("Yorum", " YORUM ", "YORUM"):
+        result = _detect_one(
+            ReviewTextDetector(), header, ["Ürün elime geç ulaştı ama sağlam."]
+        )
+        assert result is not None, header
+        assert result.confidence == 1.0, header
+
+
+def test_review_text_header_pattern_with_freeform_content() -> None:
+    result = _detect_one(
+        ReviewTextDetector(),
+        "Müşteri Yorumu",
+        [
+            "Sipariş verdiğim ürün iki hafta geçmesine rağmen hala kargoya verilmedi.",
+            "Müşteri hizmetleri sorunumla hiç ilgilenmedi, çok kötü bir deneyimdi.",
+        ],
+    )
+    assert result is not None
+    assert result.field_name == FieldName.REVIEW_TEXT
+    assert result.confidence >= CONFIDENCE_HIGH
+
+
+def test_review_text_content_only_freeform_column_is_suggested() -> None:
+    """Basligi taninmayan ama serbest metin tasiyan kolon Yoksay yerine
+    dusuk-orta guvenle yorum metni onerisi almali."""
+    result = _detect_one(
+        ReviewTextDetector(),
+        "kolon_a",
+        [
+            "Uygulama üzerinden verdiğim siparişin durumu günlerdir güncellenmiyor bilgi istiyorum.",
+            "Teslimat adresimi değiştirmek istedim fakat sistem izin vermedi, destek de dönmedi.",
+        ],
+    )
+    assert result is not None
+    assert result.field_name == FieldName.REVIEW_TEXT
+    assert result.confidence >= CONFIDENCE_LOW
+
+
+def test_review_text_skips_numeric_column() -> None:
+    result = _detect_one(
+        ReviewTextDetector(), "tutar", ["123,45", "67,80", "912,00"]
+    )
+    assert result is None
+
+
+def test_nps_template_header_with_in_range_values() -> None:
+    result = _detect_one(NpsScoreDetector(), "nps", ["9", "10", "3", "7"])
+    assert result is not None
+    assert result.field_name == FieldName.NPS_SCORE
+    assert result.confidence >= CONFIDENCE_HIGH
+    assert result.metadata["template_header"] is True
+
+
+def test_nps_header_with_out_of_range_values_low_confidence() -> None:
+    result = _detect_one(NpsScoreDetector(), "nps", ["85", "912", "abc"])
+    assert result is not None
+    assert result.confidence < CONFIDENCE_MEDIUM
+
+
+def test_orchestrator_maps_template_columns_not_ignore() -> None:
+    """Sablonun dort kolonu ile tam onizleme: 'yorum' REVIEW_TEXT 1.0,
+    'nps' NPS_SCORE, 'tarih' DATE — hicbiri Yoksay (None) degil."""
+    detector = SmartColumnDetector()
+    headers = ["yorum", "tarih", "kaynak", "nps"]
+    samples = {
+        "yorum": [
+            "Kargom hasarlı geldi, iade etmek istiyorum lütfen yardımcı olun.",
+            "Teslimat çok hızlıydı, teşekkür ederim.",
+        ],
+        "tarih": ["2026-05-12", "2026-06-03"],
+        "kaynak": ["hepsiburada", "trendyol"],
+        "nps": ["9", "4"],
+    }
+    result = detector.detect(headers, samples, row_count=2)
+    by_name = {c.column_name: c for c in result.detected}
+    assert by_name["yorum"].field_name == FieldName.REVIEW_TEXT
+    assert by_name["yorum"].confidence == 1.0
+    assert by_name["nps"].field_name == FieldName.NPS_SCORE
+    assert by_name["tarih"].field_name == FieldName.DATE

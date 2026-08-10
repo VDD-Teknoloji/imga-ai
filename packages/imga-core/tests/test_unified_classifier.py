@@ -13,6 +13,9 @@ from __future__ import annotations
 
 import pytest
 
+from imga_core.analyzers.base import SentimentAnalyzer
+from imga_core.llm.base import LLMProviderError
+from imga_core.llm.errors import InvalidKeyError, RateLimitError
 from imga_core.llm.key_rotation import GeminiKey
 from imga_core.llm.unified_classifier import (
     FewShotExample,
@@ -21,10 +24,7 @@ from imga_core.llm.unified_classifier import (
     _build_prompt,
     _map_sdk_error,
 )
-from imga_core.llm.base import LLMProviderError
-from imga_core.llm.errors import InvalidKeyError, RateLimitError
 from imga_core.pipeline import AnalysisPipeline
-from imga_core.analyzers.base import AnalyzerPrediction, SentimentAnalyzer
 
 
 def _keys() -> list[GeminiKey]:
@@ -261,3 +261,37 @@ async def test_pipeline_fills_perspective_sink() -> None:
         perspective_sink=sink,
     )
     assert sink == ["product_quality_material", "product_quality_material"]
+
+
+# --- 2026-08-10: GLM citli-JSON vakasi (prod OOM zinciri) -----------------
+
+
+def test_parse_accepts_markdown_fenced_json() -> None:
+    """GLM 5.2 gecerli JSON'u ```json citiyle sariyordu; parse reddi
+    her chunk'i BERT fallback'ine dusurup worker'i OOM'a goturdu.
+    Citli govde artik kabul edilir."""
+    parsed = _parse_with_raw(
+        '```json\n[{"i": 0, "s": "NEGATIF", "sc": -0.7, "c": "kargo", '
+        '"cc": 0.9, "p": "shipment_not_arrived"}]\n```',
+        _OPTIONS,
+    )
+    assert parsed[0].sentiment_label == "NEGATIF"
+    assert parsed[0].perspective_code == "shipment_not_arrived"
+
+
+def test_parse_accepts_json_with_leading_prose() -> None:
+    parsed = _parse_with_raw(
+        'Iste sonuclar:\n[{"i": 0, "s": "POZITIF", "sc": 0.8, '
+        '"c": "kargo", "cc": 0.9}]',
+        _OPTIONS,
+    )
+    assert parsed[0].sentiment_label == "POZITIF"
+
+
+def test_parse_still_rejects_garbage() -> None:
+    import pytest
+
+    from imga_core.llm.base import LLMProviderError
+
+    with pytest.raises(LLMProviderError):
+        _parse_with_raw("tamamen serbest metin, json yok", _OPTIONS)

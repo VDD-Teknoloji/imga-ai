@@ -10,10 +10,16 @@ from __future__ import annotations
 from imga_api.services.smart_parser.detectors.customer_name import (
     CustomerNameDetector,
 )
+from imga_api.services.smart_parser.detectors.nps_score import (
+    NpsScoreDetector,
+)
 from imga_api.services.smart_parser.detectors.order_id import OrderIdDetector
 from imga_api.services.smart_parser.detectors.price import PriceDetector
 from imga_api.services.smart_parser.detectors.product_name import (
     ProductNameDetector,
+)
+from imga_api.services.smart_parser.detectors.review_text import (
+    ReviewTextDetector,
 )
 from imga_api.services.smart_parser.detectors.turkish_date import (
     TurkishDateDetector,
@@ -22,6 +28,8 @@ from imga_api.services.smart_parser.detectors.turkish_date import (
 # Order is informational only; the orchestrator runs every detector
 # against every column and ranks the results by confidence.
 ALL_DETECTORS = (
+    ReviewTextDetector(),
+    NpsScoreDetector(),
     OrderIdDetector(),
     ProductNameDetector(),
     CustomerNameDetector(),
@@ -33,8 +41,10 @@ ALL_DETECTORS = (
 __all__ = [
     "ALL_DETECTORS",
     "CustomerNameDetector",
+    "NpsScoreDetector",
     "OrderIdDetector",
     "PriceDetector",
     "ProductNameDetector",
+    "ReviewTextDetector",
     "TurkishDateDetector",
 ]

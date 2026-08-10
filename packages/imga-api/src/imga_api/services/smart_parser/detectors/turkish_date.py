@@ -53,12 +53,17 @@ _TR_MONTHS: Final[tuple[str, ...]] = (
     "aralik",
 )
 
-# Three accepted shapes:
+# Four accepted shapes:
 #   1) DD/MM/YYYY
 #   2) DD.MM.YYYY
 #   3) DD <Türkçe ay> YYYY  (case-folded)
+#   4) YYYY-MM-DD (ISO — şablonun önerdiği biçim; 2026-08-10 düzeltmesi:
+#      tanınmayınca sipariş-no dedektörü kolonu kapıyordu)
 _NUMERIC_DATE_RE: Final[re.Pattern[str]] = re.compile(
     r"^\d{1,2}[\./]\d{1,2}[\./]\d{4}$"
+)
+_ISO_DATE_RE: Final[re.Pattern[str]] = re.compile(
+    r"^\d{4}-\d{2}-\d{2}([T ].*)?$"
 )
 _TR_MONTH_RE: Final[re.Pattern[str]] = re.compile(
     r"^\d{1,2}\s+(?:" + "|".join(_TR_MONTHS) + r")\s+\d{4}$"
@@ -203,6 +208,10 @@ class TurkishDateDetector(Detector):
                     formats.add("DD/MM/YYYY")
                 else:
                     formats.add("DD.MM.YYYY")
+                hits += 1
+                continue
+            if _ISO_DATE_RE.match(stripped):
+                formats.add("YYYY-MM-DD (ISO)")
                 hits += 1
                 continue
             # Lowercase + ASCII-fold the month-name path so "Mayıs"

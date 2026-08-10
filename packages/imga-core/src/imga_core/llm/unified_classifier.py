@@ -344,12 +344,32 @@ class GeminiUnifiedEngine:
             raw = self._generate_raw_openrouter(api_key, prompt, stats)
         else:
             raw = self._generate_raw_gemini(api_key, prompt, stats)
+        # 2026-08-10 OOM vakasi: GLM 5.2 gecerli JSON'u ```json citiyle
+        # sardi; ciplak json.loads reddedince HER chunk klasik BERT
+        # fallback'ine dustu ve worker bellekten oldu. Cit soy + dizi
+        # govdesini cikar — openrouter/gemini structured yollariyla
+        # ayni tolerans.
+        from imga_core.llm.gemini import _strip_markdown_fences
+
+        cleaned = _strip_markdown_fences(raw)
         try:
-            data = json.loads(raw)
+            data = json.loads(cleaned)
         except json.JSONDecodeError as exc:
-            raise LLMProviderError(
-                f"{self._provider} unified returned non-JSON: {raw[:200]!r}"
-            ) from exc
+            start = cleaned.find("[")
+            end = cleaned.rfind("]")
+            if start != -1 and end > start:
+                try:
+                    data = json.loads(cleaned[start : end + 1])
+                except json.JSONDecodeError:
+                    raise LLMProviderError(
+                        f"{self._provider} unified returned non-JSON: "
+                        f"{raw[:200]!r}"
+                    ) from exc
+            else:
+                raise LLMProviderError(
+                    f"{self._provider} unified returned non-JSON: "
+                    f"{raw[:200]!r}"
+                ) from exc
         if not isinstance(data, list):
             raise LLMProviderError(
                 f"Expected JSON array, got {type(data).__name__}"
