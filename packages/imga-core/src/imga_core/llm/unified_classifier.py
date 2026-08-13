@@ -90,6 +90,12 @@ class UnifiedPrediction:
     # None = model bir alt kategori seçmedi ya da seçtiği kod kurumun
     # listesinde yok; çağıran taraf keyword sezgiseline düşer.
     perspective_code: str | None = None
+    # 2026-08-10 hedef çalışması — deneyim türü ("dijital" |
+    # "operasyonel"). Kategoriden TÜRETİLMEZ; temas noktasını model
+    # değerlendirir ("uygulamada statü yanlış" → kategori kargo ama
+    # deneyim dijital). None = model alan üretmedi / geçersiz değer;
+    # tüketici taraf kategori-eşleme yedeğine düşebilir.
+    experience_type: str | None = None
 
 
 @dataclass(slots=True)
@@ -119,6 +125,9 @@ _RESPONSE_SCHEMA: dict[str, Any] = {
             # alt kategori bulamazsa alanı hiç yazmaz; parse tarafı
             # eksik/boş/tanınmayan kodu None'a düşürür.
             "p": {"type": "string"},
+            # 2026-08-10 — deneyim türü; ayni "required disinda,
+            # nullable yok" disiplini (p ile ayni sebep).
+            "e": {"type": "string"},
         },
     },
 }
@@ -156,9 +165,19 @@ def _build_prompt(
     few_shot: tuple[FewShotExample, ...],
     system_prompt: str | None = None,
     perspective_options: PerspectiveOptions | None = None,
+    category_descriptions: dict[str, str] | None = None,
 ) -> str:
     parts: list[str] = [system_prompt or UNIFIED_SYSTEM_PROMPT]
-    parts.append("Kategori kodları: " + ", ".join(available_categories))
+    if category_descriptions:
+        # 2026-08-10 — çıplak kod listesi yerine tanımlı liste:
+        # gold4 taban çizgisinde kategori %76,4 / belirsiz %14,8'in
+        # ana nedeni tanımsızlıktı.
+        parts.append("Ana kategori kodları ve tanımları:")
+        for code in available_categories:
+            desc = category_descriptions.get(code)
+            parts.append(f"- {code}: {desc}" if desc else f"- {code}")
+    else:
+        parts.append("Kategori kodları: " + ", ".join(available_categories))
 
     if perspective_options:
         parts.append(
@@ -256,6 +275,7 @@ class GeminiUnifiedEngine:
         available_categories: list[str],
         few_shot: tuple[FewShotExample, ...] = (),
         perspective_options: PerspectiveOptions | None = None,
+        category_descriptions: dict[str, str] | None = None,
     ) -> tuple[list[UnifiedPrediction], UnifiedBatchStats]:
         """Tüm metinler için birleşik tahmin. Herhangi bir alt-çağrı
         kalıcı olarak başarısızsa exception fırlatır — kısmi/sessiz
@@ -278,6 +298,7 @@ class GeminiUnifiedEngine:
                     few_shot,
                     stats,
                     perspective_options,
+                    category_descriptions,
                 )
             for local_idx, prediction in predictions.items():
                 results[offset + local_idx] = prediction
@@ -313,6 +334,7 @@ class GeminiUnifiedEngine:
         few_shot: tuple[FewShotExample, ...],
         stats: UnifiedBatchStats,
         perspective_options: PerspectiveOptions | None = None,
+        category_descriptions: dict[str, str] | None = None,
     ) -> dict[int, UnifiedPrediction]:
         prompt = _build_prompt(
             chunk,
@@ -320,6 +342,7 @@ class GeminiUnifiedEngine:
             few_shot,
             self._system_prompt,
             perspective_options,
+            category_descriptions,
         )
 
         async def _operation(api_key: str) -> dict[int, UnifiedPrediction]:
@@ -457,12 +480,19 @@ class GeminiUnifiedEngine:
                 candidate = raw_perspective.strip()
                 if candidate in valid_perspectives.get(category, frozenset()):
                     perspective = candidate
+            raw_experience = entry.get("e")
+            experience: str | None = None
+            if isinstance(raw_experience, str):
+                exp_candidate = raw_experience.strip().lower()
+                if exp_candidate in ("dijital", "operasyonel"):
+                    experience = exp_candidate
             parsed[idx] = UnifiedPrediction(
                 sentiment_label=label,
                 sentiment_score=score,
                 category=category,
                 category_confidence=confidence,
                 perspective_code=perspective,
+                experience_type=experience,
             )
         if not parsed:
             raise LLMProviderError(
