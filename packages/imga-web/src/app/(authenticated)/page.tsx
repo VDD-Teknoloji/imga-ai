@@ -49,7 +49,6 @@ import { UploadDock } from "@/components/dashboard/upload-dock";
 import { VoiceOfCustomer } from "@/components/dashboard/voice-of-customer";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
-  useCategoryDistribution,
   useNpsSummary,
   useSentimentByCategory,
   useSentimentDistribution,
@@ -58,6 +57,7 @@ import {
   useExecutiveOverview,
   type ExecutiveOverview,
 } from "@/hooks/use-executive-overview";
+import { useExperienceDistribution } from "@/hooks/use-experience";
 import { useRoleFlags } from "@/hooks/use-role-flags";
 import { useAuthStore } from "@/lib/auth-store";
 import { useTranslation } from "@/lib/i18n/use-translation";
@@ -184,9 +184,12 @@ function DashboardInner() {
   const dist = useSentimentDistribution(filters);
   const nps = useNpsSummary(filters);
   const byCategory = useSentimentByCategory(filters, 10);
-  // Deneyim kartları tüm kategorileri toplar — top-10 kesmesi
-  // dağılımı yanıltmasın diye limit geniş.
-  const categoryDist = useCategoryDistribution(filters, 50);
+  // Deneyim dağılımı yalnız tarih aralığı alır — uç henüz
+  // batch_job_id kabul etmiyor; yükleme filtresi bu kartlara işlemez.
+  const experience = useExperienceDistribution({
+    date_from: filters.date_from,
+    date_to: filters.date_to,
+  });
 
   const sentimentCounts = toSentimentCounts(dist.data);
   // hasAnyData filtreye duyarsız olmalı (boş-pencere ≠ boş-tenant);
@@ -281,8 +284,8 @@ function DashboardInner() {
       <div className="rise-in space-y-6" style={{ animationDelay: "60ms" }}>
         <NpsBreakdownCard data={nps.data} isLoading={nps.isLoading} />
         <ExperienceBreakdownCards
-          data={categoryDist.data}
-          isLoading={categoryDist.isLoading}
+          data={experience.data}
+          isLoading={experience.isLoading}
         />
         <CategorySentimentBreakdown
           data={byCategory.data}

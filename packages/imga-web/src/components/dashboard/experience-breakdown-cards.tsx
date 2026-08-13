@@ -1,13 +1,17 @@
 "use client";
 
-// Sprint 13 — Deneyim Dağılımı kartları (ürün sahibi görsel
-// referansı: legacy prototipin "Experience Breakdown" bölümü —
-// iki büyük renkli kart, dev yüzde + tıkla-filtrele).
+// Deneyim Dağılımı kartları (ürün sahibi görsel referansı: legacy
+// prototipin "Experience Breakdown" bölümü — iki büyük renkli kart,
+// dev yüzde + tıkla-filtrele).
 //
 // Dijital (mavi) / Operasyonel (turuncu): klasik CVD-güvenli çift.
-// Yüzde, seçili dönemdeki sınıflandırılmış ('belirsiz' hariç)
-// yorumların deneyim tipine dağılımı; kart tıklaması /reviews'u o
-// deneyimin kategorileriyle filtreli açar.
+// Sayılar /analytics/experience-distribution'dan gelir; kovalama
+// backend'de review.experience_type üzerinden yapılır (null satırlar
+// için eski kategori yedeği de orada uygulanır). Burada hiçbir şey
+// yeniden türetilmez.
+//
+// Yüzde paydası = dijital + operasyonel. Kovaya düşemeyen satırlar
+// (atanmamis) paydaya girmez; altta ayrı bir not olarak görünür.
 
 import { ArrowRight, Info, Monitor, Package } from "lucide-react";
 import Link from "next/link";
@@ -19,46 +23,42 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { useCategories } from "@/hooks/use-categories";
+import type { ExperienceDistribution } from "@/hooks/use-experience";
 import { experienceOf, type ExperienceType } from "@/lib/experience";
 import { useTranslation } from "@/lib/i18n/use-translation";
-import type { CategoryDistResponse } from "@/lib/types";
 
 interface Props {
-  data: CategoryDistResponse | undefined;
+  data: ExperienceDistribution | undefined;
   isLoading: boolean;
-}
-
-interface Bucket {
-  count: number;
-  codes: string[];
-}
-
-function bucketize(data: CategoryDistResponse): Record<ExperienceType, Bucket> {
-  const buckets: Record<ExperienceType, Bucket> = {
-    dijital: { count: 0, codes: [] },
-    operasyonel: { count: 0, codes: [] },
-  };
-  for (const row of data.data) {
-    const kind = experienceOf(row.category);
-    if (kind === null) continue;
-    buckets[kind].count += row.count;
-    buckets[kind].codes.push(row.category);
-  }
-  return buckets;
 }
 
 export function ExperienceBreakdownCards({ data, isLoading }: Props) {
   const { t, locale } = useTranslation();
+  // Derin bağlantı filtresi için kategori kodları. Kartın SAYISI değil,
+  // yalnız hedef URL'i besler — /reviews'ta henüz experience_type
+  // filtresi yok, en yakın karşılık eski kategori eşlemesi.
+  const categories = useCategories();
   if (isLoading || !data) {
     return <Skeleton className="h-44 w-full rounded-3xl" />;
   }
 
-  const buckets = bucketize(data);
-  const total = buckets.dijital.count + buckets.operasyonel.count;
-  if (total === 0) return null;
+  const total = data.dijital.total + data.operasyonel.total;
+  if (total === 0 && data.atanmamis.total === 0) return null;
+
+  const codesFor = (kind: ExperienceType): string[] =>
+    (categories.data ?? [])
+      .filter((c) => experienceOf(c.code) === kind)
+      .map((c) => c.code);
 
   const nf = new Intl.NumberFormat(locale === "en" ? "en-US" : "tr-TR");
-  const pct = (n: number) => Math.round((n / total) * 1000) / 10;
+  const pct = (n: number) => (total === 0 ? 0 : Math.round((n / total) * 1000) / 10);
+  const hrefFor = (kind: ExperienceType): string => {
+    const codes = codesFor(kind);
+    return codes.length === 0
+      ? "/reviews"
+      : `/reviews?primary_categories=${encodeURIComponent(codes.join(","))}`;
+  };
 
   return (
     <section aria-label={t("dashboard.experience.title")}>
@@ -72,26 +72,39 @@ export function ExperienceBreakdownCards({ data, isLoading }: Props) {
         <ExperienceCard
           label={t("dashboard.experience.digital")}
           icon={<Monitor className="size-5" aria-hidden />}
-          pct={pct(buckets.dijital.count)}
-          count={nf.format(buckets.dijital.count)}
+          pct={pct(data.dijital.total)}
+          count={nf.format(data.dijital.total)}
           countLabel={t("dashboard.experience.reviews")}
+          negativeLabel={t("dashboard.experience.negativeShare", {
+            count: nf.format(data.dijital.negatif),
+          })}
           filterLabel={t("dashboard.experience.viewReviews")}
-          href={`/reviews?primary_categories=${encodeURIComponent(buckets.dijital.codes.join(","))}`}
+          href={hrefFor("dijital")}
           className="from-blue-600 to-blue-500"
-          disabled={buckets.dijital.count === 0}
+          disabled={data.dijital.total === 0}
         />
         <ExperienceCard
           label={t("dashboard.experience.operational")}
           icon={<Package className="size-5" aria-hidden />}
-          pct={pct(buckets.operasyonel.count)}
-          count={nf.format(buckets.operasyonel.count)}
+          pct={pct(data.operasyonel.total)}
+          count={nf.format(data.operasyonel.total)}
           countLabel={t("dashboard.experience.reviews")}
+          negativeLabel={t("dashboard.experience.negativeShare", {
+            count: nf.format(data.operasyonel.negatif),
+          })}
           filterLabel={t("dashboard.experience.viewReviews")}
-          href={`/reviews?primary_categories=${encodeURIComponent(buckets.operasyonel.codes.join(","))}`}
+          href={hrefFor("operasyonel")}
           className="from-orange-600 to-orange-500"
-          disabled={buckets.operasyonel.count === 0}
+          disabled={data.operasyonel.total === 0}
         />
       </div>
+      {data.atanmamis.total > 0 && (
+        <p className="text-muted-foreground mt-2.5 text-xs">
+          {t("dashboard.experience.unassignedNote", {
+            count: nf.format(data.atanmamis.total),
+          })}
+        </p>
+      )}
     </section>
   );
 }
@@ -102,6 +115,7 @@ function ExperienceCard({
   pct,
   count,
   countLabel,
+  negativeLabel,
   filterLabel,
   href,
   className,
@@ -112,6 +126,7 @@ function ExperienceCard({
   pct: number;
   count: string;
   countLabel: string;
+  negativeLabel: string;
   filterLabel: string;
   href: string;
   className: string;
@@ -136,6 +151,9 @@ function ExperienceCard({
           </span>
           <p className="mt-1 text-sm text-white/80 tabular-nums">
             {count} {countLabel}
+          </p>
+          <p className="mt-0.5 text-xs text-white/70 tabular-nums">
+            {negativeLabel}
           </p>
         </div>
         {!disabled && (

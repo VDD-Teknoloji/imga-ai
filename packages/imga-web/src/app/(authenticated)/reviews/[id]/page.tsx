@@ -14,6 +14,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useCategories } from "@/hooks/use-categories";
 import { useManualPromoteReview, useReviewDetail } from "@/hooks/use-reviews";
 import { ApiError } from "@/lib/api-client";
+import { effectiveExperience, type ExperienceType } from "@/lib/experience";
 import { useTranslation } from "@/lib/i18n/use-translation";
 import { NPS_CATEGORY_LABELS, type ReviewDecision } from "@/lib/types";
 
@@ -83,6 +84,10 @@ function ReviewDetailInner() {
   const categories = useCategories();
   const categoryLabelFor = (code: string): string =>
     categories.data?.find((c) => c.code === code)?.label_tr ?? code;
+  // Deneyim tipi backend alanından okunur; eski satırlarda alan yok,
+  // effectiveExperience kategori yedeğine düşer, o da boşsa "—".
+  const experienceLabel = (kind: ExperienceType | null): string =>
+    kind === null ? "—" : t(`reviews.experience.${kind}`);
 
   const canPromote =
     detail.data != null &&
@@ -222,13 +227,28 @@ function ReviewDetailInner() {
                   })}
                 />
               </div>
-              <div>
-                <p className="text-muted-foreground text-xs">
-                  {t("reviews.detail.category")}
-                </p>
-                <p className="text-sm">
-                  {categoryLabelFor(detail.data.categorization.primary)}
-                </p>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <div>
+                  <p className="text-muted-foreground text-xs">
+                    {t("reviews.detail.category")}
+                  </p>
+                  <p className="text-sm">
+                    {categoryLabelFor(detail.data.categorization.primary)}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-muted-foreground text-xs">
+                    {t("reviews.detail.experience")}
+                  </p>
+                  <p className="text-sm">
+                    {experienceLabel(
+                      effectiveExperience(
+                        detail.data.experience_type,
+                        detail.data.categorization.primary,
+                      ),
+                    )}
+                  </p>
+                </div>
               </div>
             </CardContent>
           </Card>

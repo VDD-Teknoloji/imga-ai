@@ -1,15 +1,12 @@
-// Sprint 13 — deneyim tipi (Dijital / Operasyonel) türetimi.
+// Deneyim tipi (Dijital / Operasyonel).
 //
-// Eski cx prototipinin "Experience Breakdown" kartlarının (F9) yeni
-// mimarideki karşılığı. Analiz kararı (2026-05-03 eski-sistem-analizi,
-// Kart F9): deneyim tipi primary category ile ortogonal değil —
-// ayrı kolon yerine kategoriden türetilir.
+// BİRİNCİL KAYNAK ARTIK BACKEND'DİR: sınıflandırma revizyonundan sonra
+// her review satırı LLM'in doldurduğu `experience_type` kolonunu taşır.
+// UI'da deneyim tipi okunacaksa o alan kullanılır — `effectiveExperience`
+// bunu zaten yapar.
 //
 //   dijital      : uygulama / site / online ödeme akışı sorunları
 //   operasyonel  : fiziksel süreçler (kargo, iade, ürün, mağaza…)
-//
-// Tenant'a özel (custom) kategoriler eski prototiple aynı varsayılana
-// düşer: operasyonel. 'belirsiz' hiçbir kovaya girmez.
 
 export type ExperienceType = "dijital" | "operasyonel";
 
@@ -18,7 +15,26 @@ const DIGITAL_CODES: ReadonlySet<string> = new Set([
   "faturalama",
 ]);
 
+// AÇIK YEDEK — YALNIZCA `experience_type` taşımayan satırlar/uçlar için.
+// Revizyon öncesi analiz edilmiş eski satırlarda alan null gelir; bu
+// eski kategoriden-türetme kuralı onları bir kovaya düşürür. Yeni kod
+// bunu doğrudan çağırmasın: `effectiveExperience` üzerinden geçin.
+// Tenant'a özel (custom) kategoriler eski prototiple aynı varsayılana
+// düşer: operasyonel. 'belirsiz' hiçbir kovaya girmez.
 export function experienceOf(categoryCode: string): ExperienceType | null {
   if (categoryCode === "belirsiz") return null;
   return DIGITAL_CODES.has(categoryCode) ? "dijital" : "operasyonel";
+}
+
+/** Backend alanını tercih eder, yoksa eski kategori kuralına düşer.
+ *  `experienceType` beklenmedik bir string taşırsa (şema kayması) yine
+ *  yedeğe düşülür — sessizce geçersiz değer yüzeye çıkmasın. */
+export function effectiveExperience(
+  experienceType: string | null | undefined,
+  categoryCode: string,
+): ExperienceType | null {
+  if (experienceType === "dijital" || experienceType === "operasyonel") {
+    return experienceType;
+  }
+  return experienceOf(categoryCode);
 }

@@ -194,6 +194,25 @@ export const analyze: Bundle = {
     "analyze.history.status.failed": "Başarısız",
     "analyze.history.status.cancelled": "İptal",
 
+    // --- Yeniden analiz (yalnız kurum yöneticisi) ---
+    "analyze.history.reanalyze.action": "Yeniden Analiz Et",
+    "analyze.history.reanalyze.confirmTitle": "Yeniden analiz edilsin mi?",
+    "analyze.history.reanalyze.confirmDesc":
+      "Bu yüklemenin {count} yorumu yeni sınıflandırma kurallarıyla yeniden analiz edilecek; insan düzeltmeleri korunur. Sürebilir.",
+    "analyze.history.reanalyze.confirm": "Yeniden analiz et",
+    "analyze.history.reanalyze.cancel": "Vazgeç",
+    "analyze.history.reanalyze.submitting": "Kuyruğa alınıyor…",
+    "analyze.history.reanalyze.queued": "Yeniden analiz kuyruğa alındı",
+    "analyze.history.reanalyze.failed": "Yeniden analiz başlatılamadı.",
+    "analyze.history.reanalyze.noPermission":
+      "Yeniden analiz için kurum yöneticisi olmanız gerekir.",
+    "analyze.history.reanalyze.allButton": "Tüm yorumları yeniden analiz et",
+    "analyze.history.reanalyze.allConfirmTitle":
+      "Kurumun tüm yorumları yeniden analiz edilsin mi?",
+    "analyze.history.reanalyze.allConfirmDesc":
+      "Kurumdaki TÜM yorumlar yeni sınıflandırma kurallarıyla baştan analiz edilecek; insan düzeltmeleri korunur. Veri hacmine göre uzun sürebilir ve bu süre boyunca analiz sonuçları değişmeye devam eder. Tek bir yüklemeyi güncellemek istiyorsanız satır bazındaki Yeniden Analiz Et'i kullanın.",
+    "analyze.history.reanalyze.allConfirm": "Evet, tümünü yeniden analiz et",
+
     // --- Sütun eşleme (components/analyze/column-mapping-preview.tsx) ---
     "analyze.mapping.hint":
       'Sütun açıklamasına tıklayarak elle değiştirebilirsiniz. "Yoksay" seçilen sütunlar yüklemeye dahil edilmez.',
@@ -411,6 +430,25 @@ export const analyze: Bundle = {
     "analyze.history.status.completed": "Completed",
     "analyze.history.status.failed": "Failed",
     "analyze.history.status.cancelled": "Cancelled",
+
+    // --- Re-analysis (tenant admin only) ---
+    "analyze.history.reanalyze.action": "Re-analyze",
+    "analyze.history.reanalyze.confirmTitle": "Re-analyze this upload?",
+    "analyze.history.reanalyze.confirmDesc":
+      "The {count} reviews in this upload will be re-analyzed with the new classification rules; human corrections are preserved. This may take a while.",
+    "analyze.history.reanalyze.confirm": "Re-analyze",
+    "analyze.history.reanalyze.cancel": "Cancel",
+    "analyze.history.reanalyze.submitting": "Queueing…",
+    "analyze.history.reanalyze.queued": "Re-analysis queued",
+    "analyze.history.reanalyze.failed": "Could not start the re-analysis.",
+    "analyze.history.reanalyze.noPermission":
+      "Re-analysis requires a tenant admin role.",
+    "analyze.history.reanalyze.allButton": "Re-analyze all reviews",
+    "analyze.history.reanalyze.allConfirmTitle":
+      "Re-analyze every review in this tenant?",
+    "analyze.history.reanalyze.allConfirmDesc":
+      "EVERY review in this tenant will be re-analyzed from scratch with the new classification rules; human corrections are preserved. Depending on your data volume this can take a long time, and analysis results will keep changing until it finishes. To update a single upload, use the per-row Re-analyze action instead.",
+    "analyze.history.reanalyze.allConfirm": "Yes, re-analyze everything",
 
     // --- Column mapping (components/analyze/column-mapping-preview.tsx) ---
     "analyze.mapping.hint":

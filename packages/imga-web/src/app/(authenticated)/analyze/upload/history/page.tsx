@@ -1,10 +1,21 @@
 "use client";
 
-import { ChevronLeft, Loader2, RotateCcw, Upload } from "lucide-react";
+import { ChevronLeft, Loader2, RefreshCw, RotateCcw, Upload } from "lucide-react";
 import Link from "next/link";
+import { useState } from "react";
 import { toast } from "sonner";
 
 import { RequireRole } from "@/components/auth/require-role";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -19,9 +30,14 @@ import {
   useBatchHistory,
   useRetryBatchJobMutation,
 } from "@/hooks/use-batch-uploads";
+import {
+  useReanalyzeAllReviews,
+  useReanalyzeBatchJob,
+} from "@/hooks/use-reanalyze";
+import { useRoleFlags } from "@/hooks/use-role-flags";
 import { ApiError } from "@/lib/api-client";
 import { useTranslation } from "@/lib/i18n/use-translation";
-import type { BatchJobStatus } from "@/lib/types";
+import type { BatchJob, BatchJobStatus } from "@/lib/types";
 
 const STATUS_LABEL_KEYS: Record<BatchJobStatus, string> = {
   queued: "analyze.history.status.queued",
@@ -54,6 +70,13 @@ function BatchHistoryPageInner() {
   const { t } = useTranslation();
   const history = useBatchHistory(50);
   const retry = useRetryBatchJobMutation();
+  // Yeniden analiz yalnız tenant_admin'e açık — sayfanın kendi kapısı
+  // "write" (analist de girer), o yüzden ayrıca kapılanır.
+  const { isAdmin } = useRoleFlags();
+  const reanalyze = useReanalyzeBatchJob();
+  const reanalyzeAll = useReanalyzeAllReviews();
+  const [reanalyzeTarget, setReanalyzeTarget] = useState<BatchJob | null>(null);
+  const [reanalyzeAllOpen, setReanalyzeAllOpen] = useState(false);
   const jobs = history.data?.pages.flatMap((p) => p.jobs) ?? [];
 
   function handleRetry(jobId: string) {
@@ -63,6 +86,37 @@ function BatchHistoryPageInner() {
         toast.error(
           err instanceof ApiError ? err.detail : t("analyze.history.retryFailed"),
         ),
+    });
+  }
+
+  function reanalyzeErrorToast(err: Error) {
+    if (err instanceof ApiError && err.status === 403) {
+      toast.error(t("analyze.history.reanalyze.noPermission"));
+      return;
+    }
+    toast.error(t("analyze.history.reanalyze.failed"));
+  }
+
+  function handleReanalyzeConfirm() {
+    if (!reanalyzeTarget) return;
+    reanalyze.mutate(reanalyzeTarget.job_id, {
+      onSuccess: () => {
+        toast.success(t("analyze.history.reanalyze.queued"));
+        setReanalyzeTarget(null);
+        void history.refetch();
+      },
+      onError: reanalyzeErrorToast,
+    });
+  }
+
+  function handleReanalyzeAllConfirm() {
+    reanalyzeAll.mutate(undefined, {
+      onSuccess: () => {
+        toast.success(t("analyze.history.reanalyze.queued"));
+        setReanalyzeAllOpen(false);
+        void history.refetch();
+      },
+      onError: reanalyzeErrorToast,
     });
   }
 
@@ -78,9 +132,21 @@ function BatchHistoryPageInner() {
           </Link>
           <h1 className="text-2xl font-semibold">{t("analyze.history.title")}</h1>
         </div>
-        <Button render={<Link href="/analyze/upload" />}>
-          <Upload className="size-4" /> {t("analyze.history.newUpload")}
-        </Button>
+        <div className="flex flex-wrap items-center gap-2">
+          {isAdmin && (
+            <Button
+              variant="outline"
+              onClick={() => setReanalyzeAllOpen(true)}
+              disabled={reanalyzeAll.isPending}
+            >
+              <RefreshCw className="size-4" aria-hidden />
+              {t("analyze.history.reanalyze.allButton")}
+            </Button>
+          )}
+          <Button render={<Link href="/analyze/upload" />}>
+            <Upload className="size-4" /> {t("analyze.history.newUpload")}
+          </Button>
+        </div>
       </header>
 
       {history.isLoading ? (
@@ -153,6 +219,17 @@ function BatchHistoryPageInner() {
                           {t("analyze.history.retry")}
                         </Button>
                       )}
+                      {isAdmin && job.status === "completed" && (
+                        <Button
+                          variant="link"
+                          className="text-primary h-auto gap-1 p-0"
+                          disabled={reanalyze.isPending}
+                          onClick={() => setReanalyzeTarget(job)}
+                        >
+                          <RefreshCw className="size-3.5" aria-hidden />
+                          {t("analyze.history.reanalyze.action")}
+                        </Button>
+                      )}
                       <Button
                         variant="link"
                         className="h-auto p-0"
@@ -180,6 +257,67 @@ function BatchHistoryPageInner() {
           </Button>
         </div>
       )}
+
+      <AlertDialog
+        open={reanalyzeTarget !== null}
+        onOpenChange={(open) => {
+          if (!open) setReanalyzeTarget(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {t("analyze.history.reanalyze.confirmTitle")}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {t("analyze.history.reanalyze.confirmDesc", {
+                // Analiz edilmiş satır sayısı — yeniden analiz toplam
+                // satırı değil, kayda geçen yorumları kapsar.
+                count: reanalyzeTarget?.succeeded_rows ?? 0,
+              })}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={reanalyze.isPending}>
+              {t("analyze.history.reanalyze.cancel")}
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleReanalyzeConfirm}
+              disabled={reanalyze.isPending}
+            >
+              {reanalyze.isPending
+                ? t("analyze.history.reanalyze.submitting")
+                : t("analyze.history.reanalyze.confirm")}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={reanalyzeAllOpen} onOpenChange={setReanalyzeAllOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {t("analyze.history.reanalyze.allConfirmTitle")}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {t("analyze.history.reanalyze.allConfirmDesc")}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={reanalyzeAll.isPending}>
+              {t("analyze.history.reanalyze.cancel")}
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleReanalyzeAllConfirm}
+              disabled={reanalyzeAll.isPending}
+            >
+              {reanalyzeAll.isPending
+                ? t("analyze.history.reanalyze.submitting")
+                : t("analyze.history.reanalyze.allConfirm")}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </main>
   );
 }

@@ -426,6 +426,9 @@ export interface ReviewListItem {
   // tenant's taxonomy row was deleted after analyze (Sprint 8.3.7).
   company_perspective_code: string | null;
   company_perspective_label_tr: string | null;
+  // "dijital" | "operasyonel"; revizyon öncesi analiz edilmiş satırlarda
+  // null. Okurken lib/experience.ts#effectiveExperience kullanın.
+  experience_type?: string | null;
 }
 
 export interface ReviewListResponse {
@@ -467,6 +470,9 @@ export interface ReviewDetail {
   // Sprint 8.3.5 NPS — null when the upload row didn't carry an NPS.
   nps_score: number | null;
   nps_category: NpsCategory | null;
+  // "dijital" | "operasyonel"; revizyon öncesi analiz edilmiş satırlarda
+  // null. Okurken lib/experience.ts#effectiveExperience kullanın.
+  experience_type?: string | null;
 }
 
 export type NpsCategory = "detractor" | "passive" | "promoter";

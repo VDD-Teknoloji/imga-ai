@@ -275,10 +275,13 @@ export const dashboard: Bundle = {
     "dashboard.experience.title": "Deneyim Dağılımı",
     "dashboard.experience.infoAria": "Deneyim dağılımı nasıl hesaplanır?",
     "dashboard.experience.info":
-      "Yorumlar kategorilerine göre iki deneyim tipine ayrılır: Teknik Destek ve Faturalama/Ödeme dijital; kargo, iade, ürün kalitesi gibi kategoriler operasyonel sayılır. Sınıflandırılamayan yorumlar dahil edilmez.",
+      "Deneyim tipi her yorum için analiz sırasında belirlenir: dijital kanallardaki sorunlar (uygulama, site, online ödeme) dijital; fiziksel süreçler (kargo, iade, ürün, mağaza) operasyonel sayılır. Bu bilgiyi taşımayan eski yorumlar kategorilerine göre yaklaşık olarak yerleştirilir; hiçbirine giremeyenler yüzdelere dahil edilmez.",
     "dashboard.experience.digital": "Dijital Deneyim",
     "dashboard.experience.operational": "Operasyonel Deneyim",
     "dashboard.experience.reviews": "yorum",
+    "dashboard.experience.negativeShare": "{count} olumsuz",
+    "dashboard.experience.unassignedNote":
+      "{count} yorum deneyim ataması bekliyor (yeniden analizle atanır)",
     "dashboard.experience.viewReviews": "Yorumları gör",
 
     // --- önce yükleme (24 saat kuralı) ---
@@ -787,10 +790,13 @@ export const dashboard: Bundle = {
     "dashboard.experience.title": "Experience Breakdown",
     "dashboard.experience.infoAria": "How is the experience breakdown calculated?",
     "dashboard.experience.info":
-      "Reviews are split into two experience types by category: Technical Support and Billing/Payment count as digital; categories like shipping, returns and product quality count as operational. Unclassified reviews are excluded.",
+      "The experience type is decided per review during analysis: problems in digital channels (app, website, online payment) count as digital; physical processes (shipping, returns, product, store) count as operational. Older reviews without this information are placed approximately by their category; reviews that fit neither are excluded from the percentages.",
     "dashboard.experience.digital": "Digital Experience",
     "dashboard.experience.operational": "Operational Experience",
     "dashboard.experience.reviews": "reviews",
+    "dashboard.experience.negativeShare": "{count} negative",
+    "dashboard.experience.unassignedNote":
+      "{count} reviews are awaiting an experience assignment (a re-analysis assigns them)",
     "dashboard.experience.viewReviews": "View reviews",
 
     // --- upload first (24-hour rule) ---
