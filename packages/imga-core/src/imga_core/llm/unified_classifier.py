@@ -66,6 +66,8 @@ _HARD_TIMEOUT_SECONDS_OPENROUTER = 240.0
 # Rotasyon tukenince chunk'a verilen ek sanslarin bekleme suresi (sn).
 # Uzunluk = ek deneme sayisi; toplam deneme = len + 1.
 _ROTATION_RETRY_DELAYS: tuple[float, ...] = (5.0, 15.0, 30.0)
+# OpenRouter birlesik cagri cikti tavani — bkz. _generate_raw_openrouter.
+_OPENROUTER_MAX_OUTPUT_TOKENS = 16384
 
 
 @dataclass(frozen=True, slots=True)
@@ -570,6 +572,12 @@ class GeminiUnifiedEngine:
             "model": self._model_name,
             "messages": [{"role": "user", "content": prompt}],
             "temperature": 0.1,
+            # 2026-08-13 — max_tokens gonderilmeyince OpenRouter model
+            # maksimumunu (GLM 5.2: 65k) varsayiyor ve karsilayabilirlik
+            # kontrolu dusuk bakiyede her istegi 402 ile kesiyordu.
+            # 25'lik paket + GLM reasoning cikti olcumu ~4k/cagri;
+            # 16384 = 4x pay.
+            "max_tokens": _OPENROUTER_MAX_OUTPUT_TOKENS,
             "response_format": {
                 "type": "json_schema",
                 "json_schema": {
@@ -580,7 +588,9 @@ class GeminiUnifiedEngine:
             },
         }
         try:
-            with httpx.Client(timeout=httpx.Timeout(40.0)) as client:
+            # Transport zaman asimi asyncio emniyet aginin (240s) hemen
+            # altinda — 40s'lik eski deger agi anlamsizlastiriyordu.
+            with httpx.Client(timeout=httpx.Timeout(230.0)) as client:
                 resp = client.post(
                     f"{OPENROUTER_BASE_URL}/chat/completions",
                     headers=_attribution_headers(api_key),

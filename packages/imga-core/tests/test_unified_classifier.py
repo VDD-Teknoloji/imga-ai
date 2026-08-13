@@ -380,3 +380,53 @@ async def test_rotation_exhaustion_raises_after_final_attempt(
         await engine.classify_unified_batch_async(
             ["metin"], available_categories=["kargo"]
         )
+
+
+def test_openrouter_payload_bounds_max_tokens(monkeypatch) -> None:
+    """max_tokens gonderilmeyince OpenRouter model maksimumunu (65k)
+    varsayip dusuk bakiyede her istegi 402 ile kesiyordu (afford
+    kontrolu). Cikti tavani acikca sinirlanir."""
+    import httpx
+
+    captured: dict = {}
+
+    class _FakeResp:
+        status_code = 200
+
+        def json(self):
+            return {
+                "choices": [{"message": {"content": "[]"}, "finish_reason": "stop"}],
+                "usage": {"prompt_tokens": 1, "completion_tokens": 1},
+            }
+
+        @property
+        def text(self):
+            return "[]"
+
+    class _FakeClient:
+        def __init__(self, *a, **k): ...
+        def __enter__(self):
+            return self
+        def __exit__(self, *a):
+            return False
+        def post(self, url, headers=None, json=None):
+            captured.update(json or {})
+            return _FakeResp()
+
+    monkeypatch.setattr(httpx, "Client", _FakeClient)
+    from imga_core.llm.unified_classifier import (
+        _OPENROUTER_MAX_OUTPUT_TOKENS,
+        GeminiUnifiedEngine,
+        UnifiedBatchStats,
+    )
+
+    engine = GeminiUnifiedEngine(
+        _keys(), model_name="m", provider="openrouter"
+    )
+    import contextlib
+
+    with contextlib.suppress(Exception):
+        # icerik parse'i test disi; payload yakalandiktan sonrasi onemsiz
+        engine._generate_raw_openrouter("k", "p", UnifiedBatchStats())
+    assert captured.get("max_tokens") == _OPENROUTER_MAX_OUTPUT_TOKENS
+    assert captured["max_tokens"] <= 16384
