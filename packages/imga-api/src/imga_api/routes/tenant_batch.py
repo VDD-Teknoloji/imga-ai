@@ -55,7 +55,12 @@ from imga_api.workers.file_parser import (
     count_rows,
     peek_header,
 )
-from imga_api.workers.scheduler import enqueue_batch_job
+from imga_api.workers.reanalyzer import (
+    NoReanalysisCandidatesError,
+    create_reanalysis_job,
+    is_reanalysis_job,
+)
+from imga_api.workers.scheduler import enqueue_batch_job, enqueue_reanalysis_job
 from imga_api.workers.upload_validation import (
     _effective_text_column,
     validate_upload,
@@ -779,12 +784,19 @@ async def retry_batch(
             ) from exc
         tenant_id_for_dispatch = job.tenant_id
         retry_attempt = job.retry_count
+        # 2026-08-10 — yeniden analiz işleri de bu endpoint'ten
+        # sürdürülür (checkpoint = aday listesindeki indeks). Dosya
+        # işçisine yollanırsa "upload file missing" ile ölürdü.
+        dispatch_reanalysis = is_reanalysis_job(job.file_path)
 
     # Re-submit via the same dispatch path as create — arq if wired,
     # else in-process scheduler. Sprint 9.0.5-A. attempt: çöken önceki
     # denemenin Redis'te kalan arq kaydıyla kimlik çakışmasın (bkz.
     # enqueue_batch_job docstring).
-    worker_job_id, queued_at = await enqueue_batch_job(
+    dispatch = (
+        enqueue_reanalysis_job if dispatch_reanalysis else enqueue_batch_job
+    )
+    worker_job_id, queued_at = await dispatch(
         request.app,
         job_id=job.id,
         tenant_id=tenant_id_for_dispatch,
@@ -806,6 +818,111 @@ async def retry_batch(
         refreshed = await app_session.get(AnalyzeBatchJob, job.id)
         view = _job_view(refreshed if refreshed is not None else job)
     return view
+
+
+@router.post(
+    "/{job_id}/reanalyze",
+    response_model=BatchJobResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="2026-08-10 — bu yüklemenin yorumlarını yeniden analiz et.",
+    description=(
+        "Kaynak yüklemenin ürettiği yorumları güncel sınıflandırma "
+        "modelinden yeniden geçirir. YENİ bir iş satırı açılır "
+        "(``yeniden-analiz: <kaynak>``) — kaynak iş olduğu gibi kalır, "
+        "ilerleme aynı /batch endpoint'lerinden izlenir. Yorumlar "
+        "YERİNDE güncellenir: duygu / kategori / alt kategori / "
+        "deneyim tipi tazelenir; tarih, NPS, ticket bağlantısı ve "
+        "otomasyon kararı korunur. İnsan düzeltmesi yapılmış yorumlar "
+        "kapsam dışıdır. Yalnız kurum yöneticisi çalıştırabilir."
+    ),
+    responses={
+        400: {"description": "Kapsamda yeniden analiz edilecek yorum yok."},
+        403: {"description": "Kurum yöneticisi olmayan rol."},
+        404: {"description": "Kaynak iş bulunamadı / RLS gizledi."},
+        409: {"description": "Kaynak iş zaten bir yeniden analiz işi."},
+    },
+)
+async def reanalyze_batch(
+    job_id: UUID,
+    request: Request,
+    current: Annotated[CurrentUser, _TenantAdmin],
+    app_session: Annotated[AsyncSession, Depends(get_app_session)],
+) -> BatchJobResponse:
+    tenant_id = _require_active_tenant(current)
+    async with app_session.begin():
+        await bind_tenant(app_session, current)
+        audit = AuditService(app_session)
+        service = BatchAnalyzeService(app_session, audit)
+        try:
+            source = await service.get_job(job_id)
+        except BatchJobNotFoundError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="batch job not found",
+            ) from exc
+        if is_reanalysis_job(source.file_path):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    "Bu iş zaten bir yeniden analiz işi; yeniden analizin "
+                    "yeniden analizi yapılmaz."
+                ),
+            )
+        try:
+            new_job = await create_reanalysis_job(
+                app_session,
+                audit,
+                tenant_id=tenant_id,
+                triggered_by_user_id=current.user_id,
+                source_batch_job_id=job_id,
+                ip_address=_client_ip(request),
+            )
+        except NoReanalysisCandidatesError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)
+            ) from exc
+        new_job_id = new_job.id
+
+    return await dispatch_reanalysis(
+        request, current, app_session, job_id=new_job_id, tenant_id=tenant_id
+    )
+
+
+async def dispatch_reanalysis(
+    request: Request,
+    current: CurrentUser,
+    app_session: AsyncSession,
+    *,
+    job_id: UUID,
+    tenant_id: UUID,
+) -> BatchJobResponse:
+    """Yeniden analiz işini kuyruğa ver + arq tutamacını satıra yaz.
+
+    İki route (``/batch/{id}/reanalyze`` ve ``/reviews/reanalyze-all``)
+    aynı kuyruklama + tazeleme adımını paylaşır."""
+    worker_job_id, queued_at = await enqueue_reanalysis_job(
+        request.app, job_id=job_id, tenant_id=tenant_id
+    )
+    if worker_job_id is not None or queued_at is not None:
+        async with app_session.begin():
+            await bind_tenant(app_session, current)
+            await app_session.execute(
+                update(AnalyzeBatchJob)
+                .where(AnalyzeBatchJob.id == job_id)
+                .values(worker_job_id=worker_job_id, queued_at=queued_at)
+            )
+    async with app_session.begin():
+        await bind_tenant(app_session, current)
+        refreshed = await app_session.get(AnalyzeBatchJob, job_id)
+        if refreshed is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="batch job not found",
+            )
+        # update-then-serialize: refresh olmadan alanlar bayat kalır
+        # (MissingGreenlet riski aynı oturumda lazy load tetiklerse).
+        await app_session.refresh(refreshed)
+        return _job_view(refreshed)
 
 
 def _client_ip(request: Request) -> str | None:

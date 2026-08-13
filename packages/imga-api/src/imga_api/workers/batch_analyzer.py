@@ -61,12 +61,14 @@ from imga_db import create_engine, create_session_factory, set_current_tenant
 from imga_db.models import (
     AnalyzeBatchJob,
     BatchJobStatus,
+    Category,
     CategoryTaxonomy,
     Review,
     ReviewDecision,
     TenantBusinessDimension,
+    TenantCategory,
 )
-from sqlalchemy import select, update
+from sqlalchemy import and_, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from imga_api.services.audit_service import AuditService
@@ -805,6 +807,9 @@ async def _process_chunk(
         # sırasına göre. Klasik yola düşülürse boş kalır ve persist
         # döngüsü tümüyle keyword sezgiseline güvenir.
         unified_perspectives: list[str | None] = []
+        # 2026-08-10 — LLM'in temas noktası kararı, satır sırasına göre.
+        # Klasik yola düşülürse boş kalır ve satırlar NULL persist edilir.
+        unified_experiences: list[str | None] = []
         if unified_ctx is not None:
             try:
                 few_shot, semantic_hits = await _few_shot_for_chunk(
@@ -818,6 +823,8 @@ async def _process_chunk(
                     stats_sink=classifier_stats,
                     perspective_options=unified_ctx.perspective_options,
                     perspective_sink=unified_perspectives,
+                    category_descriptions=unified_ctx.category_descriptions,
+                    experience_sink=unified_experiences,
                 )
             except Exception as exc:
                 if not _bert_fallback_enabled():
@@ -837,6 +844,7 @@ async def _process_chunk(
                 )
                 analyses = None
                 unified_perspectives = []
+                unified_experiences = []
         if analyses is None:
             analyses = await pipeline.analyze_batch_async(
                 texts,
@@ -1020,6 +1028,11 @@ async def _process_chunk(
                 if row_index < len(unified_perspectives)
                 else None
             )
+            experience_type = normalize_experience_type(
+                unified_experiences[row_index]
+                if row_index < len(unified_experiences)
+                else None
+            )
             perspective_code: str | None
             perspective_label: str | None
             if llm_perspective is not None and (
@@ -1079,6 +1092,7 @@ async def _process_chunk(
                     overrides_applied=[hit.model_dump() for hit in analysis.overrides_applied],
                     nps_score=parsed.nps_score,
                     company_perspective_code=perspective_code,
+                    experience_type=experience_type,
                     business_segment=parsed.business_segment,
                     product_line=parsed.product_line,
                     channel=parsed.channel,
@@ -1124,10 +1138,15 @@ async def _process_chunk(
                     continue
                 # Back-fill batch_job_id on the review record_and_decide
                 # just inserted (the bridge has no batch awareness).
+                # 2026-08-10 — experience_type de aynı UPDATE'e binir:
+                # köprü de temas noktası kavramından habersiz.
                 await app_session.execute(
                     update(Review)
                     .where(Review.id == result.review_id)
-                    .values(batch_job_id=job_id)
+                    .values(
+                        batch_job_id=job_id,
+                        experience_type=experience_type,
+                    )
                 )
                 if result.decision == ReviewDecision.CREATE:
                     tickets += 1
@@ -1168,6 +1187,7 @@ async def _process_chunk(
                     overrides_applied=[hit.model_dump() for hit in analysis.overrides_applied],
                     nps_score=parsed.nps_score,
                     company_perspective_code=perspective_code,
+                    experience_type=experience_type,
                     business_segment=parsed.business_segment,
                     product_line=parsed.product_line,
                     channel=parsed.channel,
@@ -1430,6 +1450,26 @@ class UnifiedJobContext:
     # Boş sözlük = kurumun eşlenmiş alt kategorisi yok; prompt bölümü
     # hiç yazılmaz ve her satır keyword sezgiseline düşer.
     perspective_options: PerspectiveOptions = field(default_factory=dict)
+    # 2026-08-10 — kod -> tanım (prompt rubric'i). Kod tabanındaki
+    # CATEGORY_DESCRIPTIONS_TR taban alınır, DB'deki dolu
+    # ``categories.description`` satırları üstüne bindirilir.
+    category_descriptions: dict[str, str] = field(default_factory=dict)
+
+
+EXPERIENCE_TYPES: frozenset[str] = frozenset({"dijital", "operasyonel"})
+
+
+def normalize_experience_type(value: str | None) -> str | None:
+    """LLM'den gelen temas noktası değerini DB sözleşmesine indirger.
+
+    ``ck_reviews_experience_type`` yalnız iki değeri kabul eder; motor
+    beklenmedik bir şey döndürürse (model halüsinasyonu, prompt
+    sürüm kayması) tek satır yüzünden chunk transaction'ı patlamasın
+    diye burada NULL'a düşürülür."""
+    if value is None:
+        return None
+    normalized = value.strip().lower()
+    return normalized if normalized in EXPERIENCE_TYPES else None
 
 
 class BertFallbackDisabledError(RuntimeError):
@@ -1495,6 +1535,10 @@ async def _build_unified_context(
             # Sprint 13.1 — alt kategori seçenekleri job başında bir
             # kez okunur (prompt payload'ı, chunk'lar arası sabit).
             taxonomy_snapshot = await _load_taxonomy_payload(
+                session, tenant_id
+            )
+            # 2026-08-10 — kategori tanımları da job başında bir kez.
+            category_descriptions = await _load_category_descriptions(
                 session, tenant_id
             )
             # Sprint 11.3 — /settings/prompts override'ı: tenant
@@ -1566,6 +1610,7 @@ async def _build_unified_context(
         store=store,
         keys=embedding_keys,
         perspective_options=taxonomy_snapshot.perspective_options,
+        category_descriptions=category_descriptions,
     )
 
 
@@ -1726,6 +1771,51 @@ async def _fetch_dimension_mapping(
     return {dim: col for dim, col in rows if col}
 
 
+async def _load_category_descriptions(
+    session: AsyncSession, tenant_id: UUID
+) -> dict[str, str]:
+    """Sınıflandırıcı prompt'una giden kod -> tanım sözlüğü.
+
+    Taban ``CATEGORY_DESCRIPTIONS_TR`` (kod içindeki 9 global tanım);
+    üstüne ``categories`` tablosundaki DOLU ``description`` satırları
+    biner — global satırlar (tenant_id IS NULL) kod varsayılanını
+    ezebilir, kurumun ETKİN özel kategorileri (``tenant_categories``
+    join'i is_enabled) sözlüğü genişletir.
+
+    Sorgu patlarsa çağıran tarafın işi durmasın diye burada değil,
+    ``_build_unified_context``'in ortak try'ında yakalanır (o yol
+    zaten klasik path'e düşürür).
+    """
+    from imga_core.categories.taxonomy import CATEGORY_DESCRIPTIONS_TR
+
+    payload: dict[str, str] = dict(CATEGORY_DESCRIPTIONS_TR)
+    stmt = (
+        select(Category.code, Category.description)
+        .outerjoin(
+            TenantCategory,
+            and_(
+                TenantCategory.category_id == Category.id,
+                TenantCategory.tenant_id == tenant_id,
+            ),
+        )
+        .where(Category.deleted_at.is_(None))
+        .where(Category.description.is_not(None))
+        .where(
+            or_(
+                Category.tenant_id.is_(None),
+                and_(
+                    Category.tenant_id == tenant_id,
+                    TenantCategory.is_enabled.is_(True),
+                ),
+            )
+        )
+    )
+    for code, description in (await session.execute(stmt)).all():
+        if description:
+            payload[code] = description
+    return payload
+
+
 @dataclass(frozen=True, slots=True)
 class TenantTaxonomySnapshot:
     """One read of ``category_taxonomies``, shaped for its three
@@ -1790,8 +1880,10 @@ async def _load_taxonomy_payload(
 
 
 __all__ = [
+    "EXPERIENCE_TYPES",
     "WorkerContext",
     "build_worker_context",
+    "normalize_experience_type",
     "process_batch_job",
     "recover_orphans",
 ]

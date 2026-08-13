@@ -59,6 +59,27 @@ def submit_batch_job(
     log.info("scheduler: queued batch job %s", job_id)
 
 
+def submit_reanalysis_job(
+    scheduler: AsyncIOScheduler,
+    *,
+    job_id: UUID,
+    context: WorkerContext,
+) -> None:
+    """2026-08-10 — ``submit_batch_job``'ın yeniden analiz ikizi. Aynı
+    WorkerContext, aynı eşzamanlılık biletleri; farkı yalnız çağrılan
+    işçi fonksiyonu."""
+    from imga_api.workers.reanalyzer import process_reanalysis_job
+
+    scheduler.add_job(
+        process_reanalysis_job,
+        trigger="date",
+        args=[job_id, context],
+        id=f"reanalyze-{job_id}",
+        replace_existing=True,
+    )
+    log.info("scheduler: queued reanalysis job %s", job_id)
+
+
 def submit_report_job(
     scheduler: AsyncIOScheduler,
     *,
@@ -251,12 +272,77 @@ async def enqueue_batch_job(
     return None, None
 
 
+async def enqueue_reanalysis_job(
+    app: FastAPI,
+    *,
+    job_id: UUID,
+    tenant_id: UUID,
+    attempt: int = 0,
+) -> tuple[str | None, datetime | None]:
+    """``enqueue_batch_job``'ın yeniden analiz ikizi.
+
+    Aynı kuyruk (``imga-batch``) kullanılır — yeniden analiz de LLM
+    ağırlıklı ve aynı worker pool'unun kapasitesini tüketiyor; ayrı
+    kuyruk ikinci bir konteyner gerektirirdi. Görev kimliği
+    ``reanalyze:{job_id}[:r{n}]``: yükleme kimlikleriyle çakışmaz ve
+    çöken bir denemenin Redis kaydı retry'ı bloklamaz (bkz.
+    ``enqueue_batch_job`` docstring'i).
+    """
+    arq_job_id = f"reanalyze:{job_id}" + (f":r{attempt}" if attempt else "")
+    arq_pool = getattr(app.state, "arq_pool", None)
+    if arq_pool is not None:
+        try:
+            job = await arq_pool.enqueue_job(
+                "process_reanalysis_task",
+                str(job_id),
+                str(tenant_id),
+                _job_id=arq_job_id,
+                _queue_name="imga-batch",
+            )
+        except Exception:
+            log.exception(
+                "scheduler: arq reanalysis enqueue failed; falling back "
+                "to in-process",
+                extra={"job_id": str(job_id)},
+            )
+        else:
+            if job is not None:
+                queued_at = datetime.now(UTC)
+                worker_job_id = getattr(job, "job_id", None)
+                log.info(
+                    "scheduler: enqueued reanalysis job %s on arq "
+                    "(worker_job_id=%s)",
+                    job_id,
+                    worker_job_id,
+                )
+                return worker_job_id, queued_at
+            log.warning(
+                "scheduler: arq dedup hit for reanalysis %s (attempt %d); "
+                "not re-enqueueing",
+                job_id,
+                attempt,
+            )
+            return arq_job_id, None
+
+    scheduler = getattr(app.state, "batch_scheduler", None)
+    worker_context = getattr(app.state, "batch_worker_context", None)
+    if scheduler is None or worker_context is None:
+        raise RuntimeError(
+            "no dispatch target available — neither arq_pool nor "
+            "batch_scheduler is wired on app.state"
+        )
+    submit_reanalysis_job(scheduler, job_id=job_id, context=worker_context)
+    return None, None
+
+
 __all__ = [
     "build_scheduler",
     "enqueue_batch_job",
+    "enqueue_reanalysis_job",
     "schedule_cleanup",
     "schedule_data_retention",
     "schedule_provider_healthcheck",
     "submit_batch_job",
+    "submit_reanalysis_job",
     "submit_report_job",
 ]

@@ -20,13 +20,19 @@ from typing import Any, Literal
 from uuid import UUID
 from zoneinfo import ZoneInfo
 
+from imga_core.categories.taxonomy import FALLBACK_CATEGORY_CODE
 from imga_core.config import CRISIS_SCORE_THRESHOLD, LABEL_NEGATIVE
 from imga_db.models import Category, CategoryTaxonomy, Review, Ticket, TicketState
-from sqlalchemy import and_, case, func, or_, select, text
+from sqlalchemy import and_, case, func, literal, null, or_, select, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.asyncio import AsyncSession
 
 Granularity = Literal["day", "week", "month"]
+
+# 2026-08-10 — ``packages/imga-web/src/lib/experience.ts`` ile birebir
+# aynı liste. Deneyim tipi kolonu NULL olan ESKİ satırlar için yedek
+# eşleme; kolon doluysa modelin kararı kazanır.
+_DIGITAL_CATEGORY_CODES: tuple[str, ...] = ("teknik_destek", "faturalama")
 
 
 @dataclass(frozen=True, slots=True)
@@ -230,6 +236,24 @@ class CompanyPerspectiveDistRow:
     label_tr: str
     count: int
     percentage: float
+
+
+@dataclass(frozen=True, slots=True)
+class ExperienceBucket:
+    total: int
+    negatif: int
+
+
+@dataclass(frozen=True, slots=True)
+class ExperienceDistribution:
+    """Temas noktası dağılımı: dijital / operasyonel / atanmamış.
+
+    ``atanmamis`` = ne modelin kararı ne de kategori yedeği bir kova
+    üretebildi (pratikte ``primary_category = 'belirsiz'``)."""
+
+    dijital: ExperienceBucket
+    operasyonel: ExperienceBucket
+    atanmamis: ExperienceBucket
 
 
 @dataclass(frozen=True, slots=True)
@@ -1306,6 +1330,83 @@ class AnalyticsService:
             data=data,
         )
 
+    async def experience_distribution(
+        self,
+        *,
+        tenant_id: UUID,
+        filters: AnalyticsFilters,
+    ) -> ExperienceDistribution:
+        """Dijital / operasyonel temas noktası dağılımı (+ negatif alt
+        sayısı), 2026-08-10.
+
+        Filtre zarfı diğer /analytics uçlarıyla ORTAK
+        (``_apply_review_filters``): tarihler ``review_date`` üzerinde
+        ve ``datetime`` (frontend ISO datetime yollar), ayrıca
+        ``batch_job_id`` ile tek bir yüklemeye daraltılabilir.
+        ``sentiment_labels`` bilinçli olarak uç noktada açılmadı —
+        duyguya göre süzülmüş bir küme içindeki "negatif" alt sayısı
+        anlamsız olurdu.
+
+        ``reviews.experience_type`` modelin yorum başına verdiği karar
+        ve DOLUYSA hep o kazanır. NULL satırlar (birleşik yolu hiç
+        görmemiş arşiv) SQL tarafında eski kategori eşlemesine düşer —
+        frontend'deki ``lib/experience.ts`` ile birebir aynı semantik:
+        teknik_destek/faturalama dijital, belirsiz hiçbir kovaya
+        girmez, geri kalan her şey (kurum-özel kategoriler dahil)
+        operasyonel.
+
+        Yeniden analiz (``/reviews/reanalyze-all``) yedek yola düşen
+        satır sayısını zamanla sıfıra indirir; kova adları o zaman da
+        aynı kalır.
+        """
+        bucket = case(
+            (Review.experience_type.is_not(None), Review.experience_type),
+            (
+                Review.primary_category.in_(_DIGITAL_CATEGORY_CODES),
+                literal("dijital"),
+            ),
+            (Review.primary_category == FALLBACK_CATEGORY_CODE, null()),
+            else_=literal("operasyonel"),
+        ).label("experience")
+
+        stmt = (
+            select(
+                bucket,
+                func.count().label("total"),
+                func.count(
+                    case((Review.sentiment_label == LABEL_NEGATIVE, 1))
+                ).label("negatif"),
+            )
+            .select_from(Review)
+            .where(Review.tenant_id == tenant_id)
+            .where(Review.deleted_at.is_(None))
+            .group_by(bucket)
+        )
+        stmt = self._apply_review_filters(stmt, filters)
+        rows = (await self._session.execute(stmt)).all()
+
+        buckets = {
+            "dijital": ExperienceBucket(total=0, negatif=0),
+            "operasyonel": ExperienceBucket(total=0, negatif=0),
+            "atanmamis": ExperienceBucket(total=0, negatif=0),
+        }
+        for row in rows:
+            key = row.experience or "atanmamis"
+            if key not in buckets:
+                # Beklenmedik bir değer (CHECK'i atlatmış eski veri)
+                # sayımı düşürmesin — atanmamış kovasına eklenir.
+                key = "atanmamis"
+            current = buckets[key]
+            buckets[key] = ExperienceBucket(
+                total=current.total + int(row.total or 0),
+                negatif=current.negatif + int(row.negatif or 0),
+            )
+        return ExperienceDistribution(
+            dijital=buckets["dijital"],
+            operasyonel=buckets["operasyonel"],
+            atanmamis=buckets["atanmamis"],
+        )
+
     # ------------------------------------------------------------------
     # Filter helpers
     # ------------------------------------------------------------------
@@ -1456,6 +1557,8 @@ __all__ = [
     "CategoryDistRow",
     "CompanyPerspectiveDist",
     "CompanyPerspectiveDistRow",
+    "ExperienceBucket",
+    "ExperienceDistribution",
     "Granularity",
     "HeadlineMetrics",
     "NPSMonthlyPoint",

@@ -202,6 +202,20 @@ class CategoryDrilldownResponse(BaseModel):
     data: list[CategoryDrilldownRowResponse]
 
 
+class ExperienceBucketResponse(BaseModel):
+    total: int
+    negatif: int
+
+
+class ExperienceDistributionResponse(BaseModel):
+    """2026-08-10 — temas noktası kovaları. ``atanmamis`` = ne modelin
+    kararı ne kategori yedeği bir kova üretebildi."""
+
+    dijital: ExperienceBucketResponse
+    operasyonel: ExperienceBucketResponse
+    atanmamis: ExperienceBucketResponse
+
+
 # --- helpers ------------------------------------------------------------
 
 
@@ -272,6 +286,45 @@ async def sentiment_distribution(
     return SentimentDistResponse(
         total=result.total,
         data=[SentimentDistRowResponse(**asdict(row)) for row in result.data],
+    )
+
+
+@router.get(
+    "/experience-distribution",
+    response_model=ExperienceDistributionResponse,
+    summary="Dijital / operasyonel temas noktası dağılımı.",
+    description=(
+        "2026-08-10 — deneyim tipi artık yorum başına LLM kararı "
+        "(``reviews.experience_type``). Kolonu NULL olan eski satırlar "
+        "SQL tarafında eski kategori eşlemesine düşer "
+        "(teknik_destek/faturalama → dijital, belirsiz → atanmamış, "
+        "geri kalan → operasyonel), böylece yeniden analiz tamamlanana "
+        "kadar sayımlar bozulmaz. Tüm kurum üyelerine açık. Tarih "
+        "filtreleri ``review_date`` üzerinde ve diğer /analytics "
+        "uçlarıyla aynı ISO datetime zarfını kullanır."
+    ),
+)
+async def experience_distribution(
+    current: Annotated[CurrentUser, _AnyMember],
+    app_session: Annotated[AsyncSession, Depends(get_app_session)],
+    date_from: datetime | None = None,
+    date_to: datetime | None = None,
+    source_types: str | None = None,
+    batch_job_id: UUID | None = None,
+) -> ExperienceDistributionResponse:
+    tenant_id = _require_active_tenant(current)
+    filters = _build_filters(
+        date_from, date_to, source_types=source_types, batch_job_id=batch_job_id
+    )
+    async with app_session.begin():
+        await bind_tenant(app_session, current)
+        result = await AnalyticsService(app_session).experience_distribution(
+            tenant_id=tenant_id, filters=filters
+        )
+    return ExperienceDistributionResponse(
+        dijital=ExperienceBucketResponse(**asdict(result.dijital)),
+        operasyonel=ExperienceBucketResponse(**asdict(result.operasyonel)),
+        atanmamis=ExperienceBucketResponse(**asdict(result.atanmamis)),
     )
 
 

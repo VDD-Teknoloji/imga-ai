@@ -13,7 +13,7 @@ from datetime import datetime
 from typing import Annotated, Literal
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from imga_db.models import Review, UserTenantRole
 from pydantic import BaseModel
 from sqlalchemy import select
@@ -22,7 +22,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from imga_api.auth_deps import CurrentUser, bind_tenant, require_role
 from imga_api.db_deps import get_app_session
 from imga_api.dependencies import get_review_service
+from imga_api.routes.tenant_batch import BatchJobResponse, dispatch_reanalysis
 from imga_api.services import (
+    AuditService,
     CategoryNotConfiguredError,
     ReviewAlreadyTicketedError,
     ReviewNotFoundError,
@@ -40,6 +42,10 @@ from imga_api.services.review_list_service import (
     ReviewListItem,
     ReviewListService,
 )
+from imga_api.workers.reanalyzer import (
+    NoReanalysisCandidatesError,
+    create_reanalysis_job,
+)
 
 router = APIRouter(prefix="/tenants/me/reviews", tags=["Analyze"])
 
@@ -52,6 +58,7 @@ _WriteMember = Depends(require_role(
     UserTenantRole.TENANT_ADMIN,
     UserTenantRole.ANALYST,
 ))
+_TenantAdmin = Depends(require_role(UserTenantRole.TENANT_ADMIN))
 
 
 def _require_active_tenant(current: CurrentUser) -> UUID:
@@ -92,6 +99,10 @@ class ReviewItemResponse(BaseModel):
     override_count: int
     company_perspective_code: str | None = None
     company_perspective_label_tr: str | None = None
+    # 2026-08-10 — LLM'in temas noktası kararı ("dijital" |
+    # "operasyonel"). NULL = birleşik yol koşmamış eski satır; UI
+    # kategori eşlemesine düşer.
+    experience_type: str | None = None
 
 
 class ReviewListResponse(BaseModel):
@@ -143,6 +154,7 @@ class ReviewDetailResponse(BaseModel):
     auto_ticket_decision_reason: str | None
     nps_score: int | None = None
     nps_category: str | None = None
+    experience_type: str | None = None
 
 
 # --- endpoints -----------------------------------------------------
@@ -317,6 +329,7 @@ async def get_review(
             auto_ticket_decision_reason=review.decision_reason,
             nps_score=review.nps_score,
             nps_category=review.nps_category,
+            experience_type=review.experience_type,
         )
 
 
@@ -480,6 +493,60 @@ async def correct_review(
         )
 
 
+# --- 2026-08-10 — kurum geneli yeniden analiz -----------------------
+
+
+@router.post(
+    "/reanalyze-all",
+    response_model=BatchJobResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Kurumdaki TÜM yorumları güncel modelden yeniden geçir.",
+    description=(
+        "Yeni bir yeniden analiz işi açar (``analyze_batch_jobs`` "
+        "satırı) ve kuyruğa verir; ilerleme normal bir yükleme işi "
+        "gibi ``/tenants/me/analyze/batch/{job_id}`` üzerinden "
+        "izlenir. Yorumlar YERİNDE güncellenir: duygu, kategori, alt "
+        "kategori ve deneyim tipi tazelenir; ``review_date``, NPS, "
+        "ticket bağlantısı ve otomasyon kararı korunur. İnsan "
+        "düzeltmesi yapılmış yorumlara DOKUNULMAZ. Yalnız kurum "
+        "yöneticisi çalıştırabilir."
+    ),
+    responses={
+        400: {"description": "Yeniden analiz edilecek yorum yok."},
+        403: {"description": "Kurum yöneticisi olmayan rol."},
+    },
+)
+async def reanalyze_all_reviews(
+    request: Request,
+    current: Annotated[CurrentUser, _TenantAdmin],
+    app_session: Annotated[AsyncSession, Depends(get_app_session)],
+) -> BatchJobResponse:
+    tenant_id = _require_active_tenant(current)
+    async with app_session.begin():
+        await bind_tenant(app_session, current)
+        audit = AuditService(app_session)
+        try:
+            job = await create_reanalysis_job(
+                app_session,
+                audit,
+                tenant_id=tenant_id,
+                triggered_by_user_id=current.user_id,
+                source_batch_job_id=None,
+                ip_address=(
+                    request.client.host if request.client is not None else None
+                ),
+            )
+        except NoReanalysisCandidatesError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)
+            ) from exc
+        job_id = job.id
+
+    return await dispatch_reanalysis(
+        request, current, app_session, job_id=job_id, tenant_id=tenant_id
+    )
+
+
 def _to_item_response(item: ReviewListItem) -> ReviewItemResponse:
     return ReviewItemResponse(
         id=item.id,
@@ -499,4 +566,5 @@ def _to_item_response(item: ReviewListItem) -> ReviewItemResponse:
         override_count=item.override_count,
         company_perspective_code=item.company_perspective_code,
         company_perspective_label_tr=item.company_perspective_label_tr,
+        experience_type=item.experience_type,
     )

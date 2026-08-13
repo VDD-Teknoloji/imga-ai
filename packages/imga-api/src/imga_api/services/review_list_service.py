@@ -91,6 +91,9 @@ class ReviewListItem:
     # the raw code as if it were the label.
     company_perspective_code: str | None
     company_perspective_label_tr: str | None
+    # 2026-08-10 — LLM'in temas noktası kararı ("dijital" |
+    # "operasyonel"). NULL = birleşik yol koşmamış eski satır.
+    experience_type: str | None = None
 
 
 class ReviewListService:
@@ -240,6 +243,7 @@ class ReviewListService:
                 else 0,
                 company_perspective_code=r.Review.company_perspective_code,
                 company_perspective_label_tr=r.label_tr,
+                experience_type=r.Review.experience_type,
             )
             for r in rows
         ]

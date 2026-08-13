@@ -94,6 +94,27 @@ async def process_batch_task(
         raise
 
 
+async def process_reanalysis_task(
+    ctx: dict[str, Any],
+    job_id: str,
+    tenant_id: str,
+) -> None:
+    """2026-08-10 — yeniden analiz görevi. ``process_batch_task`` ile
+    aynı sözleşme (aynı kuyruk, aynı startup'ta kurulan
+    ``WorkerContext``); tek fark çağrılan işçi fonksiyonu."""
+    from imga_api.workers.reanalyzer import process_reanalysis_job
+
+    worker_context = ctx["worker_context"]
+    try:
+        await process_reanalysis_job(UUID(job_id), worker_context)
+    except Exception:
+        _logger.exception(
+            "arq reanalysis task failed",
+            extra={"job_id": job_id, "tenant_id": tenant_id},
+        )
+        raise
+
+
 async def startup(ctx: dict[str, Any]) -> None:  # noqa: D401
     # Sprint 9.0.5-B J — pin INFO on the project namespaces inside
     # the arq worker process. arq's own logging defaults leave
@@ -207,7 +228,7 @@ class WorkerSettings:
     via the same job id without a stale-key warning.
     """
 
-    functions = [process_batch_task]
+    functions = [process_batch_task, process_reanalysis_task]
     on_startup = staticmethod(startup)
     on_shutdown = staticmethod(shutdown)
     redis_settings = _redis_settings()
@@ -244,6 +265,7 @@ class WorkerSettings:
 __all__ = [
     "WorkerSettings",
     "process_batch_task",
+    "process_reanalysis_task",
     "shutdown",
     "startup",
 ]
