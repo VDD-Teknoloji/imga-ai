@@ -114,7 +114,13 @@ class _StubUnifiedEngine:
     model_name = "stub"
 
     async def classify_unified_batch_async(
-        self, texts, *, available_categories, few_shot=(), perspective_options=None
+        self,
+        texts,
+        *,
+        available_categories,
+        few_shot=(),
+        perspective_options=None,
+        category_descriptions=None,
     ):
         from imga_core.llm.unified_classifier import UnifiedBatchStats
 

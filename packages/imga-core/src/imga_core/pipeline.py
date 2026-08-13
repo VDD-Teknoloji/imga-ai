@@ -82,6 +82,8 @@ class AnalysisPipeline:
         stats_sink: dict[str, int] | None = None,
         perspective_options: PerspectiveOptions | None = None,
         perspective_sink: list[str | None] | None = None,
+        category_descriptions: dict[str, str] | None = None,
+        experience_sink: list[str | None] | None = None,
     ) -> list[AnalysisResult]:
         """Sprint 11.0 — birleşik LLM yolu: sentiment + kategori tek
         Gemini batch çağrı setinden gelir; BERT ve keyword/LLM-fallback
@@ -103,6 +105,13 @@ class AnalysisPipeline:
         alt kategori kodunu satır sırasına göre çağırana geri verir.
         ``AnalysisResult`` genişletilmedi: alt kategori bir DB
         kolonudur, çekirdek analiz sonucunun parçası değil.
+
+        2026-08-10 — ``category_descriptions`` kod tanımlarını motora
+        geçirir (prompt rubric'i); ``experience_sink`` de aynı
+        out-param deseniyle modelin temas noktası kararını
+        ("dijital" | "operasyonel" | None) satır sırasına göre geri
+        verir. İkisi de alt kategoriyle aynı gerekçeyle
+        ``AnalysisResult``'a girmez.
         """
         n = len(texts)
         if n == 0:
@@ -118,10 +127,14 @@ class AnalysisPipeline:
             available_categories=available_categories,
             few_shot=few_shot,
             perspective_options=perspective_options,
+            category_descriptions=category_descriptions,
         )
         if perspective_sink is not None:
             perspective_sink.clear()
             perspective_sink.extend(p.perspective_code for p in predictions)
+        if experience_sink is not None:
+            experience_sink.clear()
+            experience_sink.extend(p.experience_type for p in predictions)
         if stats_sink is not None:
             stats_sink["llm_total_input_tokens"] = stats.input_tokens
             stats_sink["llm_total_output_tokens"] = stats.output_tokens

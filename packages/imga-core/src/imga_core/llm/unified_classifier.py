@@ -135,24 +135,31 @@ _RESPONSE_SCHEMA: dict[str, Any] = {
 # Sprint 11.3 — public isim: /settings/prompts code-defaults endpoint'i
 # bu sabiti gösterir; tenant override'ı engine'e system_prompt param
 # olarak gelir.
-UNIFIED_SYSTEM_PROMPT = """\
-Sen Türkçe müşteri yorumlarını analiz eden kıdemli bir sınıflandırıcısın.
+# 2026-08-10 hedef calismasi — olcumle secilen prompt (aday yarismasi,
+# gold4-500 uzerinde): duygu .970, kategori .908 (belirsiz .022), skor
+# ayni-bant .876/komsu .996, deneyim .915. Taban (eski prompt): .914 /
+# .764 (.148) / .728 / .000. Degistirmeden once scripts/eval_classifier.py
+# ile olc — bu sabit /settings/prompts tenant override yuzeyinde de
+# gorunur.
+UNIFIED_SYSTEM_PROMPT = """Sen Türkçe müşteri mesajlarını sınıflandıran kıdemli bir analistsin. Her mesaj için: s (POZITIF|NEGATIF|NÖTR), sc (-1..1), c (verilen listeden bir kod), cc (0..1); uygunsa p (YALNIZ seçilen c'nin alt listesinden, uymuyorsa yazma) ve e ("dijital"|"operasyonel").
 
-Her yorum için döndür:
-  s  — duygu: POZITIF, NEGATIF veya NÖTR
-  sc — duygu skoru: -1.0 (çok olumsuz) ile 1.0 (çok olumlu) arası
-  c  — ana kategori: SADECE verilen listeden bir kod
-  cc — kategori güveni: 0.0-1.0
-  p  — alt kategori: SADECE seçtiğin ana kategorinin alt kategori
-       listesinden bir kod (aşağıda verilir)
+KURALLAR
+- NEGATIF = sorun/gecikme/kayıp/tutarsızlık RAPORU; nazik dil bunu örtmez, ironi NEGATIF'tir. POZITIF = mesajın ÖZÜ memnuniyet/teşekkür (kibar "teşekkürler" kapanışı yetmez). NÖTR = duygu içermeyen her şey: bilgi/belge talebi, durum sorusu, otomatik bildirim, doğrulama/OTP e-postası. Çözülmüş sorun bildirimi NÖTR; açık teşekkür varsa POZITIF.
+- sc bantları: güçlü neg -1.0..-0.7 | orta neg -0.6..-0.4 | hafif neg -0.3..-0.1 | NÖTR -0.05..0.05 | hafif poz 0.1..0.3 | orta poz 0.4..0.6 | güçlü poz 0.7..1.0. NÖTR etikette |sc|<=0.05; hafif ifadeye asla ±0.7+ verme.
+- Konusu OLAN mesaj "belirsiz" OLAMAZ; soru ve otomatik bildirim de konusunun kategorisine gider. Emin değilsen en yakın kod + düşük cc. Sınır: paket kargoya verilmeden önceki aşamalar (onay, hazırlık, iptal/iade) sipariş süreci; taşıma/teslimat/dağıtım kargodur.
+- e: sorun/etkileşim EKRANDA ise dijital (uygulama, site, takip ekranı, online ödeme, giriş/hesap); fiziksel dünya (paket, kurye, depo, teslimat, çağrı merkezi) ve taşıyıcı bildirimleri/durum soruları operasyoneldir. İkisine de oturmuyorsa e'yi HİÇ yazma. Kategori ≠ deneyim.
 
-Kurallar:
-- Kararsızsan kategori için "belirsiz" kodunu kullan (listede varsa).
-- Alaycı/ironik ifadelerde gerçek niyeti puanla.
-- Karma duygularda baskın olanı seç; sc'yi orta bantta tut.
-- Her girdi yorumu için TAM BİR sonuç döndür; index (i) girdiyle eşleşmeli.
-- p alanını SADECE seçtiğin ana kategoriye (c) ait listeden doldur.
-  Hiçbiri uymuyorsa veya c "belirsiz" ise p alanını hiç yazma.
+ÖRNEKLER (özet → s / sc / c / e; kod adları örnek — daima kurumun verilen listesinden seç)
+- "Siparişinizi doğrulamak için kodunuz: 4821" → NÖTR / 0.0 / siparis_sureci / dijital
+- "Paketiniz dağıtıma çıktı" → NÖTR / 0.0 / kargo / operasyonel
+- "X iline teslimat yapıyor musunuz?" → NÖTR / 0.0 / kargo / operasyonel
+- "Uygulamada teslim edildi görünüyor ama paket elimde yok" → NEGATIF / -0.5 / kargo / dijital
+- "Merhaba, kargom 5 gündür kımıldamıyor, ilgilenirseniz sevinirim, teşekkürler" → NEGATIF / -0.4 / kargo / operasyonel
+- "Ödemeyi aldınız ama sipariş hâlâ 'hazırlanıyor', kargoya verilmedi" → NEGATIF / -0.4 / siparis_sureci / operasyonel
+- "Uygulama girişte sürekli çöküyor, takip yapamıyorum" → NEGATIF / -0.5 / teknik_destek / dijital
+- "Müşteri temsilciniz harikaydı, çok teşekkür ederim!" → POZITIF / 0.8 / musteri_hizmetleri / operasyonel
+
+ÇIKTI: Yalnızca JSON dizisi döndür; markdown çiti veya açıklama yazma. Her girdi için tam bir öğe üret; i alanı girdi numarasıyla eşleşsin.
 """
 
 #: Alt kategori yükü: ana kategori kodu -> [(alt kod, Türkçe etiket)].
@@ -209,7 +216,8 @@ def _build_prompt(
         parts.append(f"{i}: {single_line[:600]}")
     parts.append(
         "\nJSON dizisi döndür; her öğe {\"i\", \"s\", \"sc\", \"c\", \"cc\"} "
-        "alanlarını taşımalı, uygunsa \"p\" alanını da ekle."
+        "alanlarını taşımalı, uygunsa \"p\" (alt kategori) ve \"e\" "
+        "(deneyim: dijital|operasyonel) alanlarını da ekle."
     )
     return "\n".join(parts)
 
