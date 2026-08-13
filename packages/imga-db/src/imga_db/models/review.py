@@ -165,6 +165,17 @@ class Review(Base, TimestampMixin, SoftDeleteMixin):
         String(64), nullable=True
     )
 
+    # 2026-08-10 — temas noktası türü ("dijital" | "operasyonel").
+    # LLM'in yorum başına verdiği karar; kategoriden TÜRETİLMEZ
+    # ("uygulamada kargo statüsü yanlış" → kategori kargo, deneyim
+    # dijital). NULL = birleşik yol koşmamış eski satır ya da model
+    # geçerli değer üretmemiş; okuma tarafı NULL'ı kategori
+    # eşlemesine düşürür. CHECK ck_reviews_experience_type (0041)
+    # iki değerden başkasını kabul etmez.
+    experience_type: Mapped[str | None] = mapped_column(
+        String(16), nullable=True
+    )
+
     # Sprint 9.3 B — business impact dimensions. All four nullable
     # so existing reviews stay valid; populated at upload time via
     # the tenant's ``tenant_business_dimensions.csv_column_mapping``
