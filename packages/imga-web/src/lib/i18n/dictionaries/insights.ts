@@ -103,7 +103,7 @@ export const insights: Bundle = {
     "insights.heatmap.high": "yüksek",
     "insights.heatmap.legendNotePre": "Her hücre o saat × gün kesişimindeki ",
     "insights.heatmap.legendNotePost":
-      " değerini gösterir. Renk koyulaştıkça değer yükselir. Boş hücre = veri yok.",
+      " değerini gösterir. Koyu mor düşük, sarı yüksek değeri gösterir. Boş hücre = veri yok.",
     "insights.heatmap.cellEmptyTitle": "{y} × {x} — veri yok",
     "insights.heatmap.cellTitle": "{y} × {x}: {value} ({metric}) — yorumları gör",
     "insights.heatmap.cellEmptyAria": "{y} × {x} boş hücre",
@@ -381,7 +381,7 @@ export const insights: Bundle = {
     "insights.heatmap.high": "high",
     "insights.heatmap.legendNotePre": "Each cell shows the ",
     "insights.heatmap.legendNotePost":
-      " value at that hour × day intersection. The darker the colour, the higher the value. Empty cell = no data.",
+      " value at that hour × day intersection. Dark purple marks low values, yellow marks high. Empty cell = no data.",
     "insights.heatmap.cellEmptyTitle": "{y} × {x} — no data",
     "insights.heatmap.cellTitle": "{y} × {x}: {value} ({metric}) — view comments",
     "insights.heatmap.cellEmptyAria": "{y} × {x} empty cell",
