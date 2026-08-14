@@ -383,10 +383,20 @@ export interface BatchJobListResponse {
 
 export type ReviewSourceType = "manual" | "batch" | "api";
 
-// Sprint 8.3.4 — five known override layer codes. Server may emit
-// any one of these in `overrides_applied[].layer`; the UI maps them
-// to Türkçe labels via OVERRIDE_LAYER_LABELS_TR below.
-export type OverrideLayer = "knowledge_base" | "critical" | "tier1" | "sla" | "tier2";
+// Sprint 8.3.4 — rule layer codes, plus the Sprint 11 correction
+// traces and the reanalysis provenance marker. Server may emit any of
+// these in `overrides_applied[].layer`; unknown codes fall back to the
+// raw string in the UI (see overrideLayerLabel).
+export type OverrideLayer =
+  | "knowledge_base"
+  | "critical"
+  | "tier1"
+  | "sla"
+  | "tier2"
+  | "user_correction"
+  | "user_correction_kb"
+  | "user_correction_semantic"
+  | "reanalysis";
 
 export const OVERRIDE_LAYER_LABELS_TR: Record<OverrideLayer, string> = {
   knowledge_base: "Bilgi Tabanı Kuralı",
@@ -394,13 +404,19 @@ export const OVERRIDE_LAYER_LABELS_TR: Record<OverrideLayer, string> = {
   tier1: "Güçlü Negatif Sıfat",
   sla: "SLA Tetikleyicisi",
   tier2: "İkincil Tetikleyici",
+  user_correction: "Kullanıcı Düzeltmesi",
+  user_correction_kb: "Düzeltme Kuralı (Bilgi Tabanı)",
+  user_correction_semantic: "Benzer Düzeltme Eşleşmesi",
+  reanalysis: "Yeniden Analiz",
 };
 
 export interface OverrideHit {
-  layer: OverrideLayer;
-  matched_keywords: string[];
-  score: number;
-  detail: string | null;
+  layer: string;
+  // Kural katmanlarında dolu; "reanalysis" gibi kayıt-izi girdileri
+  // yalnızca layer+detail taşır — UI eksik alanlara dayanıklı olmalı.
+  matched_keywords?: string[] | null;
+  score?: number | null;
+  detail?: string | null;
 }
 
 export interface ReviewListItem {

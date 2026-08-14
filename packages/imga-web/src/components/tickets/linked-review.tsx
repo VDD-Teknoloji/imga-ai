@@ -10,7 +10,7 @@
 import { ArrowRight } from "lucide-react";
 import Link from "next/link";
 
-import { OverrideChip } from "@/components/reviews/override-display";
+import { OverrideChip, ruleLayerHits } from "@/components/reviews/override-display";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useReviewDetail } from "@/hooks/use-reviews";
@@ -35,7 +35,7 @@ export function LinkedReviewSection({ reviewId }: { reviewId: string | null }) {
   }
   if (review.error || !review.data) return null;
 
-  const hits = review.data.overrides_applied;
+  const hits = ruleLayerHits(review.data.overrides_applied);
   const labels = hits
     .map((h) => OVERRIDE_LAYER_LABELS_TR[h.layer as OverrideLayer] ?? h.layer)
     .slice(0, 4);

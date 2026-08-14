@@ -447,3 +447,47 @@ async def test_list_exposes_override_count_and_detail_returns_full_trace(
     )
     assert detail_r2.status_code == 200
     assert detail_r2.json()["overrides_applied"] == []
+
+
+@pytest.mark.asyncio
+async def test_reanalysis_marker_excluded_from_count_kept_in_detail(
+    batch_client: TestClient,
+    semi_auto_tenant: tuple[User, UUID, str],
+    admin_session: AsyncSession,
+) -> None:
+    """Yeniden analiz izi (score/matched_keywords alanları YOK) kural
+    sayacına girmez ama detay izinde aynen döner — 2026-08-14 detay
+    sayfası çökmesinin regresyon testi."""
+    user, tid, pw = semi_auto_tenant
+    overrides = [
+        {"layer": "critical", "matched_keywords": ["kötü"], "score": -0.5, "detail": None},
+        {"layer": "reanalysis", "detail": "z-ai/glm-5.2"},
+    ]
+    async with admin_session.begin():
+        await admin_session.execute(
+            text("SELECT set_config('app.current_tenant_id', :t, true)"),
+            {"t": str(tid)},
+        )
+        review = await _insert_review(
+            admin_session, tenant_id=tid, text_value="yeniden analizli",
+            overrides_applied=overrides,
+        )
+        admin_session.expunge(review)
+
+    token = login_token(batch_client, user.email, pw, tid)
+    list_r = batch_client.get(
+        "/tenants/me/reviews",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert list_r.status_code == 200, list_r.text
+    by_id = {item["id"]: item for item in list_r.json()["items"]}
+    assert by_id[str(review.id)]["override_count"] == 1
+
+    detail_r = batch_client.get(
+        f"/tenants/me/reviews/{review.id}",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert detail_r.status_code == 200
+    trace = detail_r.json()["overrides_applied"]
+    assert len(trace) == 2
+    assert trace[1] == {"layer": "reanalysis", "detail": "z-ai/glm-5.2"}

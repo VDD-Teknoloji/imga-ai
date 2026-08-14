@@ -35,6 +35,12 @@ function layerLabel(layer: string): string {
   return layer;
 }
 
+// "reanalysis" kayıt-izi girdisi kural katmanı değildir — chip
+// sayaçlarına girmez; yalnızca detay yığınında kart olarak görünür.
+export function ruleLayerHits(hits: OverrideHit[]): OverrideHit[] {
+  return hits.filter((hit) => hit.layer !== "reanalysis");
+}
+
 export function OverrideChip({
   count,
   href,
@@ -76,21 +82,23 @@ export function OverrideChip({
 }
 
 export function OverrideLayerCard({ hit }: { hit: OverrideHit }) {
-  const sign = hit.score >= 0 ? "+" : "";
+  const keywords = hit.matched_keywords ?? [];
   return (
     <div className="bg-card rounded-md border p-3">
       <div className="flex items-baseline justify-between gap-3">
         <h4 className="text-sm font-semibold">{layerLabel(hit.layer)}</h4>
-        <span className="text-muted-foreground font-mono text-xs">
-          skor {sign}
-          {hit.score.toFixed(2)}
-        </span>
+        {typeof hit.score === "number" && (
+          <span className="text-muted-foreground font-mono text-xs">
+            skor {hit.score >= 0 ? "+" : ""}
+            {hit.score.toFixed(2)}
+          </span>
+        )}
       </div>
-      {hit.matched_keywords.length > 0 && (
+      {keywords.length > 0 && (
         <p className="text-muted-foreground mt-1 text-xs">
           Eşleşen:{" "}
           <span className="text-foreground font-mono">
-            {hit.matched_keywords.join(", ")}
+            {keywords.join(", ")}
           </span>
         </p>
       )}

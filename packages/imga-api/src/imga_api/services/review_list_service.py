@@ -238,9 +238,14 @@ class ReviewListService:
                 analyzed_at=r.Review.analyzed_at,
                 review_date=r.Review.review_date,
                 submitted_by_user_id=r.Review.submitted_by_user_id,
-                override_count=len(r.Review.overrides_applied)
-                if r.Review.overrides_applied
-                else 0,
+                # "reanalysis" izi kural katmanı değil — sayaca girerse
+                # yeniden analiz sonrası her satır "+1" gösterir.
+                override_count=sum(
+                    1
+                    for hit in (r.Review.overrides_applied or [])
+                    if isinstance(hit, dict)
+                    and hit.get("layer") != "reanalysis"
+                ),
                 company_perspective_code=r.Review.company_perspective_code,
                 company_perspective_label_tr=r.label_tr,
                 experience_type=r.Review.experience_type,
