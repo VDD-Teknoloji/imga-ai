@@ -297,7 +297,13 @@ function HeatmapGrid({ data, colorFor, maxCell, onCellClick }: GridProps) {
                 className="float-left h-full"
                 style={{
                   width: `${100 / 24}%`,
-                  background: colorFor(i / 23),
+                  // colorFor min..max aralığına normalize eder; lejant
+                  // oranı gerçek metrik değerine çevrilerek geçilmeli,
+                  // yoksa lejant renkleri hücrelerle uyuşmaz.
+                  background: colorFor(
+                    data.metric_min +
+                      (i / 23) * (data.metric_max - data.metric_min),
+                  ),
                 }}
               />
             ))}
@@ -449,10 +455,7 @@ function buildScale(data: HeatmapResponse | null): Scale {
   function colorFor(v: number | null): string {
     if (v === null) return "#f5f5f5";
     let t: number;
-    // The scale legend passes a 0..1 ratio directly; data values
-    // need normalisation. Detect the legend case by checking if v
-    // is already in [0, 1] AND max isn't (avoids confusion when
-    // max ≤ 1 naturally).
+    // range 0 (tüm hücreler eşit) → skala ortası rengi.
     if (range <= 0) {
       t = 0.5;
     } else {

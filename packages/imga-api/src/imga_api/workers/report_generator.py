@@ -10,7 +10,7 @@ Sheet layout (comprehensive):
     1. Tüm Analizler          — review-level rows
     2. Duygu Özeti             — sentiment label pivot
     3. Kategori Özeti          — category count + sentiment breakdown
-    4. Override Katmanları     — override layer trace stats (placeholder)
+    4. Override Katmanları     — override layer trace stats
     5. Çapraz Analiz           — category × sentiment matrix
     6. Bilet Özeti             — ticket-state aggregates
 
@@ -385,7 +385,7 @@ def _sheet_reviews(
             r, 6, category_lookup.get(review.primary_category, review.primary_category),
         )
         sheet.write_number(r, 7, float(review.primary_confidence), num_fmt)
-        sheet.write_string(r, 8, "")  # 8.3.4 populates override trace
+        sheet.write_string(r, 8, _rule_layer_labels(review.overrides_applied))
         sheet.write_string(r, 9, str(review.ticket_id) if review.ticket_id else "")
         sheet.write_string(r, 10, "Toplu" if review.batch_job_id else "Manuel")
 
@@ -456,6 +456,23 @@ def _sheet_category_summary(
     _set_widths(sheet, [22, 10, 12, 12, 10, 12])
 
 
+def _rule_layer_labels(overrides: list[dict[str, object]] | None) -> str:
+    """Satırın kural-katmanı izlerinin Türkçe etiketleri, tetiklenme
+    sırasıyla. reanalysis / user_correction* izleri bilinçli dışarıda:
+    dashboard'daki override_stats de yalnız bu 5 katmanı sayar, rapor
+    ile ekran aynı sözleşmeyi izler."""
+    if not isinstance(overrides, list):
+        return ""
+    labels: list[str] = []
+    for entry in overrides:
+        if not isinstance(entry, dict):
+            continue
+        layer = entry.get("layer")
+        if isinstance(layer, str) and layer in _OVERRIDE_LABEL_TR:
+            labels.append(_OVERRIDE_LABEL_TR[layer])
+    return ", ".join(labels)
+
+
 def _sheet_override_layers(
     workbook: Any,
     rows: list[Review],
@@ -468,13 +485,44 @@ def _sheet_override_layers(
     for col, label in enumerate(headers):
         sheet.write(0, col, label, header_fmt)
     sheet.freeze_panes(1, 0)
-    # Sprint 8.3.4 populates per-row overrides_applied; for now we
-    # surface the layer table with zeros so the contract is stable.
-    for i, (_code, label) in enumerate(_OVERRIDE_LABEL_TR.items(), start=1):
+
+    # analytics_service.override_stats ile aynı savunmacı desen: dict
+    # olmayan girdiler ve score'u sayı olmayanlar (ör. {"layer":
+    # "reanalysis"} izi) atlanır; bilinmeyen katman kodu raporu
+    # patlatmak yerine sessizce düşer.
+    per_layer: dict[str, list[float]] = {code: [] for code in _OVERRIDE_LABEL_TR}
+    for review in rows:
+        arr = review.overrides_applied
+        if not isinstance(arr, list):
+            continue
+        for entry in arr:
+            if not isinstance(entry, dict):
+                continue
+            layer = entry.get("layer")
+            score = entry.get("score")
+            if (
+                isinstance(layer, str)
+                and layer in per_layer
+                and isinstance(score, (int, float))
+            ):
+                per_layer[layer].append(float(score))
+
+    for i, (code, label) in enumerate(_OVERRIDE_LABEL_TR.items(), start=1):
+        scores = per_layer[code]
+        count = len(scores)
+        # Ortalama İŞARETLİ tutulur (dashboard'ın avg_impact'i mutlak
+        # değer ortalamasıdır); yön de bu işaretten okunur.
+        avg = sum(scores) / count if count else 0.0
+        if count == 0 or avg == 0:
+            direction = "—"
+        elif avg < 0:
+            direction = "−"
+        else:
+            direction = "+"
         sheet.write_string(i, 0, label)
-        sheet.write_number(i, 1, 0)
-        sheet.write_string(i, 2, "—")
-        sheet.write_number(i, 3, 0.0, num_fmt)
+        sheet.write_number(i, 1, count)
+        sheet.write_string(i, 2, direction)
+        sheet.write_number(i, 3, avg, num_fmt)
     _set_widths(sheet, [24, 14, 12, 16])
 
 

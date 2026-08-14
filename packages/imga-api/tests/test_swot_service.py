@@ -254,6 +254,58 @@ def test_swot_schema_priority_enum_has_explicit_string_type() -> None:
     assert impact.get("enum") == ["yüksek", "orta", "düşük"]
 
 
+# OpenRouter yolu response_schema'yı strict:false ile yalnız tavsiye
+# olarak gönderiyor — GLM madde-içi zorunlu alanları (evidence vb.)
+# atlayabiliyor. Validasyon artık normalize edilmiş kopya döner;
+# persist HER ZAMAN tam şekilli olur (StrictUndefined tüketicileri:
+# okr_v1 prompt + PDF şablonları + frontend).
+
+
+def test_swot_response_validation_normalizes_missing_item_fields() -> None:
+    """Madde-düzeyi eksik/yanlış-tipli alanlar güvenli varsayılanlarla
+    dolar: metin alanları "", priority/estimated_impact "orta",
+    liste-olmayan bölüm [], dict-olmayan madde atlanır."""
+    payload = {
+        "strengths": [{"title": "Eksik kanıt", "description": "D"}],
+        "weaknesses": "liste değil",
+        "opportunities": [],
+        "threats": [
+            {"title": 42, "description": "D", "evidence": "E"},
+            "dict değil",
+        ],
+        "strategic_recommendations": [{"description": "B"}],
+    }
+    normalized = SwotService._validate_swot_response(payload)
+    assert normalized["strengths"][0] == {
+        "title": "Eksik kanıt", "description": "D", "evidence": "",
+    }
+    assert normalized["weaknesses"] == []
+    assert normalized["threats"] == [
+        {"title": "", "description": "D", "evidence": "E"},
+    ]
+    assert normalized["strategic_recommendations"][0] == {
+        "title": "",
+        "description": "B",
+        "priority": "orta",
+        "estimated_impact": "orta",
+    }
+    # Normalize kopya döner — girdi payload'ı yerinde değişmez.
+    assert "evidence" not in payload["strengths"][0]
+
+
+def test_swot_response_validation_preserves_complete_payload() -> None:
+    """Tam şekilli payload değer olarak aynen korunur — normalizasyon
+    yalnızca eksikleri doldurur."""
+    payload = {
+        "strengths": [_swot_item(), _swot_item()],
+        "weaknesses": [_swot_item(), _swot_item()],
+        "opportunities": [_swot_item(), _swot_item()],
+        "threats": [_swot_item(), _swot_item()],
+        "strategic_recommendations": [_swot_rec(), _swot_rec(), _swot_rec()],
+    }
+    assert SwotService._validate_swot_response(payload) == payload
+
+
 # ---------------------------------------------------------------------------
 # DB + provider-mock + fakeredis integration tests
 # ---------------------------------------------------------------------------
@@ -484,6 +536,49 @@ async def test_swot_service_persists_report_to_db(
         # input_stats has the snapshot fields we documented.
         assert "stats_hash" in row.input_stats
         assert "total_reviews" in row.input_stats
+
+
+@pytest.mark.asyncio
+async def test_swot_service_persists_normalized_payload(
+    admin_session: AsyncSession,
+    tenant_with_context: tuple[User, UUID, str],
+    mock_gemini_credential: Any,
+    fake_redis_client: Any,
+) -> None:
+    """OpenRouter strict:false yolu madde-içi zorunlu alanları
+    atlayabiliyor — evidence'sız madde / priority'siz öneri yine de
+    TAM ŞEKİLLİ persist edilmeli, yoksa StrictUndefined tüketicileri
+    (okr prompt + PDF şablonları) kalıcı 500'e döner."""
+    del fake_redis_client
+    _user, tid, _pw = tenant_with_context
+    await mock_gemini_credential(tid, "fake-key", priority=0)
+
+    payload = _swot_payload()
+    payload["strengths"] = [{"title": "Eksik kanıt"}]
+    payload["strategic_recommendations"] = [{"title": "A", "description": "B"}]
+    provider = _build_mock_provider(payload=payload)
+    async with admin_session.begin():
+        await _bind_tenant(admin_session, tid)
+        service = SwotService(
+            admin_session, tid, user_id=None, provider=provider
+        )
+        result = await service.generate()
+
+        row = (
+            await admin_session.execute(
+                select(StrategicReport).where(
+                    StrategicReport.id == UUID(result["id"])
+                )
+            )
+        ).scalar_one()
+        assert row.output_payload["strengths"][0] == {
+            "title": "Eksik kanıt", "description": "", "evidence": "",
+        }
+        rec = row.output_payload["strategic_recommendations"][0]
+        assert rec["priority"] == "orta"
+        assert rec["estimated_impact"] == "orta"
+        # Dönen dict de persist edilen normalize halini taşır.
+        assert result["output_payload"] == row.output_payload
 
 
 @pytest.mark.asyncio

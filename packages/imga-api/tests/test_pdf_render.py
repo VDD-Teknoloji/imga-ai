@@ -165,3 +165,53 @@ def test_render_okr_handles_source_swot_without_created_at() -> None:
     }
     pdf_bytes = renderer.render_okr(_okr_report(), source)
     assert pdf_bytes[:5] == b"%PDF-"
+
+
+# OpenRouter strict:false yolundan JSONB'ye sızmış / eski eksik-şekilli
+# satırlar: normalizasyon choke-point'i StrictUndefined şablonlarını
+# patlatmadan payload'ı tam şekle getirmeli.
+
+
+def test_render_swot_with_missing_item_fields_still_renders() -> None:
+    """Madde-içi evidence / priority eksik, bölümlerden biri liste bile
+    değil — render yine de PDF üretmeli (500 değil)."""
+    renderer = _pdf_or_skip()
+    report = _swot_report(
+        output_payload={
+            "strengths": [{"title": "Eksik kanıt"}],
+            "weaknesses": [],
+            "opportunities": "liste değil",
+            "threats": [{"title": "T", "description": "D", "evidence": "E"}],
+            "strategic_recommendations": [{"title": "R"}],
+        }
+    )
+    pdf_bytes = renderer.render_swot(report)
+    assert pdf_bytes[:5] == b"%PDF-"
+
+
+def test_render_okr_with_missing_fields_still_renders() -> None:
+    """key_results'sız / rationale'siz objective ve eksik KR alanları —
+    okr.html StrictUndefined altında yine de render olmalı."""
+    renderer = _pdf_or_skip()
+    report = _okr_report(
+        output_payload={
+            "objectives": [
+                {"objective": "Sadece hedef"},
+                {"objective": "KR eksik", "key_results": [{"text": "KR"}]},
+            ],
+        }
+    )
+    pdf_bytes = renderer.render_okr(report)
+    assert pdf_bytes[:5] == b"%PDF-"
+
+
+def test_jinja_undefined_error_surfaces_as_pdf_render_error() -> None:
+    """template.render artık try kapsamında — StrictUndefined'ın
+    UndefinedError'ı ham 500 yerine PdfRenderError sözleşmesiyle
+    çıkmalı. model_name payload normalizasyonunun kapsamı dışında,
+    bu yüzden eksikliği hâlâ UndefinedError tetikler."""
+    renderer = _pdf_or_skip()
+    report = _swot_report()
+    del report["model_name"]  # swot.html {{ report.model_name }} basıyor
+    with pytest.raises(PdfRenderError, match=r"swot\.html"):
+        renderer.render_swot(report)

@@ -22,6 +22,7 @@ from typing import Any
 from uuid import UUID, uuid4
 
 import pytest
+import xlsxwriter
 from fastapi.testclient import TestClient
 from imga_core import review_text_hash
 from imga_db.models import (
@@ -32,6 +33,7 @@ from imga_db.models import (
     ReviewDecision,
     User,
 )
+from openpyxl import load_workbook
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -491,3 +493,125 @@ async def test_unsupported_report_type_rejected_by_pydantic(
         json={"report_type": "bogus", "format": "xlsx", "filters": {}},
     )
     assert r.status_code == 422
+
+
+# --- override sheet aggregation (DB'siz birim testleri) -------------------
+
+
+def _mem_review(
+    overrides: list[Any] | None,
+) -> Review:
+    """DB'ye dokunmadan bellek-içi Review — sheet fonksiyonları yalnız
+    kolon attribute'larını okur, flush gerekmez."""
+    moment = datetime.now(UTC)
+    return Review(
+        text="birim test satiri",
+        text_hash=review_text_hash("birim test satiri"),
+        sentiment_label="NÖTR",
+        sentiment_score=0.0,
+        primary_category="kargo",
+        primary_confidence=0.9,
+        analyzed_at=moment,
+        review_date=moment,
+        overrides_applied=overrides,
+    )
+
+
+def test_override_layers_sheet_aggregates_real_counts(tmp_path: Path) -> None:
+    """Override sayfası artık sabit 0/'—'/0.0 değil; satırlardaki
+    gerçek izlerden sayım + işaretli ortalama üretir. Score'suz
+    reanalysis girdisi, dict olmayan çöp ve sayı olmayan score
+    atlanır (analytics_service.override_stats ile aynı desen)."""
+    rows = [
+        _mem_review([
+            {"layer": "critical", "score": -0.4},
+            {"layer": "reanalysis", "detail": "glm-4.6"},  # score yok — atlanır
+        ]),
+        _mem_review([
+            {"layer": "critical", "score": -0.2},
+            {"layer": "sla", "score": -0.9},
+        ]),
+        _mem_review(None),
+        _mem_review([
+            {"layer": "tier1", "score": 0.5},
+            "bozuk-girdi",
+            {"layer": "knowledge_base", "score": "sayi-degil"},
+            {"layer": "user_correction", "detail": "elle"},
+        ]),
+    ]
+
+    path = tmp_path / "override.xlsx"
+    workbook = xlsxwriter.Workbook(str(path))
+    try:
+        header_fmt = workbook.add_format({"bold": True})
+        num_fmt = workbook.add_format({"num_format": "0.00"})
+        report_generator._sheet_override_layers(
+            workbook, rows, header_fmt=header_fmt, num_fmt=num_fmt
+        )
+    finally:
+        workbook.close()
+
+    sheet = load_workbook(path)["Override Katmanları"]
+    by_label = {
+        sheet.cell(row=i, column=1).value: (
+            sheet.cell(row=i, column=2).value,
+            sheet.cell(row=i, column=3).value,
+            sheet.cell(row=i, column=4).value,
+        )
+        for i in range(2, 7)
+    }
+    count, direction, avg = by_label["Kritik Anahtar Kelime"]
+    assert count == 2
+    assert direction == "−"
+    assert avg == pytest.approx(-0.3)
+    assert by_label["SLA Tetikleyicisi"][0] == 1
+    assert by_label["SLA Tetikleyicisi"][1] == "−"
+    assert by_label["SLA Tetikleyicisi"][2] == pytest.approx(-0.9)
+    assert by_label["Güçlü Negatif Sıfat"][0] == 1
+    assert by_label["Güçlü Negatif Sıfat"][1] == "+"
+    assert by_label["Güçlü Negatif Sıfat"][2] == pytest.approx(0.5)
+    # knowledge_base'in tek girdisi sayı olmayan score taşıyordu →
+    # hiç tetiklenmemiş sayılır; tier2 gerçekten hiç tetiklenmedi.
+    assert by_label["Bilgi Tabanı Kuralı"] == (0, "—", 0)
+    assert by_label["İkincil Tetikleyici"] == (0, "—", 0)
+
+
+def test_reviews_sheet_override_column_lists_rule_layers(
+    tmp_path: Path,
+) -> None:
+    """'Tüm Analizler'deki override kolonu artık boş string değil;
+    kural katmanlarının Türkçe etiketlerini virgülle yazar. reanalysis
+    / user_correction izleri kolona girmez — dashboard'ın
+    override_stats'i ile aynı 5-katman sözleşmesi."""
+    rows = [
+        _mem_review([
+            {"layer": "critical", "score": -0.4},
+            {"layer": "sla", "score": -0.2},
+            {"layer": "reanalysis", "detail": "glm-4.6"},
+            {"layer": "user_correction", "detail": "elle"},
+        ]),
+        _mem_review([]),
+        _mem_review(None),
+    ]
+
+    path = tmp_path / "reviews.xlsx"
+    workbook = xlsxwriter.Workbook(str(path))
+    try:
+        header_fmt = workbook.add_format({"bold": True})
+        date_fmt = workbook.add_format({"num_format": "DD.MM.YYYY HH:MM"})
+        num_fmt = workbook.add_format({"num_format": "0.00"})
+        report_generator._sheet_reviews(
+            workbook, rows, {},
+            header_fmt=header_fmt, date_fmt=date_fmt, num_fmt=num_fmt,
+        )
+    finally:
+        workbook.close()
+
+    sheet = load_workbook(path)["Tüm Analizler"]
+    assert (
+        sheet.cell(row=2, column=9).value
+        == "Kritik Anahtar Kelime, SLA Tetikleyicisi"
+    )
+    # İz taşımayan satırlarda kolon boş kalır.
+    assert sheet.cell(row=3, column=9).value in ("", None)
+    assert sheet.cell(row=4, column=9).value in ("", None)

@@ -30,7 +30,17 @@ export function timeWindowDateFrom(key: TimeWindowKey): string | undefined {
   const months = WINDOW_MONTHS[key];
   if (months === null) return undefined;
   const d = new Date();
+  // setMonth ay sonunda taşar (31 Ağu - 6 ay → 3 Mar): önce günü 1'e
+  // çek, ayı çıkar, sonra günü hedef ayın son gününe kıstır.
+  const currentDay = d.getDate();
+  d.setDate(1);
   d.setMonth(d.getMonth() - months);
+  const lastDayOfTarget = new Date(
+    d.getFullYear(),
+    d.getMonth() + 1,
+    0,
+  ).getDate();
+  d.setDate(Math.min(currentDay, lastDayOfTarget));
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, "0");
   const day = String(d.getDate()).padStart(2, "0");

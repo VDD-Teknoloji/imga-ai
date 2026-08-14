@@ -205,6 +205,61 @@ def test_okr_response_validation_accepts_complete_payload() -> None:
     OkrService._validate_okr_response({"objectives": []})
 
 
+# OpenRouter strict:false yolunda madde-içi zorunlu alanlar (key_results,
+# rationale, KR metin alanları) eksik gelebilir. Validasyon normalize
+# edilmiş kopya döner; persist tam şekilli olur.
+
+
+def test_okr_response_validation_fills_missing_item_fields() -> None:
+    """key_results'sız objective [] ile, eksik metin alanları "" ile
+    dolar; dict-olmayan objective atlanır."""
+    normalized = OkrService._validate_okr_response(
+        {
+            "objectives": [
+                {"objective": "Tek başına hedef"},
+                {"objective": "KR eksik", "key_results": [{"text": "KR1"}]},
+                "dict değil",
+            ],
+        }
+    )
+    first, second = normalized["objectives"]
+    assert first == {
+        "objective": "Tek başına hedef", "rationale": "", "key_results": [],
+    }
+    assert second["key_results"] == [
+        {"text": "KR1", "metric": "", "baseline": "", "target": ""},
+    ]
+
+
+def test_okr_response_validation_preserves_complete_payload() -> None:
+    """Tam şekilli payload değer olarak aynen korunur."""
+    payload = _okr_payload()
+    assert OkrService._validate_okr_response(payload) == payload
+
+
+def test_render_context_and_prompt_survive_incomplete_source_swot() -> None:
+    """Eski satır senaryosu — kaynak SWOT'un maddelerinde evidence /
+    priority eksik, bölümlerden biri liste bile değil. _render_context
+    okuma yanında normalize eder; okr_v1'in StrictUndefined şablonu
+    (s.evidence / r.priority / r.estimated_impact'i koşulsuz basar)
+    patlamadan render olur."""
+    source = StrategicReport(
+        report_type="swot",
+        input_stats={"industry": "e_commerce", "company_size": "medium"},
+        output_payload={
+            "strengths": [{"title": "S1"}],
+            "weaknesses": "liste değil",
+            "strategic_recommendations": [{"title": "R1"}],
+            # opportunities / threats tamamen yok
+        },
+    )
+    ctx = OkrService._render_context(source)
+    rendered = render_okr_user_prompt(ctx)
+    assert "S1" in rendered
+    assert "R1" in rendered
+    assert "orta öncelik" in rendered
+
+
 def test_okr_schema_does_not_use_minitems() -> None:
     """Schema regression guard. Same Gemini SDK proto-Schema crash as
     SWOT — ``minItems`` / ``maxItems`` raise ``ValueError: Unknown
@@ -288,6 +343,52 @@ async def test_okr_generate_persists_with_correct_source_link(
         # Date window inherited from the parent SWOT.
         assert row.date_from is None
         assert row.date_to is None
+
+
+@pytest.mark.asyncio
+async def test_okr_generate_persists_objective_without_key_results(
+    admin_session: AsyncSession,
+    tenant_with_context: tuple[User, UUID, str],
+    mock_gemini_credential: Any,
+) -> None:
+    """strict:false yolundan key_results'sız objective gelirse persist
+    edilen satırda [] + doldurulmuş metin alanları olmalı — JSONB'ye
+    eksik şekil sızmaz."""
+    _user, tid, _pw = tenant_with_context
+    await mock_gemini_credential(tid, "fake-key", priority=0)
+
+    payload = {
+        "objectives": [
+            {"objective": "KR'siz hedef"},
+            {"objective": "Normal hedef", "rationale": "R",
+             "key_results": [{"text": "KR", "metric": "NPS"}]},
+        ],
+    }
+    provider = _build_mock_provider(payload=payload)
+    async with admin_session.begin():
+        await _bind_tenant(admin_session, tid)
+        swot_id = await _seed_swot(admin_session, tid)
+
+        service = OkrService(
+            admin_session, tid, user_id=None, provider=provider
+        )
+        result = await service.generate(swot_id)
+
+        row = (
+            await admin_session.execute(
+                select(StrategicReport).where(
+                    StrategicReport.id == UUID(result["id"])
+                )
+            )
+        ).scalar_one()
+        first, second = row.output_payload["objectives"]
+        assert first == {
+            "objective": "KR'siz hedef", "rationale": "", "key_results": [],
+        }
+        assert second["key_results"] == [
+            {"text": "KR", "metric": "NPS", "baseline": "", "target": ""},
+        ]
+        assert result["output_payload"] == row.output_payload
 
 
 @pytest.mark.asyncio

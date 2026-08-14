@@ -21,6 +21,7 @@ from datetime import UTC, date, datetime, timedelta
 from typing import Any
 from uuid import UUID
 
+from imga_core.categories.taxonomy import DEFAULT_GLOBAL_CATEGORIES
 from imga_core.llm import (
     AllKeysExhaustedError,
     GeminiKeyRotator,
@@ -55,6 +56,13 @@ from imga_api.services.strategic_constants import (
 )
 
 _logger = logging.getLogger(__name__)
+
+# root_cause_service ile ayni eslem — ham kategori kodu ("belirsiz",
+# eski BERT kodlari) LLM prompt'una sizip brifingde kod adiyla
+# alintilaniyordu.
+_CATEGORY_LABELS: dict[str, str] = {
+    c.code: c.name for c in DEFAULT_GLOBAL_CATEGORIES
+}
 
 CACHE_TTL_SECONDS = 12 * 3600
 # Sprint 9.5.4 — Gemini 3 ailesine cutover. Recent history:
@@ -457,7 +465,12 @@ class ExecutiveBriefingService:
             cat_stmt = cat_stmt.where(Review.batch_job_id == batch_id)
         cat_rows = (await self._session.execute(cat_stmt)).all()
         top_categories = [
-            {"label": r.primary_category, "count": int(r.cnt)}
+            {
+                "label": _CATEGORY_LABELS.get(
+                    r.primary_category, r.primary_category
+                ),
+                "count": int(r.cnt),
+            }
             for r in cat_rows
         ]
 

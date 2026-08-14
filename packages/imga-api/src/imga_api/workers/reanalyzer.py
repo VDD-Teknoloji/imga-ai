@@ -249,6 +249,9 @@ async def process_reanalysis_job(job_id: UUID, context: WorkerContext) -> None:
             await _record_catastrophic_failure(
                 job_id, tenant_id, context, reason=str(exc)
             )
+            # Çökme anına kadar commit edilen chunk'lar satırları
+            # güncellemiş olabilir — önbellekler bayat kalmasın.
+            await _bust_stale_caches(tenant_id, context)
 
 
 async def _run_reanalysis(
@@ -319,6 +322,10 @@ async def _run_reanalysis(
         chunk_ids = pending_ids[offset : offset + REANALYSIS_CHUNK_SIZE]
         if await _is_cancelled(job_id, tenant_id, context):
             log.info("reanalysis worker: job %s cancelled", job_id)
+            # İptal noktasına kadar işlenen chunk'lar satırları çoktan
+            # güncelledi — temizlik başarı dalıyla aynı, yoksa binlerce
+            # güncel satıra karşın snapshot/brifing bayat kalır.
+            await _bust_stale_caches(tenant_id, context)
             await _publish_terminal(job_id, tenant_id, context)
             return
         processed_index += len(chunk_ids)
@@ -348,6 +355,9 @@ async def _run_reanalysis(
                     f"oldu (BERT yedeğine düşülmez): {exc}"
                 ),
             )
+            # Checkpoint'e kadarki güncellemeler kalıcı — önbellekler de
+            # onlara göre tazelenmeli.
+            await _bust_stale_caches(tenant_id, context)
             return
         await _commit_progress(
             job_id=job_id,
@@ -365,8 +375,7 @@ async def _run_reanalysis(
         await set_current_tenant(admin_session, tenant_id)
         audit = AuditService(admin_session)
         await BatchAnalyzeService(admin_session, audit).mark_completed(job_id)
-        await _bust_snapshot_cache(admin_session, tenant_id)
-    await _bust_briefing_cache(tenant_id)
+    await _bust_stale_caches(tenant_id, context)
     await _publish_terminal(job_id, tenant_id, context)
     log.info(
         "reanalysis completed",
@@ -470,16 +479,9 @@ async def _process_reanalysis_chunk(
             # JSONB listesi MutableList değil — yerinde append ORM'e
             # görünmez, satır kirli sayılmaz ve UPDATE hiç çıkmaz.
             # Yeni liste ATANIR.
-            new_entries: list[dict[str, object]] = [
-                hit.model_dump()
-                for hit in analysis.overrides_applied
-                if str(hit.layer).startswith("user_correction")
-            ]
-            new_entries.append({"layer": "reanalysis", "detail": model_name})
-            review.overrides_applied = [
-                *(review.overrides_applied or []),
-                *new_entries,
-            ]
+            review.overrides_applied = _rewritten_overrides(
+                review.overrides_applied, analysis, model_name
+            )
             succeeded += 1
 
     log.info(
@@ -495,9 +497,50 @@ async def _process_reanalysis_chunk(
     return succeeded, len(chunk_ids) - succeeded
 
 
+def _rewritten_overrides(
+    existing: list[dict[str, object]] | None,
+    analysis: AnalysisResult,
+    model_name: str,
+) -> list[dict[str, object]]:
+    """İz TAMAMEN yeniden yazılır: skoru yeni analiz belirledi, eski
+    kural-katmanı izleri ve eski reanalysis işaretleri artık onu tarif
+    etmiyor — atılırlar (tekrar koşularda dedupe'suz şişmeyi de keser).
+    user_correction* girdileri savunma amaçlı korunur; aday sorgusu bu
+    satırları normalde zaten dışlar."""
+    kept: list[dict[str, object]] = [
+        entry
+        for entry in (existing or [])
+        if isinstance(entry, dict)
+        and str(entry.get("layer", "")).startswith("user_correction")
+    ]
+    return [
+        *kept,
+        *(hit.model_dump() for hit in analysis.overrides_applied),
+        {"layer": "reanalysis", "detail": model_name},
+    ]
+
+
 # ---------------------------------------------------------------------------
 # Önbellek temizliği
 # ---------------------------------------------------------------------------
+
+
+async def _bust_stale_caches(tenant_id: UUID, context: WorkerContext) -> None:
+    """Üç terminal dalda da (başarı, iptal, kalıcı hata) koşar: iptal/
+    hata yolunda da checkpoint'e kadarki satırlar güncellenmiş durumda.
+    Tamamı best-effort — önbellek hijyeni iş durumunu değiştirmemeli;
+    terminal durum yazıldıktan SONRA çağrılır ve buradan istisna sızarsa
+    catch-all COMPLETED/CANCELLED bir işi FAILED'a çevirebilirdi."""
+    try:
+        async with context.admin_session_factory() as session, session.begin():
+            await set_current_tenant(session, tenant_id)
+            await _bust_snapshot_cache(session, tenant_id)
+    except Exception:
+        log.warning(
+            "reanalysis: snapshot cache bust failed (non-fatal)",
+            extra={"tenant_id": str(tenant_id)},
+        )
+    await _bust_redis_caches(tenant_id)
 
 
 async def _bust_snapshot_cache(session: AsyncSession, tenant_id: UUID) -> None:
@@ -512,20 +555,32 @@ async def _bust_snapshot_cache(session: AsyncSession, tenant_id: UUID) -> None:
     )
 
 
-async def _bust_briefing_cache(tenant_id: UUID) -> None:
-    """Redis'teki yönetici brifing önbelleği (``briefing:{tenant}:*``).
-    Best-effort: Redis erişilemezse iş başarılı sayılır, en fazla TTL
-    dolana kadar eski brifing görünür."""
+# Yorumlardan türeyen Redis önbelleklerinin anahtar önekleri; hepsi
+# ``{etiket}:{tenant_id}:...`` şemasını izler (executive_briefing_service,
+# cohort_analyzer, heatmap_generator, word_cloud.generator). SWOT
+# bilinçli dışarıda: anahtarı istatistik hash'i içerir, veri değişince
+# kendiliğinden ıskalar ve eski girdi TTL ile düşer.
+_REDIS_CACHE_PREFIXES = ("briefing", "cohort", "heatmap", "wordcloud")
+
+
+async def _bust_redis_caches(tenant_id: UUID) -> None:
+    """Redis'teki yorum-türevi analitik önbellekler (yönetici brifingi,
+    cohort, heatmap, kelime bulutu). Best-effort: Redis erişilemezse iş
+    durumu değişmez, en fazla TTL dolana kadar bayat veri görünür."""
     from imga_api.cache.redis_client import get_redis_client
 
     try:
         client = get_redis_client()
-        keys = [key async for key in client.scan_iter(f"briefing:{tenant_id}:*")]
+        keys = [
+            key
+            for prefix in _REDIS_CACHE_PREFIXES
+            async for key in client.scan_iter(f"{prefix}:{tenant_id}:*")
+        ]
         if keys:
             await client.delete(*keys)
     except Exception:
         log.warning(
-            "reanalysis: briefing cache bust failed (non-fatal)",
+            "reanalysis: redis cache bust failed (non-fatal)",
             extra={"tenant_id": str(tenant_id)},
         )
 

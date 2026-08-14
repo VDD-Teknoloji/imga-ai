@@ -30,6 +30,11 @@ from typing import Any
 
 from jinja2 import Environment, FileSystemLoader, StrictUndefined, select_autoescape
 
+from imga_api.services.strategic_payload import (
+    normalize_okr_payload,
+    normalize_swot_payload,
+)
+
 _logger = logging.getLogger(__name__)
 
 # Resolve the templates dir relative to THIS file so the service works
@@ -65,7 +70,10 @@ class PdfRenderService:
             raise PdfRenderError(
                 f"render_swot called with report_type={report.get('report_type')!r}"
             )
-        payload = report.get("output_payload") or {}
+        # Eski / strict:false yolundan sızmış satırlarda madde-içi
+        # alanlar eksik olabilir; şablon StrictUndefined ile title/
+        # evidence/priority'yi koşulsuz basıyor. Tam şekle getir.
+        payload = normalize_swot_payload(report.get("output_payload"))
         return self._render_template(
             "swot.html",
             report=report,
@@ -83,7 +91,9 @@ class PdfRenderService:
             raise PdfRenderError(
                 f"render_okr called with report_type={report.get('report_type')!r}"
             )
-        payload = report.get("output_payload") or {}
+        # Aynı okuma-yanı savunma: eksik key_results / metin alanları
+        # normalize edilmeden okr.html StrictUndefined'da patlar.
+        payload = normalize_okr_payload(report.get("output_payload"))
         # Sprint 8.3.6.6 round-6 — the route layer hands us source_swot
         # as a Pydantic ``model_dump(mode="json")`` result, which
         # serialises datetimes to ISO strings. okr.html calls
@@ -151,10 +161,12 @@ class PdfRenderService:
             ) from exc
 
         template = _jinja_env.get_template(template_name)
-        html = template.render(**context)
+        # render() da try kapsamında: StrictUndefined'ın UndefinedError'ı
+        # ham 500 değil, PdfRenderError sözleşmesiyle yüzeye çıksın.
         try:
+            html = template.render(**context)
             return bytes(HTML(string=html).write_pdf())
         except Exception as exc:
             raise PdfRenderError(
-                f"WeasyPrint failed to render {template_name}: {exc}"
+                f"Failed to render {template_name}: {exc}"
             ) from exc

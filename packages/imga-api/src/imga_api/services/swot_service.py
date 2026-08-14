@@ -84,6 +84,7 @@ from imga_api.services.strategic_constants import (
     industry_label,
     language_directive,
 )
+from imga_api.services.strategic_payload import normalize_swot_payload
 
 _logger = logging.getLogger(__name__)
 
@@ -304,8 +305,8 @@ class SwotService:
         if failed_invalid_key_ids:
             await mark_keys_failed(self._session, failed_invalid_key_ids)
 
-        # 7. Validate
-        self._validate_swot_response(response)
+        # 7. Validate + normalize (persist HER ZAMAN tam şekilli).
+        response = self._validate_swot_response(response)
 
         # 8. Persist + cache + return
         report_dict = await self._persist_report(
@@ -408,13 +409,20 @@ class SwotService:
         }
 
     @staticmethod
-    def _validate_swot_response(payload: dict[str, Any]) -> None:
-        """Defence-in-depth validation. Two layers, each with a
+    def _validate_swot_response(payload: dict[str, Any]) -> dict[str, Any]:
+        """Defence-in-depth validation. Three layers, each with a
         deliberately different posture:
 
           * **Required-field shape (strict):** missing top-level keys
             mean the LLM ignored the schema entirely; that's a hard
             error — the row would be unrenderable.
+          * **Madde-düzeyi normalizasyon:** OpenRouter yolu şemayı
+            ``strict: false`` ile yalnız tavsiye olarak gönderiyor —
+            GLM madde-içi zorunlu alanları (evidence vb.) atlayabiliyor.
+            Eksik alanlı payload JSONB'ye sızarsa StrictUndefined
+            tüketicileri (okr_v1 prompt, PDF şablonları) kalıcı 500'e
+            dönüşüyor; normalize edilmiş kopya döner, persist onu
+            kullanır.
           * **Per-section counts (permissive):** the count window
             (2-6 SWOT items, 3-5 recommendations) used to live in the
             response_schema as ``minItems`` / ``maxItems`` until the
@@ -432,8 +440,10 @@ class SwotService:
                 f"SWOT response missing required fields: {missing}"
             )
 
+        payload = normalize_swot_payload(payload)
+
         for section in ("strengths", "weaknesses", "opportunities", "threats"):
-            items = payload.get(section, [])
+            items = payload[section]
             if not (2 <= len(items) <= 6):
                 _logger.warning(
                     "SWOT response %s has %d items, expected 2-6 — "
@@ -441,13 +451,14 @@ class SwotService:
                     section, len(items),
                 )
 
-        recs = payload.get("strategic_recommendations", [])
+        recs = payload["strategic_recommendations"]
         if not (3 <= len(recs) <= 5):
             _logger.warning(
                 "SWOT response strategic_recommendations has %d items, "
                 "expected 3-5 — persisting anyway",
                 len(recs),
             )
+        return payload
 
     async def _persist_report(
         self,

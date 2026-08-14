@@ -883,21 +883,24 @@ export interface SwotItem {
   evidence: string;
 }
 
+// LLM çıktısı (schema strict:false) ham JSONB olarak persist ediliyor;
+// aşağıdaki opsiyonel alanlar runtime'da gerçekten eksik gelebilir —
+// consumer'lar buna göre korumalı olmalı.
 export interface SwotRecommendation {
   title: string;
   description: string;
   /** Backend enum: "yüksek" | "orta" | "düşük" */
-  priority: string;
+  priority?: string | null;
   /** Backend enum: "yüksek" | "orta" | "düşük" */
-  estimated_impact: string;
+  estimated_impact?: string | null;
 }
 
 export interface SwotPayload {
-  strengths: SwotItem[];
-  weaknesses: SwotItem[];
-  opportunities: SwotItem[];
-  threats: SwotItem[];
-  strategic_recommendations: SwotRecommendation[];
+  strengths?: SwotItem[] | null;
+  weaknesses?: SwotItem[] | null;
+  opportunities?: SwotItem[] | null;
+  threats?: SwotItem[] | null;
+  strategic_recommendations?: SwotRecommendation[] | null;
 }
 
 /** OKR row's ``output_payload`` shape. */
@@ -910,12 +913,12 @@ export interface OkrKeyResult {
 
 export interface OkrObjective {
   objective: string;
-  rationale: string;
-  key_results: OkrKeyResult[];
+  rationale?: string | null;
+  key_results?: OkrKeyResult[] | null;
 }
 
 export interface OkrPayload {
-  objectives: OkrObjective[];
+  objectives?: OkrObjective[] | null;
 }
 
 export type StrategicReportType = "swot" | "okr";

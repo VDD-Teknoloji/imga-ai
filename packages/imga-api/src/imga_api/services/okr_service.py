@@ -70,6 +70,10 @@ from imga_api.services.strategic_constants import (
     industry_label,
     language_directive,
 )
+from imga_api.services.strategic_payload import (
+    normalize_okr_payload,
+    normalize_swot_payload,
+)
 
 _logger = logging.getLogger(__name__)
 
@@ -249,8 +253,8 @@ class OkrService:
         if failed_invalid_key_ids:
             await mark_keys_failed(self._session, failed_invalid_key_ids)
 
-        # 5. Validate.
-        self._validate_okr_response(response)
+        # 5. Validate + normalize (persist HER ZAMAN tam şekilli).
+        response = self._validate_okr_response(response)
 
         # 6. Persist with the parent SWOT's id in source_report_id.
         report_dict = await self._persist_report(
@@ -306,16 +310,18 @@ class OkrService:
         was produced under, even if the user has since edited their
         /settings/profile.
         """
-        payload = source.output_payload
+        # Okuma-yanı savunma: eski / strict:false yolundan sızmış
+        # satırlarda madde-içi alanlar eksik olabilir; okr_v1 şablonu
+        # s.evidence / r.priority / r.estimated_impact'i StrictUndefined
+        # altında koşulsuz basıyor. Normalizasyon burada patlamayı önler.
+        payload = normalize_swot_payload(source.output_payload)
         stats = source.input_stats
         return {
-            "strengths": payload.get("strengths", []),
-            "weaknesses": payload.get("weaknesses", []),
-            "opportunities": payload.get("opportunities", []),
-            "threats": payload.get("threats", []),
-            "strategic_recommendations": payload.get(
-                "strategic_recommendations", []
-            ),
+            "strengths": payload["strengths"],
+            "weaknesses": payload["weaknesses"],
+            "opportunities": payload["opportunities"],
+            "threats": payload["threats"],
+            "strategic_recommendations": payload["strategic_recommendations"],
             "industry_label": industry_label(
                 stats.get("industry"), stats.get("industry_other_text")
             ),
@@ -323,11 +329,15 @@ class OkrService:
         }
 
     @staticmethod
-    def _validate_okr_response(payload: dict[str, Any]) -> None:
-        """Two-layer validation, mirroring SwotService:
+    def _validate_okr_response(payload: dict[str, Any]) -> dict[str, Any]:
+        """Three-layer validation, mirroring SwotService:
 
           * **Top-level required (strict):** missing ``objectives``
             means the row is unrenderable; reject.
+          * **Madde-düzeyi normalizasyon:** strict:false OpenRouter
+            yolunda key_results / rationale gibi madde-içi alanlar
+            eksik gelebilir; normalize edilmiş kopya döner (key_results
+            → [], metin alanları → ""), persist onu kullanır.
           * **Per-objective counts (permissive):** the 2-4 / 2-4 spec
             used to live in the response_schema as ``minItems`` /
             ``maxItems`` until the Gemini SDK crashed on those keys
@@ -342,7 +352,9 @@ class OkrService:
                 f"OKR response missing required fields: {missing}"
             )
 
-        objectives = payload.get("objectives", [])
+        payload = normalize_okr_payload(payload)
+
+        objectives = payload["objectives"]
         if not (2 <= len(objectives) <= 4):
             _logger.warning(
                 "OKR response has %d objectives, expected 2-4 — "
@@ -350,13 +362,14 @@ class OkrService:
                 len(objectives),
             )
         for idx, obj in enumerate(objectives):
-            krs = obj.get("key_results", []) if isinstance(obj, dict) else []
+            krs = obj["key_results"]
             if not (2 <= len(krs) <= 4):
                 _logger.warning(
                     "OKR objective[%d] has %d key_results, expected 2-4 — "
                     "persisting anyway",
                     idx, len(krs),
                 )
+        return payload
 
     async def _persist_report(
         self,

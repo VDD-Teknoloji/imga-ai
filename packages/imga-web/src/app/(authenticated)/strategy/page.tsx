@@ -490,43 +490,46 @@ function SwotViewer({ report }: { report: StrategicReportDetail }) {
       </CardHeader>
       <CardContent className="space-y-6">
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-          {SWOT_QUADRANTS.map((q) => (
-            <div key={q.key} className={`rounded-lg border p-4 ${q.tone}`}>
-              <h3 className="mb-3 text-sm font-semibold">{t(q.labelKey)}</h3>
-              <ul className="space-y-3">
-                {payload[q.key].length === 0 ? (
-                  <li className="text-muted-foreground text-xs">
-                    {t("dashboard.strategy.swot.noItems")}
-                  </li>
-                ) : (
-                  payload[q.key].map((item, idx) => (
-                    <li key={idx} className="space-y-1 text-sm">
-                      <p className="font-medium">{item.title}</p>
-                      <p className="text-muted-foreground text-xs">
-                        {item.description}
-                      </p>
-                      {item.evidence && (
-                        <p className="text-muted-foreground text-xs italic">
-                          {t("dashboard.strategy.swot.evidence", {
-                            text: item.evidence,
-                          })}
-                        </p>
-                      )}
+          {SWOT_QUADRANTS.map((q) => {
+            const items = payload[q.key] ?? [];
+            return (
+              <div key={q.key} className={`rounded-lg border p-4 ${q.tone}`}>
+                <h3 className="mb-3 text-sm font-semibold">{t(q.labelKey)}</h3>
+                <ul className="space-y-3">
+                  {items.length === 0 ? (
+                    <li className="text-muted-foreground text-xs">
+                      {t("dashboard.strategy.swot.noItems")}
                     </li>
-                  ))
-                )}
-              </ul>
-            </div>
-          ))}
+                  ) : (
+                    items.map((item, idx) => (
+                      <li key={idx} className="space-y-1 text-sm">
+                        <p className="font-medium">{item.title}</p>
+                        <p className="text-muted-foreground text-xs">
+                          {item.description}
+                        </p>
+                        {item.evidence && (
+                          <p className="text-muted-foreground text-xs italic">
+                            {t("dashboard.strategy.swot.evidence", {
+                              text: item.evidence,
+                            })}
+                          </p>
+                        )}
+                      </li>
+                    ))
+                  )}
+                </ul>
+              </div>
+            );
+          })}
         </div>
 
-        {payload.strategic_recommendations.length > 0 && (
+        {(payload.strategic_recommendations ?? []).length > 0 && (
           <div className="space-y-3">
             <h3 className="text-sm font-semibold">
               {t("dashboard.strategy.swot.recommendations")}
             </h3>
             <ul className="space-y-2">
-              {payload.strategic_recommendations.map((rec, idx) => (
+              {(payload.strategic_recommendations ?? []).map((rec, idx) => (
                 <RecommendationRow key={idx} rec={rec} />
               ))}
             </ul>
@@ -537,26 +540,35 @@ function SwotViewer({ report }: { report: StrategicReportDetail }) {
   );
 }
 
+const SWOT_TONE_FALLBACK = "bg-gray-50 border-gray-300 text-gray-800";
+
 function RecommendationRow({ rec }: { rec: SwotRecommendation }) {
   const { t } = useTranslation();
-  const priorityTone =
-    SWOT_PRIORITY_TONE[rec.priority.toLowerCase()] ??
-    "bg-gray-50 border-gray-300 text-gray-800";
-  const impactTone =
-    SWOT_PRIORITY_TONE[rec.estimated_impact.toLowerCase()] ??
-    "bg-gray-50 border-gray-300 text-gray-800";
+  const priorityTone = rec.priority
+    ? (SWOT_PRIORITY_TONE[rec.priority.toLowerCase()] ?? SWOT_TONE_FALLBACK)
+    : SWOT_TONE_FALLBACK;
+  const impactTone = rec.estimated_impact
+    ? (SWOT_PRIORITY_TONE[rec.estimated_impact.toLowerCase()] ??
+      SWOT_TONE_FALLBACK)
+    : SWOT_TONE_FALLBACK;
   return (
     <li className="bg-card space-y-2 rounded-lg border p-3">
       <div className="flex flex-wrap items-center gap-2">
         <p className="text-sm font-medium">{rec.title}</p>
-        <Badge variant="outline" className={`text-xs ${priorityTone}`}>
-          {t("dashboard.strategy.swot.priorityBadge", { value: rec.priority })}
-        </Badge>
-        <Badge variant="outline" className={`text-xs ${impactTone}`}>
-          {t("dashboard.strategy.swot.impactBadge", {
-            value: rec.estimated_impact,
-          })}
-        </Badge>
+        {rec.priority && (
+          <Badge variant="outline" className={`text-xs ${priorityTone}`}>
+            {t("dashboard.strategy.swot.priorityBadge", {
+              value: rec.priority,
+            })}
+          </Badge>
+        )}
+        {rec.estimated_impact && (
+          <Badge variant="outline" className={`text-xs ${impactTone}`}>
+            {t("dashboard.strategy.swot.impactBadge", {
+              value: rec.estimated_impact,
+            })}
+          </Badge>
+        )}
       </div>
       <p className="text-muted-foreground text-sm">{rec.description}</p>
     </li>
@@ -733,6 +745,7 @@ function OkrViewer({
 }) {
   const { t } = useTranslation();
   const payload = report.output_payload as unknown as OkrPayload;
+  const objectives = payload.objectives ?? [];
   return (
     <Card>
       <CardHeader className="flex flex-row items-start justify-between gap-3">
@@ -753,13 +766,13 @@ function OkrViewer({
         <DownloadPdfButton reportId={report.id} reportType="okr" />
       </CardHeader>
       <CardContent className="space-y-4">
-        {payload.objectives.length === 0 ? (
+        {objectives.length === 0 ? (
           <p className="text-muted-foreground text-sm">
             {t("dashboard.strategy.okr.noObjectives")}
           </p>
         ) : (
           <ul className="space-y-4">
-            {payload.objectives.map((obj, idx) => (
+            {objectives.map((obj, idx) => (
               <li
                 key={idx}
                 className="bg-card space-y-3 rounded-lg border p-4"
@@ -777,35 +790,37 @@ function OkrViewer({
                     </p>
                   )}
                 </div>
-                <div>
-                  <p className="text-xs font-medium">
-                    {t("dashboard.strategy.okr.keyResults")}
-                  </p>
-                  <ul className="mt-2 space-y-2">
-                    {obj.key_results.map((kr, krIdx) => (
-                      <li
-                        key={krIdx}
-                        className="bg-muted/40 rounded border p-3 text-sm"
-                      >
-                        <p className="font-medium">{kr.text}</p>
-                        <dl className="text-muted-foreground mt-1 grid grid-cols-3 gap-2 text-xs">
-                          <div>
-                            <dt>{t("dashboard.strategy.okr.metric")}</dt>
-                            <dd className="text-foreground">{kr.metric}</dd>
-                          </div>
-                          <div>
-                            <dt>{t("dashboard.strategy.okr.baseline")}</dt>
-                            <dd className="text-foreground">{kr.baseline}</dd>
-                          </div>
-                          <div>
-                            <dt>{t("dashboard.strategy.okr.target")}</dt>
-                            <dd className="text-foreground">{kr.target}</dd>
-                          </div>
-                        </dl>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
+                {(obj.key_results ?? []).length > 0 && (
+                  <div>
+                    <p className="text-xs font-medium">
+                      {t("dashboard.strategy.okr.keyResults")}
+                    </p>
+                    <ul className="mt-2 space-y-2">
+                      {(obj.key_results ?? []).map((kr, krIdx) => (
+                        <li
+                          key={krIdx}
+                          className="bg-muted/40 rounded border p-3 text-sm"
+                        >
+                          <p className="font-medium">{kr.text}</p>
+                          <dl className="text-muted-foreground mt-1 grid grid-cols-3 gap-2 text-xs">
+                            <div>
+                              <dt>{t("dashboard.strategy.okr.metric")}</dt>
+                              <dd className="text-foreground">{kr.metric}</dd>
+                            </div>
+                            <div>
+                              <dt>{t("dashboard.strategy.okr.baseline")}</dt>
+                              <dd className="text-foreground">{kr.baseline}</dd>
+                            </div>
+                            <div>
+                              <dt>{t("dashboard.strategy.okr.target")}</dt>
+                              <dd className="text-foreground">{kr.target}</dd>
+                            </div>
+                          </dl>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
               </li>
             ))}
           </ul>

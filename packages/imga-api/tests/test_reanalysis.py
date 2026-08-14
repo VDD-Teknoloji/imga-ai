@@ -26,7 +26,11 @@ from uuid import UUID, uuid4
 import pytest
 from fastapi.testclient import TestClient
 from imga_core import review_text_hash
-from imga_core.models import AnalysisResult, CategoryClassification
+from imga_core.models import (
+    AnalysisResult,
+    CategoryClassification,
+    OverrideHit,
+)
 from imga_db.models import (
     AnalyzeBatchJob,
     ExecutiveSnapshot,
@@ -141,6 +145,7 @@ def _fake_unified(
     category: str = "kargo",
     experience: str | None = "dijital",
     perspective: str | None = None,
+    overrides: list[OverrideHit] | None = None,
 ) -> Any:
     """``AnalysisPipeline.analyze_batch_unified_async`` yerine gecen
     sahte.
@@ -175,7 +180,7 @@ def _fake_unified(
                 text=t,
                 sentiment_label=sentiment_label,
                 sentiment_score=sentiment_score,
-                overrides_applied=[],
+                overrides_applied=list(overrides or []),
                 categorization=CategoryClassification(
                     primary=category, primary_confidence=0.9
                 ),
@@ -841,6 +846,216 @@ async def test_candidate_predicate_keeps_null_overrides_rows(
     assert set(ids) == {legacy_id, empty_id}
     # Route'un sayimi ile iscinin listesi AYNI yuklemi kullanmali.
     assert total == len(ids) == 2
+
+
+def test_rewritten_overrides_contract() -> None:
+    """Iz-yeniden-yazma sozlesmesi (DB'siz): eski kural izleri + eski
+    reanalysis isaretleri atilir (tekrar kosularda sisme olmaz), yeni
+    analizin TUM hit'leri yazilir (yalniz user_correction* degil), TEK
+    reanalysis isareti eklenir; mevcut user_correction* girdileri
+    savunma amacli korunur."""
+    from imga_api.workers.reanalyzer import _rewritten_overrides
+
+    existing: list[Any] = [
+        {"layer": "critical", "score": -0.9, "detail": "eski kosu"},
+        {"layer": "reanalysis", "detail": "eski-model"},
+        {"layer": "reanalysis", "detail": "daha-eski-model"},
+        {"layer": "user_correction", "detail": "elle"},
+        {"layer": "user_correction_semantic", "score": -0.5},
+        "bozuk-girdi",
+    ]
+    analysis = AnalysisResult(
+        text="t",
+        sentiment_label="NEGATIF",
+        sentiment_score=-0.8,
+        overrides_applied=[
+            OverrideHit(
+                layer="knowledge_base", score=-0.6, matched_keywords=["kargo"]
+            ),
+            OverrideHit(layer="user_correction_kb", score=-0.4),
+        ],
+    )
+
+    result = _rewritten_overrides(existing, analysis, "glm-4.6")
+
+    layers = [e["layer"] for e in result]
+    assert layers == [
+        "user_correction",
+        "user_correction_semantic",
+        "knowledge_base",
+        "user_correction_kb",
+        "reanalysis",
+    ]
+    assert result[-1] == {"layer": "reanalysis", "detail": "glm-4.6"}
+    assert result[0] == {"layer": "user_correction", "detail": "elle"}
+    assert result[2]["score"] == -0.6
+    assert result[2]["matched_keywords"] == ["kargo"]
+
+    # NULL iz (0014 oncesi satir) — yalniz yeni isaret yazilir.
+    bare = AnalysisResult(
+        text="t", sentiment_label="NÖTR", sentiment_score=0.0
+    )
+    assert _rewritten_overrides(None, bare, "m") == [
+        {"layer": "reanalysis", "detail": "m"}
+    ]
+
+
+@pytest.mark.asyncio
+async def test_reanalysis_rewrites_override_trace(
+    batch_client: TestClient,
+    semi_auto_tenant: tuple[User, UUID, str],
+    admin_session: AsyncSession,
+    mock_gemini_credential: Any,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Yeniden analiz izi YENIDEN YAZAR: onceki kosulardan kalan kural
+    izleri ve (siskin) reanalysis isaretleri atilir; satirda yeni
+    analizin hit'leri + TEK reanalysis isareti kalir."""
+    user, tid, pw = semi_auto_tenant
+    await mock_gemini_credential(tid, "fake-key-for-unified-path-123")
+    _no_embeddings(monkeypatch)
+
+    review_id = await _seed_review(
+        admin_session,
+        tenant_id=tid,
+        text_value="Eski kosudan kalma izlerle dolu satir",
+        overrides_applied=[
+            {"layer": "critical", "score": -0.9, "detail": "eski kosu"},
+            {"layer": "reanalysis", "detail": "eski-model"},
+            {"layer": "reanalysis", "detail": "daha-eski-model"},
+        ],
+    )
+
+    from imga_core.pipeline import AnalysisPipeline
+
+    monkeypatch.setattr(
+        AnalysisPipeline,
+        "analyze_batch_unified_async",
+        _fake_unified(
+            overrides=[
+                OverrideHit(
+                    layer="knowledge_base", score=-0.6, matched_keywords=["kargo"]
+                )
+            ]
+        ),
+    )
+
+    token = login_token(batch_client, user.email, pw, tid)
+    r = batch_client.post(
+        "/tenants/me/reviews/reanalyze-all",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert r.status_code == 201, r.text
+    await run_reanalysis_worker(batch_client, UUID(r.json()["job_id"]))
+
+    row = await _fetch_review(admin_session, review_id)
+    trace = row.overrides_applied or []
+    layers = [e.get("layer") for e in trace]
+    assert layers == ["knowledge_base", "reanalysis"]
+    assert trace[0]["score"] == -0.6
+    # Isaret yeni modeli tarif eder; eski isaretler tumden gitti.
+    details = {e.get("detail") for e in trace}
+    assert "eski-model" not in details
+    assert "daha-eski-model" not in details
+    assert isinstance(trace[1]["detail"], str) and trace[1]["detail"]
+
+
+@pytest.mark.asyncio
+async def test_reanalysis_busts_caches_on_cancel(
+    batch_client: TestClient,
+    semi_auto_tenant: tuple[User, UUID, str],
+    admin_session: AsyncSession,
+    mock_gemini_credential: Any,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Iptal dalinda da checkpoint'e kadarki satirlar guncellenmis
+    olabilir — snapshot + Redis temizligi basari daliyla ayni sekilde
+    kosmali."""
+    user, tid, pw = semi_auto_tenant
+    await mock_gemini_credential(tid, "fake-key-for-unified-path-123")
+    _no_embeddings(monkeypatch)
+    await _seed_review(
+        admin_session, tenant_id=tid, text_value="iptal senaryosu satiri"
+    )
+
+    from imga_api.workers import reanalyzer
+
+    calls: list[str] = []
+
+    async def _always_cancelled(*_a: Any, **_kw: Any) -> bool:
+        return True
+
+    async def _spy_snapshot(_session: Any, _tid: UUID) -> None:
+        calls.append("snapshot")
+
+    async def _spy_redis(_tid: UUID) -> None:
+        calls.append("redis")
+
+    monkeypatch.setattr(reanalyzer, "_is_cancelled", _always_cancelled)
+    monkeypatch.setattr(reanalyzer, "_bust_snapshot_cache", _spy_snapshot)
+    monkeypatch.setattr(reanalyzer, "_bust_redis_caches", _spy_redis)
+
+    token = login_token(batch_client, user.email, pw, tid)
+    r = batch_client.post(
+        "/tenants/me/reviews/reanalyze-all",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert r.status_code == 201, r.text
+    await run_reanalysis_worker(batch_client, UUID(r.json()["job_id"]))
+
+    assert calls == ["snapshot", "redis"]
+
+
+@pytest.mark.asyncio
+async def test_reanalysis_busts_caches_on_permanent_chunk_failure(
+    batch_client: TestClient,
+    semi_auto_tenant: tuple[User, UUID, str],
+    admin_session: AsyncSession,
+    mock_gemini_credential: Any,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Kalici chunk hatasinda is FAILED olur ama checkpoint'e kadarki
+    guncellemeler kalicidir — temizlik burada da kosmali."""
+    user, tid, pw = semi_auto_tenant
+    await mock_gemini_credential(tid, "fake-key-for-unified-path-123")
+    _no_embeddings(monkeypatch)
+    await _seed_review(
+        admin_session, tenant_id=tid, text_value="kalici hata senaryosu"
+    )
+
+    from imga_core.pipeline import AnalysisPipeline
+
+    from imga_api.workers import reanalyzer
+
+    calls: list[str] = []
+
+    async def _spy_snapshot(_session: Any, _tid: UUID) -> None:
+        calls.append("snapshot")
+
+    async def _spy_redis(_tid: UUID) -> None:
+        calls.append("redis")
+
+    async def _boom(_self: Any, *_a: Any, **_kw: Any) -> Any:
+        raise RuntimeError("LLM kalici olarak coktu")
+
+    monkeypatch.setattr(reanalyzer, "_bust_snapshot_cache", _spy_snapshot)
+    monkeypatch.setattr(reanalyzer, "_bust_redis_caches", _spy_redis)
+    monkeypatch.setattr(AnalysisPipeline, "analyze_batch_unified_async", _boom)
+
+    token = login_token(batch_client, user.email, pw, tid)
+    r = batch_client.post(
+        "/tenants/me/reviews/reanalyze-all",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert r.status_code == 201, r.text
+    job_id = UUID(r.json()["job_id"])
+    await run_reanalysis_worker(batch_client, job_id)
+
+    assert calls == ["snapshot", "redis"]
+    async with admin_session.begin():
+        job = await admin_session.get(AnalyzeBatchJob, job_id)
+        assert job is not None
+        assert job.status == "failed"
 
 
 # ---------------------------------------------------------------------

@@ -823,7 +823,13 @@ function OverridesTab({ filters }: { filters: AnalyticsFilters }) {
         </CardTitle>
       </CardHeader>
       <CardContent>
-        <ChartFrame state={stats} isEmpty={(d) => d.data.length === 0} height={260}>
+        {/* Backend 5 katmanı her zaman (0 sayaçla) döndürür — boş
+            durum satır sayısından değil sayaçlardan anlaşılır. */}
+        <ChartFrame
+          state={stats}
+          isEmpty={(d) => d.data.every((row) => row.trigger_count === 0)}
+          height={260}
+        >
           {(d) => (
             <ResponsiveContainer width="100%" height={260}>
               <BarChart data={d.data} layout="vertical">
