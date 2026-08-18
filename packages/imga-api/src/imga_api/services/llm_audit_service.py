@@ -60,6 +60,8 @@ CALL_TYPE_OKR = "okr"
 # kısıtı migration 0040 ile genişletildi; yeni bir tip eklemeden önce
 # aynı kısıtı da güncelle.
 CALL_TYPE_ROOT_CAUSE = "root_cause"
+# Dalga 2 — toplu yükleme veri kalitesi raporu özeti (kısıt: 0043).
+CALL_TYPE_QUALITY_REPORT = "quality_report"
 
 ERROR_TIMEOUT = "timeout"
 ERROR_RATE_LIMIT = "rate_limit"
@@ -309,6 +311,7 @@ __all__ = [
     "CALL_TYPE_BRIEFING",
     "CALL_TYPE_CLASSIFICATION",
     "CALL_TYPE_OKR",
+    "CALL_TYPE_QUALITY_REPORT",
     "CALL_TYPE_ROOT_CAUSE",
     "CALL_TYPE_STRATEGIC_REPORT",
     "ERROR_ALL_KEYS_EXHAUSTED",

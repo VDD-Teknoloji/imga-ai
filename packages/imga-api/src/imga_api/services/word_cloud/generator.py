@@ -158,6 +158,7 @@ class WordCloudGenerator:
             select(Review.text, Review.sentiment_score)
             .where(Review.tenant_id == tenant_id)
             .where(Review.deleted_at.is_(None))
+            .where(Review.quality_flag.is_(None))
         )
         if sentiment != "all":
             stmt = stmt.where(

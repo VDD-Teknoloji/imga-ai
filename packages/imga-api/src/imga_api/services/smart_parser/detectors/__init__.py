@@ -10,6 +10,9 @@ from __future__ import annotations
 from imga_api.services.smart_parser.detectors.customer_name import (
     CustomerNameDetector,
 )
+from imga_api.services.smart_parser.detectors.employee_name import (
+    EmployeeNameDetector,
+)
 from imga_api.services.smart_parser.detectors.nps_score import (
     NpsScoreDetector,
 )
@@ -33,6 +36,7 @@ ALL_DETECTORS = (
     OrderIdDetector(),
     ProductNameDetector(),
     CustomerNameDetector(),
+    EmployeeNameDetector(),
     PriceDetector(),
     TurkishDateDetector(),
 )
@@ -41,6 +45,7 @@ ALL_DETECTORS = (
 __all__ = [
     "ALL_DETECTORS",
     "CustomerNameDetector",
+    "EmployeeNameDetector",
     "NpsScoreDetector",
     "OrderIdDetector",
     "PriceDetector",

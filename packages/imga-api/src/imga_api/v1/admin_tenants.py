@@ -22,6 +22,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from imga_api.db_deps import get_admin_session
+from imga_api.services import AuditService, TenantService, TenantSlugTakenError
 from imga_api.v1.auth import ApiPrincipal, get_partner_principal, require_ops
 from imga_api.v1.errors import PartnerApiError
 
@@ -108,23 +109,25 @@ async def create_tenant(
     _ops: Annotated[ApiPrincipal, Depends(require_ops)],
     admin_session: Annotated[AsyncSession, Depends(get_admin_session)],
 ) -> TenantCreatedResponse:
+    # 2026-08-18 (WS1 bug fix) — bu route eskiden çıplak
+    # ``Tenant(...)`` satırı ekliyordu: tenant_categories (global
+    # kategori bootstrap) ve CategoryTaxonomy (21 satır varsayılan
+    # taksonomi) seed'i atlanıyordu. Partner API'den oluşan kurumlar
+    # panel'den oluşanlarla aynı yoldan (TenantService.create) geçer;
+    # ApiTenantConfig kurulumu değişmedi.
     slug = _slugify(body.name)
     async with admin_session.begin():
-        exists = (
-            await admin_session.execute(
-                select(Tenant.id).where(Tenant.slug == slug)
-            )
-        ).scalar_one_or_none()
-        if exists is not None:
+        audit = AuditService(admin_session)
+        tenants = TenantService(admin_session, audit)
+        try:
+            tenant = await tenants.create(name=body.name, slug=slug)
+        except TenantSlugTakenError as exc:
             raise PartnerApiError(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 code="invalid_input",
                 message=f"tenant already exists: {slug}",
                 details={"field": "name", "slug": slug},
-            )
-        tenant = Tenant(name=body.name, slug=slug)
-        admin_session.add(tenant)
-        await admin_session.flush()
+            ) from exc
         admin_session.add(
             ApiTenantConfig(
                 tenant_id=tenant.id,

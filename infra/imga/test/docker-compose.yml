@@ -129,11 +129,15 @@ services:
           tests/test_bert_fallback_disabled.py \
           tests/test_batch_dedup.py \
           tests/test_batch_concurrency.py \
+          tests/test_data_quality.py \
+          tests/test_batch_quality.py \
+          tests/test_batch_quality_report.py \
           tests/test_reviews_list.py \
           tests/test_orphan_recovery.py \
           tests/test_review_manual_ticket.py \
           tests/test_report_generation.py \
           tests/test_analytics.py \
+          tests/test_period_comparison.py \
           tests/test_nps_detector.py \
           tests/test_batch_nps.py \
           tests/test_tenant_analyze_nps.py \
@@ -201,6 +205,7 @@ services:
           tests/test_batch_template.py \
           tests/test_executive_overview.py \
           tests/test_review_corrections.py \
+          tests/test_onboarding.py \
           tests/test_reanalysis.py \
           tests/test_ticket_routing.py \
           tests/test_upload_validation.py \

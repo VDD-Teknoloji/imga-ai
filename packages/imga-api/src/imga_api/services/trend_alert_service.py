@@ -281,6 +281,10 @@ class TrendAlertService:
             Review.deleted_at.is_(None),
             Review.review_date >= start,
             Review.review_date < end,
+            # 2026-08-18 — trend eşikleri de temiz veriden hesaplanır;
+            # bir bayraklı-yorum yığını yanlış bir "hacim sıçraması"
+            # ya da "negatif sıçrama" alarmı tetiklemesin.
+            Review.quality_flag.is_(None),
         )
         row = (await self._session.execute(stmt)).one()
         cnt = int(row.cnt or 0)

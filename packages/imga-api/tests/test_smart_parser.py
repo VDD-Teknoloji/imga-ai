@@ -16,6 +16,7 @@ from imga_api.services.smart_parser import (
 )
 from imga_api.services.smart_parser.detectors import (
     CustomerNameDetector,
+    EmployeeNameDetector,
     NpsScoreDetector,
     OrderIdDetector,
     PriceDetector,
@@ -174,6 +175,43 @@ def test_orchestrator_handles_missing_sample_dict_entry() -> None:
     assert len(result.detected) == 2
     bos = next(d for d in result.detected if d.column_name == "Boş Sütun")
     assert bos.field_name is None
+
+
+def test_employee_name_detects_header_and_content() -> None:
+    """2026-08-18 (migration 0042) — 5th business dimension detector.
+    Same capitalisation heuristic as CustomerNameDetector, but no PII
+    flag: entered_by is a deliberately stored dimension, not an
+    accidental PII column."""
+    result = _detect_one(
+        EmployeeNameDetector(),
+        "Çalışan Adı",
+        ["Ahmet Yılmaz", "Ayşe Demir", "Mehmet Kaya"],
+    )
+    assert result is not None
+    assert result.field_name == FieldName.EMPLOYEE_NAME
+    assert "is_pii" not in result.metadata
+    assert result.confidence >= CONFIDENCE_HIGH
+
+
+def test_employee_name_recognises_english_and_turkish_headers() -> None:
+    for header in ("Personel", "Temsilci", "Ekleyen", "Agent Name"):
+        result = _detect_one(EmployeeNameDetector(), header, ["Ahmet Yılmaz"])
+        assert result is not None, f"{header!r} should have matched"
+        assert result.field_name == FieldName.EMPLOYEE_NAME
+
+
+def test_employee_name_never_sets_pii_flag() -> None:
+    """Unlike CustomerNameDetector, this column is a deliberately
+    stored dimension — firing the consent banner on it would be a
+    false alarm on the exact column the feature asks the tenant to
+    map."""
+    result = _detect_one(
+        EmployeeNameDetector(),
+        "Kaydeden",
+        ["Ahmet Yılmaz", "Ayşe Demir", "Mehmet Kaya"],
+    )
+    assert result is not None
+    assert result.metadata.get("is_pii") is None
 
 
 # --- 4 PII detection tests ----------------------------------------------

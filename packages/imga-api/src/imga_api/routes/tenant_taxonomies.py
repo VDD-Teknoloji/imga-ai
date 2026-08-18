@@ -31,7 +31,6 @@ from typing import Annotated, Any
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from imga_core.categories.taxonomy import GLOBAL_CATEGORY_CODES
 from imga_db.models import (
     CategoryTaxonomy,
     TaxonomyEditAudit,
@@ -43,6 +42,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from imga_api.auth_deps import CurrentUser, bind_tenant, require_role
 from imga_api.db_deps import get_app_session
+from imga_api.services.category_codes import valid_primary_codes
+from imga_api.services.tenant_config_service import create_taxonomy_entry
 
 _logger = logging.getLogger(__name__)
 
@@ -63,22 +64,37 @@ _KEYWORD_MAX = 64
 _KEYWORDS_LIMIT = 50
 
 
-def _validate_primary_category_code(v: str | None) -> str | None:
-    """Sprint 13.1 — ana kategori eşlemesi. NULL = eşlenmemiş; dolu
-    ise ``reviews.primary_category`` ile aynı global kod uzayından
-    olmak zorunda, aksi halde drill-down gruplaması sessizce boş
-    kovalar üretir."""
+def _normalize_primary_category_code(v: str | None) -> str | None:
+    """Sprint 13.1 — ana kategori eşlemesi. NULL = eşlenmemiş; dolu ise
+    ``reviews.primary_category`` ile aynı kod uzayından olmak zorunda,
+    aksi halde drill-down gruplaması sessizce boş kovalar üretir.
+
+    2026-08-18 WS2 — geçerli kod kümesi (global + kurumun custom
+    kategorileri) DB'ye bağlı; Pydantic field_validator DB göremez.
+    Burada yalnız string normalizasyonu yapılır (strip + boş->None),
+    üyelik kontrolü route gövdesinde ``_check_primary_category_code``
+    ile bind_tenant'tan SONRA çalışır."""
     if v is None:
         return None
     v = v.strip()
-    if not v:
-        return None
-    if v not in GLOBAL_CATEGORY_CODES:
-        raise ValueError(
-            "primary_category_code gecersiz; gecerli kodlar: "
-            + ", ".join(sorted(GLOBAL_CATEGORY_CODES))
+    return v or None
+
+
+async def _check_primary_category_code(
+    session: AsyncSession, tenant_id: UUID, code: str
+) -> None:
+    """422 — global kod uzayı + kurumun aktif custom kategorileri
+    dışında bir ``primary_category_code``. RLS-bound session'ın
+    bind_tenant'tan SONRA çağrılması gerekir."""
+    valid_codes = await valid_primary_codes(session, tenant_id)
+    if code not in valid_codes:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=(
+                "primary_category_code gecersiz; gecerli kodlar: "
+                + ", ".join(sorted(valid_codes))
+            ),
         )
-    return v
 
 
 # --------------------------------------------------------------------- #
@@ -119,7 +135,7 @@ class TaxonomyCreateRequest(BaseModel):
     @field_validator("primary_category_code")
     @classmethod
     def _validate_primary(cls, v: str | None) -> str | None:
-        return _validate_primary_category_code(v)
+        return _normalize_primary_category_code(v)
 
     @field_validator("code")
     @classmethod
@@ -164,7 +180,7 @@ class TaxonomyUpdateRequest(BaseModel):
     @field_validator("primary_category_code")
     @classmethod
     def _validate_primary(cls, v: str | None) -> str | None:
-        return _validate_primary_category_code(v)
+        return _normalize_primary_category_code(v)
 
     @field_validator("label_tr")
     @classmethod
@@ -373,29 +389,21 @@ async def create_taxonomy(
                 await _validate_parent_code(
                     app_session, tenant_id, body.parent_code, body.code
                 )
+            if body.primary_category_code is not None:
+                await _check_primary_category_code(
+                    app_session, tenant_id, body.primary_category_code
+                )
 
-            row = CategoryTaxonomy(
+            row = await create_taxonomy_entry(
+                app_session,
                 tenant_id=tenant_id,
+                user_id=current.user_id,
                 code=body.code,
                 label_tr=body.label_tr,
                 keywords=body.keywords,
                 priority=body.priority,
                 parent_code=body.parent_code,
                 primary_category_code=body.primary_category_code,
-                is_default_seed=False,
-                is_active=True,
-            )
-            app_session.add(row)
-            await app_session.flush()
-
-            _emit_audit(
-                app_session,
-                tenant_id=tenant_id,
-                user_id=current.user_id,
-                taxonomy_id=row.id,
-                action="create",
-                before=None,
-                after=_row_to_audit_state(row),
             )
             response = _row_to_response(row)
         return response
@@ -443,6 +451,10 @@ async def update_taxonomy(
                 row.parent_code = None
             # Ana kategori eşlemesi: acik null esleme'yi kaldirir.
             if "primary_category_code" in body.model_fields_set:
+                if body.primary_category_code is not None:
+                    await _check_primary_category_code(
+                        app_session, tenant_id, body.primary_category_code
+                    )
                 row.primary_category_code = body.primary_category_code
 
             await app_session.flush()

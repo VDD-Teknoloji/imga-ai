@@ -336,6 +336,7 @@ async def _resolve_current_values(
                     .select_from(Review)
                     .where(Review.tenant_id == tenant_id)
                     .where(Review.deleted_at.is_(None))
+                    .where(Review.quality_flag.is_(None))
                     .where(func.date(Review.review_date) >= date_from)
                     .where(func.date(Review.review_date) <= date_to)
                 )
@@ -352,6 +353,7 @@ async def _resolve_current_values(
                     .select_from(Review)
                     .where(Review.tenant_id == tenant_id)
                     .where(Review.deleted_at.is_(None))
+                    .where(Review.quality_flag.is_(None))
                     .where(func.date(Review.review_date) >= date_from)
                     .where(func.date(Review.review_date) <= date_to)
                     .where(
@@ -367,6 +369,7 @@ async def _resolve_current_values(
                     .select_from(Review)
                     .where(Review.tenant_id == tenant_id)
                     .where(Review.deleted_at.is_(None))
+                    .where(Review.quality_flag.is_(None))
                     .where(func.date(Review.review_date) >= date_from)
                     .where(func.date(Review.review_date) <= date_to)
                 )

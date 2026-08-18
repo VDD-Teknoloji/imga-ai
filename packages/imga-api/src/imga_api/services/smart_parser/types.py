@@ -24,6 +24,10 @@ class FieldName(StrEnum):
     PRODUCT_NAME = "product_name"
     CUSTOMER_NAME = "customer_name"
     PRICE = "price"
+    # 2026-08-18 (migration 0042) — 5. business dimension: yorumu
+    # kuruma giren çalışanın adı (öneri amaçlı, is_pii=False — bkz.
+    # EmployeeNameDetector docstring).
+    EMPLOYEE_NAME = "employee_name"
     # Frontend-only sentinels — not emitted by detectors but used in
     # the UI dropdown so a user can mark a column as "ignore".
     IGNORE = "ignore"

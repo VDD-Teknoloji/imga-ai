@@ -23,13 +23,31 @@ from uuid import UUID
 import pytest
 from fastapi.testclient import TestClient
 from imga_core import review_text_hash
-from imga_db.models import Review, ReviewDecision, User
+from imga_db.models import Category, Review, ReviewDecision, User
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from tests.batch_helpers import login_token
 
 _ENDPOINT = "/tenants/me/analytics/category-drilldown"
+
+
+async def _seed_custom_category(
+    admin_session: AsyncSession, *, tenant_id: UUID, code: str
+) -> None:
+    """2026-08-18 WS2 — kurumun kendi custom Category satırı. Doğrudan
+    ORM ile açılıyor (TenantConfigService.create_custom_category ile
+    aynı şekli üretir); testin odağı gate davranışı, servis katmanı
+    değil."""
+    async with admin_session.begin():
+        await admin_session.execute(
+            text("SELECT set_config('app.current_tenant_id', :t, true)"),
+            {"t": str(tenant_id)},
+        )
+        admin_session.add(
+            Category(tenant_id=tenant_id, code=code, label_tr="Kargo Lojistik")
+        )
+        await admin_session.flush()
 
 
 async def _seed_review(
@@ -223,6 +241,13 @@ async def test_invalid_primary_category_is_422(
     batch_client: TestClient,
     semi_auto_tenant: tuple[User, UUID, str],
 ) -> None:
+    """2026-08-18 WS2 — gate artık global kod uzayı + kurumun AKTİF
+    custom kategorileri üzerine bakıyor (services.category_codes.
+    valid_primary_codes). ``kargo_lojistik`` burada hâlâ 422 olur çünkü
+    bu tenant o kodu custom kategori olarak hiç kaydetmedi — dinamik
+    kabul yalnız kaydedilmiş custom kodlar için geçerli, keyfi string
+    için değil. Bkz. test_custom_category_code_accepted_by_drilldown
+    (aynı kod, custom olarak kayıtlıyken 200 döner)."""
     user, tid, pw = semi_auto_tenant
     token = login_token(batch_client, user.email, pw, tid)
     r = batch_client.get(
@@ -231,6 +256,36 @@ async def test_invalid_primary_category_is_422(
         headers=_auth(token),
     )
     assert r.status_code == 422, r.text
+
+
+@pytest.mark.asyncio
+async def test_custom_category_code_accepted_by_drilldown(
+    batch_client: TestClient,
+    semi_auto_tenant: tuple[User, UUID, str],
+    admin_session: AsyncSession,
+) -> None:
+    """2026-08-18 WS2 — aynı ``kargo_lojistik`` kodu bu tenant'ta
+    custom kategori olarak kayıtlıyken artık 422 değil 200 döner ve
+    o kategorideki yorum drill-down'a girer (A-sistemi gerçekten
+    devrede)."""
+    user, tid, pw = semi_auto_tenant
+    await _seed_custom_category(admin_session, tenant_id=tid, code="kargo_lojistik")
+    await _seed_review(
+        admin_session,
+        tenant_id=tid,
+        text_value="Kargo lojistik süreci berbat",
+        primary_category="kargo_lojistik",
+        perspective_code="shipment_not_arrived",
+    )
+
+    token = login_token(batch_client, user.email, pw, tid)
+    r = batch_client.get(
+        _ENDPOINT,
+        params={"primary_category": "kargo_lojistik"},
+        headers=_auth(token),
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["total"] == 1
 
 
 @pytest.mark.asyncio

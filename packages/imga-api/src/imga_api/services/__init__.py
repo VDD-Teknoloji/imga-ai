@@ -28,6 +28,8 @@ from imga_api.services.batch_service import (
     BatchJobNotFoundError,
     BatchProgress,
     BatchServiceError,
+    QualityReportResponseInvalidError,
+    QualityReportService,
 )
 from imga_api.services.comment_service import (
     MAX_BODY_LENGTH as COMMENT_MAX_BODY_LENGTH,
@@ -133,6 +135,7 @@ from imga_api.services.review_service import (
     ReviewServiceError,
 )
 from imga_api.services.tenant_config_service import (
+    CategoryCodeArchivedError,
     CategoryCodeConflictError,
     CategoryNotFoundError,
     TenantConfigError,
@@ -196,6 +199,7 @@ __all__ = [
     "BatchProgress",
     "BatchServiceError",
     "CancellationReasonRequiredError",
+    "CategoryCodeArchivedError",
     "CategoryCodeConflictError",
     "CategoryNotConfiguredError",
     "CategoryNotFoundError",
@@ -232,6 +236,8 @@ __all__ = [
     "compute_next_run_at",
     "OrderBy",
     "OrderDirection",
+    "QualityReportResponseInvalidError",
+    "QualityReportService",
     "ReportEstimate",
     "ReportExpiredError",
     "ReportFilters",

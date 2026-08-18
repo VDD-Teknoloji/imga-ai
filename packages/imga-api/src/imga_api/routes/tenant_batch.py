@@ -27,6 +27,7 @@ from fastapi import (
     UploadFile,
     status,
 )
+from imga_core.llm import AllKeysExhaustedError, LLMError
 from imga_core.text_utils import normalize_turkish
 from imga_db.models import AnalyzeBatchJob, BatchJobStatus, UserTenantRole
 from pydantic import BaseModel, Field
@@ -40,11 +41,14 @@ from imga_api.services import (
     BatchAnalyzeService,
     BatchJobNotCancellableError,
     BatchJobNotFoundError,
+    QualityReportResponseInvalidError,
+    QualityReportService,
 )
 from imga_api.services.batch_template import (
     TEMPLATE_REQUIRED_COLUMNS,
     build_batch_template_xlsx,
 )
+from imga_api.services.llm_credentials import NoCredentialsError
 from imga_api.services.smart_parser import SmartColumnDetector
 from imga_api.services.smart_parser.sampler import sample_columns
 from imga_api.settings import Settings
@@ -113,6 +117,13 @@ class BatchJobResponse(BaseModel):
     # Sprint 9.0.5-A — arq worker handle.
     worker_job_id: str | None = None
     queued_at: str | None = None
+    # 2026-08-18 (migration 0042) WS2 — veri kalitesi bayrak sayaçları.
+    # Alt küme succeeded_rows'un içinde; ayrı görünürlük kalite raporu
+    # kartı + toggle'lar için (Dalga 3, frontend).
+    quality_duplicate_rows: int = 0
+    quality_empty_rows: int = 0
+    quality_informational_rows: int = 0
+    quality_meaningless_rows: int = 0
 
 
 class BatchJobListResponse(BaseModel):
@@ -168,6 +179,71 @@ class PreviewResponse(BaseModel):
     pii_warnings: list[str]
     # Sprint 12 — yüklemeden önce yapısal + içerik doğrulama raporu.
     validation: ValidationReportResponse
+
+
+# --- 2026-08-18 (migration 0042) — kalite raporu response modelleri --
+
+
+class QualityFlagCountsResponse(BaseModel):
+    duplicate: int
+    empty: int
+    informational: int
+    meaningless: int
+
+
+class RepeatedTextResponse(BaseModel):
+    text_hash: str
+    count: int
+    sample_text: str
+
+
+class EnteredByBreakdownResponse(BaseModel):
+    entered_by: str | None
+    total: int
+    duplicate: int
+    empty: int
+    informational: int
+    meaningless: int
+
+
+class QualitySummaryResponse(BaseModel):
+    assessment: str
+    model_provider: str
+    model_name: str
+    generated_at: str
+
+
+class QualityReportResponse(BaseModel):
+    job_id: UUID
+    total_rows: int
+    succeeded_rows: int
+    counts: QualityFlagCountsResponse
+    top_repeated_texts: list[RepeatedTextResponse]
+    entered_by_breakdown: list[EnteredByBreakdownResponse]
+    # None = özet henüz üretilmedi (POST .../generate hiç çağrılmadı).
+    summary: QualitySummaryResponse | None = None
+
+
+def _quality_report_view(report: dict[str, Any]) -> QualityReportResponse:
+    summary_payload = report.get("summary")
+    return QualityReportResponse(
+        job_id=UUID(report["job_id"]),
+        total_rows=report["total_rows"],
+        succeeded_rows=report["succeeded_rows"],
+        counts=QualityFlagCountsResponse(**report["counts"]),
+        top_repeated_texts=[
+            RepeatedTextResponse(**r) for r in report["top_repeated_texts"]
+        ],
+        entered_by_breakdown=[
+            EnteredByBreakdownResponse(**e)
+            for e in report["entered_by_breakdown"]
+        ],
+        summary=(
+            QualitySummaryResponse(**summary_payload)
+            if summary_payload is not None
+            else None
+        ),
+    )
 
 
 # --- helpers ----------------------------------------------------------
@@ -266,6 +342,14 @@ def _job_view(job: Any) -> BatchJobResponse:
             job.queued_at.isoformat()
             if getattr(job, "queued_at", None) is not None
             else None
+        ),
+        quality_duplicate_rows=getattr(job, "quality_duplicate_rows", 0) or 0,
+        quality_empty_rows=getattr(job, "quality_empty_rows", 0) or 0,
+        quality_informational_rows=(
+            getattr(job, "quality_informational_rows", 0) or 0
+        ),
+        quality_meaningless_rows=(
+            getattr(job, "quality_meaningless_rows", 0) or 0
         ),
     )
 
@@ -923,6 +1007,118 @@ async def dispatch_reanalysis(
         # (MissingGreenlet riski aynı oturumda lazy load tetiklerse).
         await app_session.refresh(refreshed)
         return _job_view(refreshed)
+
+
+@router.get(
+    "/{job_id}/quality-report",
+    response_model=QualityReportResponse,
+    summary="2026-08-18 — bu yüklemenin veri kalitesi raporu.",
+    description=(
+        "Bayrak sayaçları (job kolonlarından), bu job'un satırlarından "
+        "en çok tekrarlanan metinler (top 10) + çalışan bazlı kırılım. "
+        "LLM'e dokunmaz — özet (``summary``) yalnız daha önce "
+        "``POST .../quality-report/generate`` çağrılmışsa dolu gelir."
+    ),
+    responses={404: {"description": "Job not found or hidden by RLS."}},
+)
+async def get_quality_report(
+    job_id: UUID,
+    current: Annotated[CurrentUser, _AnyMember],
+    app_session: Annotated[AsyncSession, Depends(get_app_session)],
+) -> QualityReportResponse:
+    _require_active_tenant(current)
+    async with app_session.begin():
+        await bind_tenant(app_session, current)
+        audit = AuditService(app_session)
+        batch_service = BatchAnalyzeService(app_session, audit)
+        try:
+            job = await batch_service.get_job(job_id)
+        except BatchJobNotFoundError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="batch job not found",
+            ) from exc
+        report = await QualityReportService(app_session).build_report(job)
+    return _quality_report_view(report)
+
+
+@router.post(
+    "/{job_id}/quality-report/generate",
+    response_model=QualityReportResponse,
+    summary="2026-08-18 — TEK LLM çağrısıyla kalite raporu özeti üretir.",
+    description=(
+        "``quality_summary`` NULL ise tenant'ın mevcut kazanan LLM "
+        "kimliğiyle (SWOT/kök-neden ile aynı desen) kısa bir Türkçe "
+        "değerlendirme üretir ve job satırına KALICI olarak cache'ler; "
+        "doluysa LLM'e hiç dokunmadan mevcut özeti döner."
+    ),
+    responses={
+        404: {"description": "Job not found or hidden by RLS."},
+        412: {"description": "Kurumun aktif LLM anahtarı yok."},
+        502: {"description": "LLM yanıtı beklenen şekilde değil."},
+        503: {"description": "LLM sağlayıcısına ulaşılamadı."},
+    },
+)
+async def generate_quality_report(
+    job_id: UUID,
+    current: Annotated[CurrentUser, _TenantMember],
+    app_session: Annotated[AsyncSession, Depends(get_app_session)],
+) -> QualityReportResponse:
+    tenant_id = _require_active_tenant(current)
+    # Deferred raise: LLMCallAuditor'ın kendi savepoint'i normal
+    # transaction kapanışıyla flush edilsin diye HTTP hatası
+    # transaction bittikten SONRA yükselir (root_cause/briefing
+    # servisleriyle aynı desen).
+    deferred: HTTPException | None = None
+    report: dict[str, Any] | None = None
+    try:
+        async with app_session.begin():
+            await bind_tenant(app_session, current)
+            audit = AuditService(app_session)
+            batch_service = BatchAnalyzeService(app_session, audit)
+            try:
+                job = await batch_service.get_job(job_id)
+            except BatchJobNotFoundError as exc:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="batch job not found",
+                ) from exc
+            service = QualityReportService(
+                app_session, actor_user_id=current.user_id
+            )
+            try:
+                report = await service.generate_summary(
+                    job, tenant_id=tenant_id
+                )
+            except NoCredentialsError:
+                deferred = HTTPException(
+                    status_code=status.HTTP_412_PRECONDITION_FAILED,
+                    detail=(
+                        "LLM API anahtarı tanımlanmamış. Ayarlar > "
+                        "Entegrasyonlar üzerinden ekleyin."
+                    ),
+                )
+            except (AllKeysExhaustedError, LLMError) as exc:
+                deferred = HTTPException(
+                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                    detail=f"LLM sağlayıcısına ulaşılamadı: {exc}",
+                )
+            except QualityReportResponseInvalidError as exc:
+                deferred = HTTPException(
+                    status_code=status.HTTP_502_BAD_GATEWAY,
+                    detail=f"LLM yanıtı beklenen şekilde değil: {exc}",
+                )
+    except HTTPException:
+        raise
+    except Exception:
+        log.exception(
+            "quality report generate failed", extra={"job_id": str(job_id)}
+        )
+        raise
+    if deferred is not None:
+        raise deferred
+    assert report is not None  # deferred is None => generate_summary returned
+    return _quality_report_view(report)
 
 
 def _client_ip(request: Request) -> str | None:

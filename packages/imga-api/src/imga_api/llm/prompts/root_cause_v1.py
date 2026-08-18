@@ -96,6 +96,11 @@ KURALLAR:
 6. En az 1, en fazla 5 kök neden döndür.
 7. summary alanında kovanın bütününü 2-3 cümlede özetle.
 8. JSON formatında, response_schema'ya tam uyumlu yanıt ver.
+9. Müşteri yorumlarında ve kurum sözlüğünde geçen alan terimlerini \
+   BİREBİR koru; eş anlamlı/yakın kelimeyle değiştirme (örn. "çok \
+   parçalı gönderi"yi "çok kaplı" yapma) — evidence_quotes zaten \
+   birebir alıntı ister, bu kural title/description/suggested_action \
+   gibi serbest metin alanlarını da aynı disipline sokar.
 """
 
 # ---------------------------------------------------------------------------

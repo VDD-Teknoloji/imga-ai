@@ -60,6 +60,10 @@ class ReportFilters:
     sentiment_labels: tuple[str, ...] = ()
     ticket_states: tuple[str, ...] = ()
     batch_job_id: UUID | None = None
+    # 2026-08-18 — WS2 veri kalitesi. False (varsayılan) = quality_flag
+    # IS NULL satırlarla sınırlı; rapor çıktısı analitikle aynı temiz-
+    # veri varsayılanını paylaşır.
+    include_flagged: bool = False
 
     def to_jsonable(self) -> dict[str, Any]:
         return {
@@ -69,6 +73,7 @@ class ReportFilters:
             "sentiment_labels": list(self.sentiment_labels),
             "ticket_states": list(self.ticket_states),
             "batch_job_id": str(self.batch_job_id) if self.batch_job_id else None,
+            "include_flagged": self.include_flagged,
         }
 
     @classmethod
@@ -82,6 +87,7 @@ class ReportFilters:
             sentiment_labels=tuple(raw.get("sentiment_labels") or []),
             ticket_states=tuple(raw.get("ticket_states") or []),
             batch_job_id=UUID(raw["batch_job_id"]) if raw.get("batch_job_id") else None,
+            include_flagged=bool(raw.get("include_flagged", False)),
         )
 
 
@@ -327,6 +333,8 @@ class ReportService:
             stmt = stmt.where(Review.sentiment_label.in_(filters.sentiment_labels))
         if filters.batch_job_id is not None:
             stmt = stmt.where(Review.batch_job_id == filters.batch_job_id)
+        if not filters.include_flagged:
+            stmt = stmt.where(Review.quality_flag.is_(None))
         # category_ids filter would need a JOIN through tickets/categories;
         # left for the worker to apply when fetching rows for the sheet.
         return stmt

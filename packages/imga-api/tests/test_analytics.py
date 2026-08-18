@@ -47,6 +47,8 @@ async def _seed(
     analyzed_at: datetime | None = None,
     batch_job_id: UUID | None = None,
     overrides_applied: list[dict[str, object]] | None = None,
+    quality_flag: str | None = None,
+    nps_score: int | None = None,
 ) -> Review:
     async with admin_session.begin():
         await admin_session.execute(
@@ -72,6 +74,9 @@ async def _seed(
             # ile kurguladığı için ikisi aynı ana sabitleniyor.
             review_date=analyzed_at or datetime.now(UTC),
             overrides_applied=overrides_applied,
+            # 2026-08-18 — WS2 include_flagged testleri için.
+            quality_flag=quality_flag,
+            nps_score=nps_score,
         )
         admin_session.add(review)
         await admin_session.flush()
@@ -391,6 +396,261 @@ async def test_analytics_namespace_rls_isolation(
         assert r.json()["total"] == 0
     finally:
         await cleanup_tenant(admin_session, user_b.id, tid_b)
+
+
+# ---- WS2 (2026-08-18) — include_flagged veri kalitesi filtresi -------
+
+
+@pytest.mark.asyncio
+async def test_sentiment_distribution_excludes_flagged_reviews_by_default(
+    batch_client: TestClient,
+    semi_auto_tenant: tuple[User, UUID, str],
+    admin_session: AsyncSession,
+) -> None:
+    """quality_flag IS NOT NULL satırlar varsayılanda dışlanır;
+    include_flagged=true ile geri gelir. sentiment-distribution
+    ``_apply_review_filters`` paylaşan 9 uç için temsilci."""
+    user, tid, pw = semi_auto_tenant
+    await _seed(
+        admin_session, tenant_id=tid, text_value="clean",
+        sentiment="NEGATIF", score=-0.6,
+    )
+    await _seed(
+        admin_session, tenant_id=tid, text_value="dup",
+        sentiment="POZITIF", score=0.6, quality_flag="duplicate",
+    )
+
+    token = login_token(batch_client, user.email, pw, tid)
+    r_default = batch_client.get(
+        "/tenants/me/analytics/sentiment-distribution",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert r_default.status_code == 200, r_default.text
+    assert r_default.json()["total"] == 1
+
+    r_included = batch_client.get(
+        "/tenants/me/analytics/sentiment-distribution?include_flagged=true",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert r_included.status_code == 200
+    assert r_included.json()["total"] == 2
+
+
+@pytest.mark.asyncio
+async def test_category_distribution_excludes_flagged_reviews_by_default(
+    batch_client: TestClient,
+    semi_auto_tenant: tuple[User, UUID, str],
+    admin_session: AsyncSession,
+) -> None:
+    """category-distribution ayrı bir GROUP BY + total sorgusu
+    çalıştırır — include_flagged'ın her ikisine de uygulandığını
+    (satır kümesi + total) doğrular."""
+    user, tid, pw = semi_auto_tenant
+    await _seed(
+        admin_session, tenant_id=tid, text_value="clean",
+        sentiment="NÖTR", score=0.0, category="kargo",
+    )
+    await _seed(
+        admin_session, tenant_id=tid, text_value="meaningless",
+        sentiment="NÖTR", score=0.0, category="kargo",
+        quality_flag="meaningless",
+    )
+
+    token = login_token(batch_client, user.email, pw, tid)
+    r_default = batch_client.get(
+        "/tenants/me/analytics/category-distribution",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    body = r_default.json()
+    assert body["total"] == 1
+    assert body["data"][0]["count"] == 1
+
+    r_included = batch_client.get(
+        "/tenants/me/analytics/category-distribution?include_flagged=true",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    body2 = r_included.json()
+    assert body2["total"] == 2
+    assert body2["data"][0]["count"] == 2
+
+
+@pytest.mark.asyncio
+async def test_nps_summary_include_flagged_toggle(
+    batch_client: TestClient,
+    semi_auto_tenant: tuple[User, UUID, str],
+    admin_session: AsyncSession,
+) -> None:
+    """NPS ayrı bir kod yolundan geçer (compute_nps_summary,
+    AnalyticsFilters kullanmaz) — include_flagged'ın orada da
+    uygulandığını doğrular."""
+    user, tid, pw = semi_auto_tenant
+    await _seed(
+        admin_session, tenant_id=tid, text_value="clean-detractor",
+        sentiment="NEGATIF", score=-0.5, nps_score=0,
+    )
+    await _seed(
+        admin_session, tenant_id=tid, text_value="flagged-promoter",
+        sentiment="POZITIF", score=0.6, nps_score=10,
+        quality_flag="empty",
+    )
+
+    token = login_token(batch_client, user.email, pw, tid)
+    r_default = batch_client.get(
+        "/tenants/me/analytics/nps-summary",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    body = r_default.json()
+    assert body["total_count"] == 1
+    assert body["score"] == -100.0
+
+    r_included = batch_client.get(
+        "/tenants/me/analytics/nps-summary?include_flagged=true",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    body2 = r_included.json()
+    assert body2["total_count"] == 2
+    assert body2["score"] == 0.0
+
+
+@pytest.mark.asyncio
+async def test_headline_metrics_include_flagged_toggle(
+    batch_client: TestClient,
+    semi_auto_tenant: tuple[User, UUID, str],
+    admin_session: AsyncSession,
+) -> None:
+    """headline-metrics de ayrı bir kod yolu (compute_headline_metrics)
+    — total_reviews üstünden include_flagged doğrulanır."""
+    user, tid, pw = semi_auto_tenant
+    await _seed(
+        admin_session, tenant_id=tid, text_value="clean",
+        sentiment="NEGATIF", score=-0.5,
+    )
+    await _seed(
+        admin_session, tenant_id=tid, text_value="flagged",
+        sentiment="POZITIF", score=0.5, quality_flag="informational",
+    )
+
+    token = login_token(batch_client, user.email, pw, tid)
+    r_default = batch_client.get(
+        "/tenants/me/analytics/headline-metrics",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert r_default.json()["total_reviews"] == 1
+
+    r_included = batch_client.get(
+        "/tenants/me/analytics/headline-metrics?include_flagged=true",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert r_included.json()["total_reviews"] == 2
+
+
+@pytest.mark.asyncio
+async def test_snapshot_service_excludes_flagged_reviews_from_metrics(
+    semi_auto_tenant: tuple[User, UUID, str],
+    admin_session: AsyncSession,
+) -> None:
+    """Yönetici özeti önbelleği (SnapshotService) — bayraklı satır
+    review_volume/NPS'i hareket ettirmemeli; toggle yok, her zaman
+    temiz veri."""
+    from imga_api.services.snapshot_service import SnapshotService
+
+    _user, tid, _pw = semi_auto_tenant
+    today = datetime.now(UTC).date()
+    base = datetime.combine(today, datetime.min.time(), tzinfo=UTC)
+    await _seed(
+        admin_session, tenant_id=tid, text_value="clean",
+        sentiment="NEGATIF", score=-0.5, nps_score=0,
+        analyzed_at=base + timedelta(hours=10),
+    )
+    await _seed(
+        admin_session, tenant_id=tid, text_value="flagged",
+        sentiment="POZITIF", score=0.5, nps_score=10,
+        quality_flag="duplicate",
+        analyzed_at=base + timedelta(hours=11),
+    )
+
+    async with admin_session.begin():
+        await admin_session.execute(
+            text("SELECT set_config('app.current_tenant_id', :t, true)"),
+            {"t": str(tid)},
+        )
+        payload = await SnapshotService(admin_session).get_or_compute(
+            tenant_id=tid, period="daily", snapshot_date=today,
+        )
+    assert payload.metrics["review_volume"]["sample_count"] == 1
+    assert payload.metrics["nps"]["sample_count"] == 1
+
+
+@pytest.mark.asyncio
+async def test_trend_alert_stats_excludes_flagged_reviews(
+    semi_auto_tenant: tuple[User, UUID, str],
+    admin_session: AsyncSession,
+) -> None:
+    """TrendAlertService._stats — bayraklı satır hacim/negatif-oran
+    hesaplarına girmemeli (yanlış alarm tetiklememesi için)."""
+    from imga_api.services.trend_alert_service import TrendAlertService
+
+    _user, tid, _pw = semi_auto_tenant
+    now = datetime.now(UTC)
+    await _seed(
+        admin_session, tenant_id=tid, text_value="clean-neg",
+        sentiment="NEGATIF", score=-0.5,
+        analyzed_at=now - timedelta(days=1),
+    )
+    await _seed(
+        admin_session, tenant_id=tid, text_value="flagged-pos",
+        sentiment="POZITIF", score=0.5, quality_flag="meaningless",
+        analyzed_at=now - timedelta(days=1),
+    )
+
+    async with admin_session.begin():
+        await admin_session.execute(
+            text("SELECT set_config('app.current_tenant_id', :t, true)"),
+            {"t": str(tid)},
+        )
+        stats = await TrendAlertService(admin_session)._stats(
+            tid, now - timedelta(days=7), now
+        )
+    assert stats.review_count == 1
+    assert stats.negative_share == 1.0
+
+
+@pytest.mark.asyncio
+async def test_executive_briefing_compute_stats_excludes_flagged_reviews(
+    semi_auto_tenant: tuple[User, UUID, str],
+    admin_session: AsyncSession,
+) -> None:
+    """ExecutiveBriefingService._compute_stats — brifing girdisi de
+    temiz veriden; total_reviews + top_categories bayraklı satırı
+    saymamalı."""
+    from imga_api.services.executive_briefing_service import (
+        ExecutiveBriefingService,
+    )
+
+    user, tid, _pw = semi_auto_tenant
+    today = datetime.now(UTC).date()
+    base = datetime.combine(today, datetime.min.time(), tzinfo=UTC)
+    await _seed(
+        admin_session, tenant_id=tid, text_value="clean",
+        sentiment="NEGATIF", score=-0.5, category="kargo",
+        analyzed_at=base + timedelta(hours=10),
+    )
+    await _seed(
+        admin_session, tenant_id=tid, text_value="flagged",
+        sentiment="POZITIF", score=0.5, category="iade",
+        quality_flag="informational",
+        analyzed_at=base + timedelta(hours=11),
+    )
+
+    async with admin_session.begin():
+        await admin_session.execute(
+            text("SELECT set_config('app.current_tenant_id', :t, true)"),
+            {"t": str(tid)},
+        )
+        service = ExecutiveBriefingService(admin_session, tid, user.id)
+        stats = await service._compute_stats(today, today, None)
+    assert stats.total_reviews == 1
+    assert stats.top_categories == [{"label": "Kargo / Lojistik", "count": 1}]
 
 
 # Silence unused imports.

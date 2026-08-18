@@ -76,6 +76,7 @@ from imga_api.services.batch_service import (
     BatchAnalyzeService,
     BatchProgress,
 )
+from imga_api.services.data_quality import classify_data_quality
 from imga_api.services.review_service import ReviewService
 from imga_api.services.tenant_config_service import TenantConfigService
 from imga_api.services.ticket_service import TicketService
@@ -89,6 +90,8 @@ from imga_api.workers.file_parser import (
 
 if TYPE_CHECKING:
     from cachetools import TTLCache
+
+    from imga_api.services.correction_store import CorrectedDecision
 
 log = logging.getLogger("imga-api.workers.batch")
 
@@ -703,6 +706,57 @@ async def _is_cancelled(
         return status == BatchJobStatus.CANCELLED
 
 
+async def _write_empty_reviews(
+    app_session: AsyncSession,
+    *,
+    tenant_id: UUID,
+    job_id: UUID,
+    empty_rows: list[Any],  # list[ParsedRow]
+    tenant_mode: str,
+    triggered_by_user_id: UUID | None,
+) -> None:
+    """2026-08-18 (migration 0042) WS2 — persist one Review row per
+    empty-text ``ParsedRow``: ``quality_flag='empty'``, sentiment
+    NÖTR/0.0, ``primary_category='belirsiz'``, confidence 0.0,
+    ``decision=SKIPPED_QUALITY``. Never touches BERT/LLM or
+    ``seen_hashes`` — every empty text normalizes to the SAME
+    ``text_hash`` (sha256 of an empty string), so if these rows ever
+    flowed through the normal dedup/exact-lookup paths the second one
+    onward would be misclassified as 'duplicate'. Called from both the
+    normal per-chunk success path and the catastrophic-BERT-failure
+    fallback (empty rows never depended on BERT, so they must not be
+    lost when the rest of the chunk fails)."""
+    row_moment = datetime.now(UTC)
+    for parsed in empty_rows:
+        review = Review(
+            tenant_id=tenant_id,
+            text=parsed.text,
+            text_hash=review_text_hash(parsed.text),
+            sentiment_label="NÖTR",
+            sentiment_score=0.0,
+            primary_category="belirsiz",
+            primary_confidence=0.0,
+            automation_mode=tenant_mode,
+            decision=ReviewDecision.SKIPPED_QUALITY,
+            decision_reason="empty_text",
+            quality_flag="empty",
+            ticket_id=None,
+            submitted_by_user_id=triggered_by_user_id,
+            batch_job_id=job_id,
+            analyzed_at=row_moment,
+            review_date=parsed.review_date or row_moment,
+            overrides_applied=[],
+            nps_score=parsed.nps_score,
+            business_segment=parsed.business_segment,
+            product_line=parsed.product_line,
+            channel=parsed.channel,
+            customer_tier=parsed.customer_tier,
+            entered_by=parsed.entered_by,
+            source=parsed.source,
+        )
+        app_session.add(review)
+
+
 async def _process_chunk(
     *,
     job_id: UUID,
@@ -725,6 +779,15 @@ async def _process_chunk(
     tickets = 0
     duplicates = 0
     rows_with_nps_in_chunk = 0
+    # 2026-08-18 (migration 0042) WS2 — veri kalitesi bayrak sayaçları.
+    # quality_duplicate hem intra-batch hem cross-batch (record_and_decide
+    # SKIPPED_DEDUP) dalından gelir; ``duplicates`` (yukarıdaki) zaten bu
+    # ikisini toplar, quality_duplicate onun quality_flag'e yansıyan
+    # aynasıdır.
+    quality_duplicate = 0
+    quality_empty = 0
+    quality_informational = 0
+    quality_meaningless = 0
     # Sprint 9.1 E — chunk-level timing for the structured log emitted
     # at the bottom of this function. ``time.monotonic()`` is the
     # right tool for elapsed measurement; wall-clock would be tripped
@@ -734,14 +797,20 @@ async def _process_chunk(
     db_seconds = 0.0
     llm_fallback_count = 0
 
-    # Pre-filter empty rows (don't burn BERT inference on whitespace).
+    # 2026-08-18 (migration 0042) WS2 — boş metin artık 'failed'
+    # sayılmaz: her boş satır aşağıdaki DB bloğunda quality_flag='empty'
+    # bir Review olarak YAZILIR (BERT/LLM'e hiç girmeden — bkz.
+    # _write_empty_reviews). KRİTİK: bu satırlar seen_hashes'e HİÇ
+    # girmez (hash("") çakışması olmasın diye intra-batch dedup, cross-
+    # batch dedup lookup'ı ve birebir düzeltme lookup'ı tamamı valid_rows
+    # üzerinden çalışan aşağıdaki döngüye/record_and_decide çağrısına
+    # hiç girmeyen bu listeden atlanır — ayrı bir guard eklemeye gerek
+    # yok, yapısal olarak zaten dokunulmuyor).
     valid_rows: list[Any] = []
+    empty_rows: list[Any] = []
     for parsed in chunk:
         if not parsed.text:
-            failed += 1
-            error_entries.append(
-                {"row": parsed.row_number, "error": "empty text"}
-            )
+            empty_rows.append(parsed)
             continue
         valid_rows.append(parsed)
 
@@ -751,21 +820,9 @@ async def _process_chunk(
     # a later refactor shuffles ordering.
     chunk_checkpoint = max((p.row_number for p in chunk), default=0)
 
-    if not valid_rows:
-        await _commit_progress(
-            job_id=job_id,
-            tenant_id=tenant_id,
-            context=context,
-            progress=BatchProgress(
-                processed_delta=len(chunk),
-                failed_delta=failed,
-                error_entries=error_entries or None,
-                checkpoint_row=chunk_checkpoint,
-            ),
-        )
-        return
-
-    # BERT inference — outside any DB transaction.
+    # BERT inference — outside any DB transaction. Skipped entirely
+    # when the chunk has no non-empty text (an all-empty chunk still
+    # falls through to the DB block below to persist the empty rows).
     # Sprint 9.0.5-A B6: pipeline.analyze_batch is sync and the
     # transformers pipeline is a sync C extension that doesn't yield
     # back to the event loop during inference. Awaiting through
@@ -777,119 +834,163 @@ async def _process_chunk(
     # processed_rows=0 the whole time because the sync call held the
     # loop until BERT finished (~1.4s × 2852 = ~67 min projected).
     texts = [r.text for r in valid_rows]
-    pipeline = _select_pipeline(context, chunk_index=chunk_index)
-    bert_started_at = time.monotonic()
-    try:
-        # Sprint 9.0.5-A B2 + B6 — analyze_batch_async runs BERT and
-        # the category classifier on parallel threads via to_thread,
-        # so the event loop is free for sibling chunks AND the two
-        # slow steps overlap rather than serialise. Earlier this
-        # method was a sync ``pipeline.analyze_batch(texts)`` call;
-        # that held the loop for the entire BERT inference and was
-        # the proximate cause of today's 21-min freeze on a 2852-row
-        # CSV.
-        # Sprint 9.5.5 A — pass a stats sink the pipeline forwards
-        # to HybridClassifier.classify_batch_async. Pre-9.5.5 the
-        # chunk audit row landed with input_tokens=NULL and
-        # duration_ms=0 because the auditor wrapped only the
-        # ~1ms flag-setting region below; the real LLM duration
-        # + per-call token usage went uncaptured. The sink picks up
-        # llm_total_input_tokens / llm_total_output_tokens /
-        # llm_duration_ms from the BatchClassificationResult.
-        classifier_stats: dict[str, int] = {}
-        analyses: list[AnalysisResult] | None = None
-        # Sprint 11.0 — birincil yol: birleşik Gemini sınıflandırma
-        # (sentiment + kategori tek çağrı setinde, few-shot düzeltme
-        # örnekleriyle). Motor üretemezse klasik yola düşülür: BERT
-        # zinciri (uzak Modal → lazy lokal) + keyword/LLM classifier.
-        semantic_hits: dict[int, Any] = {}
-        # Sprint 13.1 — LLM'in seçtiği alt kategori kodları, satır
-        # sırasına göre. Klasik yola düşülürse boş kalır ve persist
-        # döngüsü tümüyle keyword sezgiseline güvenir.
-        unified_perspectives: list[str | None] = []
-        # 2026-08-10 — LLM'in temas noktası kararı, satır sırasına göre.
-        # Klasik yola düşülürse boş kalır ve satırlar NULL persist edilir.
-        unified_experiences: list[str | None] = []
-        if unified_ctx is not None:
-            try:
-                few_shot, semantic_hits = await _few_shot_for_chunk(
-                    unified_ctx, texts, context, tenant_id
-                )
-                analyses = await pipeline.analyze_batch_unified_async(
+    classifier_stats: dict[str, int] = {}
+    analyses: list[AnalysisResult] = []
+    semantic_hits: dict[int, Any] = {}
+    unified_perspectives: list[str | None] = []
+    unified_experiences: list[str | None] = []
+    # 2026-08-18 (migration 0042, B3 sözleşme notu) — satır başına
+    # UYGULANAN insan düzeltmesi (None = düzeltme yok). experience_type
+    # / perspective_code AnalysisResult'a giremediği için
+    # patch_analysis_with_decision yalnız izlenebilirlik metni yazar;
+    # bu liste per-satır döngüsünün deneyim/perspektif hesaplamasına
+    # düzeltmeyi UYGULAMASI için taşınır.
+    correction_overrides: list[CorrectedDecision | None] = []
+    if valid_rows:
+        pipeline = _select_pipeline(context, chunk_index=chunk_index)
+        bert_started_at = time.monotonic()
+        try:
+            # Sprint 9.0.5-A B2 + B6 — analyze_batch_async runs BERT and
+            # the category classifier on parallel threads via to_thread,
+            # so the event loop is free for sibling chunks AND the two
+            # slow steps overlap rather than serialise. Earlier this
+            # method was a sync ``pipeline.analyze_batch(texts)`` call;
+            # that held the loop for the entire BERT inference and was
+            # the proximate cause of today's 21-min freeze on a 2852-row
+            # CSV.
+            # Sprint 9.5.5 A — pass a stats sink the pipeline forwards
+            # to HybridClassifier.classify_batch_async. Pre-9.5.5 the
+            # chunk audit row landed with input_tokens=NULL and
+            # duration_ms=0 because the auditor wrapped only the
+            # ~1ms flag-setting region below; the real LLM duration
+            # + per-call token usage went uncaptured. The sink picks up
+            # llm_total_input_tokens / llm_total_output_tokens /
+            # llm_duration_ms from the BatchClassificationResult.
+            # Sprint 11.0 — birincil yol: birleşik Gemini sınıflandırma
+            # (sentiment + kategori tek çağrı setinde, few-shot düzeltme
+            # örnekleriyle). Motor üretemezse klasik yola düşülür: BERT
+            # zinciri (uzak Modal → lazy lokal) + keyword/LLM classifier.
+            # Sprint 13.1 — LLM'in seçtiği alt kategori kodları, satır
+            # sırasına göre. Klasik yola düşülürse boş kalır ve persist
+            # döngüsü tümüyle keyword sezgiseline güvenir.
+            # 2026-08-10 — LLM'in temas noktası kararı, satır sırasına göre.
+            # Klasik yola düşülürse boş kalır ve satırlar NULL persist edilir.
+            unified_analyses: list[AnalysisResult] | None = None
+            if unified_ctx is not None:
+                try:
+                    few_shot, semantic_hits = await _few_shot_for_chunk(
+                        unified_ctx, texts, context, tenant_id
+                    )
+                    unified_analyses = await pipeline.analyze_batch_unified_async(
+                        texts,
+                        engine=unified_ctx.engine,
+                        available_categories=unified_ctx.available_categories,
+                        few_shot=few_shot,
+                        stats_sink=classifier_stats,
+                        perspective_options=unified_ctx.perspective_options,
+                        perspective_sink=unified_perspectives,
+                        category_descriptions=unified_ctx.category_descriptions,
+                        experience_sink=unified_experiences,
+                    )
+                except Exception as exc:
+                    if not _bert_fallback_enabled():
+                        # BERT yedeği kapalı: sessiz kalite düşüşü yerine
+                        # işi net gerekçeyle durdur. Checkpoint'e kadar
+                        # işlenen satırlar kalıcı — Yeniden Dene kaldığı
+                        # yerden sürer.
+                        raise BertFallbackDisabledError(
+                            "LLM sınıflandırma bu parça için kalıcı olarak "
+                            "başarısız oldu ve BERT yedeği devre dışı "
+                            f"(IMGA_BATCH_BERT_FALLBACK=false): {exc}"
+                        ) from exc
+                    log.warning(
+                        "unified classifier failed for chunk; falling back "
+                        "to classic pipeline: %s",
+                        exc,
+                    )
+                    unified_analyses = None
+                    unified_perspectives = []
+                    unified_experiences = []
+            if unified_analyses is None:
+                analyses = await pipeline.analyze_batch_async(
                     texts,
-                    engine=unified_ctx.engine,
-                    available_categories=unified_ctx.available_categories,
-                    few_shot=few_shot,
-                    stats_sink=classifier_stats,
-                    perspective_options=unified_ctx.perspective_options,
-                    perspective_sink=unified_perspectives,
-                    category_descriptions=unified_ctx.category_descriptions,
-                    experience_sink=unified_experiences,
+                    classifier=classifier_override,
+                    classifier_stats_sink=classifier_stats,
                 )
-            except Exception as exc:
-                if not _bert_fallback_enabled():
-                    # BERT yedeği kapalı: sessiz kalite düşüşü yerine
-                    # işi net gerekçeyle durdur. Checkpoint'e kadar
-                    # işlenen satırlar kalıcı — Yeniden Dene kaldığı
-                    # yerden sürer.
-                    raise BertFallbackDisabledError(
-                        "LLM sınıflandırma bu parça için kalıcı olarak "
-                        "başarısız oldu ve BERT yedeği devre dışı "
-                        f"(IMGA_BATCH_BERT_FALLBACK=false): {exc}"
-                    ) from exc
-                log.warning(
-                    "unified classifier failed for chunk; falling back "
-                    "to classic pipeline: %s",
-                    exc,
+            else:
+                analyses = unified_analyses
+            # Düzeltme katmanları — insan kararı her yolu ezer
+            # (birebir + anlamsal).
+            if unified_ctx is not None:
+                analyses, correction_overrides = _apply_corrections(
+                    analyses, texts, unified_ctx, semantic_hits
                 )
-                analyses = None
-                unified_perspectives = []
-                unified_experiences = []
-        if analyses is None:
-            analyses = await pipeline.analyze_batch_async(
-                texts,
-                classifier=classifier_override,
-                classifier_stats_sink=classifier_stats,
+            bert_seconds = time.monotonic() - bert_started_at
+        except BertFallbackDisabledError:
+            # Chunk-yerel "satırları failed say, devam et" düzeneğine
+            # DÜŞMEZ: iş seviyesinde durdurulur (catastrophic path) ki
+            # yüzlerce chunk tek tek başarısızlık geçidine dönmesin.
+            raise
+        except Exception as exc:
+            log.exception("batch chunk inference failed: %s", exc)
+            for parsed in valid_rows:
+                error_entries.append(
+                    {"row": parsed.row_number, "error": f"pipeline failed: {exc}"}
+                )
+                failed += 1
+            # 2026-08-18 WS2 — boş satırlar BERT'e hiç bağımlı değildi;
+            # valid_rows analizi tamamen çökse bile empty_rows kaybolmasın
+            # diye burada da persist edilir (aksi halde checkpoint bu
+            # satırların row_number'ını da geçer ve bir daha asla
+            # görünmezlerdi — bkz. _write_empty_reviews docstring).
+            empty_succeeded = 0
+            if empty_rows:
+                async with (
+                    context.app_session_factory() as fallback_session,
+                    fallback_session.begin(),
+                ):
+                    await set_current_tenant(fallback_session, tenant_id)
+                    fallback_audit = AuditService(fallback_session)
+                    fallback_config_service = TenantConfigService(
+                        fallback_session, fallback_audit,
+                        context.tenant_config_cache,
+                    )
+                    fallback_tenant_config = await fallback_config_service.get_config(
+                        tenant_id
+                    )
+                    await _write_empty_reviews(
+                        fallback_session,
+                        tenant_id=tenant_id,
+                        job_id=job_id,
+                        empty_rows=empty_rows,
+                        tenant_mode=str(
+                            fallback_tenant_config["automation_mode"]
+                        ),
+                        triggered_by_user_id=triggered_by_user_id,
+                    )
+                empty_succeeded = len(empty_rows)
+            await _commit_progress(
+                job_id=job_id,
+                tenant_id=tenant_id,
+                context=context,
+                progress=BatchProgress(
+                    processed_delta=len(chunk),
+                    succeeded_delta=empty_succeeded,
+                    failed_delta=failed,
+                    quality_empty_delta=empty_succeeded,
+                    error_entries=error_entries or None,
+                    checkpoint_row=chunk_checkpoint,
+                ),
             )
-        # Düzeltme katmanları — insan kararı her yolu ezer
-        # (birebir + anlamsal).
-        if unified_ctx is not None:
-            analyses = _apply_corrections(
-                analyses, texts, unified_ctx, semantic_hits
-            )
-        bert_seconds = time.monotonic() - bert_started_at
-    except BertFallbackDisabledError:
-        # Chunk-yerel "satırları failed say, devam et" düzeneğine
-        # DÜŞMEZ: iş seviyesinde durdurulur (catastrophic path) ki
-        # yüzlerce chunk tek tek başarısızlık geçidine dönmesin.
-        raise
-    except Exception as exc:
-        log.exception("batch chunk inference failed: %s", exc)
-        for parsed in valid_rows:
-            error_entries.append(
-                {"row": parsed.row_number, "error": f"pipeline failed: {exc}"}
-            )
-            failed += 1
-        await _commit_progress(
-            job_id=job_id,
-            tenant_id=tenant_id,
-            context=context,
-            progress=BatchProgress(
-                processed_delta=len(chunk),
-                failed_delta=failed,
-                error_entries=error_entries or None,
-                checkpoint_row=chunk_checkpoint,
-            ),
-        )
-        return
+            return
 
-    # Count rows that triggered an LLM fallback (HybridClassifier
-    # exposes ``llm_fallback`` on each AnalysisResult.categorization
-    # when present). Best-effort: stays 0 for keyword-only pipelines.
-    for analysis in analyses:
-        cat = analysis.categorization
-        if cat is not None and getattr(cat, "llm_fallback", False):
-            llm_fallback_count += 1
+        # Count rows that triggered an LLM fallback (HybridClassifier
+        # exposes ``llm_fallback`` on each AnalysisResult.categorization
+        # when present). Best-effort: stays 0 for keyword-only pipelines.
+        for analysis in analyses:
+            cat = analysis.categorization
+            if cat is not None and getattr(cat, "llm_fallback", False):
+                llm_fallback_count += 1
 
     # Persist — RLS-bound app session so reviews + tickets land
     # tenant-scoped via the same path as /tenants/me/analyze.
@@ -996,6 +1097,22 @@ async def _process_chunk(
         tenant_config = await config_service.get_config(tenant_id)
         tenant_mode = str(tenant_config["automation_mode"])
 
+        # 2026-08-18 (migration 0042) WS2 — boş metinli satırlar burada
+        # yazılır: BERT/LLM'e hiç girmediler, hash'e de girmediler
+        # (yukarıdaki modül docstring'i). succeeded'a eklenir, failed'a
+        # DEĞİL.
+        if empty_rows:
+            await _write_empty_reviews(
+                app_session,
+                tenant_id=tenant_id,
+                job_id=job_id,
+                empty_rows=empty_rows,
+                tenant_mode=tenant_mode,
+                triggered_by_user_id=triggered_by_user_id,
+            )
+            quality_empty = len(empty_rows)
+            succeeded += quality_empty
+
         # Sprint 8.3.5.6. Fetch the company taxonomy once per chunk so
         # the heuristic reranker doesn't hit the DB per row. The auto-
         # create branch routes through ReviewService.record_and_decide
@@ -1028,14 +1145,40 @@ async def _process_chunk(
                 if row_index < len(unified_perspectives)
                 else None
             )
-            experience_type = normalize_experience_type(
-                unified_experiences[row_index]
-                if row_index < len(unified_experiences)
+            # 2026-08-18 (migration 0042, B3 sözleşme notu) — bu satır
+            # birebir/anlamsal düzeltmeyle eşleştiyse (bkz.
+            # _apply_corrections), kayıtlı deneyim/perspektif İNSAN
+            # KARARI olarak LLM'in kendi tahmininin ÖNÜNE geçer.
+            # decision alanı NULL ise (operatör o alanı boş bıraktıysa)
+            # LLM/heuristik değeri aynen korunur.
+            correction_override = (
+                correction_overrides[row_index]
+                if row_index < len(correction_overrides)
                 else None
+            )
+            experience_type = normalize_experience_type(
+                correction_override.experience_type
+                if correction_override is not None
+                and correction_override.experience_type is not None
+                else (
+                    unified_experiences[row_index]
+                    if row_index < len(unified_experiences)
+                    else None
+                )
             )
             perspective_code: str | None
             perspective_label: str | None
-            if llm_perspective is not None and (
+            correction_perspective = (
+                correction_override.perspective_code
+                if correction_override is not None
+                else None
+            )
+            if correction_perspective is not None:
+                perspective_code = correction_perspective
+                perspective_label = taxonomy_snapshot.labels.get(
+                    correction_perspective, correction_perspective
+                )
+            elif llm_perspective is not None and (
                 llm_perspective in taxonomy_snapshot.labels
             ):
                 perspective_code = llm_perspective
@@ -1084,6 +1227,7 @@ async def _process_chunk(
                     automation_mode=tenant_mode,
                     decision=ReviewDecision.SKIPPED_DEDUP,
                     decision_reason="intra_batch_duplicate",
+                    quality_flag="duplicate",
                     ticket_id=None,
                     submitted_by_user_id=triggered_by_user_id,
                     batch_job_id=job_id,
@@ -1097,13 +1241,36 @@ async def _process_chunk(
                     product_line=parsed.product_line,
                     channel=parsed.channel,
                     customer_tier=parsed.customer_tier,
+                    entered_by=parsed.entered_by,
+                    source=parsed.source,
                 )
                 app_session.add(review)
                 duplicates += 1
+                quality_duplicate += 1
                 succeeded += 1
                 if parsed.nps_score is not None:
                     rows_with_nps_in_chunk += 1
                 continue
+
+            # 2026-08-18 (migration 0042) WS2 — deterministik Türkçe
+            # heuristik (imga_api.services.data_quality). Motor yolundan
+            # (unified/classic) bağımsız, her zaman burada koşar; sadece
+            # quality_flag'i doldurur, decision akışını DEĞİŞTİRMEZ.
+            # Cross-batch dedup (record_and_decide'ın kendi SKIPPED_DEDUP
+            # kararı) bu değeri aşağıda ezer — dedup her zaman içerik
+            # kalitesinden önceliktir (0042 backfill semantiğiyle aynı).
+            # 2026-08-18 adversarial inceleme FX1 — satır birebir/anlamsal
+            # bir düzeltmeyle eşleştiyse (correction_override is not None)
+            # heuristik HİÇ ÇALIŞTIRILMAZ: bir insan bu metni gerçek yorum
+            # sayıp deneyim/perspektif kararı verdi, dolayısıyla quality_flag
+            # None'a sabitlenir — aksi halde heuristik aynı satırı
+            # 'informational'/'meaningless' damgalayıp insan kararını
+            # analitikten sessizce düşürebilirdi.
+            row_quality_flag = (
+                None
+                if correction_override is not None
+                else classify_data_quality(parsed.text)
+            )
 
             if auto_create:
                 try:
@@ -1118,9 +1285,16 @@ async def _process_chunk(
                         channel=parsed.channel,
                         customer_tier=parsed.customer_tier,
                         review_date=parsed.review_date,
+                        # 2026-08-18 — bir insan düzeltmesi perspective_code
+                        # sağladıysa (correction_perspective) LLM'inkiyle
+                        # AYNI önceliği taşır: ikisinden biri varsa
+                        # record_and_decide'ın kendi heuristiğini ezer.
                         perspective_override=(
                             (perspective_code, perspective_label)
-                            if llm_perspective is not None
+                            if (
+                                correction_perspective is not None
+                                or llm_perspective is not None
+                            )
                             and perspective_code is not None
                             and perspective_label is not None
                             else None
@@ -1139,19 +1313,37 @@ async def _process_chunk(
                 # Back-fill batch_job_id on the review record_and_decide
                 # just inserted (the bridge has no batch awareness).
                 # 2026-08-10 — experience_type de aynı UPDATE'e binir:
-                # köprü de temas noktası kavramından habersiz.
+                # köprü de temas noktası kavramından habersiz. 2026-08-18
+                # (migration 0042) — entered_by/source/quality_flag de
+                # aynı desene biner (record_and_decide imzası
+                # genişletilmedi — mevcut back-fill deseni izlendi).
+                # Cross-batch dedup (SKIPPED_DEDUP) 'duplicate' ile
+                # içerik-kalitesi bayrağının ÖNÜNE geçer.
+                final_quality_flag = (
+                    "duplicate"
+                    if result.decision == ReviewDecision.SKIPPED_DEDUP
+                    else row_quality_flag
+                )
                 await app_session.execute(
                     update(Review)
                     .where(Review.id == result.review_id)
                     .values(
                         batch_job_id=job_id,
                         experience_type=experience_type,
+                        quality_flag=final_quality_flag,
+                        entered_by=parsed.entered_by,
+                        source=parsed.source,
                     )
                 )
                 if result.decision == ReviewDecision.CREATE:
                     tickets += 1
-                elif result.decision == ReviewDecision.SKIPPED_DEDUP:
+                if result.decision == ReviewDecision.SKIPPED_DEDUP:
                     duplicates += 1
+                    quality_duplicate += 1
+                elif final_quality_flag == "informational":
+                    quality_informational += 1
+                elif final_quality_flag == "meaningless":
+                    quality_meaningless += 1
                 succeeded += 1
                 if parsed.nps_score is not None:
                     rows_with_nps_in_chunk += 1
@@ -1179,6 +1371,7 @@ async def _process_chunk(
                     automation_mode=tenant_mode,
                     decision=ReviewDecision.SKIPPED_MODE,
                     decision_reason="auto_create_tickets_disabled",
+                    quality_flag=row_quality_flag,
                     ticket_id=None,
                     submitted_by_user_id=triggered_by_user_id,
                     batch_job_id=job_id,
@@ -1192,9 +1385,15 @@ async def _process_chunk(
                     product_line=parsed.product_line,
                     channel=parsed.channel,
                     customer_tier=parsed.customer_tier,
+                    entered_by=parsed.entered_by,
+                    source=parsed.source,
                 )
                 app_session.add(review)
                 succeeded += 1
+                if row_quality_flag == "informational":
+                    quality_informational += 1
+                elif row_quality_flag == "meaningless":
+                    quality_meaningless += 1
                 if parsed.nps_score is not None:
                     rows_with_nps_in_chunk += 1
 
@@ -1215,6 +1414,10 @@ async def _process_chunk(
             rows_with_nps_delta=rows_with_nps_in_chunk,
             error_entries=error_entries or None,
             checkpoint_row=chunk_checkpoint,
+            quality_duplicate_delta=quality_duplicate,
+            quality_empty_delta=quality_empty,
+            quality_informational_delta=quality_informational,
+            quality_meaningless_delta=quality_meaningless,
         ),
     )
 
@@ -1317,6 +1520,13 @@ def _progress_snapshot(job: AnalyzeBatchJob) -> dict[str, Any]:
         "duplicates_skipped": int(job.duplicates_skipped or 0),
         "eta_seconds": eta_seconds,
         "last_checkpoint_row": int(job.last_checkpoint_row or 0),
+        # 2026-08-18 (migration 0042) WS2 — veri kalitesi bayrak
+        # sayaçları. Frontend Dalga 3'te bağlanacak (bkz. plan
+        # dokümanı); backend yüzeyi burada + BatchJobResponse'da hazır.
+        "quality_duplicate_rows": int(job.quality_duplicate_rows or 0),
+        "quality_empty_rows": int(job.quality_empty_rows or 0),
+        "quality_informational_rows": int(job.quality_informational_rows or 0),
+        "quality_meaningless_rows": int(job.quality_meaningless_rows or 0),
     }
 
 
@@ -1538,7 +1748,9 @@ async def _build_unified_context(
                 session, tenant_id
             )
             # 2026-08-10 — kategori tanımları da job başında bir kez.
-            category_descriptions = await _load_category_descriptions(
+            # 2026-08-18 (WS1) — artık dinamik kod kümesiyle TEK
+            # sorguda, tutarlı biçimde (bkz. TenantCategorySnapshot).
+            category_snapshot = await _load_tenant_category_snapshot(
                 session, tenant_id
             )
             # Sprint 11.3 — /settings/prompts override'ı: tenant
@@ -1581,8 +1793,6 @@ async def _build_unified_context(
         return None
     keys = selection.keys
 
-    from imga_core.categories.taxonomy import GLOBAL_CATEGORY_CODES
-
     from imga_api.services.llm_provider_factory import resolve_model_name
 
     if selection.provider == "openrouter":
@@ -1606,12 +1816,52 @@ async def _build_unified_context(
     )
     return UnifiedJobContext(
         engine=engine,
-        available_categories=list(GLOBAL_CATEGORY_CODES),
+        available_categories=category_snapshot.codes,
         store=store,
         keys=embedding_keys,
         perspective_options=taxonomy_snapshot.perspective_options,
-        category_descriptions=category_descriptions,
+        category_descriptions=category_snapshot.descriptions,
     )
+
+
+async def _embed_chunk_rows(
+    texts: list[str], keys: list[Any]
+) -> list[list[float]] | None:
+    """2026-08-18 (WS3 kapsam düzeltmesi) — chunk'ın TÜM satırlarını
+    embed eder, ``embed_texts``'in tek çağrıda kabul ettiği 64'lük API
+    partileri hâlinde (mevcut sınır — bkz. eski ``texts[:64]``
+    örneklemesi). Eskiden yalnız chunk'ın ilk 64 satırı embed
+    edilirdi; 200 satırlık varsayılan chunk boyutunda geri kalan
+    ~136 satır centroid'i hiç etkilemiyor, satır-bazlı anlamsal
+    override'ı (bkz. ``semantic_override_lookup`` döngüsü aşağıda)
+    hiç görmüyordu.
+
+    Bir parti başarısız olursa (``None``) TÜMÜ ``None`` döner: kısmi
+    bir vektör listesiyle devam etmek centroid'i çarpıtır VE
+    ``semantic_hits``'in satır-index hizalamasını bozar (``vectors[i]``
+    ``texts[i]``'e karşılık gelmeyi bırakır); RAG'ın "ya tam kapsama
+    ya da sessiz-fallback" best-effort ilkesiyle tutarlı (bkz.
+    docs/analysis/2026-08-18-rag-mimari.md §1) — kısmi kapsamayla
+    devam etmek yerine tek seferde eski davranışa (yalnız güncel
+    few-shot, satır-bazlı override yok) düşülür.
+
+    Maliyet notu: Gemini ``embed_content`` karakter başına ücretlendirir
+    ve LLM sınıflandırma çağrısına göre ihmal edilebilir ölçekte ucuz;
+    200 satırlık bir chunk için ~4 parti çağrısı, önceki 64-satır
+    kapsamasına göre marjinal ek maliyet, kapsam kazancının yanında
+    önemsiz. Per-LLM-çağrısı (25'lik parti) centroid granülerliği
+    BİLİNÇLİ ERTELENDİ (bkz. rag-mimari.md §5) — bu fonksiyon yalnız
+    örnekleme genişliğini (64→tüm chunk) düzeltir, centroid'in chunk
+    başına tek olması değişmedi."""
+    from imga_api.services.embedding_service import embed_texts
+
+    vectors: list[list[float]] = []
+    for start in range(0, len(texts), 64):
+        batch_vectors = await embed_texts(texts[start : start + 64], keys)
+        if batch_vectors is None:
+            return None
+        vectors.extend(batch_vectors)
+    return vectors
 
 
 async def _few_shot_for_chunk(
@@ -1628,6 +1878,11 @@ async def _few_shot_for_chunk(
         satırlardan, bir düzeltmeye cosine ≥ 0.95 benzeyenler insan
         kararını devralır (index -> CorrectedDecision).
 
+    2026-08-18 (WS3 kapsam düzeltmesi) — chunk'ın TÜM satırları embed
+    edilir (bkz. ``_embed_chunk_rows``), yalnız ilk 64 değil: centroid
+    artık chunk'ın tamamının ortalaması ve satır-bazlı override
+    araması her satırı kapsar.
+
     Embedding erişilemezse sessizce (few-shot=güncel, override=boş)
     moduna düşer — RAG hiçbir zaman analizi bloklamaz."""
     from imga_api.services.correction_store import (
@@ -1635,15 +1890,13 @@ async def _few_shot_for_chunk(
         nearest_corrections,
         semantic_override_lookup,
     )
-    from imga_api.services.embedding_service import embed_texts
 
     recent = unified_ctx.store.recent_examples
     semantic = []
     semantic_hits: dict[int, Any] = {}
     if recent:
         try:
-            sample = texts[:64]
-            vectors = await embed_texts(sample, unified_ctx.keys)
+            vectors = await _embed_chunk_rows(texts, unified_ctx.keys)
             if vectors:
                 dim = len(vectors[0])
                 centroid = [
@@ -1659,10 +1912,11 @@ async def _few_shot_for_chunk(
                         session, tenant_id, centroid
                     )
                     # Satır-bazlı doğrudan override — HNSW indeksli
-                    # k=1 sorgular, embed edilen örneklem için (ek
-                    # API maliyeti yok; vektörler zaten elimizde).
-                    # Tenant'ta embedding'li düzeltme yoksa atla —
-                    # chunk başına 64 boş sorgu (code review bulgusu).
+                    # k=1 sorgular, embed edilen TÜM chunk satırları
+                    # için (ek API maliyeti yok; vektörler zaten
+                    # elimizde — bkz. _embed_chunk_rows). Tenant'ta
+                    # embedding'li düzeltme yoksa atla — chunk başına
+                    # (artık ≤200) boş sorgu (code review bulgusu).
                     if unified_ctx.store.has_embeddings:
                         for i, vector in enumerate(vectors):
                             decision = await semantic_override_lookup(
@@ -1690,23 +1944,34 @@ def _apply_corrections(
     texts: list[str],
     unified_ctx: UnifiedJobContext,
     semantic_hits: dict[int, Any] | None = None,
-) -> list[AnalysisResult]:
+) -> tuple[list[AnalysisResult], list[CorrectedDecision | None]]:
     """Düzeltme katmanları (insan kararı her yolu ezer):
 
       1. Birebir — text_hash eşleşmesi (eski 'Train & Save' KB
          davranışının DB-bazlı, tenant-scoped hali).
       2. Anlamsal (Sprint 11.3) — embed edilen satırlardan bir
          düzeltmeye cosine ≥ 0.95 benzeyenler. Birebir eşleşme
-         önceliklidir."""
+         önceliklidir.
+
+    2026-08-18 (migration 0042, B3 sözleşme notu) — satır sırasına
+    göre UYGULANAN ``CorrectedDecision``'ı da döner (None = düzeltme
+    yok). ``patch_analysis_with_decision`` yalnız ``AnalysisResult``'a
+    giren alanları (sentiment/kategori/skor) yazar —
+    ``decision.experience_type`` / ``decision.perspective_code``
+    ``AnalysisResult``'a giremez (pydantic ``extra=\"forbid\"``,
+    imga-core donuk); çağıran (``_process_chunk``'ın per-satır döngüsü)
+    bu ikisini decision nesnesinden DOĞRUDAN okuyup kendi
+    experience_type/perspective_code hesaplamasına uygulamalı."""
     from imga_api.services.correction_store import (
         patch_analysis_with_decision,
     )
 
     hits = semantic_hits or {}
     if not unified_ctx.store.has_corrections and not hits:
-        return analyses
+        return analyses, [None] * len(analyses)
 
     patched: list[AnalysisResult] = []
+    applied: list[CorrectedDecision | None] = []
     for i, (text, analysis) in enumerate(zip(texts, analyses, strict=True)):
         decision = unified_ctx.store.exact_lookup(review_text_hash(text))
         if decision is not None:
@@ -1718,6 +1983,7 @@ def _apply_corrections(
                     detail_prefix="Tenant düzeltme sözlüğü",
                 )
             )
+            applied.append(decision)
             continue
         semantic_decision = hits.get(i)
         if semantic_decision is not None:
@@ -1729,9 +1995,11 @@ def _apply_corrections(
                     detail_prefix="Anlamsal düzeltme eşleşmesi (≥0.95)",
                 )
             )
+            applied.append(semantic_decision)
             continue
         patched.append(analysis)
-    return patched
+        applied.append(None)
+    return patched, applied
 
 
 async def _fetch_dimension_mapping(
@@ -1771,27 +2039,55 @@ async def _fetch_dimension_mapping(
     return {dim: col for dim, col in rows if col}
 
 
-async def _load_category_descriptions(
-    session: AsyncSession, tenant_id: UUID
-) -> dict[str, str]:
-    """Sınıflandırıcı prompt'una giden kod -> tanım sözlüğü.
+@dataclass(frozen=True, slots=True)
+class TenantCategorySnapshot:
+    """WS1 (2026-08-18, migration 0042 çalışması) — sınıflandırıcı
+    prompt'una giden dinamik kod kümesi + kod->tanım sözlüğü, TEK
+    sorguda tutarlı biçimde üretilir.
 
-    Taban ``CATEGORY_DESCRIPTIONS_TR`` (kod içindeki 9 global tanım);
-    üstüne ``categories`` tablosundaki DOLU ``description`` satırları
-    biner — global satırlar (tenant_id IS NULL) kod varsayılanını
-    ezebilir, kurumun ETKİN özel kategorileri (``tenant_categories``
-    join'i is_enabled) sözlüğü genişletir.
+    ``codes`` — tenant'ın ETKİN globalleri (``tenant_categories.
+    is_enabled``) + etkin custom ``Category`` kodları; ikisi de AYNI
+    (tenant, category) join satırı üzerinden gelir —
+    ``TenantConfigService.toggle_category`` global/custom ayrımı
+    yapmadan ikisini de aynı mekanizmayla açıp kapatıyor, dolayısıyla
+    burada da tek bir sorgu ikisini birden kapsıyor.
+    ``ensure_fallback_category`` 'belirsiz'i koşulsuz garanti eder.
 
-    Sorgu patlarsa çağıran tarafın işi durmasın diye burada değil,
-    ``_build_unified_context``'in ortak try'ında yakalanır (o yol
-    zaten klasik path'e düşürür).
+    GÜVENLİ GERİ DÖNÜŞ: etkin kategori (global+custom toplamı) hiç
+    kalmamışsa (legacy tenant, hiç seed edilmemiş ``tenant_categories``
+    ya da — kasıtlı olsun olmasın — hepsi kapatılmış) TÜM globallere
+    düşülür; aksi halde prompt'a giden kod kümesi fiilen boşalır ve
+    her satır zorunlu olarak 'belirsiz' sınıflandırılırdı. Tenant
+    yalnız custom taksonomiye güveniyorsa (bilinçli olarak tüm
+    globalleri kapattıysa) bu geri dönüş TETİKLENMEZ — ``combined``
+    boş değildir, custom kodlar zaten oradadır.
+
+    ``descriptions`` — kod tabanındaki ``CATEGORY_DESCRIPTIONS_TR``
+    tabanı, üstüne DB'deki dolu ``description`` satırları biner;
+    yalnız ``codes`` kümesindeki kodlar için tutulur — eskiden bu
+    sözlük devre dışı globallerin tanımını da taşıyordu (kod
+    kümesiyle tutarsızdı), artık taşımıyor.
     """
-    from imga_core.categories.taxonomy import CATEGORY_DESCRIPTIONS_TR
 
-    payload: dict[str, str] = dict(CATEGORY_DESCRIPTIONS_TR)
+    codes: list[str]
+    descriptions: dict[str, str]
+
+
+async def _load_tenant_category_snapshot(
+    session: AsyncSession, tenant_id: UUID
+) -> TenantCategorySnapshot:
+    """Sorgu patlarsa çağıran tarafın işi durmasın diye burada değil,
+    ``_build_unified_context``'in ortak try'ında yakalanır (o yol
+    zaten klasik path'e düşürür)."""
+    from imga_core.categories.taxonomy import (
+        CATEGORY_DESCRIPTIONS_TR,
+        GLOBAL_CATEGORY_CODES,
+        ensure_fallback_category,
+    )
+
     stmt = (
-        select(Category.code, Category.description)
-        .outerjoin(
+        select(Category.code, Category.tenant_id, Category.description)
+        .join(
             TenantCategory,
             and_(
                 TenantCategory.category_id == Category.id,
@@ -1799,21 +2095,38 @@ async def _load_category_descriptions(
             ),
         )
         .where(Category.deleted_at.is_(None))
-        .where(Category.description.is_not(None))
+        .where(Category.is_active.is_(True))
+        .where(TenantCategory.is_enabled.is_(True))
         .where(
             or_(
                 Category.tenant_id.is_(None),
-                and_(
-                    Category.tenant_id == tenant_id,
-                    TenantCategory.is_enabled.is_(True),
-                ),
+                Category.tenant_id == tenant_id,
             )
         )
     )
-    for code, description in (await session.execute(stmt)).all():
-        if description:
-            payload[code] = description
-    return payload
+    rows = (await session.execute(stmt)).all()
+    global_codes = [
+        code for code, cat_tenant_id, _desc in rows if cat_tenant_id is None
+    ]
+    custom_codes = [
+        code for code, cat_tenant_id, _desc in rows if cat_tenant_id is not None
+    ]
+
+    combined = global_codes + custom_codes
+    if not combined:
+        combined = list(GLOBAL_CATEGORY_CODES)
+    codes = ensure_fallback_category(combined)
+    code_set = set(codes)
+
+    descriptions: dict[str, str] = {
+        code: desc
+        for code, desc in CATEGORY_DESCRIPTIONS_TR.items()
+        if code in code_set
+    }
+    for code, _cat_tenant_id, desc in rows:
+        if desc and code in code_set:
+            descriptions[code] = desc
+    return TenantCategorySnapshot(codes=codes, descriptions=descriptions)
 
 
 @dataclass(frozen=True, slots=True)

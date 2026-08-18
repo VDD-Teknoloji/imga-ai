@@ -88,6 +88,7 @@ class HeatmapGenerator:
         date_to: date | None = None,
         taxonomy_top_n: int = 12,
         batch_id: UUID | None = None,
+        include_flagged: bool = False,
     ) -> dict[str, Any]:
         """Return the heatmap payload (cache-aware).
 
@@ -113,7 +114,7 @@ class HeatmapGenerator:
 
         cache_key = self._cache_key(
             tenant_id, x_axis, y_axis, metric,
-            date_from, date_to, taxonomy_top_n, batch_id,
+            date_from, date_to, taxonomy_top_n, batch_id, include_flagged,
         )
 
         async def _compute() -> dict[str, Any]:
@@ -127,6 +128,7 @@ class HeatmapGenerator:
                     date_to=date_to,
                     taxonomy_top_n=taxonomy_top_n,
                     batch_id=batch_id,
+                    include_flagged=include_flagged,
                 )
             except Exception:
                 _logger.exception(
@@ -158,6 +160,7 @@ class HeatmapGenerator:
         date_to: date | None,
         taxonomy_top_n: int,
         batch_id: UUID | None,
+        include_flagged: bool = False,
     ) -> dict[str, Any]:
         x_expr, x_resolver = self._axis_expr(x_axis)
         y_expr, y_resolver = self._axis_expr(y_axis)
@@ -180,6 +183,8 @@ class HeatmapGenerator:
             stmt = stmt.where(Review.review_date <= day_ceil(date_to))
         if batch_id is not None:
             stmt = stmt.where(Review.batch_job_id == batch_id)
+        if not include_flagged:
+            stmt = stmt.where(Review.quality_flag.is_(None))
         # NPS metric ignores rows where nps_score is NULL — without
         # this, the AVG produces NULL cells we'd then have to filter
         # client-side.
@@ -365,13 +370,17 @@ class HeatmapGenerator:
         date_to: date | None,
         taxonomy_top_n: int,
         batch_id: UUID | None,
+        include_flagged: bool = False,
     ) -> str:
         df = date_from.isoformat() if date_from else "all"
         dt = date_to.isoformat() if date_to else "all"
         bid = str(batch_id) if batch_id else "all"
+        # include_flagged bilerek anahtara girer — yoksa temiz/dahil
+        # istekleri aynı cache satırını paylaşıp yanlış payload dönerdi.
+        flg = "1" if include_flagged else "0"
         return (
             f"heatmap:{tenant_id}:{x_axis}:{y_axis}:{metric}:"
-            f"{df}:{dt}:{taxonomy_top_n}:{bid}"
+            f"{df}:{dt}:{taxonomy_top_n}:{bid}:{flg}"
         )
 
 

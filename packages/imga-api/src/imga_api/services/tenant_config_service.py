@@ -43,10 +43,13 @@ from cachetools import TTLCache
 from imga_db.models import (
     AutomationMode,
     Category,
+    CategoryTaxonomy,
+    TaxonomyEditAudit,
     Tenant,
     TenantCategory,
 )
 from sqlalchemy import select, update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from imga_api.services.audit_service import AuditService
@@ -59,6 +62,18 @@ class TenantConfigError(Exception):
 class CategoryCodeConflictError(TenantConfigError):
     """A custom category code collides with a global or with the tenant's
     own existing custom category."""
+
+
+class CategoryCodeArchivedError(CategoryCodeConflictError):
+    """2026-08-18 (bulgu) — code çakışması tenant'ın ARŞİVLENMİŞ
+    (soft-deleted) bir custom kategorisiyle. ``uq_categories_per_tenant_code``
+    (migration 0005) ``deleted_at``'i saymaz — arşivli bir kod DB
+    seviyesinde hâlâ "dolu" sayılır. Bir ``CategoryCodeConflictError``
+    alt sınıfı olduğu için mevcut ``except CategoryCodeConflictError``
+    tüketicileri (routes/tenant_config.py) davranış değiştirmeden aynı
+    409'u üretmeye devam eder; onboarding apply akışı bu alt sınıfı
+    AYRICA yakalayıp temiz Türkçe mesajla 409'a çevirir (bkz.
+    routes/tenant_onboarding.py)."""
 
 
 class CategoryNotFoundError(TenantConfigError):
@@ -226,11 +241,25 @@ class TenantConfigService:
     ) -> Category:
         """Create a tenant-scoped custom category.
 
-        Two collision checks:
+        Collision checks:
           1. Code must not match any global (reserved system codes).
-          2. Code must not match an existing custom on this tenant
-             (DB unique index also catches this; we check first to
-             return a friendly error rather than IntegrityError).
+          2. Code must not match an existing (non-archived) custom on
+             this tenant.
+          3. 2026-08-18 (bulgu) — code must not match an ARCHIVED
+             custom on this tenant either.
+             ``uq_categories_per_tenant_code`` (migration 0005) is a
+             partial unique index on ``(tenant_id, code) WHERE
+             tenant_id IS NOT NULL`` — it does NOT exempt archived
+             rows, so a soft-deleted code still "occupies" the slot at
+             the DB level even though callers that filter
+             ``deleted_at IS NULL`` (suggestion normalize, this
+             method's own check #2 before this fix) can't see it. Both
+             the pre-check (below) and a defensive ``IntegrityError``
+             catch around the flush (races / anything the pre-check
+             missed) convert the collision into the SAME friendly
+             ``CategoryCodeArchivedError`` — the raw asyncpg constraint
+             text never reaches the client (bkz. routes/
+             tenant_onboarding.py._onboarding_error_to_http).
         """
         normalized = code.strip().lower()
         if not normalized:
@@ -248,16 +277,23 @@ class TenantConfigService:
                 f"code {normalized!r} is a reserved global category"
             )
 
-        own_clash = await self._session.execute(
-            select(Category.id).where(
-                Category.tenant_id == tenant_id,
-                Category.code == normalized,
-                Category.deleted_at.is_(None),
+        own_clash_row = (
+            await self._session.execute(
+                select(Category.deleted_at).where(
+                    Category.tenant_id == tenant_id,
+                    Category.code == normalized,
+                )
             )
-        )
-        if own_clash.scalar_one_or_none() is not None:
-            raise CategoryCodeConflictError(
-                f"code {normalized!r} already exists for this tenant"
+        ).first()
+        if own_clash_row is not None:
+            (own_deleted_at,) = own_clash_row
+            if own_deleted_at is None:
+                raise CategoryCodeConflictError(
+                    f"code {normalized!r} already exists for this tenant"
+                )
+            raise CategoryCodeArchivedError(
+                f"kod {normalized!r} arşivde mevcut; ayarlardan geri "
+                "yükleyin veya farklı kod seçin"
             )
 
         cat = Category(
@@ -268,7 +304,13 @@ class TenantConfigService:
             description=description,
         )
         self._session.add(cat)
-        await self._session.flush()
+        try:
+            await self._session.flush()
+        except IntegrityError as exc:
+            raise CategoryCodeArchivedError(
+                f"kod {normalized!r} arşivde mevcut; ayarlardan geri "
+                "yükleyin veya farklı kod seçin"
+            ) from exc
         # New custom categories are enabled by default.
         self._session.add(
             TenantCategory(tenant_id=tenant_id, category_id=cat.id, is_enabled=True)
@@ -369,3 +411,67 @@ class TenantConfigService:
 
     def _invalidate(self, tenant_id: UUID) -> None:
         self._cache.pop(tenant_id, None)
+
+
+async def create_taxonomy_entry(
+    session: AsyncSession,
+    *,
+    tenant_id: UUID,
+    user_id: UUID | None,
+    code: str,
+    label_tr: str,
+    keywords: list[str] | None = None,
+    priority: int = 100,
+    parent_code: str | None = None,
+    primary_category_code: str | None = None,
+    is_default_seed: bool = False,
+) -> CategoryTaxonomy:
+    """Tek satır ``CategoryTaxonomy`` oluşturma + audit — ortak
+    yardımcı (2026-08-18, WS1). İki tüketicisi var:
+
+      1. ``routes/tenant_taxonomies.py`` POST /tenants/me/taxonomies
+         (mevcut CRUD — bu fonksiyon oradaki satır-içi kod bloğunun
+         çıkarılmış hali, davranış AYNI).
+      2. ``routes/tenant_onboarding.py`` POST .../apply-categories —
+         AI önerisinden seçilen alt-taksonomi satırları.
+
+    Kod tekilliği / ``parent_code`` / ``primary_category_code``
+    doğrulaması bilerek burada YAPILMAZ — iki tüketicinin izin
+    verilen kod kümesi farklı (taxonomies route yalnız
+    ``GLOBAL_CATEGORY_CODES``'a izin verir; onboarding apply globaller
+    + aynı payload'da oluşan tenant customlarına da izin verir).
+    Çağıran kendi kuralına göre önceden doğrulamalı."""
+    row = CategoryTaxonomy(
+        tenant_id=tenant_id,
+        code=code,
+        label_tr=label_tr,
+        keywords=list(keywords or []),
+        priority=priority,
+        parent_code=parent_code,
+        primary_category_code=primary_category_code,
+        is_default_seed=is_default_seed,
+        is_active=True,
+    )
+    session.add(row)
+    await session.flush()
+    session.add(
+        TaxonomyEditAudit(
+            tenant_id=tenant_id,
+            user_id=user_id,
+            taxonomy_id=row.id,
+            action="create",
+            before_state=None,
+            after_state={
+                "id": str(row.id),
+                "code": row.code,
+                "label_tr": row.label_tr,
+                "keywords": list(row.keywords),
+                "priority": row.priority,
+                "parent_code": row.parent_code,
+                "primary_category_code": row.primary_category_code,
+                "is_default_seed": row.is_default_seed,
+                "is_active": row.is_active,
+            },
+        )
+    )
+    return row

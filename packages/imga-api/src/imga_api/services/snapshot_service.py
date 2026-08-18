@@ -182,6 +182,10 @@ class SnapshotService:
             .where(Review.nps_score.is_not(None))
             .where(Review.review_date >= date_from_dt)
             .where(Review.review_date <= date_to_dt)
+            # 2026-08-18 — yönetici metrikleri de temiz veriden
+            # hesaplanmalı; bayraklı (duplicate/empty/informational/
+            # meaningless) satırlar snapshot'a hiç girmez, toggle yok.
+            .where(Review.quality_flag.is_(None))
             .group_by(Review.nps_category)
         )
         per_bucket = {"detractor": 0, "passive": 0, "promoter": 0}
@@ -202,6 +206,8 @@ class SnapshotService:
             .where(Review.deleted_at.is_(None))
             .where(Review.review_date >= date_from_dt)
             .where(Review.review_date <= date_to_dt)
+            # Bkz. bucket_stmt yorumu — review_volume de temiz veriden.
+            .where(Review.quality_flag.is_(None))
         )
         period_count = (
             await self._session.execute(period_total_stmt)
@@ -209,7 +215,10 @@ class SnapshotService:
 
         # All-time count + latest review id (cursor) for the tenant,
         # regardless of date — the cursor is "most recent Review the
-        # tenant has seen", not "most recent in window".
+        # tenant has seen", not "most recent in window". Deliberately
+        # NOT quality_flag-filtered: a newly-flagged (or newly-arrived
+        # flagged) row must still bump the cursor so the cache goes
+        # stale and the next read recomputes the (clean) metrics above.
         total_stmt = (
             select(func.count())
             .select_from(Review)

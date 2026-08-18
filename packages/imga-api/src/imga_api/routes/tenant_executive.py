@@ -233,6 +233,7 @@ async def _sentiment_totals(
                 select(Review.sentiment_label, func.count())
                 .where(Review.tenant_id == tenant_id)
                 .where(Review.deleted_at.is_(None))
+                .where(Review.quality_flag.is_(None))
                 .group_by(Review.sentiment_label)
             )
         )
@@ -279,6 +280,7 @@ async def _sentiment_trend(
             )
             .where(Review.tenant_id == tenant_id)
             .where(Review.deleted_at.is_(None))
+            .where(Review.quality_flag.is_(None))
             .where(Review.review_date >= start)
         )
         if end is not None:
@@ -336,6 +338,7 @@ async def _top_problems(
                 )
                 .where(Review.tenant_id == tenant_id)
                 .where(Review.deleted_at.is_(None))
+                .where(Review.quality_flag.is_(None))
                 .where(Review.sentiment_label == "NEGATIF")
                 .where(Review.primary_category != "belirsiz")
                 .group_by(Review.primary_category, Category.label_tr)
@@ -357,6 +360,7 @@ async def _top_problems(
                     select(Review.text)
                     .where(Review.tenant_id == tenant_id)
                     .where(Review.deleted_at.is_(None))
+                    .where(Review.quality_flag.is_(None))
                     .where(Review.sentiment_label == "NEGATIF")
                     .where(Review.primary_category == code)
                     .where(func.length(Review.text) >= _QUOTE_MIN_CHARS)
@@ -428,6 +432,7 @@ async def _voice_of_customer(
                     )
                     .where(Review.tenant_id == tenant_id)
                     .where(Review.deleted_at.is_(None))
+                    .where(Review.quality_flag.is_(None))
                     .where(Review.sentiment_label == label)
                     # 'belirsiz' alıntı kartında kategori chip'i olarak
                     # görünür — sınıflandırılamayan yorum yönetici

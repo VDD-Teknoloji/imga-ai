@@ -42,7 +42,7 @@ class LlmCallAudit(Base):
         CheckConstraint(
             "call_type IN ('classification', 'briefing', "
             "'strategic_report', 'action_extraction', 'okr', "
-            "'root_cause')",
+            "'root_cause', 'quality_report')",
             name="ck_llm_call_audit_call_type",
         ),
     )

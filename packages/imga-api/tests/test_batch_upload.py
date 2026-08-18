@@ -8,7 +8,9 @@ manually via ``run_worker`` for determinism.
 Covered surfaces:
   * Upload validation: file size, row count, missing column, empty file
   * Worker happy path: every row analyzed, status=completed
-  * Worker row-level resilience: empty text rows fail without aborting
+  * Worker row-level resilience: empty text rows persist as quality-
+    flagged rows without aborting (2026-08-18, migration 0042 WS2 —
+    see the renamed test below for the behaviour-change rationale)
   * auto_create_tickets toggle interactions with tenant automation_mode
   * Cancellation: pre-pickup queued, between chunks
   * RLS: cross-tenant lookup returns 404
@@ -233,12 +235,25 @@ async def test_worker_processes_all_rows_and_marks_completed(
 
 
 @pytest.mark.asyncio
-async def test_worker_skips_empty_text_rows_as_failed(
+async def test_worker_persists_empty_text_rows_as_quality_flagged(
     batch_client: TestClient,
     manual_tenant: tuple[User, UUID, str],
     tmp_path: Path,
     admin_session: AsyncSession,
 ) -> None:
+    """2026-08-18 (migration 0042 WS2) — BEHAVIOUR CHANGE from the
+    original ``test_worker_skips_empty_text_rows_as_failed``: empty
+    rows are no longer dropped into ``failed_rows`` with no DB trace.
+    They now persist as a normal Review row (quality_flag='empty',
+    decision=SKIPPED_QUALITY, sentiment NÖTR/0.0, primary_category
+    'belirsiz'/0.0) and count toward ``succeeded_rows`` /
+    ``quality_empty_rows`` instead — the low-quality-data report needs
+    a durable record of every skipped-content row, not just a
+    fire-and-forget counter. Full field-level coverage (decision_reason,
+    exact sentiment/category values, the empty-text-hash dedup
+    exception) lives in ``tests/test_batch_quality.py``; this test only
+    pins the job-level counters so this file's original "row-level
+    resilience" narrative stays accurate."""
     user, tid, pw = manual_tenant
     token = login_token(batch_client, user.email, pw, tid)
 
@@ -255,10 +270,10 @@ async def test_worker_skips_empty_text_rows_as_failed(
 
     assert job.status == BatchJobStatus.COMPLETED
     assert job.processed_rows == 4
-    assert job.succeeded_rows == 2
-    assert job.failed_rows == 2
-    # error_summary captures the bad row numbers.
-    assert {entry["error"] for entry in job.error_summary} == {"empty text"}
+    assert job.succeeded_rows == 4
+    assert job.failed_rows == 0
+    assert job.quality_empty_rows == 2
+    assert job.error_summary == []
 
 
 # --- auto_create_tickets toggle ------------------------------------------

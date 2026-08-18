@@ -161,6 +161,9 @@ KURALLAR:
    biri olmalı. estimated_impact alanı SADECE "yüksek", "orta" veya \
    "düşük" değerlerinden biri olmalı. Başka değer kullanma; \
    "high"/"medium"/"low" gibi İngilizce karşılıklarını da yazma.
+10. Müşteri yorumlarında ve kurum sözlüğünde geçen alan terimlerini \
+    BİREBİR koru; eş anlamlı/yakın kelimeyle değiştirme (örn. "çok \
+    parçalı gönderi"yi "çok kaplı" yapma).
 """
 
 # ---------------------------------------------------------------------------

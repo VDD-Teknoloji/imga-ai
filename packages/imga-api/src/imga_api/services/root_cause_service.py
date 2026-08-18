@@ -38,10 +38,7 @@ from datetime import UTC, date, datetime
 from typing import Any
 from uuid import UUID
 
-from imga_core.categories.taxonomy import (
-    DEFAULT_GLOBAL_CATEGORIES,
-    GLOBAL_CATEGORY_CODES,
-)
+from imga_core.categories.taxonomy import DEFAULT_GLOBAL_CATEGORIES
 from imga_core.config import LABEL_NEGATIVE
 from imga_core.llm import (
     AllKeysExhaustedError,
@@ -60,6 +57,7 @@ from imga_api.llm.prompts.root_cause_v1 import (
     render_root_cause_user_prompt,
 )
 from imga_api.services.analytics_service import UNMATCHED_PERSPECTIVE_SENTINEL
+from imga_api.services.category_codes import valid_primary_codes
 from imga_api.services.llm_credentials import (
     NoCredentialsError,
     load_active_llm_keys,
@@ -70,7 +68,10 @@ from imga_api.services.llm_provider_factory import (
     build_structured_provider,
     resolve_model_name,
 )
-from imga_api.services.strategic_constants import language_directive
+from imga_api.services.strategic_constants import (
+    language_directive,
+    terminology_directive,
+)
 
 _logger = logging.getLogger(__name__)
 
@@ -189,9 +190,14 @@ class RootCauseService:
         date_to: date | None = None,
         force_refresh: bool = False,
     ) -> dict[str, Any]:
-        if primary_category not in GLOBAL_CATEGORY_CODES:
+        # 2026-08-18 WS2 — global kod uzayi + kurumun aktif custom
+        # kategori kodlari; sabit GLOBAL_CATEGORY_CODES kurumun kendi
+        # actigi custom kategoriyi hep reddediyordu.
+        valid_codes = await valid_primary_codes(self._session, self._tenant_id)
+        if primary_category not in valid_codes:
             raise InvalidCategoryError(
-                f"primary_category {primary_category!r} global kod listesinde yok"
+                f"primary_category {primary_category!r} gecerli kod listesinde "
+                f"yok: {', '.join(sorted(valid_codes))}"
             )
 
         cache_key = self._cache_key(
@@ -247,7 +253,12 @@ class RootCauseService:
             }
         )
         language = await self._tenant_language()
-        system_prompt = ROOT_CAUSE_SYSTEM_PROMPT + language_directive(language)
+        terminology = await self._tenant_terminology()
+        system_prompt = (
+            ROOT_CAUSE_SYSTEM_PROMPT
+            + language_directive(language)
+            + terminology_directive(terminology)
+        )
 
         failed_invalid_key_ids: list[UUID] = []
 
@@ -376,6 +387,7 @@ class RootCauseService:
             stmt = (
                 stmt.where(Review.tenant_id == self._tenant_id)
                 .where(Review.deleted_at.is_(None))
+                .where(Review.quality_flag.is_(None))
                 .where(Review.primary_category == primary_category)
             )
             if perspective_code == UNMATCHED_PERSPECTIVE_SENTINEL:
@@ -462,6 +474,13 @@ class RootCauseService:
             )
         ).scalar_one_or_none()
         return language or "tr"
+
+    async def _tenant_terminology(self) -> list[dict[str, Any]] | None:
+        return (
+            await self._session.execute(
+                select(Tenant.terminology).where(Tenant.id == self._tenant_id)
+            )
+        ).scalar_one_or_none()
 
     def _cache_key(
         self,

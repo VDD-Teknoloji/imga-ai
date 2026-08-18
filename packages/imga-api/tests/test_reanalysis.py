@@ -42,6 +42,7 @@ from imga_db.models import (
     AnalyzeBatchJob,
     ExecutiveSnapshot,
     Review,
+    ReviewCorrection,
     ReviewDecision,
     Tenant,
     User,
@@ -1170,6 +1171,222 @@ async def test_reanalysis_busts_caches_on_permanent_chunk_failure(
         job = await admin_session.get(AnalyzeBatchJob, job_id)
         assert job is not None
         assert job.status == "failed"
+
+
+# ---------------------------------------------------------------------
+# 4b. 2026-08-18 adversarial inceleme FX1 — quality_flag backfill +
+# duzeltme (correction_overrides) parity
+# ---------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_reanalysis_writes_informational_quality_flag(
+    batch_client: TestClient,
+    semi_auto_tenant: tuple[User, UUID, str],
+    admin_session: AsyncSession,
+    mock_gemini_credential: Any,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Yeniden analiz artik quality_flag'i de backfill eder: satirin
+    metni classify_data_quality'nin sablon/otomasyon isaretiyle
+    esletigi (ve sikayet gövdesi tasimadigi) bir metinse, satir
+    baslangicta bayraksiz (None) olsa bile 'informational' yazilir."""
+    user, tid, pw = semi_auto_tenant
+    await mock_gemini_credential(tid, "fake-key-for-unified-path-123")
+    _no_embeddings(monkeypatch)
+
+    review_id = await _seed_review(
+        admin_session,
+        tenant_id=tid,
+        text_value="Değerli müşterimiz, siparişiniz kargoya verildi.",
+        quality_flag=None,
+    )
+
+    from imga_core.pipeline import AnalysisPipeline
+
+    monkeypatch.setattr(
+        AnalysisPipeline, "analyze_batch_unified_async", _fake_unified()
+    )
+
+    token = login_token(batch_client, user.email, pw, tid)
+    r = batch_client.post(
+        "/tenants/me/reviews/reanalyze-all",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert r.status_code == 201, r.text
+    await run_reanalysis_worker(batch_client, UUID(r.json()["job_id"]))
+
+    row = await _fetch_review(admin_session, review_id)
+    assert row.quality_flag == "informational"
+
+
+@pytest.mark.asyncio
+async def test_reanalysis_preserves_duplicate_quality_flag(
+    batch_client: TestClient,
+    semi_auto_tenant: tuple[User, UUID, str],
+    admin_session: AsyncSession,
+    mock_gemini_credential: Any,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """'duplicate' bayragi yalniz yukleme iscisinin dedup karariyla
+    yazilir; yeniden analiz onu HICBIR sekilde ezmez, metin heuristigin
+    normalde None dondurecegi gercek bir yorum olsa bile."""
+    user, tid, pw = semi_auto_tenant
+    await mock_gemini_credential(tid, "fake-key-for-unified-path-123")
+    _no_embeddings(monkeypatch)
+
+    review_id = await _seed_review(
+        admin_session,
+        tenant_id=tid,
+        text_value="Kargom hala gelmedi, cok magdur oldum",
+        quality_flag="duplicate",
+    )
+
+    from imga_core.pipeline import AnalysisPipeline
+
+    monkeypatch.setattr(
+        AnalysisPipeline, "analyze_batch_unified_async", _fake_unified()
+    )
+
+    token = login_token(batch_client, user.email, pw, tid)
+    r = batch_client.post(
+        "/tenants/me/reviews/reanalyze-all",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert r.status_code == 201, r.text
+    await run_reanalysis_worker(batch_client, UUID(r.json()["job_id"]))
+
+    row = await _fetch_review(admin_session, review_id)
+    assert row.quality_flag == "duplicate"
+    # Siniflandirma yine de tazelendi (yeniden analizin asil isi).
+    assert row.sentiment_label == "NEGATIF"
+
+
+@pytest.mark.asyncio
+async def test_reanalysis_excludes_empty_quality_flag_from_candidates(
+    batch_client: TestClient,
+    semi_auto_tenant: tuple[User, UUID, str],
+    admin_session: AsyncSession,
+) -> None:
+    """quality_flag='empty' satirlar aday sorgusuna hic girmez — bos
+    metni LLM'e gondermek israf. total_rows yalniz gercek satiri
+    sayar."""
+    user, tid, pw = semi_auto_tenant
+    empty_id = await _seed_review(
+        admin_session,
+        tenant_id=tid,
+        text_value="",
+        sentiment_label="NÖTR",
+        sentiment_score=0.0,
+        primary_category="belirsiz",
+        decision=ReviewDecision.SKIPPED_QUALITY,
+        quality_flag="empty",
+    )
+    await _seed_review(
+        admin_session, tenant_id=tid, text_value="Gercek bir yorum metni burada"
+    )
+
+    from imga_api.workers.reanalyzer import candidate_stmt, count_candidates
+
+    async with admin_session.begin():
+        await admin_session.execute(
+            text("SELECT set_config('app.current_tenant_id', :t, true)"),
+            {"t": str(tid)},
+        )
+        ids = (
+            (
+                await admin_session.execute(
+                    candidate_stmt(tenant_id=tid, source_batch_job_id=None)
+                )
+            )
+            .scalars()
+            .all()
+        )
+        total = await count_candidates(
+            admin_session, tenant_id=tid, source_batch_job_id=None
+        )
+    assert empty_id not in ids
+    assert total == len(ids) == 1
+
+    token = login_token(batch_client, user.email, pw, tid)
+    r = batch_client.post(
+        "/tenants/me/reviews/reanalyze-all",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert r.status_code == 201, r.text
+    assert r.json()["total_rows"] == 1
+
+
+@pytest.mark.asyncio
+async def test_reanalysis_applies_correction_experience_and_perspective(
+    batch_client: TestClient,
+    semi_auto_tenant: tuple[User, UUID, str],
+    admin_session: AsyncSession,
+    mock_gemini_credential: Any,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """_apply_corrections'in dondurdugu correction_overrides artik
+    TUKETILIYOR: bir satirin metni tenantin duzeltme sozlugundeki
+    (birebir hash) bir kayitla eslesirse, experience_type +
+    company_perspective_code + quality_flag INSAN KARARINDAN yazilir —
+    LLM'in kendi tahmini (fake unified'in donduruguu farkli deger)
+    ONUNE GECMEZ. batch_analyzer._process_chunk ile birebir parite."""
+    user, tid, pw = semi_auto_tenant
+    await mock_gemini_credential(tid, "fake-key-for-unified-path-123")
+    _no_embeddings(monkeypatch)
+
+    review_text = "Tamam"
+    review_id = await _seed_review(
+        admin_session, tenant_id=tid, text_value=review_text
+    )
+
+    async with admin_session.begin():
+        await admin_session.execute(
+            text("SELECT set_config('app.current_tenant_id', :t, true)"),
+            {"t": str(tid)},
+        )
+        admin_session.add(
+            ReviewCorrection(
+                tenant_id=tid,
+                review_id=review_id,
+                text_hash=review_text_hash(review_text),
+                review_text=review_text,
+                old_sentiment_label="NÖTR",
+                new_sentiment_label="POZITIF",
+                old_category="belirsiz",
+                new_category="musteri_hizmetleri",
+                reason=None,
+                embedding=None,
+                new_experience="dijital",
+                new_perspective="insan_karari_kodu",
+            )
+        )
+
+    from imga_core.pipeline import AnalysisPipeline
+
+    # LLM farkli bir deneyim/perspektif dondurur — insan karari bunu
+    # ezmeli.
+    monkeypatch.setattr(
+        AnalysisPipeline,
+        "analyze_batch_unified_async",
+        _fake_unified(experience="operasyonel", perspective="llm_kodu"),
+    )
+
+    token = login_token(batch_client, user.email, pw, tid)
+    r = batch_client.post(
+        "/tenants/me/reviews/reanalyze-all",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert r.status_code == 201, r.text
+    await run_reanalysis_worker(batch_client, UUID(r.json()["job_id"]))
+
+    row = await _fetch_review(admin_session, review_id)
+    assert row.experience_type == "dijital"
+    assert row.company_perspective_code == "insan_karari_kodu"
+    # "Tamam" heuristigin normalde 'meaningless' damgalayacagi tek
+    # tokenlik bir metin — duzeltme eslesmesi bunu None'a sabitler
+    # (insan bu satiri gercek yorum saydi).
+    assert row.quality_flag is None
 
 
 # ---------------------------------------------------------------------

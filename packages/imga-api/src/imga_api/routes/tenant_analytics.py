@@ -17,7 +17,6 @@ from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from imga_core.categories.taxonomy import GLOBAL_CATEGORY_CODES
 from imga_db.models import UserTenantRole
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -28,7 +27,9 @@ from imga_api.services.analytics_service import (
     AnalyticsFilters,
     AnalyticsService,
     Granularity,
+    PeriodStats,
 )
+from imga_api.services.category_codes import valid_primary_codes
 
 router = APIRouter(prefix="/tenants/me/analytics", tags=["Analyze"])
 
@@ -216,6 +217,41 @@ class ExperienceDistributionResponse(BaseModel):
     atanmamis: ExperienceBucketResponse
 
 
+# --- WS4 — dönem karşılaştırma (2026-08-18) ------------------------------
+
+
+class PeriodStatsResponse(BaseModel):
+    date_from: date
+    date_to: date
+    total_reviews: int
+    sentiment_counts: dict[str, int]
+    category_counts: dict[str, int]
+    nps: NPSSummaryResponse
+    experience: ExperienceDistributionResponse
+    avg_sentiment_score: float | None
+
+
+class PeriodComparisonDeltaResponse(BaseModel):
+    """Her alan ``period_b - period_a`` yönündedir. ``*_direction``
+    "up" | "down" | "flat" değeri taşır; ilgili fark None ise (bir
+    pencerede veri yoksa) "flat" döner."""
+
+    total_reviews_diff: int
+    total_reviews_direction: str
+    sentiment_pct_point_diff: dict[str, float]
+    category_pct_point_diff: dict[str, float]
+    nps_score_diff: float | None
+    nps_direction: str
+    avg_sentiment_score_diff: float | None
+    avg_sentiment_direction: str
+
+
+class PeriodComparisonResponse(BaseModel):
+    period_a: PeriodStatsResponse
+    period_b: PeriodStatsResponse
+    delta: PeriodComparisonDeltaResponse
+
+
 # --- helpers ------------------------------------------------------------
 
 
@@ -245,6 +281,7 @@ def _build_filters(
     category_ids: str | None = None,
     source_types: str | None = None,
     batch_job_id: UUID | None = None,
+    include_flagged: bool = False,
 ) -> AnalyticsFilters:
     return AnalyticsFilters(
         date_from=date_from,
@@ -253,7 +290,14 @@ def _build_filters(
         category_ids=_split_uuid_csv(category_ids),
         source_types=_split_csv(source_types),
         batch_job_id=batch_job_id,
+        include_flagged=include_flagged,
     )
+
+
+_INCLUDE_FLAGGED_DESC = (
+    "Düşük kaliteli (bayraklı: duplicate/empty/informational/"
+    "meaningless) yorumları da dahil et. Varsayılan: hariç."
+)
 
 
 # --- endpoints ----------------------------------------------------------
@@ -273,10 +317,12 @@ async def sentiment_distribution(
     category_ids: str | None = None,
     source_types: str | None = None,
     batch_job_id: UUID | None = None,
+    include_flagged: bool = Query(default=False, description=_INCLUDE_FLAGGED_DESC),
 ) -> SentimentDistResponse:
     tenant_id = _require_active_tenant(current)
     filters = _build_filters(
         date_from, date_to, sentiment_labels, category_ids, source_types, batch_job_id,
+        include_flagged=include_flagged,
     )
     async with app_session.begin():
         await bind_tenant(app_session, current)
@@ -311,10 +357,12 @@ async def experience_distribution(
     date_to: datetime | None = None,
     source_types: str | None = None,
     batch_job_id: UUID | None = None,
+    include_flagged: bool = Query(default=False, description=_INCLUDE_FLAGGED_DESC),
 ) -> ExperienceDistributionResponse:
     tenant_id = _require_active_tenant(current)
     filters = _build_filters(
-        date_from, date_to, source_types=source_types, batch_job_id=batch_job_id
+        date_from, date_to, source_types=source_types, batch_job_id=batch_job_id,
+        include_flagged=include_flagged,
     )
     async with app_session.begin():
         await bind_tenant(app_session, current)
@@ -342,11 +390,13 @@ async def category_distribution(
     source_types: str | None = None,
     batch_job_id: UUID | None = None,
     limit: int = Query(default=10, ge=1, le=50),
+    include_flagged: bool = Query(default=False, description=_INCLUDE_FLAGGED_DESC),
 ) -> CategoryDistResponse:
     tenant_id = _require_active_tenant(current)
     filters = _build_filters(
         date_from, date_to, sentiment_labels=sentiment_labels,
         source_types=source_types, batch_job_id=batch_job_id,
+        include_flagged=include_flagged,
     )
     async with app_session.begin():
         await bind_tenant(app_session, current)
@@ -372,10 +422,12 @@ async def sentiment_by_category(
     source_types: str | None = None,
     batch_job_id: UUID | None = None,
     top_n_categories: int = Query(default=10, ge=1, le=20),
+    include_flagged: bool = Query(default=False, description=_INCLUDE_FLAGGED_DESC),
 ) -> SentimentByCategoryResponse:
     tenant_id = _require_active_tenant(current)
     filters = _build_filters(
         date_from, date_to, source_types=source_types, batch_job_id=batch_job_id,
+        include_flagged=include_flagged,
     )
     async with app_session.begin():
         await bind_tenant(app_session, current)
@@ -397,9 +449,12 @@ async def override_stats(
     date_from: datetime | None = None,
     date_to: datetime | None = None,
     source_types: str | None = None,
+    include_flagged: bool = Query(default=False, description=_INCLUDE_FLAGGED_DESC),
 ) -> OverrideStatsResponse:
     tenant_id = _require_active_tenant(current)
-    filters = _build_filters(date_from, date_to, source_types=source_types)
+    filters = _build_filters(
+        date_from, date_to, source_types=source_types, include_flagged=include_flagged,
+    )
     async with app_session.begin():
         await bind_tenant(app_session, current)
         result = await AnalyticsService(app_session).override_stats(
@@ -423,9 +478,12 @@ async def sentiment_timeline(
     date_from: datetime | None = None,
     date_to: datetime | None = None,
     source_types: str | None = None,
+    include_flagged: bool = Query(default=False, description=_INCLUDE_FLAGGED_DESC),
 ) -> TimelineResponse:
     tenant_id = _require_active_tenant(current)
-    filters = _build_filters(date_from, date_to, source_types=source_types)
+    filters = _build_filters(
+        date_from, date_to, source_types=source_types, include_flagged=include_flagged,
+    )
     async with app_session.begin():
         await bind_tenant(app_session, current)
         result = await AnalyticsService(app_session).sentiment_timeline(
@@ -477,9 +535,12 @@ async def sensitivity_distribution(
     date_from: datetime | None = None,
     date_to: datetime | None = None,
     source_types: str | None = None,
+    include_flagged: bool = Query(default=False, description=_INCLUDE_FLAGGED_DESC),
 ) -> SensitivityDistResponse:
     tenant_id = _require_active_tenant(current)
-    filters = _build_filters(date_from, date_to, source_types=source_types)
+    filters = _build_filters(
+        date_from, date_to, source_types=source_types, include_flagged=include_flagged,
+    )
     async with app_session.begin():
         await bind_tenant(app_session, current)
         result = await AnalyticsService(app_session).sensitivity_distribution(
@@ -503,6 +564,7 @@ async def nps_summary(
     date_from: date | None = None,
     date_to: date | None = None,
     batch_job_id: UUID | None = None,
+    include_flagged: bool = Query(default=False, description=_INCLUDE_FLAGGED_DESC),
 ) -> NPSSummaryResponse:
     """Aggregate NPS for the tenant + filter window. Every analytics
     endpoint — NPS included — now keys on Review.review_date (yorumun
@@ -518,6 +580,7 @@ async def nps_summary(
             date_from=date_from,
             date_to=date_to,
             batch_job_id=batch_job_id,
+            include_flagged=include_flagged,
         )
     return NPSSummaryResponse(**asdict(result))
 
@@ -531,6 +594,7 @@ async def nps_monthly_trend(
     current: Annotated[CurrentUser, _AnyMember],
     app_session: Annotated[AsyncSession, Depends(get_app_session)],
     months_back: int = Query(default=12, ge=1, le=24),
+    include_flagged: bool = Query(default=False, description=_INCLUDE_FLAGGED_DESC),
 ) -> list[NPSMonthlyPointResponse]:
     """Trailing months_back calendar months of NPS. Months without any
     NPS-bearing review surface with score=null so a connectNulls=false
@@ -540,6 +604,7 @@ async def nps_monthly_trend(
         await bind_tenant(app_session, current)
         result = await AnalyticsService(app_session).compute_monthly_nps_trend(
             tenant_id=tenant_id, months_back=months_back,
+            include_flagged=include_flagged,
         )
     return [NPSMonthlyPointResponse(**asdict(p)) for p in result]
 
@@ -555,6 +620,7 @@ async def headline_metrics(
     date_from: date | None = None,
     date_to: date | None = None,
     batch_id: UUID | None = None,
+    include_flagged: bool = Query(default=False, description=_INCLUDE_FLAGGED_DESC),
 ) -> HeadlineMetricsResponse:
     """Eight values for the dashboard top row, served from a single
     round-trip. Date filter applies to the review-side metrics only;
@@ -575,6 +641,7 @@ async def headline_metrics(
             date_from=date_from,
             date_to=date_to,
             batch_id=batch_id,
+            include_flagged=include_flagged,
         )
     return HeadlineMetricsResponse(**asdict(result))
 
@@ -593,6 +660,7 @@ async def company_perspective_distribution(
     source_types: str | None = None,
     batch_job_id: UUID | None = None,
     limit: int = Query(default=10, ge=1, le=50),
+    include_flagged: bool = Query(default=False, description=_INCLUDE_FLAGGED_DESC),
 ) -> CompanyPerspectiveDistResponse:
     """Top-N matched company-perspective codes for the tenant, joined
     to the taxonomy for label_tr. ``unmatched_count`` is the share of
@@ -602,6 +670,7 @@ async def company_perspective_distribution(
     filters = _build_filters(
         date_from, date_to, sentiment_labels=sentiment_labels,
         source_types=source_types, batch_job_id=batch_job_id,
+        include_flagged=include_flagged,
     )
     async with app_session.begin():
         await bind_tenant(app_session, current)
@@ -634,6 +703,7 @@ async def category_drilldown(
     source_types: str | None = None,
     batch_job_id: UUID | None = None,
     limit: int = Query(default=25, ge=1, le=50),
+    include_flagged: bool = Query(default=False, description=_INCLUDE_FLAGGED_DESC),
 ) -> CategoryDrilldownResponse:
     """Hiyerarsik drill-down'in ikinci seviyesi: secili ana kategori
     altindaki alt kategoriler, her biri icin toplam + olumsuz sayisi.
@@ -647,21 +717,26 @@ async def category_drilldown(
 
     NULL perspektifli yorumlar ``__unmatched__`` kovasinda doner.
     """
-    if primary_category not in GLOBAL_CATEGORY_CODES:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=(
-                "primary_category gecersiz; gecerli kodlar: "
-                + ", ".join(sorted(GLOBAL_CATEGORY_CODES))
-            ),
-        )
     tenant_id = _require_active_tenant(current)
     filters = _build_filters(
         date_from, date_to, sentiment_labels=sentiment_labels,
         source_types=source_types, batch_job_id=batch_job_id,
+        include_flagged=include_flagged,
     )
     async with app_session.begin():
         await bind_tenant(app_session, current)
+        # 2026-08-18 WS2 — global kod uzayi + kurumun aktif custom
+        # kategori kodlari; sabit GLOBAL_CATEGORY_CODES kurumun kendi
+        # actigi custom kategoriyi hep reddediyordu.
+        valid_codes = await valid_primary_codes(app_session, tenant_id)
+        if primary_category not in valid_codes:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=(
+                    "primary_category gecersiz; gecerli kodlar: "
+                    + ", ".join(sorted(valid_codes))
+                ),
+            )
         result = await AnalyticsService(app_session).compute_category_drilldown(
             tenant_id=tenant_id,
             primary_category=primary_category,
@@ -673,5 +748,75 @@ async def category_drilldown(
         total=result.total,
         negative_total=result.negative_total,
         data=[CategoryDrilldownRowResponse(**asdict(r)) for r in result.data],
+    )
+
+
+@router.get(
+    "/period-comparison",
+    response_model=PeriodComparisonResponse,
+    summary="İki bağımsız tarih penceresini karşılaştır.",
+    description=(
+        "İki pencere ([a_from,a_to] ve [b_from,b_to]) için toplam, "
+        "duygu/kategori dağılımı, NPS özeti, deneyim dağılımı ve "
+        "ortalama skor hesaplanır; ``delta`` alanı period_b - period_a "
+        "farkını + yönünü (up/down/flat) taşır. Pencereler kullanıcı "
+        "seçimidir; çakışma/bitişiklik kontrolü yapılmaz."
+    ),
+)
+async def period_comparison(
+    current: Annotated[CurrentUser, _AnyMember],
+    app_session: Annotated[AsyncSession, Depends(get_app_session)],
+    a_from: Annotated[
+        date, Query(description="A penceresi başlangıcı (YYYY-MM-DD).")
+    ],
+    a_to: Annotated[date, Query(description="A penceresi bitişi (YYYY-MM-DD).")],
+    b_from: Annotated[
+        date, Query(description="B penceresi başlangıcı (YYYY-MM-DD).")
+    ],
+    b_to: Annotated[date, Query(description="B penceresi bitişi (YYYY-MM-DD).")],
+    include_flagged: bool = Query(default=False, description=_INCLUDE_FLAGGED_DESC),
+) -> PeriodComparisonResponse:
+    if a_to < a_from:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="a_to, a_from'dan önce olamaz.",
+        )
+    if b_to < b_from:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="b_to, b_from'dan önce olamaz.",
+        )
+    tenant_id = _require_active_tenant(current)
+    async with app_session.begin():
+        await bind_tenant(app_session, current)
+        result = await AnalyticsService(app_session).period_comparison(
+            tenant_id=tenant_id,
+            a_from=a_from,
+            a_to=a_to,
+            b_from=b_from,
+            b_to=b_to,
+            include_flagged=include_flagged,
+        )
+    return PeriodComparisonResponse(
+        period_a=_period_stats_response(result.period_a),
+        period_b=_period_stats_response(result.period_b),
+        delta=PeriodComparisonDeltaResponse(**asdict(result.delta)),
+    )
+
+
+def _period_stats_response(stats: PeriodStats) -> PeriodStatsResponse:
+    return PeriodStatsResponse(
+        date_from=stats.date_from,
+        date_to=stats.date_to,
+        total_reviews=stats.total_reviews,
+        sentiment_counts=stats.sentiment_counts,
+        category_counts=stats.category_counts,
+        nps=NPSSummaryResponse(**asdict(stats.nps)),
+        experience=ExperienceDistributionResponse(
+            dijital=ExperienceBucketResponse(**asdict(stats.experience.dijital)),
+            operasyonel=ExperienceBucketResponse(**asdict(stats.experience.operasyonel)),
+            atanmamis=ExperienceBucketResponse(**asdict(stats.experience.atanmamis)),
+        ),
+        avg_sentiment_score=stats.avg_sentiment_score,
     )
 

@@ -56,7 +56,7 @@ from imga_core.llm import (
     InvalidKeyError,
     LLMError,
 )
-from imga_db.models import StrategicReport
+from imga_db.models import StrategicReport, Tenant
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from imga_api.cache.redis_client import get_redis_client
@@ -83,6 +83,7 @@ from imga_api.services.strategic_constants import (
     company_size_label,
     industry_label,
     language_directive,
+    terminology_directive,
 )
 from imga_api.services.strategic_payload import normalize_swot_payload
 
@@ -194,7 +195,16 @@ class SwotService:
         user_prompt = selection.user_prompt
         # Sprint 12 i18n — kurum dili 'en' ise İngilizce çıktı yönergesini ekle
         # (DB-override promptlar dahil, dil-üstü katman).
-        system_prompt = selection.system_prompt + language_directive(stats.language)
+        # 2026-08-18 (WS1) — terim sözlüğü yönergesi aynı şekilde sona
+        # eklenir. ``stats`` (StatsAggregator) sözlüğü taşımıyor;
+        # ayrı hafif sorgu (Tenant.terminology) — okr_service'teki
+        # dil sorgusuyla aynı desen.
+        _tenant = await self._session.get(Tenant, self._tenant_id)
+        system_prompt = (
+            selection.system_prompt
+            + language_directive(stats.language)
+            + terminology_directive(getattr(_tenant, "terminology", None))
+        )
 
         # 6. LLM call with rotation. ``failed_key_ids`` accumulates the
         # ids of any InvalidKey-flagged keys; we mark them

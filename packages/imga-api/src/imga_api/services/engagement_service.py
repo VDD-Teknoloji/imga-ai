@@ -257,6 +257,7 @@ class EngagementService:
             select(bucket.label("bucket"), func.count().label("total"))
             .where(Review.tenant_id == tenant_id)
             .where(Review.deleted_at.is_(None))
+            .where(Review.quality_flag.is_(None))
             .where(Review.review_date >= month_from)
             .where(Review.review_date < upper)
             .group_by(bucket)

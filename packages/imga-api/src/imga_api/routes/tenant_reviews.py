@@ -14,8 +14,9 @@ from typing import Annotated, Literal
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from imga_core.llm.key_rotation import GeminiKey
 from imga_db.models import Review, UserTenantRole
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -31,7 +32,6 @@ from imga_api.services import (
     ReviewService,
 )
 from imga_api.services.correction_service import (
-    SCORE_FOR_LABEL,
     CorrectionError,
     CorrectionService,
 )
@@ -229,6 +229,23 @@ async def list_reviews(
         description="Sprint 9.5 B1 — EXTRACT(MONTH FROM created_at) match.",
     ),
     search: str | None = Query(default=None, max_length=200),
+    quality_flags: str | None = Query(
+        default=None,
+        description=(
+            "CSV: duplicate,empty,informational,meaningless. Verilirse "
+            "yalnız bu bayraklara sahip satırlar döner (ör. 'sadece "
+            "bilgilendirmeleri göster')."
+        ),
+    ),
+    include_flagged: bool = Query(
+        default=True,
+        description=(
+            "Düşük kaliteli (bayraklı) yorumları listeye dahil et. "
+            "Liste bir arşivdir; varsayılan HEPSİ (analitik "
+            "varsayılanından farklı). quality_flags verilmişse bu "
+            "alan devre dışı kalır."
+        ),
+    ),
     limit: int = Query(default=100, ge=1, le=500),
     offset: int = Query(default=0, ge=0),
     order_by: Literal["created_at", "sentiment_score"] = "created_at",
@@ -250,6 +267,8 @@ async def list_reviews(
         week_of_year=week_of_year,
         month=month,
         search=search,
+        quality_flags=_split_csv(quality_flags),
+        include_flagged=include_flagged,
         order_by=order_by,
         order=order,
     )
@@ -394,10 +413,19 @@ async def manually_create_ticket(
 
 
 class CorrectReviewRequest(BaseModel):
-    """En az bir alan zorunlu; verilmeyen alan mevcut kararda kalır."""
+    """En az bir alan zorunlu; verilmeyen alan mevcut kararda kalır.
+
+    2026-08-18 (migration 0042) — sentiment_score/experience_type/
+    perspective_code duygu ve kategoriden BAĞIMSIZ düzeltilebilir
+    (yalnız skor ya da yalnız perspektif düzeltmesi de geçerli)."""
 
     sentiment_label: Literal["POZITIF", "NEGATIF", "NÖTR"] | None = None
     primary_category: str | None = None
+    sentiment_score: float | None = Field(default=None, ge=-1.0, le=1.0)
+    experience_type: Literal["dijital", "operasyonel"] | None = None
+    # tenant'ın aktif CategoryTaxonomy kodlarından biri olmalı;
+    # servis katmanı doğrular (bilinmeyen kod -> 400).
+    perspective_code: str | None = None
     reason: str | None = None
 
 
@@ -406,6 +434,8 @@ class CorrectReviewResponse(BaseModel):
     sentiment_label: str
     sentiment_score: float
     primary_category: str
+    experience_type: str | None
+    perspective_code: str | None
     correction_id: UUID
     # Frontend "düzeltme kaydedildi + benzer yorumlara genellenecek"
     # mesajını embedding başarısına göre tonlayabilir.
@@ -443,7 +473,7 @@ async def correct_review(
     # tenant key'leri kısa bir ön-transaction'da okunur.
     embedding: list[float] | None = None
     text_value: str | None = None
-    keys: list = []
+    keys: list[GeminiKey] = []
     async with app_session.begin():
         await bind_tenant(app_session, current)
         text_value = (
@@ -459,18 +489,24 @@ async def correct_review(
                 keys = await load_active_gemini_keys(app_session, tenant_id)
             except Exception:
                 keys = []
-    if text_value is not None and keys:
+    # 2026-08-18 — embed_text artık boş `keys` + IMGA_EMBEDDING_
+    # FALLBACK_KEY varsa platform anahtarına düşer (embedding_service.
+    # py); `and keys` kapısı bu yolu bloklardı, kaldırıldı.
+    if text_value is not None:
         embedding = await embed_text(text_value, keys)
 
     async with app_session.begin():
         await bind_tenant(app_session, current)
         service = CorrectionService(app_session)
         try:
-            correction = await service.correct_review(
+            correction, effective_score = await service.correct_review(
                 tenant_id=tenant_id,
                 review_id=review_id,
                 new_sentiment_label=body.sentiment_label,
                 new_category=(body.primary_category or "").strip() or None,
+                new_score=body.sentiment_score,
+                new_experience=body.experience_type,
+                new_perspective=(body.perspective_code or "").strip() or None,
                 reason=body.reason,
                 corrected_by_user_id=current.user_id,
                 embedding=embedding,
@@ -483,11 +519,19 @@ async def correct_review(
                 else status.HTTP_400_BAD_REQUEST
             )
             raise HTTPException(status_code=code, detail=detail) from exc
+        # 2026-08-18 (bulgu düzeltmesi) — ``correction.new_score`` ham
+        # alan (yalnız skor GÖNDERİLDİYSE dolu); yalnız kategori/deneyim/
+        # perspektif düzeltmesinde skor KORUNUR (SCORE_FOR_LABEL'e
+        # sıfırlanmaz) — SCORE_FOR_LABEL fallback'i burada tekrarlarsak
+        # yanıt DB'deki gerçek review.sentiment_score'dan sapar; servis
+        # bu yüzden gerçekten yazılan skoru da döner.
         return CorrectReviewResponse(
             review_id=review_id,
             sentiment_label=correction.new_sentiment_label,
-            sentiment_score=SCORE_FOR_LABEL[correction.new_sentiment_label],
+            sentiment_score=effective_score,
             primary_category=correction.new_category,
+            experience_type=correction.new_experience,
+            perspective_code=correction.new_perspective,
             correction_id=correction.id,
             embedding_stored=embedding is not None,
         )

@@ -53,6 +53,7 @@ from imga_api.services.strategic_constants import (
     company_size_label,
     industry_label,
     language_directive,
+    terminology_directive,
 )
 
 _logger = logging.getLogger(__name__)
@@ -254,8 +255,11 @@ class ExecutiveBriefingService:
         )
         user_prompt = selection.user_prompt
         # Sprint 12 i18n — kurum dili 'en' ise İngilizce çıktı yönergesi.
-        system_prompt = selection.system_prompt + language_directive(
-            getattr(tenant, "language", "tr")
+        # 2026-08-18 (WS1) — terim sözlüğü yönergesi aynı sona eklenir.
+        system_prompt = (
+            selection.system_prompt
+            + language_directive(getattr(tenant, "language", "tr"))
+            + terminology_directive(getattr(tenant, "terminology", None))
         )
         failed_invalid_key_ids: list[UUID] = []
 
@@ -440,6 +444,9 @@ class ExecutiveBriefingService:
             # "hic yorum yok" uretiyordu.
             Review.review_date >= day_floor(date_from),
             Review.review_date <= day_ceil(date_to),
+            # 2026-08-18 — brifing metrikleri de temiz veriden; toggle
+            # yok (yönetici özeti her zaman bayraklı satırları dışlar).
+            Review.quality_flag.is_(None),
         )
         if batch_id is not None:
             stmt = stmt.where(Review.batch_job_id == batch_id)
@@ -456,6 +463,9 @@ class ExecutiveBriefingService:
                 Review.deleted_at.is_(None),
                 Review.review_date >= day_floor(date_from),
                 Review.review_date <= day_ceil(date_to),
+                # Bkz. yukarıdaki agg stmt yorumu — top-categories de
+                # temiz veriden.
+                Review.quality_flag.is_(None),
             )
             .group_by(Review.primary_category)
             .order_by(func.count().desc())

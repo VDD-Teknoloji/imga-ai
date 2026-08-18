@@ -64,6 +64,10 @@ _DIMENSION_KEYS: tuple[str, ...] = (
     "product_line",
     "channel",
     "customer_tier",
+    # 2026-08-18 (migration 0042) — 5. boyut: yorumu kuruma giren
+    # çalışanın adı. Diğer dördüyle aynı csv_column_mapping mekanizması
+    # üzerinden akar (tenant_business_dimensions.dimension='entered_by').
+    "entered_by",
 )
 
 
@@ -89,6 +93,10 @@ class ParsedRow:
     column. None when the upload has no date column or the cell didn't
     parse — the row is still analysed; the insert site falls back to the
     ingest moment.
+
+    ``entered_by`` (migration 0042) is the 5th business dimension —
+    the employee who logged the review, resolved the same way as the
+    other four via the tenant's ``csv_column_mapping``.
     """
 
     row_number: int
@@ -99,6 +107,7 @@ class ParsedRow:
     product_line: str | None = None
     channel: str | None = None
     customer_tier: str | None = None
+    entered_by: str | None = None
     review_date: datetime | None = None
 
 
@@ -300,6 +309,7 @@ def _iter_csv(
                 product_line=dims["product_line"],
                 channel=dims["channel"],
                 customer_tier=dims["customer_tier"],
+                entered_by=dims["entered_by"],
                 review_date=review_date,
             )
 
@@ -370,6 +380,7 @@ def _iter_xlsx(
                 product_line=dims["product_line"],
                 channel=dims["channel"],
                 customer_tier=dims["customer_tier"],
+                entered_by=dims["entered_by"],
                 review_date=review_date,
             )
     finally:

@@ -72,6 +72,11 @@ class ReportFiltersRequest(BaseModel):
     sentiment_labels: list[str] = Field(default_factory=list)
     ticket_states: list[str] = Field(default_factory=list)
     batch_job_id: UUID | None = None
+    # 2026-08-18 — WS2 veri kalitesi. ReportFilters zaten taşıyordu; bu
+    # alan eksikti ve istek gövdesinden worker'a giden zincir kopuktu
+    # (sessizce her zaman False'a düşüyordu). Varsayılan analytics_service
+    # ile aynı: temiz veri.
+    include_flagged: bool = False
 
 
 class GenerateRequest(BaseModel):
@@ -163,6 +168,7 @@ def _filters_from_request(req: ReportFiltersRequest) -> ReportFilters:
         sentiment_labels=tuple(req.sentiment_labels),
         ticket_states=tuple(req.ticket_states),
         batch_job_id=req.batch_job_id,
+        include_flagged=req.include_flagged,
     )
 
 

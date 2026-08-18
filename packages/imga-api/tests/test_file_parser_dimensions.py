@@ -11,6 +11,12 @@ These tests pin the per-row extraction behaviour: present-in-
 header keys map, missing-from-header keys silently None (we do
 not fail the upload — tenants legitimately mid-migrate dimension
 configs), empty cells become None.
+
+2026-08-18 (migration 0042) — ``entered_by`` joined as the 5th
+dimension key (the employee who logged the review); it flows
+through the exact same generic ``_DIMENSION_KEYS`` / mapping
+mechanism as the original four, so it's covered here rather than
+in a separate module.
 """
 
 from __future__ import annotations
@@ -124,14 +130,39 @@ def test_parser_empty_dimension_cell_becomes_none(
     assert rows[2].customer_tier is None
 
 
+def test_parser_emits_entered_by_when_mapping_matches_header(
+    tmp_path: Path,
+) -> None:
+    """2026-08-18 (migration 0042) — 5th dimension: entered_by."""
+    csv_path = _write_csv(
+        tmp_path,
+        name="upload.csv",
+        rows=[
+            ["text", "calisan"],
+            ["kargo geç geldi", "Ahmet Yılmaz"],
+            ["paket harika", ""],
+        ],
+    )
+    rows = list(
+        iter_rows(
+            csv_path,
+            text_column="text",
+            dimension_mapping={"entered_by": "calisan"},
+        )
+    )
+    assert rows[0].entered_by == "Ahmet Yılmaz"
+    assert rows[1].entered_by is None  # empty cell → None, same as the others
+
+
 def test_parser_unknown_dimension_key_silently_dropped(
     tmp_path: Path,
 ) -> None:
     """A mapping entry pointing at a dimension key that isn't one of
-    the four canonical keys (business_segment / product_line /
-    channel / customer_tier) is dropped — the CHECK constraint on
-    ``tenant_business_dimensions.dimension`` already rejects unknown
-    keys at insert, but the parser should not blow up on them either."""
+    the five canonical keys (business_segment / product_line /
+    channel / customer_tier / entered_by) is dropped — the CHECK
+    constraint on ``tenant_business_dimensions.dimension`` already
+    rejects unknown keys at insert, but the parser should not blow up
+    on them either."""
     csv_path = _write_csv(
         tmp_path,
         name="upload.csv",
@@ -173,6 +204,7 @@ def test_parser_no_mapping_keeps_dimensions_none(
     assert rows[0].product_line is None
     assert rows[0].channel is None
     assert rows[0].customer_tier is None
+    assert rows[0].entered_by is None
 
 
 def test_parser_text_column_missing_still_raises(

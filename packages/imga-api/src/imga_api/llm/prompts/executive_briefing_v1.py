@@ -85,6 +85,9 @@ KURALLAR:
 4. kpi_changes 'direction' alanı SADECE 'up', 'down' veya 'flat' \
    değerlerinden biri olmalı. Başka değer yazma.
 5. JSON formatında, response_schema'ya tam uyumlu yanıt ver.
+6. Müşteri yorumlarında ve kurum sözlüğünde geçen alan terimlerini \
+   BİREBİR koru; eş anlamlı/yakın kelimeyle değiştirme (örn. "çok \
+   parçalı gönderi"yi "çok kaplı" yapma).
 """
 
 

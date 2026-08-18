@@ -301,6 +301,15 @@ async def get_heatmap(
     date_to: date | None = None,
     taxonomy_top_n: Annotated[int, Query(ge=1, le=50)] = 12,
     batch_id: UUID | None = None,
+    include_flagged: Annotated[
+        bool,
+        Query(
+            description=(
+                "Düşük kaliteli (bayraklı) yorumları da dahil et. "
+                "Varsayılan: hariç."
+            )
+        ),
+    ] = False,
 ) -> HeatmapResponse:
     if x_axis not in ALLOWED_X_AXES:
         raise HTTPException(
@@ -335,6 +344,7 @@ async def get_heatmap(
                 date_to=date_to,
                 taxonomy_top_n=taxonomy_top_n,
                 batch_id=batch_id,
+                include_flagged=include_flagged,
             )
         return HeatmapResponse(**_strip_for_response(payload))
     except HTTPException:

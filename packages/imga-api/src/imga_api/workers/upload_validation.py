@@ -15,8 +15,14 @@ Kapsam (worker semantiğiyle birebir):
   * error (engelleyici):  zorunlu 'yorum' kolonu yok / dosya boş /
                           satır limiti aşıldı.
   * warning (bilgi):      boş 'yorum' hücresi (atlanacak satır) /
-                          dosya içi kopya (atlanacak satır).
+                          dosya içi kopya (atlanacak satır) /
+                          şablon-görünümlü / anlamsız içerik (2026-08-18,
+                          migration 0042 WS2 — satır YİNE analiz edilir,
+                          yalnız kullanıcı önceden uyarılır).
   * valid_rows:           analiz edilecek satır = toplam − boş − kopya.
+                          informational/meaningless satırlar dahildir —
+                          onlar da worker'da analiz edilip quality_flag'li
+                          birer Review olarak yazılır, atlanmazlar.
 """
 
 from __future__ import annotations
@@ -27,6 +33,7 @@ from pathlib import Path
 
 from imga_core.text_utils import normalize_turkish, review_text_hash
 
+from imga_api.services.data_quality import classify_data_quality
 from imga_api.workers.file_parser import (
     FileParseError,
     UnknownColumnError,
@@ -233,6 +240,8 @@ def validate_upload(
     scan_column = _effective_text_column(header, text_column, required_columns)
     empty_rows: list[int] = []
     duplicate_rows: list[int] = []
+    informational_rows: list[int] = []
+    meaningless_rows: list[int] = []
     seen_hashes: set[str] = set()
     valid_rows = 0
 
@@ -248,6 +257,18 @@ def validate_upload(
                 continue
             seen_hashes.add(digest)
             valid_rows += 1
+            # 2026-08-18 (migration 0042) WS2 — aynı deterministik
+            # heuristik worker'ın yazım yolunda kullandığıyla birebir
+            # aynı modül (imga_api.services.data_quality). Satır YİNE
+            # analiz edilecek (valid_rows'tan düşülmez) — yalnız
+            # önceden uyarı olarak gösterilir. Kopya olarak zaten
+            # işaretlenmiş satırlara bakılmaz (worker'daki öncelik:
+            # dedup > içerik kalitesi).
+            quality = classify_data_quality(text)
+            if quality == "informational":
+                informational_rows.append(parsed.row_number)
+            elif quality == "meaningless":
+                meaningless_rows.append(parsed.row_number)
     except UnknownColumnError as exc:
         # Şablon uyumlu ama seçilen text_column header'da yoksa.
         return UploadValidationReport(
@@ -297,8 +318,43 @@ def validate_upload(
         column=None,
         hint="Aynı yorumu birden çok kez yüklediyseniz tekrarları silebilirsiniz.",
     )
+    _append_row_warnings(
+        issues,
+        rows=informational_rows,
+        code="informational",
+        singular="satır şablon/otomasyon bildirimi gibi görünüyor "
+        "(bilgilendirme, kargo takip vb.) — yine de analiz edilecek",
+        plural="satır şablon/otomasyon bildirimi gibi görünüyor "
+        "(bilgilendirme, kargo takip vb.) — yine de analiz edilecekler",
+        column="yorum",
+        hint=(
+            "Gerçek müşteri yorumu değilse dosyadan çıkarabilirsiniz; "
+            "çıkarmazsanız satır normal şekilde analiz edilir ve "
+            "raporlarda düşük kaliteli veri olarak işaretlenir."
+        ),
+    )
+    _append_row_warnings(
+        issues,
+        rows=meaningless_rows,
+        code="meaningless",
+        singular="satırın içeriği çok kısa/anlamsız görünüyor "
+        "(tek kelime, yalnız rakam vb.) — yine de analiz edilecek",
+        plural="satırın içeriği çok kısa/anlamsız görünüyor "
+        "(tek kelime, yalnız rakam vb.) — yine de analiz edilecekler",
+        column="yorum",
+        hint=(
+            "Gerçek bir yorum değilse dosyadan çıkarabilirsiniz; "
+            "çıkarmazsanız satır normal şekilde analiz edilir ve "
+            "raporlarda düşük kaliteli veri olarak işaretlenir."
+        ),
+    )
 
-    warning_count = len(empty_rows) + len(duplicate_rows)
+    warning_count = (
+        len(empty_rows)
+        + len(duplicate_rows)
+        + len(informational_rows)
+        + len(meaningless_rows)
+    )
     return UploadValidationReport(
         ok=True,
         total_rows=total_rows,

@@ -12,7 +12,7 @@ prompt renderer prefers it over the generic "Diğer" rendering.
 
 from __future__ import annotations
 
-from typing import Final
+from typing import Any, Final
 
 INDUSTRY_LABELS: Final[dict[str, str]] = {
     "e_commerce": "E-ticaret",
@@ -79,3 +79,40 @@ def language_directive(language: str | None) -> str:
             "regardless of the language of the input data or these instructions."
         )
     return ""
+
+
+def terminology_directive(terminology: list[dict[str, Any]] | None) -> str:
+    """Kurum terim sözlüğü yönergesi — system prompt'un SONUNA eklenir
+    (2026-08-18, migration 0042 ``tenants.terminology``).
+
+    ``language_directive`` deseniyle birebir aynı: dil-üstü bir katman,
+    prompt içeriğini yeniden yazmadan sona eklenir (DB-override
+    promptlar dahil). Sözlük boş/None ise boş döner — mevcut kurumlar
+    (henüz sözlük doldurmamış) davranışı hiç değişmez.
+
+    ``terminology`` şekli: ``[{"term": str, "note": str}, ...]``
+    (``TenantCreateRequest.terminology`` ile aynı — bkz.
+    routes/admin/tenants.py). Boş ``term`` girdileri atlanır; ``note``
+    opsiyonel.
+
+    JSONB kolonu şemasız — bu fonksiyon dört stratejik servisin
+    (SWOT/OKR/brifing/root-cause) ortak yolunda çalışır, o yüzden
+    beklenmeyen bir eleman şekli (dict olmayan girdi) burada 500'e
+    değil sessiz atlamaya düşmeli."""
+    if not terminology:
+        return ""
+    lines: list[str] = []
+    for entry in terminology:
+        if not isinstance(entry, dict):
+            continue
+        term = str(entry.get("term") or "").strip()
+        if not term:
+            continue
+        note = str(entry.get("note") or "").strip()
+        lines.append(f"- {term} — {note}" if note else f"- {term}")
+    if not lines:
+        return ""
+    return (
+        "\n\nTERİM SÖZLÜĞÜ (bu terimleri AYNEN kullan, eş anlamlısıyla "
+        "değiştirme):\n" + "\n".join(lines)
+    )

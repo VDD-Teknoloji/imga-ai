@@ -55,6 +55,15 @@ class ReviewListFilters:
     week_of_year: int | None = None  # 1..53
     month: int | None = None  # 1..12
     search: str | None = None  # ILIKE %term% over text
+    # 2026-08-18 — WS2 veri kalitesi. CSV of quality_flag values
+    # (duplicate/empty/informational/meaningless); non-empty means
+    # "only these flags" — e.g. the list page's "sadece bilgilendirme
+    # göster" view. Empty tuple disables this positive filter.
+    quality_flags: tuple[str, ...] = ()
+    # Liste bir arşiv: analitiğin aksine varsayılan HEPSİNİ gösterir
+    # (bayraklı satırlar dahil). ``quality_flags`` doluysa bu alan
+    # devre dışı kalır — kullanıcı zaten belirli bayrakları istemiştir.
+    include_flagged: bool = True
     order_by: OrderField = "created_at"
     order: OrderDir = "desc"
 
@@ -184,6 +193,10 @@ class ReviewListService:
                 func.extract("month", Review.review_date)
                 == filters.month
             )
+        if filters.quality_flags:
+            conditions.append(Review.quality_flag.in_(filters.quality_flags))
+        elif not filters.include_flagged:
+            conditions.append(Review.quality_flag.is_(None))
 
         where_clause = and_(*conditions)
 

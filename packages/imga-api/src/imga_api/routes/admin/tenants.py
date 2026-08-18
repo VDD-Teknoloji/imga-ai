@@ -69,6 +69,22 @@ class TenantCreateRequest(BaseModel):
     # Kurum arayüz + AI çıktı dili — oluştururken seçilir (Sprint 12 i18n).
     language: Literal["tr", "en"] = "tr"
     initial_admin: InitialAdminInput | None = None
+    # 2026-08-18 (WS1 onboarding, migration 0042) — opsiyonel: create
+    # anında doldurulursa SWOT/OKR/brifing prompt bağlamı + AI kategori
+    # önerisi (suggest-categories) daha isabetli başlar. Boş bırakılırsa
+    # kurum eski davranışla (profil boş) oluşur, /settings/profile'dan
+    # sonradan doldurulabilir (terminology hariç — bkz.
+    # docs/analysis/2026-08-18-rag-mimari.md dışı, TenantService.create
+    # docstring'i).
+    industry: str | None = Field(default=None, max_length=64)
+    industry_other_text: str | None = Field(default=None, max_length=128)
+    company_size: str | None = Field(default=None, max_length=32)
+    business_description: str | None = Field(default=None, max_length=500)
+    # list[{"term": str, "note": str}] — terminology_directive'in ham
+    # girdisi (strategic_constants.py). Şekil doğrulaması orada best-
+    # effort yapılır (boş/eksik term'ler sessizce atlanır); burada
+    # yalnız üst sınır (liste boyutu) kontrol edilir.
+    terminology: list[dict[str, str]] | None = Field(default=None, max_length=200)
 
 
 class TenantUpdateRequest(BaseModel):
@@ -150,6 +166,11 @@ async def create_tenant(
             plan_tier=body.plan_tier,
             automation_mode=body.automation_mode,
             language=body.language,
+            industry=body.industry,
+            industry_other_text=body.industry_other_text,
+            company_size=body.company_size,
+            business_description=body.business_description,
+            terminology=body.terminology,
             actor_user_id=current.user_id,
         )
     except TenantSlugTakenError as exc:

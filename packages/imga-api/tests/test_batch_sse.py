@@ -39,6 +39,13 @@ def _fake_job(**overrides: object) -> object:
         duplicates_skipped=0,
         last_checkpoint_row=1024,
         started_at=datetime.now(UTC) - timedelta(seconds=60),
+        # 2026-08-18 (migration 0042) WS2 — real AnalyzeBatchJob rows
+        # always carry these (NOT NULL, server_default 0); the fake
+        # needs them too since _progress_snapshot reads them directly.
+        quality_duplicate_rows=0,
+        quality_empty_rows=0,
+        quality_informational_rows=0,
+        quality_meaningless_rows=0,
     )
     base.update(overrides)
     return SimpleNamespace(**base)
@@ -61,6 +68,10 @@ def test_progress_snapshot_emits_expected_keys() -> None:
         "duplicates_skipped",
         "eta_seconds",
         "last_checkpoint_row",
+        "quality_duplicate_rows",
+        "quality_empty_rows",
+        "quality_informational_rows",
+        "quality_meaningless_rows",
     }
     assert set(snap.keys()) == expected
 

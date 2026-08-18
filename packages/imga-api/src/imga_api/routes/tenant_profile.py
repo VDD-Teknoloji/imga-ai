@@ -16,16 +16,32 @@ nullable columns to ``tenants``:
 
 The frontend's /settings/profile page (Sprint 8.3.6.6) reads + writes
 through these two routes.
+
+2026-08-18 (WS1/WS3, migration 0042) — ``tenants.terminology``
+(``list[{"term": str, "note": str}]``) joined the profile surface.
+Onboarding's tenant-create path (``routes/admin/tenants.py`` ->
+``TenantService.create``) is the only WRITE path before this change;
+this PATCH is the post-onboarding edit surface. Semantics: full-
+replace (the whole list overwrites, no per-entry merge — falls out of
+the existing ``exclude_unset`` + ``setattr`` PATCH loop for free,
+same as every other field here). Validation is stricter than the
+admin create path's best-effort shape check (``strategic_constants.
+terminology_directive`` tolerates malformed entries so four
+downstream LLM prompts never 500 on legacy data): here ``term`` is
+required/non-blank and the list is capped at 50 entries — an
+editing surface a human fills in one field at a time can afford (and
+should have) tighter input validation than a bulk admin-create
+payload.
 """
 
 from __future__ import annotations
 
-from typing import Annotated
+from typing import Annotated, Any
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from imga_db.models import Tenant, UserTenantRole
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from imga_api.auth_deps import CurrentUser, bind_tenant, require_role
@@ -67,21 +83,63 @@ def _require_active_tenant(current: CurrentUser) -> UUID:
 # --- response + request models -------------------------------------
 
 
+class TerminologyEntry(BaseModel):
+    """2026-08-18 (WS3) — ``terminology_directive``'in ham girdi
+    şekli (``strategic_constants.py``). Write-path (bu route) katı:
+    ``term`` zorunlu + boş olamaz; ``note`` opsiyonel. Read-path
+    (``TenantProfileResponse``) kasten daha gevşek — bkz. orada."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    term: str = Field(..., max_length=128)
+    note: str | None = Field(default=None, max_length=500)
+
+    @field_validator("term")
+    @classmethod
+    def _term_not_blank(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError("term boş olamaz")
+        return v
+
+    @field_validator("note")
+    @classmethod
+    def _note_strip(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        v = v.strip()
+        return v or None
+
+
 class TenantProfileResponse(BaseModel):
     industry: str | None
     industry_other_text: str | None
     company_size: str | None
     business_description: str | None
+    # ``list[dict[str, Any]]`` bilinçli — ``TerminologyEntry`` ile
+    # yeniden doğrulamak, PATCH'in katı şekli devreye girmeden ÖNCE
+    # (ör. admin create path'i / eski satırlar) yazılmış olabilecek
+    # şekilce gevşek kayıtları GET'te 500'e düşürebilirdi;
+    # ``terminology_directive`` zaten aynı gevşek-okuma ilkesini
+    # izliyor (bkz. strategic_constants.py).
+    terminology: list[dict[str, Any]] | None = None
 
 
 class TenantProfileUpdateRequest(BaseModel):
     """All fields optional — PATCH semantics. Provided fields overwrite,
-    omitted fields stay as-is. Pass ``null`` explicitly to clear."""
+    omitted fields stay as-is. Pass ``null`` explicitly to clear.
+
+    ``terminology`` — tam-değiştirme: alan gönderilirse TÜM liste
+    yenisiyle değişir (per-entry merge YOK); en çok 50 madde, her
+    maddede ``term`` zorunlu/boş olamaz (bkz. ``TerminologyEntry``)."""
 
     industry: str | None = Field(default=None)
     industry_other_text: str | None = Field(default=None, max_length=128)
     company_size: str | None = Field(default=None)
     business_description: str | None = Field(default=None, max_length=500)
+    terminology: list[TerminologyEntry] | None = Field(
+        default=None, max_length=50
+    )
 
     @field_validator("industry")
     @classmethod
@@ -143,6 +201,7 @@ async def get_tenant_profile(
             industry_other_text=tenant.industry_other_text,
             company_size=tenant.company_size,
             business_description=tenant.business_description,
+            terminology=tenant.terminology,
         )
 
 
@@ -205,4 +264,5 @@ async def update_tenant_profile(
             industry_other_text=tenant.industry_other_text,
             company_size=tenant.company_size,
             business_description=tenant.business_description,
+            terminology=tenant.terminology,
         )

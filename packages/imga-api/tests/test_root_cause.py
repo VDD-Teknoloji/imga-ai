@@ -22,7 +22,7 @@ from uuid import UUID, uuid4
 import pytest
 from fastapi.testclient import TestClient
 from imga_core import review_text_hash
-from imga_db.models import Review, ReviewDecision, RootCauseAnalysis, User
+from imga_db.models import Category, Review, ReviewDecision, RootCauseAnalysis, User
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -97,6 +97,17 @@ async def _bind_tenant(session: AsyncSession, tid: UUID) -> None:
         text("SELECT set_config('app.current_tenant_id', :t, true)"),
         {"t": str(tid)},
     )
+
+
+async def _seed_custom_category(
+    session: AsyncSession, *, tenant_id: UUID, code: str
+) -> None:
+    """2026-08-18 WS2 — kurumun kendi custom Category satırı, InvalidCategoryError
+    kapısının artık dinamik geçerli-kod kümesine baktığını doğrulamak için."""
+    async with session.begin():
+        await _bind_tenant(session, tenant_id)
+        session.add(Category(tenant_id=tenant_id, code=code, label_tr="Kargo Lojistik"))
+        await session.flush()
 
 
 async def _seed_reviews(
@@ -256,6 +267,39 @@ async def test_service_cache_hit_skips_llm(
             primary_category="kargo", perspective_code="order_status_wrong"
         )
         assert provider.generate_root_cause.await_count == 1
+
+
+@pytest.mark.asyncio
+async def test_service_accepts_custom_category_code(
+    admin_session: AsyncSession,
+    semi_auto_tenant: tuple[User, UUID, str],
+    mock_gemini_credential: Any,
+    fake_redis_client: Any,
+) -> None:
+    """2026-08-18 WS2 — InvalidCategoryError kapısı artık global kod
+    uzayı + kurumun aktif custom kategorileri üzerine bakıyor
+    (services.category_codes.valid_primary_codes). Kurumun kendi açtığı
+    ``kargo_lojistik`` custom kategorisi artık reddedilmemeli."""
+    _user, tid, _pw = semi_auto_tenant
+    await mock_gemini_credential(tid, "fake-key", priority=0)
+    await _seed_custom_category(admin_session, tenant_id=tid, code="kargo_lojistik")
+    await _seed_reviews(
+        admin_session,
+        tenant_id=tid,
+        count=14,
+        primary_category="kargo_lojistik",
+    )
+
+    provider = _build_mock_provider()
+    async with admin_session.begin():
+        await _bind_tenant(admin_session, tid)
+        service = RootCauseService(admin_session, tid, None, provider=provider)
+        result = await service.generate(
+            primary_category="kargo_lojistik",
+            perspective_code="order_status_wrong",
+        )
+        assert result["primary_category_code"] == "kargo_lojistik"
+        assert result["review_count"] == 14
 
 
 @pytest.mark.asyncio
@@ -436,6 +480,11 @@ async def test_post_invalid_primary_category_returns_422(
     batch_client: TestClient,
     semi_auto_tenant: tuple[User, UUID, str],
 ) -> None:
+    """2026-08-18 WS2 — gate artık global kod uzayı + kurumun AKTİF
+    custom kategorileri üzerine bakıyor. ``kargo_lojistik`` burada
+    hâlâ 422 çünkü bu tenant o kodu custom kategori olarak hiç
+    kaydetmedi (bkz. test_service_accepts_custom_category_code —
+    aynı kod custom olarak kayıtlıyken kapı açılıyor)."""
     user, tid, pw = semi_auto_tenant
     token = login_token(batch_client, user.email, pw, tid)
     r = batch_client.post(

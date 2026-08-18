@@ -23,6 +23,18 @@ ilerleme arayüzü bu işi de normal bir iş gibi gösterir.
   * **Satırlar yerinde güncellenir.** Yeni ``reviews`` satırı
     açılmaz; ``review_date`` / NPS / ticket bağlantısı / ``decision``
     korunur — yeniden analiz kararı değil, SINIFLANDIRMAYI tazeler.
+
+2026-08-18 adversarial inceleme FX1 — ``quality_flag`` de artık burada
+backfill edilir: ``'empty'`` satırlar zaten aday sorgusuna hiç girmez
+(``_not_empty_quality`` — boş metni LLM'e göndermek israf), ``'duplicate'``
+korunur (yalnız yükleme işçisinin dedup kararı bu bayrağı yazabilir),
+diğer tüm satırlarda ``data_quality.classify_data_quality`` yeniden
+koşar (``None`` dahil — eski yanlış bayrağı temizler). Düzeltme KB
+eşleşmesi olan satırlarda (``_apply_corrections``'ın döndürdüğü
+``correction_overrides``) hem ``quality_flag`` hem ``experience_type``/
+``company_perspective_code`` insan kararından yazılır — LLM'in kendi
+tahmini yalnız eşleşme YOKSA kazanır (``batch_analyzer._process_chunk``
+ile birebir parite).
 """
 
 from __future__ import annotations
@@ -48,6 +60,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from imga_api.services.audit_service import AuditService
 from imga_api.services.batch_service import BatchAnalyzeService, BatchProgress
+from imga_api.services.data_quality import classify_data_quality
 from imga_api.workers.batch_analyzer import (
     WorkerContext,
     _apply_corrections,
@@ -139,6 +152,20 @@ def _not_human_corrected() -> ColumnElement[bool]:
     )
 
 
+def _not_empty_quality() -> ColumnElement[bool]:
+    """2026-08-18 adversarial inceleme FX1 (a) — ``quality_flag=
+    'empty'`` satırlar aday DEĞİLDİR. Bu satırlar zaten sabit NÖTR/0.0/
+    'belirsiz'/0.0 değerleriyle yazıldı (bkz. batch_analyzer.
+    _write_empty_reviews) ve metinleri gerçekten boş — LLM'e göndermek
+    saf israf, sınıflandırılacak bir içerik yok. NULL dalı
+    ``_not_human_corrected`` ile aynı gerekçeyle açıkça yazılır (NOT
+    (col = 'empty') NULL satırları sessizce elerdi)."""
+    return or_(
+        Review.quality_flag.is_(None),
+        Review.quality_flag != "empty",
+    )
+
+
 def candidate_stmt(
     *,
     tenant_id: UUID,
@@ -155,6 +182,7 @@ def candidate_stmt(
         .where(Review.tenant_id == tenant_id)
         .where(Review.deleted_at.is_(None))
         .where(_not_human_corrected())
+        .where(_not_empty_quality())
         .order_by(Review.id)
     )
     if source_batch_job_id is not None:
@@ -438,7 +466,18 @@ async def _process_reanalysis_chunk(
             experience_sink=experiences,
         )
     )
-    analyses = _apply_corrections(analyses, texts, unified_ctx, semantic_hits)
+    # 2026-08-18 adversarial inceleme FX1 (b) — ``_apply_corrections``
+    # (analyses, correction_overrides) tuple'ı döner (bkz.
+    # batch_analyzer.py). Önceki kod bu ikinci elemanı atıyordu ve
+    # experience_type/perspective_code'u YALNIZ LLM sink'lerinden
+    # (perspectives/experiences) okuyordu — insan kararı bir düzeltme
+    # KB eşleşmesi (birebir ya da anlamsal) üzerinden gelse bile LLM'in
+    # kendi tahmini onun üzerine YAZILIYORDU. Artık aşağıdaki döngü
+    # correction_overrides'ı tüketir; batch_analyzer._process_chunk
+    # (satır ~1154-1197) davranışıyla birebir parite.
+    analyses, correction_overrides = _apply_corrections(
+        analyses, texts, unified_ctx, semantic_hits
+    )
 
     model_name = str(unified_ctx.engine.model_name)
     succeeded = 0
@@ -468,14 +507,51 @@ async def _process_reanalysis_chunk(
                 review.primary_confidence = float(
                     analysis.categorization.primary_confidence
                 )
+            # 2026-08-18 adversarial inceleme FX1 (b) — insan kararı
+            # (düzeltme KB eşleşmesi) LLM'in kendi tahmininin ÖNÜNE
+            # geçer; batch_analyzer._process_chunk (satır ~1154-1197)
+            # ile birebir parite. Perspektifte, LLM yolunun aksine,
+            # taksonomi üyeliği KONTROL EDİLMEZ — insan kararı koşulsuz
+            # güvenilir (batch_analyzer'daki aynı asimetri).
+            correction_override = (
+                correction_overrides[index]
+                if index < len(correction_overrides)
+                else None
+            )
             llm_perspective = (
                 perspectives[index] if index < len(perspectives) else None
             )
-            if llm_perspective is not None and llm_perspective in taxonomy_labels:
+            correction_perspective = (
+                correction_override.perspective_code
+                if correction_override is not None
+                else None
+            )
+            if correction_perspective is not None:
+                review.company_perspective_code = correction_perspective
+            elif llm_perspective is not None and llm_perspective in taxonomy_labels:
                 review.company_perspective_code = llm_perspective
             review.experience_type = normalize_experience_type(
-                experiences[index] if index < len(experiences) else None
+                correction_override.experience_type
+                if correction_override is not None
+                and correction_override.experience_type is not None
+                else (
+                    experiences[index] if index < len(experiences) else None
+                )
             )
+            # 2026-08-18 adversarial inceleme FX1 (a) — quality_flag
+            # backfill. 'duplicate' bayrağı yalnız yükleme işçisinin
+            # dedup kararı yazabilir; yeniden analiz onu asla ezmez.
+            # Düzeltme eşleşen satırda insan kararı = gerçek yorum ->
+            # None (2. maddeyle tutarlı, bkz. batch_analyzer._process_
+            # chunk). Diğer tüm satırlarda heuristik YENİDEN koşar
+            # (None dahil — ilk tasarımın yanlış pozitiflerini taşıyan
+            # eski bayrağı temizler).
+            if review.quality_flag != "duplicate":
+                review.quality_flag = (
+                    None
+                    if correction_override is not None
+                    else classify_data_quality(review.text)
+                )
             # JSONB listesi MutableList değil — yerinde append ORM'e
             # görünmez, satır kirli sayılmaz ve UPDATE hiç çıkmaz.
             # Yeni liste ATANIR.

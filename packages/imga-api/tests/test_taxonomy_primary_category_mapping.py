@@ -4,7 +4,11 @@ Kapsam:
   * Varsayılan seed her satırı bir ana kategoriye eşler (migration
     0040 backfill'i ile aynı tablo).
   * POST / PATCH alanı kabul eder, GET geri döner.
-  * Geçersiz kod 422 (Pydantic field_validator).
+  * Geçersiz kod 422. 2026-08-18 WS2 — doğrulama artık Pydantic
+    field_validator'da değil (DB göremez); route gövdesinde
+    bind_tenant sonrası services.category_codes.valid_primary_codes
+    ile DB'ye bağlı dinamik kümeye (global + kurumun custom
+    kategorileri) bakıyor. 422 sözleşmesi (status code) korunuyor.
   * Açık ``null`` eşlemeyi kaldırır.
   * Alanı hiç göndermeyen PATCH mevcut eşlemeyi KORUR (parent_code'un
     ``model_fields_set`` semantiğiyle aynı).
@@ -83,8 +87,11 @@ async def test_create_rejects_unknown_primary_category_code(
     batch_client: TestClient,
     semi_auto_tenant: tuple[User, UUID, str],
 ) -> None:
-    """Global kod uzayı dışındaki değer 422 — yoksa drill-down
-    gruplaması sessizce boş kova üretirdi."""
+    """Global kod uzayı + kurumun custom kategorileri dışındaki değer
+    422 — yoksa drill-down gruplaması sessizce boş kova üretirdi.
+    2026-08-18 WS2: ``kargo_lojistik`` burada hâlâ 422 çünkü bu tenant
+    o kodu custom kategori olarak hiç kaydetmedi (bkz.
+    test_patch_accepts_custom_primary_category_code)."""
     user, tid, pw = semi_auto_tenant
     token = login_token(batch_client, user.email, pw, tid)
 
@@ -182,3 +189,34 @@ async def test_patch_rejects_unknown_primary_category_code(
         json={"primary_category_code": "uydurma"},
     )
     assert r.status_code == 422, r.text
+
+
+@pytest.mark.asyncio
+async def test_patch_accepts_custom_primary_category_code(
+    batch_client: TestClient,
+    semi_auto_tenant: tuple[User, UUID, str],
+) -> None:
+    """2026-08-18 WS2 — kurumun kendi açtığı custom kategori kodu artık
+    primary_category_code olarak kabul edilir (services.category_codes.
+    valid_primary_codes global + custom kodları birleştirir)."""
+    user, tid, pw = semi_auto_tenant
+    token = login_token(batch_client, user.email, pw, tid)
+
+    custom_code = f"custom_primary_{uuid4().hex[:6]}"
+    custom = batch_client.post(
+        "/tenants/me/custom-categories",
+        headers=_auth(token),
+        json={"code": custom_code, "label_tr": "Özel Ana Kategori"},
+    )
+    assert custom.status_code == 201, custom.text
+
+    listed = batch_client.get("/tenants/me/taxonomies", headers=_auth(token))
+    tax_id = listed.json()[0]["id"]
+
+    r = batch_client.patch(
+        f"/tenants/me/taxonomies/{tax_id}",
+        headers=_auth(token),
+        json={"primary_category_code": custom_code},
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["primary_category_code"] == custom_code

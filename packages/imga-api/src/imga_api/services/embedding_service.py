@@ -10,12 +10,27 @@ komşu aramasının dışında kalır (HNSW indeksi NULL içermez).
 
 Çağıran taraf bu fonksiyonu DB transaction'ı DIŞINDA çağırmalı —
 dış API beklerken satır kilidi tutulmaz.
+
+2026-08-18 (WS3 RAG) — tenant'ın KENDİ Gemini anahtarı yoksa (``keys``
+boş), platform-seviyesi ``IMGA_EMBEDDING_FALLBACK_KEY`` ortam
+değişkeni doluysa onunla embed edilir. Bilinçli tercih: fallback
+SADECE ``keys`` boşken devreye girer (tenant'ın kendi anahtarları
+varsa ama hepsi düşüyorsa fallback denenmez — o durum "geçici API
+hatası" olarak ele alınır, "hiç anahtar yok" durumundan farklı).
+AYNI MODEL ZORUNLU (gemini-embedding-001/768) — farklı bir embedding
+modeli farklı bir vektör uzayı üretir ve mevcut HNSW indeksiyle
+(``review_corrections.embedding``) karşılaştırılamaz hale gelir;
+bu yüzden OpenRouter gibi alternatif sağlayıcılar burada
+DEĞERLENDİRİLMEDİ (bkz. docs/analysis/2026-08-18-rag-mimari.md).
+Fallback anahtarı yoksa davranış DEĞİŞMEZ — eski sessiz-NULL yolu
+korunur.
 """
 
 from __future__ import annotations
 
 import asyncio
 import logging
+import os
 
 from imga_core.llm.key_rotation import GeminiKey
 
@@ -24,6 +39,23 @@ logger = logging.getLogger(__name__)
 EMBEDDING_MODEL = "gemini-embedding-001"
 EMBEDDING_DIM = 768
 _TIMEOUT_SECONDS = 10.0
+_FALLBACK_KEY_ENV = "IMGA_EMBEDDING_FALLBACK_KEY"
+
+
+def _fallback_keys() -> list[GeminiKey]:
+    """Platform-seviyesi yedek anahtar — yalnız tenant'ın hiç Gemini
+    anahtarı yokken kullanılır (bkz. modül docstring'i)."""
+    value = os.environ.get(_FALLBACK_KEY_ENV)
+    if not value:
+        return []
+    return [
+        GeminiKey(
+            id="platform-fallback",
+            value=value,
+            label="platform-fallback",
+            priority=9999,
+        )
+    ]
 
 
 def _embed_sync(api_key: str, texts: list[str]) -> list[list[float]]:
@@ -47,10 +79,15 @@ async def embed_texts(
     texts: list[str], keys: list[GeminiKey]
 ) -> list[list[float]] | None:
     """Metinleri embed'ler; ilk başarılı key kazanır, hepsi düşerse
-    None (çağıran NULL embedding ile devam eder)."""
-    if not texts or not keys:
+    None (çağıran NULL embedding ile devam eder). ``keys`` boşsa ve
+    platform fallback anahtarı tanımlıysa onunla dener (bkz. modül
+    docstring'i)."""
+    if not texts:
         return None
-    for key in keys:
+    effective_keys = keys if keys else _fallback_keys()
+    if not effective_keys:
+        return None
+    for key in effective_keys:
         try:
             vectors = await asyncio.wait_for(
                 asyncio.to_thread(_embed_sync, key.value, texts),
@@ -65,7 +102,7 @@ async def embed_texts(
                 key.label,
                 len(vectors),
             )
-        except Exception as exc:  # noqa: BLE001 — best-effort: sıradaki key
+        except Exception as exc:
             logger.warning(
                 "embedding call failed (key=%s): %s", key.label, exc
             )

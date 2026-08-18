@@ -53,6 +53,14 @@ class TenantService:
         plan_tier: TenantPlanTier = TenantPlanTier.TRIAL,
         automation_mode: AutomationMode = AutomationMode.SEMI_AUTO,
         language: str = "tr",
+        # 2026-08-18 (WS1 onboarding) — opsiyonel profil alanları.
+        # Boş bırakılırsa Tenant modelinin varsayılanı (None) geçerli
+        # olur; sonradan /settings/profile'dan doldurulabilir.
+        industry: str | None = None,
+        industry_other_text: str | None = None,
+        company_size: str | None = None,
+        business_description: str | None = None,
+        terminology: list[dict[str, Any]] | None = None,
         actor_user_id: UUID | None = None,
     ) -> Tenant:
         tenant = Tenant(
@@ -61,6 +69,11 @@ class TenantService:
             plan_tier=plan_tier,
             automation_mode=automation_mode,
             language=language if language in ("tr", "en") else "tr",
+            industry=industry,
+            industry_other_text=industry_other_text,
+            company_size=company_size,
+            business_description=business_description,
+            terminology=terminology,
         )
         self._session.add(tenant)
         try:

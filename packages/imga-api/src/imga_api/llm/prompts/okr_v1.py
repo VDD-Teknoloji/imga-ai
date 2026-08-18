@@ -96,6 +96,9 @@ KURALLAR:
 7. JSON formatında, response_schema'ya tam uyumlu yanıt ver.
 8. 2-4 Objective öner. Her Objective için 2-4 Key Result tanımla. Her KR \
    ölçülebilir ve farklı bir boyutu kapsar olsun.
+9. Müşteri yorumlarında ve kurum sözlüğünde geçen alan terimlerini \
+   BİREBİR koru; eş anlamlı/yakın kelimeyle değiştirme (örn. "çok \
+   parçalı gönderi"yi "çok kaplı" yapma).
 """
 
 # ---------------------------------------------------------------------------

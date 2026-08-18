@@ -27,6 +27,8 @@ from sqlalchemy import and_, case, func, literal, null, or_, select, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from imga_api.services.date_bounds import day_ceil, day_floor
+
 Granularity = Literal["day", "week", "month"]
 
 # 2026-08-10 — ``packages/imga-web/src/lib/experience.ts`` ile birebir
@@ -47,6 +49,10 @@ class AnalyticsFilters:
     category_ids: tuple[UUID, ...] = ()
     source_types: tuple[str, ...] = ()  # "manual" | "batch"
     batch_job_id: UUID | None = None
+    # 2026-08-18 — WS2 veri kalitesi. False (varsayılan) = quality_flag
+    # IS NULL satırlarla sınırlı (duplicate/empty/informational/
+    # meaningless dışlanır); dashboard metrikleri temiz veriden okunur.
+    include_flagged: bool = False
 
 
 # --- response shapes (frozen, route projects to Pydantic) ---------------
@@ -321,6 +327,50 @@ class NPSMonthlyPoint:
     passive_count: int
     promoter_count: int
     total_count: int
+
+
+# --- Sprint WS4 — dönem karşılaştırma (2026-08-18) ----------------------
+
+
+@dataclass(frozen=True, slots=True)
+class PeriodStats:
+    """One comparison window's metric bundle. ``sentiment_counts`` and
+    ``category_counts`` are label/code → count maps — the latter is
+    the FULL distribution (no top-N truncation) since a comparison
+    view wants every category represented, not just the biggest."""
+
+    date_from: date
+    date_to: date
+    total_reviews: int
+    sentiment_counts: dict[str, int]
+    category_counts: dict[str, int]
+    nps: NPSSummary
+    experience: ExperienceDistribution
+    avg_sentiment_score: float | None
+
+
+@dataclass(frozen=True, slots=True)
+class PeriodComparisonDelta:
+    """All diffs are ``period_b - period_a`` — B is read as "the later
+    / comparison" window. ``*_direction`` is "flat" both when the diff
+    is exactly zero and when either side is None (no NPS-bearing rows
+    / no scored rows in one window makes "up/down" meaningless)."""
+
+    total_reviews_diff: int
+    total_reviews_direction: str  # "up" | "down" | "flat"
+    sentiment_pct_point_diff: dict[str, float]
+    category_pct_point_diff: dict[str, float]
+    nps_score_diff: float | None
+    nps_direction: str
+    avg_sentiment_score_diff: float | None
+    avg_sentiment_direction: str
+
+
+@dataclass(frozen=True, slots=True)
+class PeriodComparison:
+    period_a: PeriodStats
+    period_b: PeriodStats
+    delta: PeriodComparisonDelta
 
 
 # --- override layer Türkçe labels (Sprint 8.3 spec) ---------------------
@@ -829,6 +879,7 @@ class AnalyticsService:
         date_from: date | None = None,
         date_to: date | None = None,
         batch_job_id: UUID | None = None,
+        include_flagged: bool = False,
     ) -> NPSSummary:
         """Aggregate NPS bucket counts + score for the filter window.
 
@@ -855,7 +906,8 @@ class AnalyticsService:
             .group_by(Review.nps_category)
         )
         bucket_stmt = self._apply_nps_window(
-            bucket_stmt, date_from=date_from, date_to=date_to, batch_job_id=batch_job_id
+            bucket_stmt, date_from=date_from, date_to=date_to,
+            batch_job_id=batch_job_id, include_flagged=include_flagged,
         )
         rows = (await self._session.execute(bucket_stmt)).all()
 
@@ -882,7 +934,8 @@ class AnalyticsService:
             .where(Review.deleted_at.is_(None))
         )
         all_stmt = self._apply_nps_window(
-            all_stmt, date_from=date_from, date_to=date_to, batch_job_id=batch_job_id
+            all_stmt, date_from=date_from, date_to=date_to,
+            batch_job_id=batch_job_id, include_flagged=include_flagged,
         )
         all_total: int = (await self._session.execute(all_stmt)).scalar_one() or 0
         coverage = round(100 * total / all_total, 2) if all_total else 0.0
@@ -906,6 +959,7 @@ class AnalyticsService:
         tenant_id: UUID,
         months_back: int = 12,
         now: datetime | None = None,
+        include_flagged: bool = False,
     ) -> list[NPSMonthlyPoint]:
         """Return ``months_back`` calendar months of NPS, oldest first.
 
@@ -942,6 +996,8 @@ class AnalyticsService:
             .where(Review.review_date < window_end_exclusive)
             .group_by(bucket_expr, Review.nps_category)
         )
+        if not include_flagged:
+            stmt = stmt.where(Review.quality_flag.is_(None))
         rows = (await self._session.execute(stmt)).all()
 
         # Pivot: month_start_date → bucket_label → count.
@@ -991,6 +1047,7 @@ class AnalyticsService:
         date_to: date | None = None,
         batch_id: UUID | None = None,
         now: datetime | None = None,
+        include_flagged: bool = False,
     ) -> HeadlineMetrics:
         """Eight headline values for the dashboard's top row.
 
@@ -1034,7 +1091,8 @@ class AnalyticsService:
             .where(Review.deleted_at.is_(None))
         )
         total_stmt = self._apply_review_date_window(
-            total_stmt, date_from=date_from, date_to=date_to
+            total_stmt, date_from=date_from, date_to=date_to,
+            include_flagged=include_flagged,
         )
         total_stmt = _scope_to_batch(total_stmt)
         total_reviews: int = (await self._session.execute(total_stmt)).scalar_one() or 0
@@ -1048,7 +1106,8 @@ class AnalyticsService:
             .where(Review.sentiment_score <= CRISIS_SCORE_THRESHOLD)
         )
         crisis_stmt = self._apply_review_date_window(
-            crisis_stmt, date_from=date_from, date_to=date_to
+            crisis_stmt, date_from=date_from, date_to=date_to,
+            include_flagged=include_flagged,
         )
         crisis_stmt = _scope_to_batch(crisis_stmt)
         crisis_count: int = (await self._session.execute(crisis_stmt)).scalar_one() or 0
@@ -1061,7 +1120,8 @@ class AnalyticsService:
             .where(Review.sentiment_score.is_not(None))
         )
         avg_stmt = self._apply_review_date_window(
-            avg_stmt, date_from=date_from, date_to=date_to
+            avg_stmt, date_from=date_from, date_to=date_to,
+            include_flagged=include_flagged,
         )
         avg_stmt = _scope_to_batch(avg_stmt)
         avg_raw = (await self._session.execute(avg_stmt)).scalar_one_or_none()
@@ -1096,7 +1156,8 @@ class AnalyticsService:
             )
         )
         sensitive_stmt = self._apply_review_date_window(
-            sensitive_stmt, date_from=date_from, date_to=date_to
+            sensitive_stmt, date_from=date_from, date_to=date_to,
+            include_flagged=include_flagged,
         )
         sensitive_stmt = _scope_to_batch(sensitive_stmt)
         sensitive_topics_count: int = (
@@ -1112,6 +1173,7 @@ class AnalyticsService:
             date_from=date_from,
             date_to=date_to,
             batch_job_id=batch_id,
+            include_flagged=include_flagged,
         )
 
         # --- ticket-side metrics (no date filter) -----------------
@@ -1408,6 +1470,127 @@ class AnalyticsService:
         )
 
     # ------------------------------------------------------------------
+    # 14. Period comparison (WS4, Sprint 2026-08-18)
+    # ------------------------------------------------------------------
+
+    async def period_comparison(
+        self,
+        *,
+        tenant_id: UUID,
+        a_from: date,
+        a_to: date,
+        b_from: date,
+        b_to: date,
+        include_flagged: bool = False,
+    ) -> PeriodComparison:
+        """Two independent date windows, each reduced to the same
+        metric bundle, plus their delta.
+
+        Windows are the caller's choice and are bound INDEPENDENTLY —
+        unlike ``ExecutiveBriefingService.generate``'s prior-period calc
+        (``prior_to = date_from``), which double-counts the boundary day
+        because both ends of that pair share one inclusive bound. Here
+        A and B each get their own ``[day_floor(from), day_ceil(to)]``
+        pair; no overlap check is performed (WS4 spec — the two windows
+        are a deliberate user choice, e.g. adjacent or overlapping
+        months are both valid requests).
+        """
+        period_a = await self._period_stats(
+            tenant_id=tenant_id,
+            date_from=a_from,
+            date_to=a_to,
+            include_flagged=include_flagged,
+        )
+        period_b = await self._period_stats(
+            tenant_id=tenant_id,
+            date_from=b_from,
+            date_to=b_to,
+            include_flagged=include_flagged,
+        )
+        return PeriodComparison(
+            period_a=period_a,
+            period_b=period_b,
+            delta=_compute_period_delta(period_a, period_b),
+        )
+
+    async def _period_stats(
+        self,
+        *,
+        tenant_id: UUID,
+        date_from: date,
+        date_to: date,
+        include_flagged: bool,
+    ) -> PeriodStats:
+        filters = AnalyticsFilters(
+            date_from=day_floor(date_from),
+            date_to=day_ceil(date_to),
+            include_flagged=include_flagged,
+        )
+
+        agg_stmt = (
+            select(
+                func.count().label("cnt"),
+                func.avg(Review.sentiment_score).label("avg_score"),
+            )
+            .select_from(Review)
+            .where(Review.tenant_id == tenant_id)
+            .where(Review.deleted_at.is_(None))
+        )
+        agg_stmt = self._apply_review_filters(agg_stmt, filters)
+        agg = (await self._session.execute(agg_stmt)).one()
+        total = int(agg.cnt or 0)
+        avg_score = float(agg.avg_score) if agg.avg_score is not None else None
+
+        sent_stmt = (
+            select(Review.sentiment_label, func.count().label("cnt"))
+            .where(Review.tenant_id == tenant_id)
+            .where(Review.deleted_at.is_(None))
+            .group_by(Review.sentiment_label)
+        )
+        sent_stmt = self._apply_review_filters(sent_stmt, filters)
+        sentiment_counts = {
+            r.sentiment_label: r.cnt
+            for r in (await self._session.execute(sent_stmt)).all()
+        }
+
+        # Kategori dağılımı BÜTÜN kategorileri döner (top-N kırpması
+        # yok) — karşılaştırma görünümü her kategoriyi görmek ister.
+        cat_stmt = (
+            select(Review.primary_category, func.count().label("cnt"))
+            .where(Review.tenant_id == tenant_id)
+            .where(Review.deleted_at.is_(None))
+            .group_by(Review.primary_category)
+        )
+        cat_stmt = self._apply_review_filters(cat_stmt, filters)
+        category_counts = {
+            r.primary_category: r.cnt
+            for r in (await self._session.execute(cat_stmt)).all()
+        }
+
+        nps = await self.compute_nps_summary(
+            tenant_id=tenant_id,
+            date_from=date_from,
+            date_to=date_to,
+            include_flagged=include_flagged,
+        )
+        experience = await self.experience_distribution(
+            tenant_id=tenant_id, filters=filters
+        )
+
+        return PeriodStats(
+            date_from=date_from,
+            date_to=date_to,
+            total_reviews=total,
+            sentiment_counts=sentiment_counts,
+            category_counts=category_counts,
+            nps=nps,
+            experience=experience,
+            avg_sentiment_score=(
+                round(avg_score, 3) if avg_score is not None else None
+            ),
+        )
+
+    # ------------------------------------------------------------------
     # Filter helpers
     # ------------------------------------------------------------------
 
@@ -1417,6 +1600,7 @@ class AnalyticsService:
         *,
         date_from: date | None,
         date_to: date | None,
+        include_flagged: bool = False,
     ) -> Any:
         """Headline metrics + NPS endpoints filter reviews on
         ``review_date`` (the review's own date — upload's ``tarih``
@@ -1430,6 +1614,8 @@ class AnalyticsService:
         if date_to is not None:
             to_dt = datetime.combine(date_to, datetime.max.time(), tzinfo=UTC)
             stmt = stmt.where(Review.review_date <= to_dt)
+        if not include_flagged:
+            stmt = stmt.where(Review.quality_flag.is_(None))
         return stmt
 
     def _apply_nps_window(
@@ -1439,13 +1625,15 @@ class AnalyticsService:
         date_from: date | None,
         date_to: date | None,
         batch_job_id: UUID | None,
+        include_flagged: bool = False,
     ) -> Any:
         """NPS-summary's filter envelope: review date window (shared
         with headline metrics, see ``_apply_review_date_window``) plus
         the batch_job_id filter that's NPS-specific to scope a single
         upload's score."""
         stmt = self._apply_review_date_window(
-            stmt, date_from=date_from, date_to=date_to
+            stmt, date_from=date_from, date_to=date_to,
+            include_flagged=include_flagged,
         )
         if batch_job_id is not None:
             stmt = stmt.where(Review.batch_job_id == batch_job_id)
@@ -1456,6 +1644,8 @@ class AnalyticsService:
             stmt = stmt.where(Review.review_date >= filters.date_from)
         if filters.date_to is not None:
             stmt = stmt.where(Review.review_date <= filters.date_to)
+        if not filters.include_flagged:
+            stmt = stmt.where(Review.quality_flag.is_(None))
         if filters.sentiment_labels:
             stmt = stmt.where(Review.sentiment_label.in_(filters.sentiment_labels))
         if filters.batch_job_id is not None:
@@ -1546,6 +1736,63 @@ def _trailing_month_starts(anchor: date, months_back: int) -> list[date]:
     return months
 
 
+# --- Period-comparison delta helpers (WS4, 2026-08-18) ----------------
+
+
+def _direction(diff: float | None) -> str:
+    """"flat" doubles as the "no signal" answer — a None diff (one or
+    both sides had no qualifying data) is not "up" or "down"."""
+    if diff is None or diff == 0:
+        return "flat"
+    return "up" if diff > 0 else "down"
+
+
+def _pct_point_diff_map(
+    a_counts: dict[str, int],
+    a_total: int,
+    b_counts: dict[str, int],
+    b_total: int,
+) -> dict[str, float]:
+    """Percentage-point diff (b% - a%) per label/code seen in EITHER
+    window — a key present only in B (or only in A) still gets a row,
+    computed against a 0% baseline on the side that lacks it."""
+    keys = set(a_counts) | set(b_counts)
+    result: dict[str, float] = {}
+    for key in keys:
+        a_pct = (100 * a_counts.get(key, 0) / a_total) if a_total else 0.0
+        b_pct = (100 * b_counts.get(key, 0) / b_total) if b_total else 0.0
+        result[key] = round(b_pct - a_pct, 2)
+    return result
+
+
+def _compute_period_delta(a: PeriodStats, b: PeriodStats) -> PeriodComparisonDelta:
+    total_diff = b.total_reviews - a.total_reviews
+    nps_diff = (
+        round(b.nps.score - a.nps.score, 2)
+        if a.nps.score is not None and b.nps.score is not None
+        else None
+    )
+    avg_diff = (
+        round(b.avg_sentiment_score - a.avg_sentiment_score, 3)
+        if a.avg_sentiment_score is not None and b.avg_sentiment_score is not None
+        else None
+    )
+    return PeriodComparisonDelta(
+        total_reviews_diff=total_diff,
+        total_reviews_direction=_direction(total_diff),
+        sentiment_pct_point_diff=_pct_point_diff_map(
+            a.sentiment_counts, a.total_reviews, b.sentiment_counts, b.total_reviews,
+        ),
+        category_pct_point_diff=_pct_point_diff_map(
+            a.category_counts, a.total_reviews, b.category_counts, b.total_reviews,
+        ),
+        nps_score_diff=nps_diff,
+        nps_direction=_direction(nps_diff),
+        avg_sentiment_score_diff=avg_diff,
+        avg_sentiment_direction=_direction(avg_diff),
+    )
+
+
 # Silence unused-imports warnings (kept for forward use).
 _ = (and_, case, JSONB, timedelta)
 
@@ -1565,6 +1812,9 @@ __all__ = [
     "NPSSummary",
     "OverrideStats",
     "OverrideStatsRow",
+    "PeriodComparison",
+    "PeriodComparisonDelta",
+    "PeriodStats",
     "ResolutionBucket",
     "ResolutionByCategory",
     "SensitivityBucket",

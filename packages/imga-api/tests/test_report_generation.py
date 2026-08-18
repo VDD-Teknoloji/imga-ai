@@ -155,6 +155,64 @@ async def test_generate_rejects_estimated_rows_over_cap(
     assert "satır" in r.json()["detail"]
 
 
+@pytest.mark.asyncio
+async def test_generate_include_flagged_reaches_worker_filters_json(
+    batch_client: TestClient,
+    semi_auto_tenant: tuple[User, UUID, str],
+) -> None:
+    """2026-08-18 WS2 — ReportFiltersRequest was missing
+    ``include_flagged``, so it silently dropped to the ReportFilters
+    default (False) regardless of what the client sent. This asserts
+    the full chain: request body -> _filters_from_request ->
+    ReportFilters.to_jsonable() -> ReportJob.filters (the JSON the
+    worker reads back via ReportFilters.from_json)."""
+    user, tid, pw = semi_auto_tenant
+    token = login_token(batch_client, user.email, pw, tid)
+
+    r = batch_client.post(
+        "/tenants/me/reports/generate",
+        headers={"Authorization": f"Bearer {token}"},
+        json={
+            "report_type": "reviews_only",
+            "format": "xlsx",
+            "filters": {"include_flagged": True},
+        },
+    )
+    assert r.status_code == 201, r.text
+    report_id = r.json()["report_id"]
+
+    detail = batch_client.get(
+        f"/tenants/me/reports/{report_id}",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert detail.status_code == 200, detail.text
+    assert detail.json()["filters"]["include_flagged"] is True
+
+
+@pytest.mark.asyncio
+async def test_generate_include_flagged_defaults_false(
+    batch_client: TestClient,
+    semi_auto_tenant: tuple[User, UUID, str],
+) -> None:
+    user, tid, pw = semi_auto_tenant
+    token = login_token(batch_client, user.email, pw, tid)
+
+    r = batch_client.post(
+        "/tenants/me/reports/generate",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"report_type": "reviews_only", "format": "xlsx", "filters": {}},
+    )
+    assert r.status_code == 201, r.text
+    report_id = r.json()["report_id"]
+
+    detail = batch_client.get(
+        f"/tenants/me/reports/{report_id}",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert detail.status_code == 200, detail.text
+    assert detail.json()["filters"]["include_flagged"] is False
+
+
 # --- worker happy path ----------------------------------------------------
 
 

@@ -37,8 +37,21 @@ def _write_xlsx(path: Path, rows: list[list[str]]) -> None:
 
 
 def test_clean_file_passes(tmp_path: Path) -> None:
+    # 2026-08-18 (migration 0042 WS2) — placeholder text needs to be
+    # long/substantive enough to dodge the new informational/
+    # meaningless heuristic (classify_data_quality); a bare 2-word
+    # "ilk yorum" would legitimately trip the <=2-meaningful-word
+    # 'meaningless' rule and this test is specifically about a file
+    # with ZERO warnings.
     path = tmp_path / "ok.csv"
-    _write_csv(path, [["yorum"], ["ilk yorum"], ["ikinci yorum"]])
+    _write_csv(
+        path,
+        [
+            ["yorum"],
+            ["Ürün tam zamanında elime ulaştı"],
+            ["Paketleme oldukça özenliydi bence"],
+        ],
+    )
     report = validate_upload(path, text_column="yorum", max_rows=10_000)
     assert report.ok is True
     assert report.total_rows == 2
@@ -116,6 +129,65 @@ def test_duplicate_rows_warn_and_count_once(tmp_path: Path) -> None:
     dup = [i for i in report.issues if i.code == "duplicate"]
     assert len(dup) == 1
     assert dup[0].row == 2
+
+
+def test_informational_rows_warn_but_still_count_as_valid(
+    tmp_path: Path,
+) -> None:
+    """2026-08-18 (migration 0042 WS2). Unlike empty/duplicate, an
+    informational-looking row is NOT excluded from valid_rows — the
+    worker still analyzes and persists it, just with quality_flag set.
+    The preview only warns."""
+    path = tmp_path / "info.csv"
+    _write_csv(
+        path,
+        [
+            ["yorum"],
+            ["Değerli müşterimiz, siparişiniz kargoya verildi."],
+            ["Ürün tam zamanında elime ulaştı, çok memnun kaldım."],
+        ],
+    )
+    report = validate_upload(path, text_column="yorum", max_rows=10_000)
+    assert report.ok is True
+    assert report.total_rows == 2
+    assert report.valid_rows == 2  # NOT subtracted, unlike empty/duplicate
+    info = [i for i in report.issues if i.code == "informational"]
+    assert len(info) == 1
+    assert info[0].row == 1
+    assert info[0].severity == "warning"
+
+
+def test_meaningless_rows_warn_but_still_count_as_valid(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "meaningless.csv"
+    _write_csv(
+        path,
+        [
+            ["yorum"],
+            ["Tamam"],
+            ["Ürün gerçekten kaliteliydi, tekrar alırım kesinlikle."],
+        ],
+    )
+    report = validate_upload(path, text_column="yorum", max_rows=10_000)
+    assert report.ok is True
+    assert report.valid_rows == 2
+    meaningless = [i for i in report.issues if i.code == "meaningless"]
+    assert len(meaningless) == 1
+    assert meaningless[0].row == 1
+
+
+def test_duplicate_row_is_not_also_flagged_meaningless(
+    tmp_path: Path,
+) -> None:
+    """Priority mirrors the worker's write path: a row already
+    marked 'duplicate' never gets a second content-quality pass —
+    dedup wins."""
+    path = tmp_path / "dup_short.csv"
+    _write_csv(path, [["yorum"], ["ok"], ["ok"]])
+    report = validate_upload(path, text_column="yorum", max_rows=10_000)
+    codes_for_row_2 = [i.code for i in report.issues if i.row == 2]
+    assert codes_for_row_2 == ["duplicate"]
 
 
 def test_xlsx_clean_file(tmp_path: Path) -> None:
