@@ -520,7 +520,11 @@ class QualityReportService:
                     response_schema=QUALITY_REPORT_RESPONSE_SCHEMA,
                     model_name=model_name,
                     temperature=0.2,
-                    max_output_tokens=2048,
+                    # 2048 canliya cikinca "token sinirina takildi" ile
+                    # dusuyordu — GLM'in muhakeme token'lari da tavana
+                    # sayiliyor; diger stratejik cagrilarin varsayilaniyla
+                    # hizalandi.
+                    max_output_tokens=8192,
                 )
             except InvalidKeyError:
                 for k in keys:

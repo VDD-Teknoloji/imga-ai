@@ -219,7 +219,14 @@ export function CorrectReviewDialog({
               onValueChange={(v) => v && handleSentimentChange(v as SentimentValue)}
             >
               <SelectTrigger>
-                <SelectValue />
+                {/* base-ui SelectValue çocuk verilmezse HAM değeri basar
+                    (NEGATIF, kargo, __no_change__...) — dört tetikleyici
+                    de etikete eşlenir. */}
+                <SelectValue>
+                  {(v: string) =>
+                    SENTIMENTS.find((s) => s.value === v)?.label ?? v
+                  }
+                </SelectValue>
               </SelectTrigger>
               <SelectContent>
                 {SENTIMENTS.map((s) => (
@@ -267,7 +274,12 @@ export function CorrectReviewDialog({
             <Label>Kategori</Label>
             <Select value={category} onValueChange={(v) => v && setCategory(v)}>
               <SelectTrigger>
-                <SelectValue />
+                <SelectValue>
+                  {(v: string) =>
+                    (categories.data ?? []).find((c) => c.code === v)
+                      ?.label_tr ?? v
+                  }
+                </SelectValue>
               </SelectTrigger>
               <SelectContent>
                 {(categories.data ?? [])
@@ -296,7 +308,13 @@ export function CorrectReviewDialog({
             </Label>
             <Select value={experience} onValueChange={(v) => v && setExperience(v)}>
               <SelectTrigger id="correction-experience" className="w-full">
-                <SelectValue />
+                <SelectValue>
+                  {(v: string) =>
+                    v === NO_CHANGE
+                      ? t("reviews.correct.noChange")
+                      : t(`reviews.experience.${v}`)
+                  }
+                </SelectValue>
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value={NO_CHANGE}>
@@ -319,7 +337,14 @@ export function CorrectReviewDialog({
               onValueChange={(v) => v && setPerspective(v)}
             >
               <SelectTrigger id="correction-perspective" className="w-full">
-                <SelectValue />
+                <SelectValue>
+                  {(v: string) =>
+                    v === NO_CHANGE
+                      ? t("reviews.correct.noChange")
+                      : ((taxonomies.data ?? []).find((x) => x.code === v)
+                          ?.label_tr ?? v)
+                  }
+                </SelectValue>
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value={NO_CHANGE}>
