@@ -84,7 +84,6 @@ class AnalysisPipeline:
         perspective_sink: list[str | None] | None = None,
         category_descriptions: dict[str, str] | None = None,
         experience_sink: list[str | None] | None = None,
-        quality_sink: list[str | None] | None = None,
     ) -> list[AnalysisResult]:
         """Sprint 11.0 — birleşik LLM yolu: sentiment + kategori tek
         Gemini batch çağrı setinden gelir; BERT ve keyword/LLM-fallback
@@ -113,12 +112,6 @@ class AnalysisPipeline:
         ("dijital" | "operasyonel" | None) satır sırasına göre geri
         verir. İkisi de alt kategoriyle aynı gerekçeyle
         ``AnalysisResult``'a girmez.
-
-        2026-08-18 WS2 (veri kalitesi) — ``quality_sink`` aynı
-        out-param deseniyle modelin veri kalitesi kararını
-        ("informational" | "meaningless" | None) satır sırasına göre
-        geri verir; ``AnalysisResult``'a girmez (DB kolonu
-        ``reviews.quality_flag`` çağıran tarafta doldurulur).
         """
         n = len(texts)
         if n == 0:
@@ -142,9 +135,6 @@ class AnalysisPipeline:
         if experience_sink is not None:
             experience_sink.clear()
             experience_sink.extend(p.experience_type for p in predictions)
-        if quality_sink is not None:
-            quality_sink.clear()
-            quality_sink.extend(p.quality for p in predictions)
         if stats_sink is not None:
             stats_sink["llm_total_input_tokens"] = stats.input_tokens
             stats_sink["llm_total_output_tokens"] = stats.output_tokens
