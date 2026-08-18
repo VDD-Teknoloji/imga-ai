@@ -281,7 +281,9 @@ export type ReviewDecision =
   | "skipped_belirsiz"
   | "skipped_mode"
   | "skipped_threshold"
-  | "skipped_dedup";
+  | "skipped_dedup"
+  // Migration 0042 — düşük kaliteli satır (boş metin vb.), bilet açılmaz.
+  | "skipped_quality";
 
 export interface AnalysisResult {
   text: string;
@@ -525,6 +527,16 @@ export interface ReviewListFilters {
   week_of_year?: number;
   month?: number;
   search?: string;
+  /** 2026-08-18 (WS2 veri kalitesi) — CSV of
+   *  duplicate/empty/informational/meaningless. Verilirse yalnız bu
+   *  bayraklara sahip satırlar döner ve ``include_flagged`` backend'de
+   *  devre dışı kalır. */
+  quality_flags?: string[];
+  /** Düşük kaliteli (bayraklı) satırları listeye dahil et. Liste bir
+   *  arşivdir; backend varsayılanı true (analitik varsayılanından
+   *  farklı) — yalnız açıkça false gönderildiğinde "yalnız geçerli"
+   *  filtresi devreye girer. */
+  include_flagged?: boolean;
   limit?: number;
   offset?: number;
   order_by?: "created_at" | "sentiment_score";

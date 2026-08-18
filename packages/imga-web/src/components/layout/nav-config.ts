@@ -1,4 +1,5 @@
 import {
+  ArrowLeftRight,
   Bell,
   Building2,
   ClipboardList,
@@ -91,6 +92,8 @@ export const NAV_SECTIONS: ReadonlyArray<NavSection> = [
     heading: "shell.nav.section.analytics",
     items: [
       { label: "shell.nav.insights", href: "/insights", icon: TrendingUp },
+      // WS4 (2026-08-18) — dönem karşılaştırma, İçgörüler'in yanında.
+      { label: "shell.nav.compare", href: "/compare", icon: ArrowLeftRight },
       // Madde 4 — "Analizler" → "Analiz Arşivi"
       { label: "shell.nav.reviewArchive", href: "/reviews", icon: FileSearch },
       { label: "shell.nav.reports", href: "/reports", icon: FileBarChart },

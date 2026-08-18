@@ -72,6 +72,19 @@ export const settings: Bundle = {
     "settings.profile.invalidField": "Geçersiz alan: {detail}",
     "settings.profile.saveFailed": "Kayıt başarısız.",
 
+    // --- terim sözlüğü (profile + tenant-create sihirbazı paylaşır) ---
+    "settings.terminology.label": "Terim sözlüğü",
+    "settings.terminology.help":
+      "Kurumunuza özel terimler (ürün adı, iç jargon vb.) — sınıflandırma ve rapor metinlerinde eş anlamlıyla değiştirilmeden birebir korunur.",
+    "settings.terminology.termPlaceholder": "Terim",
+    "settings.terminology.notePlaceholder": "Not (opsiyonel)",
+    "settings.terminology.termLabel": "Terim",
+    "settings.terminology.noteLabel": "Not",
+    "settings.terminology.removeAria": "Terimi sil",
+    "settings.terminology.add": "Terim ekle",
+    "settings.terminology.count": "{n} / {max} terim",
+    "settings.terminology.aiNote": "Bu terimler yapay zekâ çıktılarında birebir korunur.",
+
     // --- integrations (yapay zekâ bağlantısı — 2026-08-09'dan beri
     // salt okunur; yönetim IMGA/süper-yönetici tarafında) ---
     "settings.integrations.title": "Yapay Zekâ Modeli",
@@ -365,6 +378,34 @@ export const settings: Bundle = {
     "settings.taxonomies.keywordHelp":
       "Enter veya virgülle ekle; otomatik küçük harfe çevrilir. {n}/50",
 
+    // --- taxonomies: "Yapay Zekâ ile Öner" (WS1 onboarding) ---
+    "settings.taxonomies.aiSuggest.trigger": "Yapay Zekâ ile Öner",
+    "settings.taxonomies.aiSuggest.title": "Yapay Zekâ ile Kategori Önerisi",
+    "settings.taxonomies.aiSuggest.desc":
+      "Sektörünüze, şirket profilinize ve son yorumlarınıza bakarak kuruma özel kategori önerisi üretir. Öneri hemen uygulanmaz — seçtiğiniz alt küme sizin onayınızla yazılır.",
+    "settings.taxonomies.aiSuggest.intro":
+      "Öneri oluşturmak için aşağıdaki butona tıklayın.",
+    "settings.taxonomies.aiSuggest.suggestButton": "Öner",
+    "settings.taxonomies.aiSuggest.loading": "Öneri hazırlanıyor…",
+    "settings.taxonomies.aiSuggest.noCredentials":
+      "Aktif LLM API anahtarı tanımlanmamış. Ayarlar > Entegrasyonlar üzerinden ekleyin.",
+    "settings.taxonomies.aiSuggest.providerUnavailable":
+      "LLM sağlayıcı hatası, lütfen tekrar deneyin.",
+    "settings.taxonomies.aiSuggest.suggestFailed": "Öneri oluşturulamadı.",
+    "settings.taxonomies.aiSuggest.addKey": "Anahtar ekle",
+    "settings.taxonomies.aiSuggest.empty":
+      "Bu profil için önerilecek yeni kategori bulunamadı.",
+    "settings.taxonomies.aiSuggest.topCategoriesTitle": "Yeni ana kategoriler",
+    "settings.taxonomies.aiSuggest.subcategoriesTitle": "Alt kategoriler",
+    "settings.taxonomies.aiSuggest.subOf": "üst: {parent}",
+    "settings.taxonomies.aiSuggest.disableTitle":
+      "Kapatılması önerilen global kategoriler",
+    "settings.taxonomies.aiSuggest.apply": "Seçilenleri Uygula ({n})",
+    "settings.taxonomies.aiSuggest.applied": "{n} öğe uygulandı.",
+    "settings.taxonomies.aiSuggest.applyFailed": "Uygulama başarısız.",
+    "settings.taxonomies.aiSuggest.parentRequired":
+      "Bu alt kategori için '{parent}' ana kategorisi de seçilmeli.",
+
     // --- users (kullanıcılar) ---
     "settings.users.title": "Kullanıcılar",
     "settings.users.subtitle":
@@ -487,6 +528,19 @@ export const settings: Bundle = {
     "settings.profile.saved": "Profile saved.",
     "settings.profile.invalidField": "Invalid field: {detail}",
     "settings.profile.saveFailed": "Save failed.",
+
+    // --- terminology dictionary (shared by profile + tenant-create wizard) ---
+    "settings.terminology.label": "Terminology dictionary",
+    "settings.terminology.help":
+      "Terms specific to your organization (product names, internal jargon, etc.) — kept verbatim in classification and report text, never replaced with a synonym.",
+    "settings.terminology.termPlaceholder": "Term",
+    "settings.terminology.notePlaceholder": "Note (optional)",
+    "settings.terminology.termLabel": "Term",
+    "settings.terminology.noteLabel": "Note",
+    "settings.terminology.removeAria": "Remove term",
+    "settings.terminology.add": "Add term",
+    "settings.terminology.count": "{n} / {max} terms",
+    "settings.terminology.aiNote": "These terms are preserved verbatim in AI-generated output.",
 
     // --- integrations (AI connection — read-only since 2026-08-09;
     // management lives on the IMGA / super-admin side) ---
@@ -783,6 +837,31 @@ export const settings: Bundle = {
     "settings.taxonomies.keywordPlaceholder": "word, comma-separated…",
     "settings.taxonomies.keywordHelp":
       "Add with Enter or comma; automatically lowercased. {n}/50",
+
+    // --- taxonomies: "Suggest with AI" (WS1 onboarding) ---
+    "settings.taxonomies.aiSuggest.trigger": "Suggest with AI",
+    "settings.taxonomies.aiSuggest.title": "AI Category Suggestion",
+    "settings.taxonomies.aiSuggest.desc":
+      "Generates a tenant-specific category suggestion from your industry, company profile, and recent reviews. Nothing is applied immediately — the subset you pick is written on your confirmation.",
+    "settings.taxonomies.aiSuggest.intro": "Click the button below to generate a suggestion.",
+    "settings.taxonomies.aiSuggest.suggestButton": "Suggest",
+    "settings.taxonomies.aiSuggest.loading": "Preparing suggestion…",
+    "settings.taxonomies.aiSuggest.noCredentials":
+      "No active LLM API key configured. Add one from Settings > Integrations.",
+    "settings.taxonomies.aiSuggest.providerUnavailable":
+      "LLM provider error, please try again.",
+    "settings.taxonomies.aiSuggest.suggestFailed": "Could not generate a suggestion.",
+    "settings.taxonomies.aiSuggest.addKey": "Add key",
+    "settings.taxonomies.aiSuggest.empty": "No new categories found for this profile.",
+    "settings.taxonomies.aiSuggest.topCategoriesTitle": "New main categories",
+    "settings.taxonomies.aiSuggest.subcategoriesTitle": "Subcategories",
+    "settings.taxonomies.aiSuggest.subOf": "parent: {parent}",
+    "settings.taxonomies.aiSuggest.disableTitle": "Global categories suggested for disabling",
+    "settings.taxonomies.aiSuggest.apply": "Apply Selected ({n})",
+    "settings.taxonomies.aiSuggest.applied": "{n} item(s) applied.",
+    "settings.taxonomies.aiSuggest.applyFailed": "Apply failed.",
+    "settings.taxonomies.aiSuggest.parentRequired":
+      "Select the '{parent}' main category for this subcategory as well.",
 
     // --- users ---
     "settings.users.title": "Users",

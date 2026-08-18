@@ -26,10 +26,15 @@ import type {
   TicketResolutionResponse,
 } from "@/lib/types";
 
-function qs(params: Record<string, string | number | undefined | string[]>): string {
+function qs(
+  params: Record<string, string | number | boolean | undefined | string[]>,
+): string {
   const u = new URLSearchParams();
   for (const [k, v] of Object.entries(params)) {
-    if (v === undefined || v === "") continue;
+    // false omitted like undefined — every include_flagged=false call
+    // would otherwise add a distinct query-cache key for a value that's
+    // already the backend default, churning every analytics query key.
+    if (v === undefined || v === "" || v === false) continue;
     if (Array.isArray(v)) {
       if (v.length > 0) u.set(k, v.join(","));
     } else {
@@ -37,6 +42,18 @@ function qs(params: Record<string, string | number | undefined | string[]>): str
     }
   }
   return u.toString();
+}
+
+// 2026-08-18 (Dalga 3, WS2) — veri kalitesi include_flagged toggle.
+// lib/types.ts'e dokunulmuyor (WS5 reviews ajanıyla eşzamanlı düzenleme
+// riski) — root-cause hook desenindeki gibi tip burada genişletiliyor.
+// AnalyticsFilters değerleri (include_flagged'sız) yapısal olarak buraya
+// atanabilir, mevcut çağıranlar değişmeden derlenmeye devam eder.
+export interface AnalyticsQueryFilters extends AnalyticsFilters {
+  /** true → düşük kaliteli (duplicate/empty/informational/meaningless
+   *  bayraklı) satırlar da dahil edilir. Varsayılan: hariç (backend
+   *  default'uyla aynı). */
+  include_flagged?: boolean;
 }
 
 // AnalyticsFilters carries YYYY-MM-DD date strings (URL-friendly, no
@@ -50,7 +67,9 @@ function dateOnlyToLocalIso(value: string | undefined, endOfDay: boolean): strin
   return Number.isNaN(d.getTime()) ? undefined : d.toISOString();
 }
 
-function commonParams(f: AnalyticsFilters): Record<string, string | string[] | undefined> {
+function commonParams(
+  f: AnalyticsQueryFilters,
+): Record<string, string | string[] | boolean | undefined> {
   return {
     date_from: dateOnlyToLocalIso(f.date_from, false),
     date_to: dateOnlyToLocalIso(f.date_to, true),
@@ -58,13 +77,17 @@ function commonParams(f: AnalyticsFilters): Record<string, string | string[] | u
     category_ids: f.category_ids,
     source_types: f.source_types,
     batch_job_id: f.batch_job_id,
+    include_flagged: f.include_flagged,
   };
 }
 
-function dateRangeParams(f: AnalyticsFilters): Record<string, string | undefined> {
+function dateRangeParams(
+  f: AnalyticsQueryFilters,
+): Record<string, string | boolean | undefined> {
   return {
     date_from: dateOnlyToLocalIso(f.date_from, false),
     date_to: dateOnlyToLocalIso(f.date_to, true),
+    include_flagged: f.include_flagged,
   };
 }
 
@@ -208,6 +231,8 @@ interface NpsDateFilters {
   date_from?: string;
   date_to?: string;
   batch_job_id?: string;
+  /** 2026-08-18 (Dalga 3, WS2) — bkz. AnalyticsQueryFilters. */
+  include_flagged?: boolean;
 }
 
 export function useNpsSummary(filters: NpsDateFilters) {
@@ -215,6 +240,7 @@ export function useNpsSummary(filters: NpsDateFilters) {
     date_from: filters.date_from,
     date_to: filters.date_to,
     batch_job_id: filters.batch_job_id,
+    include_flagged: filters.include_flagged,
   });
   return useQuery<NPSSummary>({
     queryKey: ["analytics-nps-summary", query],
@@ -223,8 +249,8 @@ export function useNpsSummary(filters: NpsDateFilters) {
   });
 }
 
-export function useNpsMonthlyTrend(monthsBack: number = 12) {
-  const query = qs({ months_back: monthsBack });
+export function useNpsMonthlyTrend(monthsBack: number = 12, includeFlagged = false) {
+  const query = qs({ months_back: monthsBack, include_flagged: includeFlagged });
   return useQuery<NPSMonthlyPoint[]>({
     queryKey: ["analytics-nps-trend", query],
     queryFn: () =>
@@ -241,6 +267,7 @@ export function useHeadlineMetrics(filters: NpsDateFilters) {
     date_from: filters.date_from,
     date_to: filters.date_to,
     batch_id: filters.batch_job_id,
+    include_flagged: filters.include_flagged,
   });
   return useQuery<HeadlineMetrics>({
     queryKey: ["analytics-headline-metrics", query],

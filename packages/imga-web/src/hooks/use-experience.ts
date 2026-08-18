@@ -31,6 +31,9 @@ export interface ExperienceDistributionFilters {
   /** YYYY-MM-DD (URL-dostu, timezone kayması yok). */
   date_from?: string;
   date_to?: string;
+  /** 2026-08-18 (Dalga 3, WS2) — düşük kaliteli (bayraklı) satırları da
+   *  dahil et. Varsayılan: hariç (backend default'uyla aynı). */
+  include_flagged?: boolean;
 }
 
 // use-analytics.ts ile aynı genişletme: /tenants/me/analytics/* uçları
@@ -53,6 +56,7 @@ export function useExperienceDistribution(
   const to = dateOnlyToLocalIso(filters.date_to, true);
   if (from) params.set("date_from", from);
   if (to) params.set("date_to", to);
+  if (filters.include_flagged) params.set("include_flagged", "true");
   const query = params.toString();
 
   return useQuery<ExperienceDistribution>({

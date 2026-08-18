@@ -18,6 +18,7 @@ import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 
 import { RequireRole } from "@/components/auth/require-role";
+import { TerminologyEditor } from "@/components/onboarding/terminology-editor";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -29,6 +30,13 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  normalizeTerminologyForEdit,
+  sanitizeTerminology,
+  type TenantProfileUpdateRequestWithTerminology,
+  type TenantProfileWithTerminology,
+  type TerminologyEntry,
+} from "@/hooks/use-onboarding";
 import {
   useTenantProfile,
   useUpdateTenantProfile,
@@ -64,19 +72,26 @@ function TenantProfilePageInner() {
   const [otherText, setOtherText] = useState<string>("");
   const [size, setSize] = useState<string>("");
   const [description, setDescription] = useState<string>("");
+  const [terminology, setTerminology] = useState<TerminologyEntry[]>([]);
 
-  // Hydrate the local form mirror from the server payload. The four
+  // Hydrate the local form mirror from the server payload. The five
   // setState calls trip react-hooks/set-state-in-effect, but this is
   // the canonical form-mirror pattern: TanStack Query is the
   // external system, the form fields are React state, and we sync
-  // when the query settles or refetches after a save.
+  // when the query settles or refetches after a save. profile.data is
+  // widened to TenantProfileWithTerminology — types.ts wasn't touched
+  // (WS1 scope), so terminology is read through the shadow type +
+  // normalized (server shape is deliberately loose, see
+  // use-onboarding.ts).
   /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
-    if (!profile.data) return;
-    setIndustry(profile.data.industry ?? "");
-    setOtherText(profile.data.industry_other_text ?? "");
-    setSize(profile.data.company_size ?? "");
-    setDescription(profile.data.business_description ?? "");
+    const data: TenantProfileWithTerminology | undefined = profile.data;
+    if (!data) return;
+    setIndustry(data.industry ?? "");
+    setOtherText(data.industry_other_text ?? "");
+    setSize(data.company_size ?? "");
+    setDescription(data.business_description ?? "");
+    setTerminology(normalizeTerminologyForEdit(data.terminology));
   }, [profile.data]);
   /* eslint-enable react-hooks/set-state-in-effect */
 
@@ -95,13 +110,15 @@ function TenantProfilePageInner() {
 
   function onSubmit(e: React.FormEvent) {
     e.preventDefault();
+    const body: TenantProfileUpdateRequestWithTerminology = {
+      industry: industry || null,
+      industry_other_text: industry === "other" ? otherText.trim() : null,
+      company_size: size || null,
+      business_description: description.trim() || null,
+      terminology: sanitizeTerminology(terminology),
+    };
     update.mutate(
-      {
-        industry: industry || null,
-        industry_other_text: industry === "other" ? otherText.trim() : null,
-        company_size: size || null,
-        business_description: description.trim() || null,
-      },
+      body,
       {
         onSuccess: () => {
           toast.success(t("settings.profile.saved"));
@@ -225,6 +242,13 @@ function TenantProfilePageInner() {
               }
             >
               {description.length} / {DESCRIPTION_MAX}
+            </p>
+          </div>
+
+          <div className="space-y-2 border-t pt-5">
+            <TerminologyEditor value={terminology} onChange={setTerminology} />
+            <p className="text-muted-foreground text-xs">
+              {t("settings.terminology.aiNote")}
             </p>
           </div>
 

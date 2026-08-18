@@ -26,11 +26,13 @@ import {
 } from "recharts";
 
 import { Heatmap } from "@/components/charts/heatmap";
+import { IncludeFlaggedToggle } from "@/components/analytics/include-flagged-toggle";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useTranslation } from "@/lib/i18n/use-translation";
 import {
+  type AnalyticsQueryFilters,
   useCategoryDistribution,
   useCompanyPerspectiveDistribution,
   useNpsMonthlyTrend,
@@ -177,6 +179,11 @@ function InsightsContent() {
   const [sourceTypes, setSourceTypesState] = useState<string>(
     () => searchParams.get("source_types") ?? "",
   );
+  // 2026-08-18 (Dalga 3, WS2) — "Düşük kaliteli veriyi dahil et" switch.
+  // Varsayılan kapalı (backend include_flagged=false default'uyla aynı).
+  const [includeFlagged, setIncludeFlaggedState] = useState<boolean>(
+    () => searchParams.get("include_flagged") === "1",
+  );
 
   // Sprint 8.3.9 — per-tab URL state for the new visualization tabs.
   // Each tab owns a small slice of params; the parent page is the
@@ -233,6 +240,8 @@ function InsightsContent() {
     setDateToState((prev) => (prev === urlTo ? prev : urlTo));
     const urlSrc = searchParams.get("source_types") ?? "";
     setSourceTypesState((prev) => (prev === urlSrc ? prev : urlSrc));
+    const urlIncludeFlagged = searchParams.get("include_flagged") === "1";
+    setIncludeFlaggedState((prev) => (prev === urlIncludeFlagged ? prev : urlIncludeFlagged));
     // Sprint 8.3.9 mirrors.
     const urlCohortPeriod =
       (searchParams.get("cohort_period") as CohortPeriod) || "month";
@@ -270,13 +279,14 @@ function InsightsContent() {
 
   // The query hooks see this; date strings are YYYY-MM-DD (the
   // use-analytics layer expands to local-midnight ISO before the API).
-  const filters = useMemo<AnalyticsFilters>(
+  const filters = useMemo<AnalyticsQueryFilters>(
     () => ({
       date_from: dateFrom || undefined,
       date_to: dateTo || undefined,
       source_types: sourceTypes ? sourceTypes.split(",").filter(Boolean) : undefined,
+      include_flagged: includeFlagged || undefined,
     }),
-    [dateFrom, dateTo, sourceTypes],
+    [dateFrom, dateTo, sourceTypes, includeFlagged],
   );
 
   // Push a single querystring update. Reads searchParams fresh on each
@@ -306,6 +316,10 @@ function InsightsContent() {
     setSourceTypesState(value);
     pushParam("source_types", value || null);
   }
+  function handleIncludeFlaggedChange(next: boolean) {
+    setIncludeFlaggedState(next);
+    pushParam("include_flagged", next ? "1" : null);
+  }
 
   return (
     <main className="mx-auto w-full max-w-6xl space-y-6 px-4 py-6 md:px-8 md:py-10">
@@ -322,9 +336,11 @@ function InsightsContent() {
         dateFrom={dateFrom}
         dateTo={dateTo}
         sourceTypes={sourceTypes}
+        includeFlagged={includeFlagged}
         onDateFromChange={handleDateFromChange}
         onDateToChange={handleDateToChange}
         onSourceTypesChange={handleSourceTypesChange}
+        onIncludeFlaggedChange={handleIncludeFlaggedChange}
       />
 
       {/* Sprint 9.8 — Madde 8 (UML): tarih filtresi boşken kullanıcı
@@ -380,7 +396,7 @@ function InsightsContent() {
           <TicketsTab filters={filters} />
         </TabsContent>
         <TabsContent value="nps">
-          <NpsTab dateFrom={dateFrom} dateTo={dateTo} />
+          <NpsTab dateFrom={dateFrom} dateTo={dateTo} includeFlagged={includeFlagged} />
         </TabsContent>
         <TabsContent value="perspective">
           <PerspectiveTab filters={filters} router={router} />
@@ -437,6 +453,7 @@ function InsightsContent() {
             metric={hmMetric}
             dateFrom={dateFrom}
             dateTo={dateTo}
+            includeFlagged={includeFlagged}
             onXAxisChange={(next) => {
               setHmXState(next);
               pushParam("hm_x", next === "hour_of_day" ? null : next);
@@ -470,16 +487,20 @@ function FilterBar({
   dateFrom,
   dateTo,
   sourceTypes,
+  includeFlagged,
   onDateFromChange,
   onDateToChange,
   onSourceTypesChange,
+  onIncludeFlaggedChange,
 }: {
   dateFrom: string;
   dateTo: string;
   sourceTypes: string;
+  includeFlagged: boolean;
   onDateFromChange: (value: string) => void;
   onDateToChange: (value: string) => void;
   onSourceTypesChange: (value: string) => void;
+  onIncludeFlaggedChange: (next: boolean) => void;
 }) {
   const { t } = useTranslation();
   // Native min/max on the date inputs prevents the picker from offering
@@ -488,39 +509,42 @@ function FilterBar({
   // trip and makes the picker grey out the disallowed days visually.
   return (
     <Card>
-      <CardContent className="grid grid-cols-1 gap-3 p-4 md:grid-cols-3">
-        <div>
-          <Label className="text-xs">{t("insights.filter.startDate")}</Label>
-          <input
-            type="date"
-            value={dateFrom}
-            max={dateTo || undefined}
-            onChange={(e) => onDateFromChange(e.target.value)}
-            className="border-input bg-background mt-1 w-full rounded-md border px-3 py-2 text-sm"
-          />
+      <CardContent className="space-y-3 p-4">
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+          <div>
+            <Label className="text-xs">{t("insights.filter.startDate")}</Label>
+            <input
+              type="date"
+              value={dateFrom}
+              max={dateTo || undefined}
+              onChange={(e) => onDateFromChange(e.target.value)}
+              className="border-input bg-background mt-1 w-full rounded-md border px-3 py-2 text-sm"
+            />
+          </div>
+          <div>
+            <Label className="text-xs">{t("insights.filter.endDate")}</Label>
+            <input
+              type="date"
+              value={dateTo}
+              min={dateFrom || undefined}
+              onChange={(e) => onDateToChange(e.target.value)}
+              className="border-input bg-background mt-1 w-full rounded-md border px-3 py-2 text-sm"
+            />
+          </div>
+          <div>
+            <Label className="text-xs">{t("insights.filter.source")}</Label>
+            <select
+              value={sourceTypes}
+              onChange={(e) => onSourceTypesChange(e.target.value)}
+              className="border-input bg-background mt-1 w-full rounded-md border px-3 py-2 text-sm"
+            >
+              <option value="">{t("insights.filter.sourceAll")}</option>
+              <option value="manual">{t("insights.filter.sourceManualOnly")}</option>
+              <option value="batch">{t("insights.filter.sourceBatchOnly")}</option>
+            </select>
+          </div>
         </div>
-        <div>
-          <Label className="text-xs">{t("insights.filter.endDate")}</Label>
-          <input
-            type="date"
-            value={dateTo}
-            min={dateFrom || undefined}
-            onChange={(e) => onDateToChange(e.target.value)}
-            className="border-input bg-background mt-1 w-full rounded-md border px-3 py-2 text-sm"
-          />
-        </div>
-        <div>
-          <Label className="text-xs">{t("insights.filter.source")}</Label>
-          <select
-            value={sourceTypes}
-            onChange={(e) => onSourceTypesChange(e.target.value)}
-            className="border-input bg-background mt-1 w-full rounded-md border px-3 py-2 text-sm"
-          >
-            <option value="">{t("insights.filter.sourceAll")}</option>
-            <option value="manual">{t("insights.filter.sourceManualOnly")}</option>
-            <option value="batch">{t("insights.filter.sourceBatchOnly")}</option>
-          </select>
-        </div>
+        <IncludeFlaggedToggle checked={includeFlagged} onChange={onIncludeFlaggedChange} />
       </CardContent>
     </Card>
   );
@@ -860,17 +884,26 @@ const NPS_BUCKET_COLOURS: Record<string, string> = {
   Promoter: "#16a34a",
 };
 
-function NpsTab({ dateFrom, dateTo }: { dateFrom: string; dateTo: string }) {
+function NpsTab({
+  dateFrom,
+  dateTo,
+  includeFlagged,
+}: {
+  dateFrom: string;
+  dateTo: string;
+  includeFlagged: boolean;
+}) {
   const { t } = useTranslation();
   const filters = useMemo(
     () => ({
       date_from: dateFrom || undefined,
       date_to: dateTo || undefined,
+      include_flagged: includeFlagged || undefined,
     }),
-    [dateFrom, dateTo],
+    [dateFrom, dateTo, includeFlagged],
   );
   const summary = useNpsSummary(filters);
-  const trend = useNpsMonthlyTrend(12);
+  const trend = useNpsMonthlyTrend(12, includeFlagged);
 
   const trendData = useMemo(
     () => (trend.data ?? []).map((p) => ({ ...p, label: p.month.slice(0, 7) })),

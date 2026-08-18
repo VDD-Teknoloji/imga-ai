@@ -77,6 +77,8 @@ interface Props {
   metric: HeatmapMetric;
   dateFrom: string;
   dateTo: string;
+  /** 2026-08-18 (Dalga 3, WS2) — düşük kaliteli veriyi dahil et toggle'ı. */
+  includeFlagged: boolean;
   onXAxisChange: (next: HeatmapXAxis) => void;
   onYAxisChange: (next: HeatmapYAxis) => void;
   onMetricChange: (next: HeatmapMetric) => void;
@@ -88,6 +90,7 @@ export function HeatmapTab({
   metric,
   dateFrom,
   dateTo,
+  includeFlagged,
   onXAxisChange,
   onYAxisChange,
   onMetricChange,
@@ -103,6 +106,7 @@ export function HeatmapTab({
     metric,
     date_from: dateFrom || undefined,
     date_to: dateTo || undefined,
+    include_flagged: includeFlagged || undefined,
   });
 
   const { colorFor, maxCell } = useMemo(

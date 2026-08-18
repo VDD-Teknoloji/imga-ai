@@ -1,11 +1,12 @@
 "use client";
 
-import { ChevronLeft, Loader2, RefreshCw, RotateCcw, Upload } from "lucide-react";
+import { ChevronLeft, ClipboardList, Loader2, RefreshCw, RotateCcw, Upload } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
 import { toast } from "sonner";
 
 import { RequireRole } from "@/components/auth/require-role";
+import { QualityReportDialog } from "@/components/batch/quality-report-dialog";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -77,6 +78,8 @@ function BatchHistoryPageInner() {
   const reanalyzeAll = useReanalyzeAllReviews();
   const [reanalyzeTarget, setReanalyzeTarget] = useState<BatchJob | null>(null);
   const [reanalyzeAllOpen, setReanalyzeAllOpen] = useState(false);
+  // 2026-08-18 (Dalga 3, WS2) — Kalite Raporu paneli.
+  const [qualityReportJobId, setQualityReportJobId] = useState<string | null>(null);
   const jobs = history.data?.pages.flatMap((p) => p.jobs) ?? [];
 
   function handleRetry(jobId: string) {
@@ -230,6 +233,16 @@ function BatchHistoryPageInner() {
                           {t("analyze.history.reanalyze.action")}
                         </Button>
                       )}
+                      {job.succeeded_rows > 0 && (
+                        <Button
+                          variant="link"
+                          className="text-primary h-auto gap-1 p-0"
+                          onClick={() => setQualityReportJobId(job.job_id)}
+                        >
+                          <ClipboardList className="size-3.5" aria-hidden />
+                          {t("analyze.history.qualityReport.action")}
+                        </Button>
+                      )}
                       <Button
                         variant="link"
                         className="h-auto p-0"
@@ -318,6 +331,12 @@ function BatchHistoryPageInner() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <QualityReportDialog
+        jobId={qualityReportJobId}
+        open={qualityReportJobId !== null}
+        onClose={() => setQualityReportJobId(null)}
+      />
     </main>
   );
 }

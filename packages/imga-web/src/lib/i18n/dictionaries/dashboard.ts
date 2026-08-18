@@ -203,6 +203,12 @@ export const dashboard: Bundle = {
     "dashboard.executiveHero.legend.positive": "Olumlu",
     "dashboard.executiveHero.legend.neutral": "Nötr",
     "dashboard.executiveHero.legend.negative": "Olumsuz",
+    // WS5 (2026-08-18) — SatisfactionBar segmentleri tıklanabilir oldu;
+    // role="img" yerine role="group" + her segmentin kendi aria-label'i.
+    "dashboard.executiveHero.satisfactionBarAria":
+      "Memnuniyet dağılımı — bir segmente tıklayarak ilgili yorumları görüntüleyin",
+    "dashboard.executiveHero.legend.segmentAria":
+      "{label}: %{pct} — görüntülemek için tıklayın",
     "dashboard.executiveHero.windowEmpty.title": "Seçilen dönemde yorum yok",
     "dashboard.executiveHero.windowEmpty.desc":
       "Dönem filtresini genişletin veya yeni yorum verisi yükleyin.",
@@ -715,6 +721,12 @@ export const dashboard: Bundle = {
     "dashboard.executiveHero.legend.positive": "Positive",
     "dashboard.executiveHero.legend.neutral": "Neutral",
     "dashboard.executiveHero.legend.negative": "Negative",
+    // WS5 (2026-08-18) — SatisfactionBar segments became clickable;
+    // role="img" replaced with role="group" + a per-segment aria-label.
+    "dashboard.executiveHero.satisfactionBarAria":
+      "Satisfaction distribution — click a segment to view the matching reviews",
+    "dashboard.executiveHero.legend.segmentAria":
+      "{label}: {pct}% — click to view",
     "dashboard.executiveHero.windowEmpty.title":
       "No reviews in the selected period",
     "dashboard.executiveHero.windowEmpty.desc":

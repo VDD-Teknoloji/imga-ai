@@ -32,6 +32,7 @@ import {
   Plus,
   RotateCcw,
   ShieldCheck,
+  Sparkles,
   Tags,
   Trash2,
   X,
@@ -41,6 +42,7 @@ import { Suspense, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 
 import { RequireRole } from "@/components/auth/require-role";
+import { CategorySuggestionDialog } from "@/components/onboarding/category-suggestion-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -156,6 +158,7 @@ function TaxonomiesContent() {
 
   const [editTarget, setEditTarget] = useState<TaxonomyEntry | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
+  const [aiSuggestOpen, setAiSuggestOpen] = useState(false);
 
   return (
     <main className="mx-auto w-full max-w-4xl space-y-6 p-6 md:p-8">
@@ -171,9 +174,14 @@ function TaxonomiesContent() {
             </p>
           </div>
         </div>
-        <Button onClick={() => setCreateOpen(true)} className="gap-2">
-          <Plus className="size-4" aria-hidden /> {t("settings.taxonomies.addCategory")}
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          <Button variant="outline" onClick={() => setAiSuggestOpen(true)} className="gap-2">
+            <Sparkles className="size-4" aria-hidden /> {t("settings.taxonomies.aiSuggest.trigger")}
+          </Button>
+          <Button onClick={() => setCreateOpen(true)} className="gap-2">
+            <Plus className="size-4" aria-hidden /> {t("settings.taxonomies.addCategory")}
+          </Button>
+        </div>
       </header>
 
       <div className="bg-card flex flex-wrap items-center gap-3 rounded-lg border p-3">
@@ -237,6 +245,10 @@ function TaxonomiesContent() {
         open={createOpen}
         onClose={() => setCreateOpen(false)}
         existing={items}
+      />
+      <CategorySuggestionDialog
+        open={aiSuggestOpen}
+        onClose={() => setAiSuggestOpen(false)}
       />
       {editTarget && (
         <EditModal

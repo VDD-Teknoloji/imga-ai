@@ -58,6 +58,10 @@ export const analyze: Bundle = {
       "Kategori belirsiz — manuel sınıflandırma gerekli",
     "analyze.manual.decision.belirsiz.message":
       "Sınıflandırıcı bu metni emin bir kategoriye yerleştiremedi. Hangi modda olursan ol, belirsiz yorumlardan otomatik Ticket açılmaz.",
+    "analyze.manual.decision.quality.title":
+      "Düşük kaliteli veri — Ticket açılmadı",
+    "analyze.manual.decision.quality.message":
+      "Bu metin gerçek bir müşteri yorumu olarak değerlendirilmedi (boş/anlamsız veya otomatik bilgilendirme). Analiz kaydı tutuldu; varsayılan grafiklerde hariç tutulur.",
 
     // --- Toplu Yükleme (analyze/upload/page.tsx) ---
     "analyze.upload.backManual": "Manuel Analiz",
@@ -136,6 +140,14 @@ export const analyze: Bundle = {
     "analyze.upload.status.processing": "İşleniyor",
     "analyze.upload.status.queued": "Sıraya alındı",
 
+    // --- 2026-08-18 (Dalga 3, WS2): Adım 4 Veri Kalitesi kartı ---
+    "analyze.upload.quality.title": "Veri Kalitesi",
+    "analyze.upload.quality.validCount": "{n} temiz satır",
+    "analyze.upload.quality.duplicate": "Tekrar",
+    "analyze.upload.quality.empty": "Boş",
+    "analyze.upload.quality.informational": "Bilgilendirme",
+    "analyze.upload.quality.meaningless": "Anlamsız",
+
     // --- Twitter'dan Çek (analyze/twitter/page.tsx) ---
     "analyze.twitter.back": "Toplu Yükleme",
     "analyze.twitter.title": "Twitter'dan Çek",
@@ -193,6 +205,35 @@ export const analyze: Bundle = {
     "analyze.history.status.completed": "Tamamlandı",
     "analyze.history.status.failed": "Başarısız",
     "analyze.history.status.cancelled": "İptal",
+
+    // --- 2026-08-18 (Dalga 3, WS2): Kalite Raporu paneli ---
+    "analyze.history.qualityReport.action": "Kalite Raporu",
+    "analyze.history.qualityReport.title": "Veri Kalitesi Raporu",
+    "analyze.history.qualityReport.subtitle":
+      "Bu yüklemenin bayrak sayaçları, en çok tekrarlanan metinler ve çalışan bazlı kırılım.",
+    "analyze.history.qualityReport.duplicate": "Tekrar",
+    "analyze.history.qualityReport.empty": "Boş",
+    "analyze.history.qualityReport.informational": "Bilgilendirme",
+    "analyze.history.qualityReport.meaningless": "Anlamsız",
+    "analyze.history.qualityReport.topRepeatedTitle": "En Çok Tekrarlanan Metinler",
+    "analyze.history.qualityReport.byEmployeeTitle": "Çalışan Bazlı Kırılım",
+    "analyze.history.qualityReport.col.text": "Metin",
+    "analyze.history.qualityReport.col.count": "Adet",
+    "analyze.history.qualityReport.col.employee": "Çalışan",
+    "analyze.history.qualityReport.col.total": "Toplam",
+    "analyze.history.qualityReport.unknownEmployee": "Bilinmiyor",
+    "analyze.history.qualityReport.aiAssessmentTitle": "Yapay Zekâ Değerlendirmesi",
+    "analyze.history.qualityReport.notGeneratedYet":
+      "Bu yükleme için henüz bir değerlendirme üretilmedi.",
+    "analyze.history.qualityReport.notGeneratedYetViewer":
+      "Bu yükleme için henüz bir değerlendirme üretilmedi.",
+    "analyze.history.qualityReport.generateButton": "Değerlendirme Üret",
+    "analyze.history.qualityReport.generating": "Değerlendirme üretiliyor…",
+    "analyze.history.qualityReport.generatedMeta": "{model} · {date}",
+    "analyze.history.qualityReport.generateFailed":
+      "Değerlendirme üretilemedi.",
+    "analyze.history.qualityReport.loadFailed": "Kalite raporu yüklenemedi.",
+    "analyze.history.qualityReport.close": "Kapat",
 
     // --- Yeniden analiz (yalnız kurum yöneticisi) ---
     "analyze.history.reanalyze.action": "Yeniden Analiz Et",
@@ -294,6 +335,10 @@ export const analyze: Bundle = {
       "Category unclear — manual classification required",
     "analyze.manual.decision.belirsiz.message":
       "The classifier couldn't confidently place this text in a category. Regardless of mode, unclear comments don't open Tickets automatically.",
+    "analyze.manual.decision.quality.title":
+      "Low-quality data — no Ticket opened",
+    "analyze.manual.decision.quality.message":
+      "This text wasn't treated as a genuine customer review (empty/meaningless or an automated notification). The analysis row is kept and excluded from default charts.",
 
     // --- Bulk Upload (analyze/upload/page.tsx) ---
     "analyze.upload.backManual": "Manual Analysis",
@@ -372,6 +417,14 @@ export const analyze: Bundle = {
     "analyze.upload.status.processing": "Processing",
     "analyze.upload.status.queued": "Queued",
 
+    // --- 2026-08-18 (Wave 3, WS2): Step 4 Data Quality card ---
+    "analyze.upload.quality.title": "Data Quality",
+    "analyze.upload.quality.validCount": "{n} clean rows",
+    "analyze.upload.quality.duplicate": "Duplicate",
+    "analyze.upload.quality.empty": "Empty",
+    "analyze.upload.quality.informational": "Informational",
+    "analyze.upload.quality.meaningless": "Meaningless",
+
     // --- Import from Twitter (analyze/twitter/page.tsx) ---
     "analyze.twitter.back": "Bulk Upload",
     "analyze.twitter.title": "Import from Twitter",
@@ -430,6 +483,35 @@ export const analyze: Bundle = {
     "analyze.history.status.completed": "Completed",
     "analyze.history.status.failed": "Failed",
     "analyze.history.status.cancelled": "Cancelled",
+
+    // --- 2026-08-18 (Wave 3, WS2): Quality Report panel ---
+    "analyze.history.qualityReport.action": "Quality Report",
+    "analyze.history.qualityReport.title": "Data Quality Report",
+    "analyze.history.qualityReport.subtitle":
+      "This upload's flag counts, most repeated texts, and per-employee breakdown.",
+    "analyze.history.qualityReport.duplicate": "Duplicate",
+    "analyze.history.qualityReport.empty": "Empty",
+    "analyze.history.qualityReport.informational": "Informational",
+    "analyze.history.qualityReport.meaningless": "Meaningless",
+    "analyze.history.qualityReport.topRepeatedTitle": "Most Repeated Texts",
+    "analyze.history.qualityReport.byEmployeeTitle": "Per-Employee Breakdown",
+    "analyze.history.qualityReport.col.text": "Text",
+    "analyze.history.qualityReport.col.count": "Count",
+    "analyze.history.qualityReport.col.employee": "Employee",
+    "analyze.history.qualityReport.col.total": "Total",
+    "analyze.history.qualityReport.unknownEmployee": "Unknown",
+    "analyze.history.qualityReport.aiAssessmentTitle": "AI Assessment",
+    "analyze.history.qualityReport.notGeneratedYet":
+      "No assessment has been generated for this upload yet.",
+    "analyze.history.qualityReport.notGeneratedYetViewer":
+      "No assessment has been generated for this upload yet.",
+    "analyze.history.qualityReport.generateButton": "Generate Assessment",
+    "analyze.history.qualityReport.generating": "Generating assessment…",
+    "analyze.history.qualityReport.generatedMeta": "{model} · {date}",
+    "analyze.history.qualityReport.generateFailed":
+      "Could not generate the assessment.",
+    "analyze.history.qualityReport.loadFailed": "Could not load the quality report.",
+    "analyze.history.qualityReport.close": "Close",
 
     // --- Re-analysis (tenant admin only) ---
     "analyze.history.reanalyze.action": "Re-analyze",

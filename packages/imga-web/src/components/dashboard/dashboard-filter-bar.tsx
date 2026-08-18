@@ -10,6 +10,7 @@
 
 import { X } from "lucide-react";
 
+import { IncludeFlaggedToggle } from "@/components/analytics/include-flagged-toggle";
 import { TimeWindowFilter, type TimeWindowKey } from "@/components/dashboard/time-window-filter";
 import { BatchFilterDropdown } from "@/components/reviews/batch-filter-dropdown";
 import { DateField } from "@/components/ui/date-field";
@@ -27,6 +28,9 @@ interface Props {
   /** Batch job UUID veya "" (seçili değil). */
   batchJobId: string;
   onBatchChange: (next: string | undefined) => void;
+  /** 2026-08-18 (Dalga 3, WS2) — "Düşük kaliteli veriyi dahil et" switch. */
+  includeFlagged: boolean;
+  onIncludeFlaggedChange: (next: boolean) => void;
   onClear: () => void;
 }
 
@@ -39,6 +43,8 @@ export function DashboardFilterBar({
   onDateToChange,
   batchJobId,
   onBatchChange,
+  includeFlagged,
+  onIncludeFlaggedChange,
   onClear,
 }: Props) {
   const { t } = useTranslation();
@@ -50,7 +56,11 @@ export function DashboardFilterBar({
     : undefined;
 
   const hasAnyFilter =
-    windowKey !== "all" || dateFrom !== "" || dateTo !== "" || batchJobId !== "";
+    windowKey !== "all" ||
+    dateFrom !== "" ||
+    dateTo !== "" ||
+    batchJobId !== "" ||
+    includeFlagged;
 
   return (
     <div className="rise-in flex flex-wrap items-center gap-x-5 gap-y-3">
@@ -104,6 +114,8 @@ export function DashboardFilterBar({
           </span>
         )}
       </div>
+
+      <IncludeFlaggedToggle checked={includeFlagged} onChange={onIncludeFlaggedChange} />
 
       {hasAnyFilter && (
         <button

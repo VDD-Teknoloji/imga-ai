@@ -39,6 +39,13 @@ export const insights: Bundle = {
     "insights.filter.sourceManualOnly": "Sadece Manuel",
     "insights.filter.sourceBatchOnly": "Sadece Toplu",
 
+    // --- 2026-08-18 (Dalga 3, WS2): veri kalitesi include_flagged toggle ---
+    // Paylaşılan bileşen (/insights + ana sayfa filtre çubuğu).
+    "insights.filter.includeFlaggedLabel": "Düşük kaliteli veriyi dahil et",
+    "insights.filter.includeFlaggedAria": "Düşük kaliteli veriyi dahil et",
+    "insights.filter.includeFlaggedBadge":
+      "tekrar/boş/bilgilendirme satırları dahil",
+
     // --- /insights: ortak durum metinleri ---
     "insights.state.loadError": "Veri yüklenemedi: {message}",
     "insights.state.loadErrorShort": "Veri yüklenemedi.",
@@ -176,6 +183,13 @@ export const insights: Bundle = {
     "reviews.pill.day": "Gün: {value}",
     "reviews.pill.week": "Hafta: {value}",
     "reviews.pill.month": "Ay: {value}",
+    // WS5 (2026-08-18) — decisions/quality/date-range filtreleri +
+    // pill "x" artık YALNIZ o filtreyi kaldıran buton (aria-label şart).
+    "reviews.pill.decisions": "Karar: {value}",
+    "reviews.pill.quality": "Veri kalitesi: {value}",
+    "reviews.pill.validOnly": "Yalnız geçerli veri",
+    "reviews.pill.dateRange": "Tarih: {from} – {to}",
+    "reviews.pill.removeAria": "{label} filtresini kaldır",
 
     // --- /reviews: perspektif filtre dropdown ---
     "reviews.perspFilter.trigger": "Şirket perspektifi",
@@ -184,12 +198,34 @@ export const insights: Bundle = {
     "reviews.perspFilter.noTaxonomy": "Taksonomi yok.",
     "reviews.perspFilter.clearAll": "Tümünü temizle",
 
+    // --- /reviews: duygu filtre dropdown (WS5) ---
+    "reviews.sentimentFilter.trigger": "Duygu",
+    "reviews.sentimentFilter.selected": "Duygu: {count} seçili",
+
+    // --- /reviews: karar filtre dropdown (WS5) ---
+    "reviews.decisionsFilter.trigger": "Karar",
+    "reviews.decisionsFilter.selected": "Karar: {count} seçili",
+
+    // --- /reviews: veri kalitesi filtre dropdown (WS5) ---
+    "reviews.qualityFilter.trigger": "Veri kalitesi: Tümü",
+    "reviews.qualityFilter.validOnly": "Yalnız geçerli",
+    "reviews.qualityFilter.duplicate": "Tekrar",
+    "reviews.qualityFilter.empty": "Boş",
+    "reviews.qualityFilter.informational": "Bilgilendirme",
+    "reviews.qualityFilter.meaningless": "Anlamsız",
+
+    // --- /reviews: tarih aralığı filtresi (WS5) ---
+    "reviews.dateFilter.groupAria": "Tarih aralığı filtresi",
+    "reviews.dateFilter.fromAria": "Başlangıç tarihi",
+    "reviews.dateFilter.toAria": "Bitiş tarihi",
+
     // --- /reviews/[id]: karar etiketleri ---
     "reviews.decision.create": "Ticket Açıldı",
     "reviews.decision.skippedBelirsiz": "Atlandı (Kategori Belirsiz)",
     "reviews.decision.skippedMode": "Atlandı (Manuel Mod)",
     "reviews.decision.skippedThreshold": "Atlandı (Eşik Altı)",
     "reviews.decision.skippedDedup": "Atlandı (24s İçinde Mükerrer)",
+    "reviews.decision.skippedQuality": "Atlandı (Düşük Kaliteli Veri)",
 
     // --- /reviews/[id]: detay ---
     "reviews.detail.promoteSuccess": "Manuel olarak Ticket açıldı.",
@@ -215,6 +251,20 @@ export const insights: Bundle = {
     "reviews.detail.experience": "Deneyim",
     "reviews.experience.dijital": "Dijital",
     "reviews.experience.operasyonel": "Operasyonel",
+
+    // --- "Kararı Düzelt" dialog'u — skor/deneyim/alt-kategori (WS3,
+    // 2026-08-18, migration 0042). Dialog'daki diğer metinler (başlık,
+    // gerekçe vb.) bilinçli olarak eski haliyle bırakıldı — bu anahtarlar
+    // yalnızca YENİ eklenen alanlara ait.
+    "reviews.correct.scoreLabel": "Skor",
+    "reviews.correct.scoreHint":
+      "-1 (çok olumsuz) ile 1 (çok olumlu) arası. Duygu değişince öneri güncellenir; siz değiştirmezseniz gönderilmez.",
+    "reviews.correct.scoreSliderAria": "Skor kaydırıcısı",
+    "reviews.correct.scoreNumberAria": "Skor değeri",
+    "reviews.correct.experienceLabel": "Deneyim",
+    "reviews.correct.subcategoryLabel": "Alt kategori (şirket perspektifi)",
+    "reviews.correct.noChange": "— (değiştirme)",
+
     "reviews.detail.companyPerspective": "Şirket Perspektifi",
     "reviews.detail.bertCategory": "BERT kategorisi",
     "reviews.detail.heuristicPerspective": "Heuristik perspektif",
@@ -317,6 +367,13 @@ export const insights: Bundle = {
     "insights.filter.sourceAll": "All",
     "insights.filter.sourceManualOnly": "Manual only",
     "insights.filter.sourceBatchOnly": "Batch only",
+
+    // --- 2026-08-18 (Wave 3, WS2): data quality include_flagged toggle ---
+    // Shared component (/insights + dashboard filter bar).
+    "insights.filter.includeFlaggedLabel": "Include low-quality data",
+    "insights.filter.includeFlaggedAria": "Include low-quality data",
+    "insights.filter.includeFlaggedBadge":
+      "includes duplicate/empty/informational rows",
 
     // --- /insights: shared state messages ---
     "insights.state.loadError": "Failed to load data: {message}",
@@ -454,6 +511,13 @@ export const insights: Bundle = {
     "reviews.pill.day": "Day: {value}",
     "reviews.pill.week": "Week: {value}",
     "reviews.pill.month": "Month: {value}",
+    // WS5 (2026-08-18) — decisions/quality/date-range filters + the
+    // pill "x" now removes only that one filter (needs an aria-label).
+    "reviews.pill.decisions": "Decision: {value}",
+    "reviews.pill.quality": "Data quality: {value}",
+    "reviews.pill.validOnly": "Valid data only",
+    "reviews.pill.dateRange": "Date: {from} – {to}",
+    "reviews.pill.removeAria": "Remove {label} filter",
 
     // --- /reviews: perspective filter dropdown ---
     "reviews.perspFilter.trigger": "Company perspective",
@@ -462,12 +526,36 @@ export const insights: Bundle = {
     "reviews.perspFilter.noTaxonomy": "No taxonomy.",
     "reviews.perspFilter.clearAll": "Clear all",
 
+    // --- /reviews: sentiment filter dropdown (WS5) ---
+    "reviews.sentimentFilter.trigger": "Sentiment",
+    "reviews.sentimentFilter.selected": "Sentiment: {count} selected",
+
+    // --- /reviews: decision filter dropdown (WS5) ---
+    "reviews.decisionsFilter.trigger": "Decision",
+    "reviews.decisionsFilter.selected": "Decision: {count} selected",
+
+    // --- /reviews: data quality filter dropdown (WS5) ---
+    "reviews.qualityFilter.trigger": "Data quality: All",
+    "reviews.qualityFilter.validOnly": "Valid only",
+    "reviews.qualityFilter.duplicate": "Duplicate",
+    "reviews.qualityFilter.empty": "Empty",
+    "reviews.qualityFilter.informational": "Informational",
+    "reviews.qualityFilter.meaningless": "Meaningless",
+
+    // --- /reviews: date range filter (WS5) ---
+    "reviews.dateFilter.groupAria": "Date range filter",
+    "reviews.dateFilter.fromAria": "Start date",
+    "reviews.dateFilter.toAria": "End date",
+
     // --- /reviews/[id]: decision labels ---
     "reviews.decision.create": "Ticket Opened",
     "reviews.decision.skippedBelirsiz": "Skipped (Category Unclear)",
     "reviews.decision.skippedMode": "Skipped (Manual Mode)",
     "reviews.decision.skippedThreshold": "Skipped (Below Threshold)",
     "reviews.decision.skippedDedup": "Skipped (Duplicate Within 24h)",
+    "reviews.decision.skippedQuality": "Skipped (Low-Quality Data)",
+    // NOTE: the backend's new "skipped_quality" branch (migration 0042)
+    // is deliberately absent here — see lib/types.ts ReviewDecision.
 
     // --- /reviews/[id]: detail ---
     "reviews.detail.promoteSuccess": "Ticket opened manually.",
@@ -493,6 +581,20 @@ export const insights: Bundle = {
     "reviews.detail.experience": "Experience",
     "reviews.experience.dijital": "Digital",
     "reviews.experience.operasyonel": "Operational",
+
+    // --- "Correct the decision" dialog — score/experience/subcategory
+    // (WS3, 2026-08-18, migration 0042). The dialog's other strings
+    // (title, reason field, etc.) are deliberately left as-is — these
+    // keys cover only the NEWLY added fields.
+    "reviews.correct.scoreLabel": "Score",
+    "reviews.correct.scoreHint":
+      "-1 (very negative) to 1 (very positive). The suggestion updates when sentiment changes; if you don't touch it, it won't be sent.",
+    "reviews.correct.scoreSliderAria": "Score slider",
+    "reviews.correct.scoreNumberAria": "Score value",
+    "reviews.correct.experienceLabel": "Experience",
+    "reviews.correct.subcategoryLabel": "Subcategory (company perspective)",
+    "reviews.correct.noChange": "— (no change)",
+
     "reviews.detail.companyPerspective": "Company Perspective",
     "reviews.detail.bertCategory": "BERT category",
     "reviews.detail.heuristicPerspective": "Heuristic perspective",

@@ -28,6 +28,10 @@ const DECISION_LABEL_KEYS: Record<ReviewDecision, string> = {
   skipped_mode: "reviews.decision.skippedMode",
   skipped_threshold: "reviews.decision.skippedThreshold",
   skipped_dedup: "reviews.decision.skippedDedup",
+  skipped_quality: "reviews.decision.skippedQuality",
+  // NOT (2026-08-18, WS5): backend'in yeni skipped_quality dalı
+  // (migration 0042) bilinçli olarak yok — bkz. lib/types.ts
+  // ReviewDecision NOT'u (analyze/page.tsx exhaustive map çakışması).
 };
 
 const PROMOTABLE_DECISIONS: ReadonlySet<ReviewDecision> = new Set([
@@ -198,6 +202,9 @@ function ReviewDetailInner() {
                 reviewId={detail.data.id}
                 currentSentiment={detail.data.sentiment.label}
                 currentCategory={detail.data.categorization.primary}
+                currentScore={detail.data.sentiment.final_score}
+                currentExperienceType={detail.data.experience_type ?? null}
+                currentPerspectiveCode={detail.data.company_perspective.code}
               />
             </CardHeader>
             <CardContent className="space-y-4">

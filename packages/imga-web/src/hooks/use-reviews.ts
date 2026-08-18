@@ -34,6 +34,12 @@ export interface CorrectReviewPayload {
   reviewId: string;
   sentiment_label?: "POZITIF" | "NEGATIF" | "NÖTR";
   primary_category?: string;
+  // 2026-08-18 (migration 0042) — duygu/kategoriden BAĞIMSIZ
+  // düzeltilebilir; yalnız değişen alan gönderilir (dirty-check
+  // dialog tarafında yapılır).
+  sentiment_score?: number;
+  experience_type?: "dijital" | "operasyonel";
+  perspective_code?: string;
   reason?: string;
 }
 
@@ -42,6 +48,8 @@ export interface CorrectReviewResponse {
   sentiment_label: string;
   sentiment_score: number;
   primary_category: string;
+  experience_type: string | null;
+  perspective_code: string | null;
   correction_id: string;
   embedding_stored: boolean;
 }
@@ -66,12 +74,26 @@ export function useCorrectReview() {
   });
 }
 
+// filters.date_from/date_to carry YYYY-MM-DD (url-state-patterns.md
+// kuralı — ISO datetime DEĞİL). Backend `date_to` alanı ham `<=`
+// karşılaştırması yapıyor (review_list_service.py); bare "YYYY-MM-DD"
+// T00:00:00'a parse olur ve tüm gün dışarıda kalır — use-analytics.ts
+// ile aynı 1-günlük timezone-slide deneyimi. Burada da yerel gün
+// başı/sonu ISO'ya genişletilir.
+function dateOnlyToLocalIso(value: string | undefined, endOfDay: boolean): string | undefined {
+  if (!value) return undefined;
+  const d = new Date(`${value}${endOfDay ? "T23:59:59" : "T00:00:00"}`);
+  return Number.isNaN(d.getTime()) ? undefined : d.toISOString();
+}
+
 function buildQueryString(filters: ReviewListFilters, offset: number, limit: number): string {
   const params = new URLSearchParams();
   params.set("limit", String(limit));
   params.set("offset", String(offset));
-  if (filters.date_from) params.set("date_from", filters.date_from);
-  if (filters.date_to) params.set("date_to", filters.date_to);
+  const dateFrom = dateOnlyToLocalIso(filters.date_from, false);
+  const dateTo = dateOnlyToLocalIso(filters.date_to, true);
+  if (dateFrom) params.set("date_from", dateFrom);
+  if (dateTo) params.set("date_to", dateTo);
   if (filters.sentiment_labels?.length) {
     params.set("sentiment_labels", filters.sentiment_labels.join(","));
   }
@@ -109,6 +131,15 @@ function buildQueryString(filters: ReviewListFilters, offset: number, limit: num
     params.set("month", String(filters.month));
   }
   if (filters.search) params.set("search", filters.search);
+  // 2026-08-18 (WS2 veri kalitesi) — quality_flags doluysa backend
+  // include_flagged'i yok sayar; yalnız açık false'u gönderiyoruz
+  // (varsayılan true ile URL'i kirletmemek için).
+  if (filters.quality_flags?.length) {
+    params.set("quality_flags", filters.quality_flags.join(","));
+  }
+  if (filters.include_flagged === false) {
+    params.set("include_flagged", "false");
+  }
   if (filters.order_by) params.set("order_by", filters.order_by);
   if (filters.order) params.set("order", filters.order);
   return params.toString();

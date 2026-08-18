@@ -658,7 +658,7 @@ function Step3Progress({
   );
 }
 
-function Step4Summary({ job, onReset }: { job: BatchJob; onReset: () => void }) {
+function Step4Summary({ job, onReset }: { job: LiveBatchJob; onReset: () => void }) {
   const { t } = useTranslation();
   const ok = job.status === "completed";
   return (
@@ -683,6 +683,7 @@ function Step4Summary({ job, onReset }: { job: BatchJob; onReset: () => void }) 
           <Stat label={t("analyze.upload.stat.failed")} value={job.failed_rows} tone="danger" />
           <Stat label={t("analyze.upload.stat.tickets")} value={job.tickets_created} />
         </dl>
+        <QualityCard job={job} />
         {job.error_summary.length > 0 && (
           <details className="rounded border p-3 text-sm">
             <summary className="cursor-pointer">
@@ -720,6 +721,38 @@ function Step4Summary({ job, onReset }: { job: BatchJob; onReset: () => void }) 
         </div>
       </CardContent>
     </Card>
+  );
+}
+
+/**
+ * 2026-08-18 (Dalga 3, WS2) — "Veri Kalitesi" kartı. Sayaçlar
+ * succeeded_rows'un ALT KÜMESİdir (backend garantisi); "temiz" satır
+ * sayısı bu yüzden succeeded_rows - (4 sayacın toplamı) ile hesaplanır.
+ */
+function QualityCard({ job }: { job: LiveBatchJob }) {
+  const { t } = useTranslation();
+  const duplicate = job.quality_duplicate_rows ?? 0;
+  const empty = job.quality_empty_rows ?? 0;
+  const informational = job.quality_informational_rows ?? 0;
+  const meaningless = job.quality_meaningless_rows ?? 0;
+  const flagged = duplicate + empty + informational + meaningless;
+  const cleanValid = Math.max(0, job.succeeded_rows - flagged);
+
+  return (
+    <div className="space-y-3 rounded-2xl border p-4">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h3 className="text-sm font-semibold">{t("analyze.upload.quality.title")}</h3>
+        <span className="text-muted-foreground text-xs tabular-nums">
+          {t("analyze.upload.quality.validCount", { n: cleanValid.toLocaleString("tr-TR") })}
+        </span>
+      </div>
+      <dl className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
+        <Stat label={t("analyze.upload.quality.duplicate")} value={duplicate} />
+        <Stat label={t("analyze.upload.quality.empty")} value={empty} />
+        <Stat label={t("analyze.upload.quality.informational")} value={informational} />
+        <Stat label={t("analyze.upload.quality.meaningless")} value={meaningless} />
+      </dl>
+    </div>
   );
 }
 

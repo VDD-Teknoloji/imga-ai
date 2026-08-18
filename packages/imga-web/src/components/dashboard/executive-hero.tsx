@@ -21,9 +21,15 @@
 //   * Veri artık sayfadaki dönem filtresine göre pencereli gelir;
 //     pencere boşsa hafif bir "bu dönemde yorum yok" kartı çizilir.
 //   * SWOT analizine göze çarpan yönlendirme butonu.
+//
+// WS5 (2026-08-18): SatisfactionBar'ın üç segmenti tıklanabilir hale
+// geldi — /insights heatmap'indeki handleCellClick deseniyle aynı:
+// segment kendi duygusuyla filtrelenmiş /reviews'e router.push eder,
+// sayfadaki aktif dönem varsa (dateFrom/dateTo) o da taşınır.
 
 import { ArrowRight, Compass, Info, Upload } from "lucide-react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -130,6 +136,10 @@ interface Props {
   /** Yükleme (batch) filtresi seçiliyken boş-pencere metni "seçilen
    *  dönem" değil "seçilen yükleme" der — dönemi genişletmek çare olmaz. */
   batchFilterActive?: boolean;
+  /** Sayfadaki aktif dönem filtresi (YYYY-MM-DD) — SatisfactionBar
+   *  segment tıklamasında /reviews URL'ine taşınır (WS5). */
+  dateFrom?: string;
+  dateTo?: string;
 }
 
 export function ExecutiveHero({
@@ -139,8 +149,11 @@ export function ExecutiveHero({
   isLoading,
   hasAnyData,
   batchFilterActive = false,
+  dateFrom,
+  dateTo,
 }: Props) {
   const { t } = useTranslation();
+  const router = useRouter();
   if (isLoading || !sentiment) {
     return <Skeleton className="h-72 w-full rounded-3xl" />;
   }
@@ -191,6 +204,17 @@ export function ExecutiveHero({
   const notrPct = Math.max(0, 100 - posPct - negPct);
   const visual = bandFor(posPct, negPct);
   const headline = headlineFor(visual.band, t);
+
+  // WS5 — segment tıklaması /reviews'e duyguya göre filtrelenmiş gider;
+  // sayfanın aktif dönem filtresi varsa (dateFrom/dateTo) o da taşınır
+  // (heatmap-tab.tsx handleCellClick ile aynı URLSearchParams deseni).
+  function handleSegmentClick(sentimentLabel: "POZITIF" | "NÖTR" | "NEGATIF") {
+    const params = new URLSearchParams();
+    params.set("sentiment_labels", sentimentLabel);
+    if (dateFrom) params.set("date_from", dateFrom);
+    if (dateTo) params.set("date_to", dateTo);
+    router.push(`/reviews?${params.toString()}`);
+  }
 
   return (
     <section
@@ -245,8 +269,15 @@ export function ExecutiveHero({
         </div>
       </div>
 
-      {/* Segmentli memnuniyet çubuğu — tüm denge tek bakışta. */}
-      <SatisfactionBar posPct={posPct} notrPct={notrPct} negPct={negPct} t={t} />
+      {/* Segmentli memnuniyet çubuğu — tüm denge tek bakışta, her segment
+          tıklanabilir (WS5). */}
+      <SatisfactionBar
+        posPct={posPct}
+        notrPct={notrPct}
+        negPct={negPct}
+        t={t}
+        onSegmentClick={handleSegmentClick}
+      />
 
       {/* Aksiyonlar — negatiflere git + göze çarpan SWOT kapısı. */}
       <div className="mt-7 flex flex-wrap items-center gap-3">
@@ -342,17 +373,24 @@ function BigPercent({ pct, className }: { pct: number; className: string }) {
 /** Apple-vari segmentli oran çubuğu: olumlu / nötr / olumsuz tek
  *  satırda. Açılışta soldan dolar. Altında sade lejant.
  *  Sprint 13: Deneyim Dağılımı kartları gibi büyük — segment içinde
- *  yüzde etiketi (dar segmentte gizlenir, lejant zaten taşıyor). */
+ *  yüzde etiketi (dar segmentte gizlenir, lejant zaten taşıyor).
+ *  WS5: her segment /reviews'e duyguya göre filtrelenmiş gider —
+ *  role="img" (dekoratif) yerine role="group" + her segment kendi
+ *  aria-label'ini taşıyan bir <button>. %0 segment odaklanabilir
+ *  olmasın diye (0 genişlikli buton = klavye tuzağı) düz <div>
+ *  kalır. */
 function SatisfactionBar({
   posPct,
   notrPct,
   negPct,
   t,
+  onSegmentClick,
 }: {
   posPct: number;
   notrPct: number;
   negPct: number;
   t: Translate;
+  onSegmentClick: (sentimentLabel: "POZITIF" | "NÖTR" | "NEGATIF") => void;
 }) {
   const mounted = useMounted();
   const pctLabel = "text-lg font-semibold tabular-nums md:text-2xl";
@@ -360,35 +398,45 @@ function SatisfactionBar({
     <div className="mt-8">
       <div
         className="bg-muted flex h-16 w-full overflow-hidden rounded-2xl md:h-20"
-        role="img"
-        aria-label={`${t("dashboard.executiveHero.legend.positive")} %${posPct}, ${t("dashboard.executiveHero.legend.neutral")} %${notrPct}, ${t("dashboard.executiveHero.legend.negative")} %${negPct}`}
+        role="group"
+        aria-label={t("dashboard.executiveHero.satisfactionBarAria")}
       >
-        <div
-          className="flex h-full items-center justify-center overflow-hidden bg-gradient-to-br from-emerald-600 to-emerald-500 transition-[width] duration-700 [transition-timing-function:var(--motion-ease)]"
-          style={{ width: mounted ? `${posPct}%` : "0%" }}
-        >
-          {posPct >= 8 && (
-            <span className={`${pctLabel} text-white`}>%{posPct}</span>
-          )}
-        </div>
-        <div
-          className="flex h-full items-center justify-center overflow-hidden bg-zinc-300 transition-[width] duration-700 [transition-timing-function:var(--motion-ease)] dark:bg-zinc-600"
-          style={{ width: mounted ? `${notrPct}%` : "0%" }}
-        >
-          {notrPct >= 8 && (
-            <span className={`${pctLabel} text-zinc-700 dark:text-zinc-100`}>
-              %{notrPct}
-            </span>
-          )}
-        </div>
-        <div
-          className="flex h-full items-center justify-center overflow-hidden bg-gradient-to-br from-red-600 to-red-500 transition-[width] duration-700 [transition-timing-function:var(--motion-ease)]"
-          style={{ width: mounted ? `${negPct}%` : "0%" }}
-        >
-          {negPct >= 8 && (
-            <span className={`${pctLabel} text-white`}>%{negPct}</span>
-          )}
-        </div>
+        <SatisfactionSegment
+          pct={posPct}
+          mounted={mounted}
+          className="bg-gradient-to-br from-emerald-600 to-emerald-500 focus-visible:ring-white"
+          textClassName="text-white"
+          pctLabelClass={pctLabel}
+          ariaLabel={t("dashboard.executiveHero.legend.segmentAria", {
+            label: t("dashboard.executiveHero.legend.positive"),
+            pct: posPct,
+          })}
+          onClick={() => onSegmentClick("POZITIF")}
+        />
+        <SatisfactionSegment
+          pct={notrPct}
+          mounted={mounted}
+          className="bg-zinc-300 focus-visible:ring-zinc-700 dark:bg-zinc-600 dark:focus-visible:ring-zinc-100"
+          textClassName="text-zinc-700 dark:text-zinc-100"
+          pctLabelClass={pctLabel}
+          ariaLabel={t("dashboard.executiveHero.legend.segmentAria", {
+            label: t("dashboard.executiveHero.legend.neutral"),
+            pct: notrPct,
+          })}
+          onClick={() => onSegmentClick("NÖTR")}
+        />
+        <SatisfactionSegment
+          pct={negPct}
+          mounted={mounted}
+          className="bg-gradient-to-br from-red-600 to-red-500 focus-visible:ring-white"
+          textClassName="text-white"
+          pctLabelClass={pctLabel}
+          ariaLabel={t("dashboard.executiveHero.legend.segmentAria", {
+            label: t("dashboard.executiveHero.legend.negative"),
+            pct: negPct,
+          })}
+          onClick={() => onSegmentClick("NEGATIF")}
+        />
       </div>
       <div className="text-muted-foreground mt-3 flex flex-wrap items-center gap-x-5 gap-y-1.5 text-sm">
         <LegendDot
@@ -408,6 +456,47 @@ function SatisfactionBar({
         />
       </div>
     </div>
+  );
+}
+
+/** Tek bir SatisfactionBar dilimi. %0 iken düz (odaklanamaz) <div>
+ *  kalır — 0 genişlikli bir <button> klavye ile atlanamayan bir
+ *  tuzağa dönüşür. focus-visible halkası `ring-inset` ile konteynerin
+ *  `overflow-hidden`ı içinde kırpılmadan görünür. */
+function SatisfactionSegment({
+  pct,
+  mounted,
+  className,
+  textClassName,
+  pctLabelClass,
+  ariaLabel,
+  onClick,
+}: {
+  pct: number;
+  mounted: boolean;
+  className: string;
+  textClassName: string;
+  pctLabelClass: string;
+  ariaLabel: string;
+  onClick: () => void;
+}) {
+  const sharedClassName = `flex h-full items-center justify-center overflow-hidden transition-[width] duration-700 [transition-timing-function:var(--motion-ease)] ${className}`;
+  const style = { width: mounted ? `${pct}%` : "0%" };
+
+  if (pct <= 0) {
+    return <div className={sharedClassName} style={style} aria-hidden />;
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label={ariaLabel}
+      className={`${sharedClassName} cursor-pointer hover:brightness-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset`}
+      style={style}
+    >
+      {pct >= 8 && <span className={`${pctLabelClass} ${textClassName}`}>%{pct}</span>}
+    </button>
   );
 }
 

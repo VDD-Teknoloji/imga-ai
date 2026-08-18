@@ -220,6 +220,18 @@ export const admin: Bundle = {
     "admin.tenantCreate.success.desc1": "İlk admin için davet linki hazır. Bu link sadece ",
     "admin.tenantCreate.success.desc2": " gösterilir — modalı kapatmadan paylaş.",
     "admin.tenantCreate.success.done": "Tamam, paylaştım",
+    "admin.tenantCreate.success.aiSuggestNote":
+      "Kurulumdan sonra Ayarlar → Taksonomiler'den yapay zekâya kategori önerttirin.",
+    "admin.tenantCreate.step.next": "İleri",
+    "admin.tenantCreate.step.back": "Geri",
+    "admin.tenantCreate.step.skip": "Atla",
+    "admin.tenantCreate.step.basicsShort": "Temel",
+    "admin.tenantCreate.step.profileShort": "Profil",
+    "admin.tenantCreate.step.inviteShort": "Davet",
+    "admin.tenantCreate.step.profileDesc":
+      "Opsiyonel — sektör/büyüklük/iş tanımı SWOT, OKR ve brifing üretimini isabetlendirir. Tamamen atlanabilir.",
+    "admin.tenantCreate.step.profileHelp":
+      "Bu adım opsiyoneldir; boş bırakıp \"Atla\" ile devam edebilirsiniz.",
 
     // --- Kurum düzenle diyaloğu -------------------------------------------
     "admin.tenantEdit.title": "Kurum düzenle",
@@ -504,6 +516,18 @@ export const admin: Bundle = {
       "The first admin invitation is ready — share the link.",
     "admin.tenantCreate.toast.createError": "Could not create organization",
     "admin.tenantCreate.error.slugTaken": "This slug is already in use.",
+    "admin.tenantCreate.success.aiSuggestNote":
+      "After setup, have AI suggest categories from Settings → Taxonomies.",
+    "admin.tenantCreate.step.next": "Next",
+    "admin.tenantCreate.step.back": "Back",
+    "admin.tenantCreate.step.skip": "Skip",
+    "admin.tenantCreate.step.basicsShort": "Basics",
+    "admin.tenantCreate.step.profileShort": "Profile",
+    "admin.tenantCreate.step.inviteShort": "Invite",
+    "admin.tenantCreate.step.profileDesc":
+      "Optional — industry/size/description sharpen SWOT, OKR, and briefing output. Fully skippable.",
+    "admin.tenantCreate.step.profileHelp":
+      "This step is optional; leave it blank and continue with \"Skip\".",
     "admin.tenantCreate.success.title": "{name} created",
     "admin.tenantCreate.success.desc1":
       "The invitation link for the first admin is ready. This link is shown ",

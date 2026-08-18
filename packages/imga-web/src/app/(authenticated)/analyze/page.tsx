@@ -395,6 +395,12 @@ const DECISION_VARIANTS: Record<ReviewDecision, DecisionVariant> = {
     titleKey: "analyze.manual.decision.belirsiz.title",
     messageKey: "analyze.manual.decision.belirsiz.message",
   },
+  skipped_quality: {
+    variant: "info",
+    Icon: Info,
+    titleKey: "analyze.manual.decision.quality.title",
+    messageKey: "analyze.manual.decision.quality.message",
+  },
 };
 
 function DecisionCard({

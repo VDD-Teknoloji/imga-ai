@@ -55,11 +55,22 @@ const POLLING_INTERVAL_MS = 5_000;
 // the 30s window.
 const WATCHDOG_TICK_MS = 5_000;
 
+// 2026-08-18 (Dalga 3, WS2) — BatchJob (lib/types.ts) henüz kalite
+// sayaçlarını taşımıyor (dokunulmuyor — WS5 reviews ajanıyla eşzamanlı
+// düzenleme riski); backend GET satırı bu alanları her zaman int
+// olarak yollar, burada opsiyonel intersection ile okunuyor.
+type BatchJobWithQuality = BatchJob & {
+  quality_duplicate_rows?: number;
+  quality_empty_rows?: number;
+  quality_informational_rows?: number;
+  quality_meaningless_rows?: number;
+};
+
 /** Map a BatchJob row (DB shape) to the same BatchProgressSnapshot
  *  the SSE stream emits. percent is computed since the DB row
  *  doesn't carry it; eta_seconds stays null on the poll path (only
  *  the live stream tracks elapsed wall-clock for an ETA estimate). */
-function batchJobToSnapshot(job: BatchJob): BatchProgressSnapshot {
+function batchJobToSnapshot(job: BatchJobWithQuality): BatchProgressSnapshot {
   const percent =
     job.total_rows > 0 ? (job.processed_rows / job.total_rows) * 100 : 0;
   return {
@@ -74,6 +85,10 @@ function batchJobToSnapshot(job: BatchJob): BatchProgressSnapshot {
     duplicates_skipped: job.duplicates_skipped,
     eta_seconds: null,
     last_checkpoint_row: job.processed_rows,
+    quality_duplicate_rows: job.quality_duplicate_rows ?? 0,
+    quality_empty_rows: job.quality_empty_rows ?? 0,
+    quality_informational_rows: job.quality_informational_rows ?? 0,
+    quality_meaningless_rows: job.quality_meaningless_rows ?? 0,
   };
 }
 
@@ -89,6 +104,12 @@ export interface BatchProgressSnapshot {
   duplicates_skipped: number;
   eta_seconds: number | null;
   last_checkpoint_row: number;
+  // 2026-08-18 (Dalga 3, WS2) — backend _progress_snapshot() ile
+  // birebir anahtar adları; kalite bayrak sayaçları.
+  quality_duplicate_rows: number;
+  quality_empty_rows: number;
+  quality_informational_rows: number;
+  quality_meaningless_rows: number;
 }
 
 export interface BatchProgressStreamProps {

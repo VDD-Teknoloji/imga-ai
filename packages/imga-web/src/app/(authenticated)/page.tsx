@@ -49,6 +49,7 @@ import { UploadDock } from "@/components/dashboard/upload-dock";
 import { VoiceOfCustomer } from "@/components/dashboard/voice-of-customer";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
+  type AnalyticsQueryFilters,
   useNpsSummary,
   useSentimentByCategory,
   useSentimentDistribution,
@@ -111,6 +112,11 @@ function DashboardInner() {
   const [batchJobId, setBatchJobId] = useState<string>(
     () => searchParams.get("batch_job_id") ?? "",
   );
+  // 2026-08-18 (Dalga 3, WS2) — "Düşük kaliteli veriyi dahil et" switch.
+  // Varsayılan kapalı (backend include_flagged=false default'uyla aynı).
+  const [includeFlagged, setIncludeFlagged] = useState<boolean>(
+    () => searchParams.get("include_flagged") === "1",
+  );
   /* eslint-disable react-hooks/set-state-in-effect */
   // INTENT: URL is source of truth; mirror onto local state on
   // navigation events. Path B pattern (Sprint 8.3.4 round-2).
@@ -124,6 +130,8 @@ function DashboardInner() {
     setCustomDateTo((prev) => (prev === urlTo ? prev : urlTo));
     const urlBatch = searchParams.get("batch_job_id") ?? "";
     setBatchJobId((prev) => (prev === urlBatch ? prev : urlBatch));
+    const urlIncludeFlagged = searchParams.get("include_flagged") === "1";
+    setIncludeFlagged((prev) => (prev === urlIncludeFlagged ? prev : urlIncludeFlagged));
   }, [searchParams]);
   /* eslint-enable react-hooks/set-state-in-effect */
 
@@ -165,12 +173,24 @@ function DashboardInner() {
     pushParams({ batch_job_id: next ?? null });
   }
 
+  function handleIncludeFlaggedChange(next: boolean) {
+    setIncludeFlagged(next);
+    pushParams({ include_flagged: next ? "1" : null });
+  }
+
   function handleClearFilters() {
     setWindowKey("all");
     setCustomDateFrom("");
     setCustomDateTo("");
     setBatchJobId("");
-    pushParams({ window: null, date_from: null, date_to: null, batch_job_id: null });
+    setIncludeFlagged(false);
+    pushParams({
+      window: null,
+      date_from: null,
+      date_to: null,
+      batch_job_id: null,
+      include_flagged: null,
+    });
   }
 
   // Efektif aralık: özel tarih varsa o, yoksa dönem preseti.
@@ -180,15 +200,25 @@ function DashboardInner() {
     date_to: customDateTo || undefined,
     batch_job_id: batchJobId || undefined,
   };
+  // 2026-08-18 (Dalga 3, WS2) — include_flagged yalnız ham analitik
+  // uçlarına gider (dist/nps/byCategory/experience). useExecutiveOverview
+  // her zaman temiz veri döner (backend FX2: 7 yüzeyde quality_flag IS
+  // NULL sabit filtre, include_flagged param'ı hiç kabul etmiyor) — bu
+  // yüzden AKSİYON/SORUNLAR/KANIT/DERİNLİK bölümleri toggle'dan etkilenmez.
+  const queryFilters: AnalyticsQueryFilters = {
+    ...filters,
+    include_flagged: includeFlagged || undefined,
+  };
   const overview = useExecutiveOverview(filters);
-  const dist = useSentimentDistribution(filters);
-  const nps = useNpsSummary(filters);
-  const byCategory = useSentimentByCategory(filters, 10);
+  const dist = useSentimentDistribution(queryFilters);
+  const nps = useNpsSummary(queryFilters);
+  const byCategory = useSentimentByCategory(queryFilters, 10);
   // Deneyim dağılımı yalnız tarih aralığı alır — uç henüz
   // batch_job_id kabul etmiyor; yükleme filtresi bu kartlara işlemez.
   const experience = useExperienceDistribution({
     date_from: filters.date_from,
     date_to: filters.date_to,
+    include_flagged: includeFlagged || undefined,
   });
 
   const sentimentCounts = toSentimentCounts(dist.data);
@@ -265,6 +295,8 @@ function DashboardInner() {
         isLoading={isLoading || dist.isLoading}
         hasAnyData={hasAnyData}
         batchFilterActive={batchJobId !== ""}
+        dateFrom={filters.date_from}
+        dateTo={filters.date_to}
       />
 
       {/* FİLTRE — hero'nun hemen altında dönem + özel aralık + yükleme. */}
@@ -277,6 +309,8 @@ function DashboardInner() {
         onDateToChange={handleDateToChange}
         batchJobId={batchJobId}
         onBatchChange={handleBatchChange}
+        includeFlagged={includeFlagged}
+        onIncludeFlaggedChange={handleIncludeFlaggedChange}
         onClear={handleClearFilters}
       />
 
@@ -290,7 +324,7 @@ function DashboardInner() {
         <CategorySentimentBreakdown
           data={byCategory.data}
           isLoading={byCategory.isLoading}
-          filters={filters}
+          filters={queryFilters}
         />
       </div>
 

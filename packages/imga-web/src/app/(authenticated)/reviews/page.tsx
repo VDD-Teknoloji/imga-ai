@@ -18,11 +18,14 @@ import { Suspense, useCallback, useEffect, useState } from "react";
 
 import { BatchFilterDropdown } from "@/components/reviews/batch-filter-dropdown";
 import { Button } from "@/components/ui/button";
+import { DateField } from "@/components/ui/date-field";
 import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
@@ -31,6 +34,7 @@ import { useInfiniteReviews } from "@/hooks/use-reviews";
 import { useCompanyTaxonomies } from "@/hooks/use-taxonomies";
 import { useTranslation } from "@/lib/i18n/use-translation";
 import type {
+  ReviewDecision,
   ReviewListFilters,
   ReviewListItem,
   ReviewSourceType,
@@ -71,10 +75,56 @@ const DATE_FORMATTER = new Intl.DateTimeFormat("tr-TR", {
  *  recognises the same string in the perspective_codes CSV. */
 const UNMATCHED_SENTINEL = "__unmatched__";
 
+// WS5 — duygu çoklu-seçim filtresi. Aynı üç değer PerspectiveFilterDropdown
+// yerine ayrı bir dropdown'da; SENTIMENT_LABEL_KEYS zaten üstte tanımlı.
+const SENTIMENT_VALUES: readonly string[] = ["POZITIF", "NÖTR", "NEGATIF"];
+
+// WS5 — /reviews/[id]/page.tsx ile aynı harita ("mevcut karar
+// etiketleri" — lib/types.ts'teki ReviewDecision NOT'una bkz:
+// backend'in yeni skipped_quality dalı bilinçli olarak dışarıda,
+// çünkü union'ı genişletmek analyze/page.tsx'i kırıyor).
+const DECISION_LABEL_KEYS: Record<ReviewDecision, string> = {
+  create: "reviews.decision.create",
+  skipped_belirsiz: "reviews.decision.skippedBelirsiz",
+  skipped_mode: "reviews.decision.skippedMode",
+  skipped_threshold: "reviews.decision.skippedThreshold",
+  skipped_dedup: "reviews.decision.skippedDedup",
+  skipped_quality: "reviews.decision.skippedQuality",
+};
+const DECISION_VALUES: readonly ReviewDecision[] = Object.keys(
+  DECISION_LABEL_KEYS,
+) as ReviewDecision[];
+
+// WS5 — "Veri kalitesi" filtresi tek-seçimli: Tümü / Yalnız geçerli /
+// tekil bayrak. URL'de doğrudan backend'in iki parametresine
+// (include_flagged, quality_flags) eşlenir — bkz. qualitySelectionFor /
+// applyQualitySelection.
+type QualitySelection = "all" | "valid_only" | string;
+const QUALITY_FLAG_VALUES: readonly string[] = [
+  "duplicate",
+  "empty",
+  "informational",
+  "meaningless",
+];
+const QUALITY_FLAG_LABEL_KEYS: Record<string, string> = {
+  duplicate: "reviews.qualityFilter.duplicate",
+  empty: "reviews.qualityFilter.empty",
+  informational: "reviews.qualityFilter.informational",
+  meaningless: "reviews.qualityFilter.meaningless",
+};
+
+function qualitySelectionFor(filters: ReviewListFilters): QualitySelection {
+  const flag = filters.quality_flags?.[0];
+  if (flag) return flag;
+  if (filters.include_flagged === false) return "valid_only";
+  return "all";
+}
+
 /**
  * Analiz Arşivi. Filter surface: sentiment, source, has_ticket,
- * batch_job_id, perspective_codes, search — all URL-bound per
- * docs/agent-rules/url-state-patterns.md.
+ * batch_job_id, perspective_codes, decisions, quality (quality_flags +
+ * include_flagged), date range (date_from/date_to), search — all
+ * URL-bound per docs/agent-rules/url-state-patterns.md.
  *
  * Suspense wrapper + Path B mirror (Sprint 8.3.5.6 round-2) korunur.
  */
@@ -113,6 +163,8 @@ function readFiltersFromParams(params: URLSearchParams): ReviewListFilters {
   const sourceRaw = params.get("source_types");
   const perspectiveRaw = params.get("perspective_codes");
   const primaryCatsRaw = params.get("primary_categories");
+  const decisionsRaw = params.get("decisions");
+  const qualityFlagsRaw = params.get("quality_flags");
   const sourceTypes = sourceRaw
     ? (sourceRaw.split(",").filter(Boolean) as ReviewSourceType[])
     : undefined;
@@ -123,8 +175,16 @@ function readFiltersFromParams(params: URLSearchParams): ReviewListFilters {
     return Number.isFinite(n) && Number.isInteger(n) ? n : undefined;
   };
   return {
+    // Sprint 9.5.1'de zaten ReviewListFilters'ta duruyordu ama sayfa
+    // hiç okumuyordu — /insights heatmap drilldown bu paramları
+    // /reviews'e yazıyor, buraya bağlanmadan sessizce yok oluyorlardı.
+    date_from: params.get("date_from") ?? undefined,
+    date_to: params.get("date_to") ?? undefined,
     sentiment_labels: sentimentRaw?.split(",").filter(Boolean),
     source_types: sourceTypes,
+    decisions: decisionsRaw?.split(",").filter(Boolean) as
+      | ReviewDecision[]
+      | undefined,
     perspective_codes: perspectiveRaw?.split(",").filter(Boolean),
     primary_categories: primaryCatsRaw?.split(",").filter(Boolean),
     has_ticket: params.has("has_ticket")
@@ -136,6 +196,10 @@ function readFiltersFromParams(params: URLSearchParams): ReviewListFilters {
     week_of_year: _int("week_of_year"),
     month: _int("month"),
     search: params.get("search") ?? undefined,
+    quality_flags: qualityFlagsRaw?.split(",").filter(Boolean),
+    // applyFilters yalnız açık false yazar (bkz. aşağı); herhangi
+    // başka bir değer varsayılana (undefined = true) düşer.
+    include_flagged: params.get("include_flagged") === "false" ? false : undefined,
   };
 }
 
@@ -150,10 +214,16 @@ function arrEq(a: string[] | undefined, b: string[] | undefined): boolean {
 
 function filtersEq(a: ReviewListFilters, b: ReviewListFilters): boolean {
   return (
+    a.date_from === b.date_from &&
+    a.date_to === b.date_to &&
     arrEq(a.sentiment_labels, b.sentiment_labels) &&
     arrEq(
       a.source_types as string[] | undefined,
       b.source_types as string[] | undefined,
+    ) &&
+    arrEq(
+      a.decisions as string[] | undefined,
+      b.decisions as string[] | undefined,
     ) &&
     arrEq(a.perspective_codes, b.perspective_codes) &&
     arrEq(a.primary_categories, b.primary_categories) &&
@@ -163,7 +233,9 @@ function filtersEq(a: ReviewListFilters, b: ReviewListFilters): boolean {
     a.day_of_week === b.day_of_week &&
     a.week_of_year === b.week_of_year &&
     a.month === b.month &&
-    a.search === b.search
+    a.search === b.search &&
+    arrEq(a.quality_flags, b.quality_flags) &&
+    a.include_flagged === b.include_flagged
   );
 }
 
@@ -194,11 +266,16 @@ function ReviewsPageInner() {
     (next: ReviewListFilters) => {
       setFilters(next);
       const params = new URLSearchParams();
+      if (next.date_from) params.set("date_from", next.date_from);
+      if (next.date_to) params.set("date_to", next.date_to);
       if (next.sentiment_labels?.length) {
         params.set("sentiment_labels", next.sentiment_labels.join(","));
       }
       if (next.source_types?.length) {
         params.set("source_types", next.source_types.join(","));
+      }
+      if (next.decisions?.length) {
+        params.set("decisions", next.decisions.join(","));
       }
       if (next.perspective_codes?.length) {
         params.set("perspective_codes", next.perspective_codes.join(","));
@@ -223,10 +300,45 @@ function ReviewsPageInner() {
         params.set("month", String(next.month));
       }
       if (next.search) params.set("search", next.search);
+      // Veri kalitesi tek-seçim: bayrak varsa quality_flags CSV
+      // (tek eleman), yoksa yalnız include_flagged=false ("yalnız
+      // geçerli") URL'e yazılır — "Tümü" varsayılan, iz bırakmaz.
+      if (next.quality_flags?.length) {
+        params.set("quality_flags", next.quality_flags.join(","));
+      } else if (next.include_flagged === false) {
+        params.set("include_flagged", "false");
+      }
       const qs = params.toString();
       router.push(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
     },
     [pathname, router],
+  );
+
+  /** Veri kalitesi dropdown'ının tek-seçim durumu → filters iki alanı
+   *  birlikte set eder (mutually exclusive). */
+  const applyQualitySelection = useCallback(
+    (selection: QualitySelection) => {
+      if (selection === "all") {
+        applyFilters({
+          ...filters,
+          quality_flags: undefined,
+          include_flagged: undefined,
+        });
+      } else if (selection === "valid_only") {
+        applyFilters({
+          ...filters,
+          quality_flags: undefined,
+          include_flagged: false,
+        });
+      } else {
+        applyFilters({
+          ...filters,
+          quality_flags: [selection],
+          include_flagged: undefined,
+        });
+      }
+    },
+    [filters, applyFilters],
   );
 
   const reviews = useInfiniteReviews(filters, 50);
@@ -254,12 +366,45 @@ function ReviewsPageInner() {
       </header>
 
       <div className="flex flex-wrap items-center gap-2">
+        <SentimentFilterDropdown
+          selected={filters.sentiment_labels ?? []}
+          onApply={(next) =>
+            applyFilters({
+              ...filters,
+              sentiment_labels: next.length > 0 ? next : undefined,
+            })
+          }
+        />
         <PerspectiveFilterDropdown
           selected={filters.perspective_codes ?? []}
           onApply={(next) =>
             applyFilters({
               ...filters,
               perspective_codes: next.length > 0 ? next : undefined,
+            })
+          }
+        />
+        <DecisionsFilterDropdown
+          selected={filters.decisions ?? []}
+          onApply={(next) =>
+            applyFilters({
+              ...filters,
+              decisions: next.length > 0 ? (next as ReviewDecision[]) : undefined,
+            })
+          }
+        />
+        <QualityFilterDropdown
+          selected={qualitySelectionFor(filters)}
+          onApply={applyQualitySelection}
+        />
+        <DateRangeFilter
+          dateFrom={filters.date_from ?? ""}
+          dateTo={filters.date_to ?? ""}
+          onChange={(dateFrom, dateTo) =>
+            applyFilters({
+              ...filters,
+              date_from: dateFrom || undefined,
+              date_to: dateTo || undefined,
             })
           }
         />
@@ -270,7 +415,7 @@ function ReviewsPageInner() {
           }
           inline
         />
-        <FilterPills filters={filters} />
+        <FilterPills filters={filters} onApply={applyFilters} />
       </div>
 
       {reviews.isLoading ? (
@@ -393,13 +538,23 @@ const MONTH_LABEL_KEYS: Record<number, string> = {
   10: "reviews.month.10", 11: "reviews.month.11", 12: "reviews.month.12",
 };
 
-function FilterPills({ filters }: { filters: ReviewListFilters }) {
+/** Aktif filtrelerin özet rozetleri. Her rozetin "×"i YALNIZ o
+ *  filtreyi temizler — kalan filtreler korunarak applyFilters'a
+ *  yeniden geçilir (önceki sürüm hepsini fixed href="/reviews" ile
+ *  siliyordu, bkz. WS5 plan notu). */
+function FilterPills({
+  filters,
+  onApply,
+}: {
+  filters: ReviewListFilters;
+  onApply: (next: ReviewListFilters) => void;
+}) {
   const { t } = useTranslation();
-  const pills: { label: string; href: string }[] = [];
+  const pills: { label: string; remove: () => void }[] = [];
   if (filters.batch_job_id) {
     pills.push({
       label: t("reviews.pill.upload", { id: filters.batch_job_id.slice(0, 8) }),
-      href: "/reviews",
+      remove: () => onApply({ ...filters, batch_job_id: undefined }),
     });
   }
   if (filters.sentiment_labels?.length) {
@@ -409,7 +564,7 @@ function FilterPills({ filters }: { filters: ReviewListFilters }) {
           .map((s) => (SENTIMENT_LABEL_KEYS[s] ? t(SENTIMENT_LABEL_KEYS[s]!) : s))
           .join(", "),
       }),
-      href: "/reviews",
+      remove: () => onApply({ ...filters, sentiment_labels: undefined }),
     });
   }
   if (filters.source_types?.length) {
@@ -419,7 +574,43 @@ function FilterPills({ filters }: { filters: ReviewListFilters }) {
           .map((s) => t(SOURCE_LABEL_KEYS[s]))
           .join(", "),
       }),
-      href: "/reviews",
+      remove: () => onApply({ ...filters, source_types: undefined }),
+    });
+  }
+  if (filters.decisions?.length) {
+    pills.push({
+      label: t("reviews.pill.decisions", {
+        value: filters.decisions
+          .map((d) => (DECISION_LABEL_KEYS[d] ? t(DECISION_LABEL_KEYS[d]) : d))
+          .join(", "),
+      }),
+      remove: () => onApply({ ...filters, decisions: undefined }),
+    });
+  }
+  if (filters.quality_flags?.length) {
+    const flag = filters.quality_flags[0]!;
+    pills.push({
+      label: t("reviews.pill.quality", {
+        value: QUALITY_FLAG_LABEL_KEYS[flag]
+          ? t(QUALITY_FLAG_LABEL_KEYS[flag]!)
+          : flag,
+      }),
+      remove: () => onApply({ ...filters, quality_flags: undefined }),
+    });
+  } else if (filters.include_flagged === false) {
+    pills.push({
+      label: t("reviews.pill.validOnly"),
+      remove: () => onApply({ ...filters, include_flagged: undefined }),
+    });
+  }
+  if (filters.date_from || filters.date_to) {
+    pills.push({
+      label: t("reviews.pill.dateRange", {
+        from: filters.date_from ?? "…",
+        to: filters.date_to ?? "…",
+      }),
+      remove: () =>
+        onApply({ ...filters, date_from: undefined, date_to: undefined }),
     });
   }
   if (filters.hour_of_day !== undefined) {
@@ -427,7 +618,7 @@ function FilterPills({ filters }: { filters: ReviewListFilters }) {
       label: t("reviews.pill.hour", {
         value: String(filters.hour_of_day).padStart(2, "0"),
       }),
-      href: "/reviews",
+      remove: () => onApply({ ...filters, hour_of_day: undefined }),
     });
   }
   if (filters.day_of_week !== undefined) {
@@ -437,13 +628,13 @@ function FilterPills({ filters }: { filters: ReviewListFilters }) {
           ? t(DOW_LABEL_KEYS[filters.day_of_week]!)
           : filters.day_of_week,
       }),
-      href: "/reviews",
+      remove: () => onApply({ ...filters, day_of_week: undefined }),
     });
   }
   if (filters.week_of_year !== undefined) {
     pills.push({
       label: t("reviews.pill.week", { value: filters.week_of_year }),
-      href: "/reviews",
+      remove: () => onApply({ ...filters, week_of_year: undefined }),
     });
   }
   if (filters.month !== undefined) {
@@ -453,20 +644,22 @@ function FilterPills({ filters }: { filters: ReviewListFilters }) {
           ? t(MONTH_LABEL_KEYS[filters.month]!)
           : filters.month,
       }),
-      href: "/reviews",
+      remove: () => onApply({ ...filters, month: undefined }),
     });
   }
   if (pills.length === 0) return null;
   return (
     <div className="flex flex-wrap gap-2">
       {pills.map((p) => (
-        <Link
+        <button
           key={p.label}
-          href={p.href}
+          type="button"
+          onClick={p.remove}
+          aria-label={t("reviews.pill.removeAria", { label: p.label })}
           className="bg-muted hover:bg-muted/80 text-foreground/80 inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs transition-colors"
         >
           {p.label} <span aria-hidden>×</span>
-        </Link>
+        </button>
       ))}
     </div>
   );
@@ -559,5 +752,222 @@ function PerspectiveFilterDropdown({
         ) : null}
       </DropdownMenuContent>
     </DropdownMenu>
+  );
+}
+
+/** WS5 — duygu çoklu-seçim filtresi. PerspectiveFilterDropdown ile
+ *  aynı controlled desen: ``selected`` ebeveynin mirror state'inden
+ *  gelir, ``onApply`` geri döner (ebeveyn URL push'unu yönetir). */
+function SentimentFilterDropdown({
+  selected,
+  onApply,
+}: {
+  selected: string[];
+  onApply: (next: string[]) => void;
+}) {
+  const { t } = useTranslation();
+
+  const toggle = useCallback(
+    (value: string) => {
+      const next = selected.includes(value)
+        ? selected.filter((v) => v !== value)
+        : [...selected, value];
+      onApply(next);
+    },
+    [selected, onApply],
+  );
+
+  const triggerLabel =
+    selected.length === 0
+      ? t("reviews.sentimentFilter.trigger")
+      : t("reviews.sentimentFilter.selected", { count: selected.length });
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger
+        render={
+          <Button variant="outline" size="sm" className="gap-1">
+            {triggerLabel}
+            <ChevronDown className="size-4" aria-hidden />
+          </Button>
+        }
+      />
+      <DropdownMenuContent align="start" className="w-48">
+        {SENTIMENT_VALUES.map((value) => (
+          <DropdownMenuCheckboxItem
+            key={value}
+            checked={selected.includes(value)}
+            onCheckedChange={() => toggle(value)}
+          >
+            {SENTIMENT_LABEL_KEYS[value] ? t(SENTIMENT_LABEL_KEYS[value]!) : value}
+          </DropdownMenuCheckboxItem>
+        ))}
+        {selected.length > 0 ? (
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              onClick={() => onApply([])}
+              className="text-muted-foreground text-xs"
+            >
+              {t("reviews.perspFilter.clearAll")}
+            </DropdownMenuItem>
+          </>
+        ) : null}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+/** WS5 — mevcut karar etiketleri (reviews/[id]/page.tsx ile aynı
+ *  DECISION_LABEL_KEYS haritası) üzerinden çoklu-seçim filtresi. */
+function DecisionsFilterDropdown({
+  selected,
+  onApply,
+}: {
+  selected: string[];
+  onApply: (next: string[]) => void;
+}) {
+  const { t } = useTranslation();
+
+  const toggle = useCallback(
+    (value: string) => {
+      const next = selected.includes(value)
+        ? selected.filter((v) => v !== value)
+        : [...selected, value];
+      onApply(next);
+    },
+    [selected, onApply],
+  );
+
+  const triggerLabel =
+    selected.length === 0
+      ? t("reviews.decisionsFilter.trigger")
+      : t("reviews.decisionsFilter.selected", { count: selected.length });
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger
+        render={
+          <Button variant="outline" size="sm" className="gap-1">
+            {triggerLabel}
+            <ChevronDown className="size-4" aria-hidden />
+          </Button>
+        }
+      />
+      <DropdownMenuContent align="start" className="w-64">
+        {DECISION_VALUES.map((value) => (
+          <DropdownMenuCheckboxItem
+            key={value}
+            checked={selected.includes(value)}
+            onCheckedChange={() => toggle(value)}
+          >
+            {t(DECISION_LABEL_KEYS[value])}
+          </DropdownMenuCheckboxItem>
+        ))}
+        {selected.length > 0 ? (
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              onClick={() => onApply([])}
+              className="text-muted-foreground text-xs"
+            >
+              {t("reviews.perspFilter.clearAll")}
+            </DropdownMenuItem>
+          </>
+        ) : null}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+/** WS5 — "Veri kalitesi" tek-seçim filtresi. Backend'in iki ayrı
+ *  parametresini (include_flagged, quality_flags) tek bir radio-grup
+ *  gibi sunar — bkz. qualitySelectionFor / applyQualitySelection. */
+function QualityFilterDropdown({
+  selected,
+  onApply,
+}: {
+  selected: QualitySelection;
+  onApply: (next: QualitySelection) => void;
+}) {
+  const { t } = useTranslation();
+
+  const triggerLabel =
+    selected === "all"
+      ? t("reviews.qualityFilter.trigger")
+      : selected === "valid_only"
+        ? t("reviews.qualityFilter.validOnly")
+        : QUALITY_FLAG_LABEL_KEYS[selected]
+          ? t(QUALITY_FLAG_LABEL_KEYS[selected]!)
+          : selected;
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger
+        render={
+          <Button variant="outline" size="sm" className="gap-1">
+            {triggerLabel}
+            <ChevronDown className="size-4" aria-hidden />
+          </Button>
+        }
+      />
+      <DropdownMenuContent align="start" className="w-56">
+        <DropdownMenuRadioGroup
+          value={selected}
+          onValueChange={(v) => v && onApply(v as QualitySelection)}
+        >
+          <DropdownMenuRadioItem value="all" closeOnClick>
+            {t("reviews.qualityFilter.trigger")}
+          </DropdownMenuRadioItem>
+          <DropdownMenuRadioItem value="valid_only" closeOnClick>
+            {t("reviews.qualityFilter.validOnly")}
+          </DropdownMenuRadioItem>
+          <DropdownMenuSeparator />
+          {QUALITY_FLAG_VALUES.map((flag) => (
+            <DropdownMenuRadioItem key={flag} value={flag} closeOnClick>
+              {t(QUALITY_FLAG_LABEL_KEYS[flag]!)}
+            </DropdownMenuRadioItem>
+          ))}
+        </DropdownMenuRadioGroup>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+/** WS5 — tarih aralığı filtresi. Dashboard'daki DashboardFilterBar'ın
+ *  DateField ikilisiyle aynı desen; date_from > date_to durumunu
+ *  native min/max ile engeller. YYYY-MM-DD taşır (url-state-patterns.md). */
+function DateRangeFilter({
+  dateFrom,
+  dateTo,
+  onChange,
+}: {
+  dateFrom: string;
+  dateTo: string;
+  onChange: (dateFrom: string, dateTo: string) => void;
+}) {
+  const { t } = useTranslation();
+  return (
+    <div
+      className="flex items-center gap-1.5"
+      role="group"
+      aria-label={t("reviews.dateFilter.groupAria")}
+    >
+      <DateField
+        value={dateFrom}
+        max={dateTo || undefined}
+        aria-label={t("reviews.dateFilter.fromAria")}
+        onChange={(e) => onChange(e.target.value, dateTo)}
+      />
+      <span className="text-muted-foreground text-xs" aria-hidden>
+        –
+      </span>
+      <DateField
+        value={dateTo}
+        min={dateFrom || undefined}
+        aria-label={t("reviews.dateFilter.toAria")}
+        onChange={(e) => onChange(dateFrom, e.target.value)}
+      />
+    </div>
   );
 }

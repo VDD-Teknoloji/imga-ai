@@ -11,6 +11,7 @@
 import type { Locale } from "./config";
 import { admin } from "./dictionaries/admin";
 import { analyze } from "./dictionaries/analyze";
+import { compare } from "./dictionaries/compare";
 import { core } from "./dictionaries/core";
 import { dashboard } from "./dictionaries/dashboard";
 import { insights } from "./dictionaries/insights";
@@ -28,6 +29,7 @@ const MODULES: readonly Bundle[] = [
   tickets,
   analyze,
   insights,
+  compare,
   settings,
   admin,
 ];

@@ -121,9 +121,19 @@ export function useBatchJob(jobId: string | null) {
 }
 
 /** BatchJob + canlı SSE karesinden gelen tahmini kalan süre.
- *  ``eta_seconds`` yalnız akış canlıyken dolar; poll yolunda kalmaz. */
+ *  ``eta_seconds`` yalnız akış canlıyken dolar; poll yolunda kalmaz.
+ *
+ *  2026-08-18 (Dalga 3, WS2) — kalite bayrak sayaçları da burada
+ *  genişletiliyor (lib/types.ts'teki BatchJob'a dokunulmuyor — WS5
+ *  reviews ajanıyla eşzamanlı düzenleme riski). Backend hem ilk GET'te
+ *  hem SSE karelerinde bu alanları her zaman int olarak yollar; burada
+ *  opsiyonel tutulması yalnız eski/kısmi kare merge'lerine karşı. */
 export interface LiveBatchJob extends BatchJob {
   eta_seconds?: number | null;
+  quality_duplicate_rows?: number;
+  quality_empty_rows?: number;
+  quality_informational_rows?: number;
+  quality_meaningless_rows?: number;
 }
 
 export interface BatchProgressStreamState {
@@ -146,6 +156,13 @@ interface BatchProgressSseSnapshot {
   tickets_created?: number;
   duplicates_skipped?: number;
   eta_seconds?: number | null;
+  // 2026-08-18 (Dalga 3, WS2) — backend _progress_snapshot() zaten bu
+  // adlarla yolluyor (BatchJob/BatchJobResponse ile birebir aynı isim,
+  // processed/total'ın aksine yeniden adlandırma gerekmiyor).
+  quality_duplicate_rows?: number;
+  quality_empty_rows?: number;
+  quality_informational_rows?: number;
+  quality_meaningless_rows?: number;
 }
 
 const BATCH_STATUSES: ReadonlySet<string> = new Set([
@@ -174,6 +191,18 @@ function sseSnapshotToPatch(raw: object): Partial<LiveBatchJob> {
   }
   if (s.eta_seconds === null || typeof s.eta_seconds === "number") {
     patch.eta_seconds = s.eta_seconds;
+  }
+  if (typeof s.quality_duplicate_rows === "number") {
+    patch.quality_duplicate_rows = s.quality_duplicate_rows;
+  }
+  if (typeof s.quality_empty_rows === "number") {
+    patch.quality_empty_rows = s.quality_empty_rows;
+  }
+  if (typeof s.quality_informational_rows === "number") {
+    patch.quality_informational_rows = s.quality_informational_rows;
+  }
+  if (typeof s.quality_meaningless_rows === "number") {
+    patch.quality_meaningless_rows = s.quality_meaningless_rows;
   }
   return patch;
 }

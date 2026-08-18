@@ -17,6 +17,9 @@ interface HeatmapFilters {
   date_from?: string;
   date_to?: string;
   taxonomy_top_n?: number;
+  /** 2026-08-18 (Dalga 3, WS2) — düşük kaliteli (bayraklı) satırları da
+   *  dahil et. Varsayılan: hariç (backend default'uyla aynı). */
+  include_flagged?: boolean;
 }
 
 function queryString(filters: HeatmapFilters): string {
@@ -29,6 +32,7 @@ function queryString(filters: HeatmapFilters): string {
   if (filters.taxonomy_top_n !== undefined) {
     params.set("taxonomy_top_n", String(filters.taxonomy_top_n));
   }
+  if (filters.include_flagged) params.set("include_flagged", "true");
   return params.toString();
 }
 
