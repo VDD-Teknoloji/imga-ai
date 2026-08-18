@@ -7,6 +7,7 @@ from imga_core.categories.taxonomy import (
     GLOBAL_CATEGORY_CODES,
     CategoryDefinition,
     GlobalCategory,
+    ensure_fallback_category,
 )
 
 __all__ = [
@@ -16,4 +17,5 @@ __all__ = [
     "GLOBAL_CATEGORY_CODES",
     "CategoryDefinition",
     "GlobalCategory",
+    "ensure_fallback_category",
 ]

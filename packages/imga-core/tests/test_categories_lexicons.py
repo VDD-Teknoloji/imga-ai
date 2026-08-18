@@ -9,7 +9,11 @@ from __future__ import annotations
 
 import pytest
 
-from imga_core.categories import GLOBAL_CATEGORY_CODES
+from imga_core.categories import (
+    FALLBACK_CATEGORY_CODE,
+    GLOBAL_CATEGORY_CODES,
+    ensure_fallback_category,
+)
 from imga_core.categories.lexicons import (
     ALL_CATEGORY_KEYWORDS,
     FATURALAMA_KEYWORDS,
@@ -145,3 +149,21 @@ def test_cross_leak_count_is_within_expected_bounds() -> None:
     assert len(multi_category) <= 5, (
         f"Too many cross-category keywords ({len(multi_category)}): {multi_category}"
     )
+
+
+# --- WS2 (veri kalitesi) — ensure_fallback_category ----------------------
+
+
+def test_ensure_fallback_category_empty_list_adds_fallback() -> None:
+    assert ensure_fallback_category([]) == [FALLBACK_CATEGORY_CODE]
+
+
+def test_ensure_fallback_category_already_present_stays_in_place() -> None:
+    codes = ["kargo", FALLBACK_CATEGORY_CODE, "iade"]
+    assert ensure_fallback_category(codes) == ["kargo", FALLBACK_CATEGORY_CODE, "iade"]
+
+
+def test_ensure_fallback_category_dedupes_preserving_order() -> None:
+    codes = ["kargo", "iade", "kargo", "iade", "kargo"]
+    result = ensure_fallback_category(codes)
+    assert result == ["kargo", "iade", FALLBACK_CATEGORY_CODE]

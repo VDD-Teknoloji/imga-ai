@@ -7,6 +7,7 @@ from typing import Any
 from uuid import UUID, uuid4
 
 from sqlalchemy import JSON, Integer, String
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -119,4 +120,13 @@ class Tenant(Base, TimestampMixin, SoftDeleteMixin):
         String(16),
         default=SlaWebhookDispatchMode.AUTOMATIC,
         nullable=False,
+    )
+
+    # --- 2026-08-18 (migration 0042) — sektör terim sözlüğü -------------
+    # list[{"term": str, "note": str}]. ``language_directive`` desenine
+    # paralel ``terminology_directive(tenant)`` SWOT/OKR/brifing/root-
+    # cause prompt'larının sonuna enjekte edilir (Dalga 2/3 kapsamı).
+    # Nullable, backfill yok — mevcut kurumlar boş sözlükle başlar.
+    terminology: Mapped[list[dict[str, Any]] | None] = mapped_column(
+        JSONB, nullable=True
     )

@@ -61,6 +61,12 @@ async def main() -> None:
     ap.add_argument("--prompt-file", default=None)
     ap.add_argument("--tenant", default="Navlungo Test")
     ap.add_argument("--out", default="/tmp/eval4_out.csv")
+    # Model benchmark'lari icin: kurumun kayitli kimligindeki anahtar
+    # kullanilir ama model kimligi buradan ezilebilir (ayni saglayici).
+    ap.add_argument("--model", default=None)
+    # Muhakemeli modeller (ör. Qwen) buyuk partilerde 240s zaman
+    # asimina takiliyor — parti kucultme imkani.
+    ap.add_argument("--call-batch-size", type=int, default=None)
     args = ap.parse_args()
 
     rows = list(csv.DictReader(open(args.gold_csv, encoding="utf-8")))
@@ -86,15 +92,19 @@ async def main() -> None:
     await engine.dispose()
     assert selection is not None, "aktif LLM kimligi yok"
 
-    model = resolve_model_name(selection.provider, selection.model)
+    model = args.model or resolve_model_name(selection.provider, selection.model)
     print(f"model: {selection.provider}/{model}", flush=True)
 
+    engine_kwargs: dict[str, object] = {}
+    if args.call_batch_size:
+        engine_kwargs["call_batch_size"] = args.call_batch_size
     ue = GeminiUnifiedEngine(
         selection.keys,
         model_name=model,
         concurrency=4,
         provider=selection.provider,
         system_prompt=system_prompt,
+        **engine_kwargs,  # type: ignore[arg-type]
     )
     preds, stats = await ue.classify_unified_batch_async(
         [r["text"] for r in rows],

@@ -1,10 +1,16 @@
-"""TenantBusinessDimension — per-tenant config for the four review
-business-impact dimensions (segment / product / channel / tier).
+"""TenantBusinessDimension — per-tenant config for the five review
+business-impact dimensions (segment / product / channel / tier /
+entered_by).
 
 Sprint 9.3 B. ``Review`` rows carry the four optional dimension
 columns directly; this table is the per-tenant configuration that
 tells the CSV uploader which CSV header maps to which dimension and
 gives the dashboard the operator-facing display label.
+
+2026-08-18 (migration 0042) added ``entered_by`` as the 5th dimension
+key — ``Review.entered_by`` (the employee who logged the review) is
+the corresponding column, same free-text-by-default treatment as the
+original four.
 
 RLS+FORCE per the convention.
 """
@@ -38,7 +44,7 @@ class TenantBusinessDimension(Base):
         ),
         CheckConstraint(
             "dimension IN ('business_segment', 'product_line', 'channel', "
-            "'customer_tier')",
+            "'customer_tier', 'entered_by')",
             name="ck_tenant_business_dimensions_key",
         ),
     )

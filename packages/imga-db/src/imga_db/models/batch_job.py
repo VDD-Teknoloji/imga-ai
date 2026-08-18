@@ -149,3 +149,29 @@ class AnalyzeBatchJob(Base):
     queued_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+
+    # 2026-08-18 (migration 0042) — veri kalitesi sayaçları. Worker her
+    # bayrak türünü ayrı sayar (quality_flag'e göre); toplamı
+    # succeeded_rows'un ALT KÜMESİ — flag'li satırlar da Review olarak
+    # yazılır (failed_rows'a değil buraya gider). Kalite raporu
+    # endpoint'i bu dört sayaç + quality_summary'yi okur.
+    quality_duplicate_rows: Mapped[int] = mapped_column(
+        Integer, default=0, nullable=False
+    )
+    quality_empty_rows: Mapped[int] = mapped_column(
+        Integer, default=0, nullable=False
+    )
+    quality_informational_rows: Mapped[int] = mapped_column(
+        Integer, default=0, nullable=False
+    )
+    quality_meaningless_rows: Mapped[int] = mapped_column(
+        Integer, default=0, nullable=False
+    )
+
+    # Kalite raporu — TEK cached LLM özeti (neden tekrar/boş, öneriler)
+    # + en çok tekrarlanan metinler/çalışan bazlı kırılım istatistiği.
+    # NULL = rapor henüz üretilmedi (job kalite bayrağı taşımıyor ya da
+    # özet endpoint'i hiç çağrılmadı).
+    quality_summary: Mapped[dict[str, Any] | None] = mapped_column(
+        JSONB, nullable=True
+    )

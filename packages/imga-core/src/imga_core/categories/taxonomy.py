@@ -7,6 +7,7 @@ can later extend or disable categories at the tenant-config level (Sprint 7).
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from enum import StrEnum
 from typing import Final
 
@@ -176,3 +177,22 @@ CATEGORY_DESCRIPTIONS_TR: Final[dict[str, str]] = {
         "en yakın kategoriyi düşük cc ile seç."
     ),
 }
+
+
+def ensure_fallback_category(codes: Iterable[str]) -> list[str]:
+    """Sırayı koruyarak tekilleştirir ve ``FALLBACK_CATEGORY_CODE``
+    ("belirsiz") kümede yoksa sona ekler.
+
+    Tenant-dinamik kategori kümesi (WS1 — etkin global + kurum
+    custom kodları) her zaman "belirsiz" içermesini garanti eder;
+    sınıflandırıcı prompt'una giden liste asla fallback'siz kalmaz.
+    """
+    seen: set[str] = set()
+    result: list[str] = []
+    for code in codes:
+        if code not in seen:
+            seen.add(code)
+            result.append(code)
+    if FALLBACK_CATEGORY_CODE not in seen:
+        result.append(FALLBACK_CATEGORY_CODE)
+    return result

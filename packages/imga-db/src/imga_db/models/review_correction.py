@@ -22,7 +22,7 @@ from datetime import datetime
 from uuid import UUID, uuid4
 
 from pgvector.sqlalchemy import Vector
-from sqlalchemy import CHAR, DateTime, ForeignKey, String, Text, func
+from sqlalchemy import CHAR, DateTime, Float, ForeignKey, String, Text, func
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -57,6 +57,17 @@ class ReviewCorrection(Base):
     old_category: Mapped[str] = mapped_column(String(64), nullable=False)
     new_category: Mapped[str] = mapped_column(String(64), nullable=False)
     reason: Mapped[str | None] = mapped_column(Text(), nullable=True)
+
+    # 2026-08-18 (migration 0042) — CorrectReviewRequest genişlemesi:
+    # skor/deneyim/perspektif düzeltmeleri de kaydedilir ki birebir +
+    # anlamsal override (patch_analysis_with_decision, Dalga 2 kapsamı)
+    # tekrar karşılaşmada bu değerleri UYGULAYABİLSİN — yoksa yalnız
+    # etiket düzeltmesi tekrar karşılaşmada SCORE_FOR_LABEL fallback'ine
+    # düşer ve operatörün girdiği skor kaybolur. Üçü de opsiyonel; boş
+    # bırakılan alan eski davranışı (fallback) korur.
+    new_score: Mapped[float | None] = mapped_column(Float(), nullable=True)
+    new_experience: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    new_perspective: Mapped[str | None] = mapped_column(Text(), nullable=True)
 
     corrected_by_user_id: Mapped[UUID | None] = mapped_column(
         PG_UUID(as_uuid=True),

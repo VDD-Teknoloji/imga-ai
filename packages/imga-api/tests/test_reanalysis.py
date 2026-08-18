@@ -4,6 +4,13 @@ Kapsam:
 
   * Migration 0041 — ``reviews.experience_type`` kolonu + CHECK +
     kismi indeks; global 9 kategorinin ``description`` backfill'i.
+  * Migration 0042 — ``reviews.quality_flag`` (CHECK + kismi indeks +
+    'skipped_dedup' backfill'i), ``entered_by``/``source`` kolonlari,
+    genisleyen ``ck_reviews_decision`` ('skipped_quality'),
+    ``tenants.terminology`` JSONB. (review_corrections / tenant_
+    business_dimensions / analyze_batch_jobs kolonlari bu dosyada
+    dogrudan test edilmiyor — DB-seviyesinde alembic upgrade head
+    suitin kurulumunda dolayli dogrulanir.)
   * Yukleme yolu — birlesik LLM tahminindeki ``experience_type``
     reviews satirina duser (unified yol mock'lanir).
   * Yeniden analiz — yetki (viewer/analyst 403, tenant_admin 201,
@@ -36,6 +43,7 @@ from imga_db.models import (
     ExecutiveSnapshot,
     Review,
     ReviewDecision,
+    Tenant,
     User,
     UserTenantRole,
 )
@@ -64,6 +72,10 @@ async def _seed_review(
     experience_type: str | None = None,
     overrides_applied: list[dict[str, object]] | None = None,
     review_date: datetime | None = None,
+    decision: ReviewDecision = ReviewDecision.SKIPPED_THRESHOLD,
+    quality_flag: str | None = None,
+    entered_by: str | None = None,
+    source: str | None = None,
 ) -> UUID:
     """Tek bir reviews satiri (admin oturumu, RLS baglami set edilir)."""
     async with admin_session.begin():
@@ -81,7 +93,7 @@ async def _seed_review(
             primary_category=primary_category,
             primary_confidence=0.7,
             automation_mode="semi_auto",
-            decision=ReviewDecision.SKIPPED_THRESHOLD,
+            decision=decision,
             decision_reason=None,
             ticket_id=None,
             submitted_by_user_id=None,
@@ -90,6 +102,9 @@ async def _seed_review(
             review_date=moment,
             experience_type=experience_type,
             overrides_applied=overrides_applied,
+            quality_flag=quality_flag,
+            entered_by=entered_by,
+            source=source,
         )
         admin_session.add(row)
         await admin_session.flush()
@@ -321,6 +336,105 @@ async def test_global_category_descriptions_backfilled(
     for code, expected in CATEGORY_DESCRIPTIONS_TR.items():
         assert by_code[code] is not None, f"{code} tanimi backfill edilmemis"
         assert by_code[code] == expected, f"{code} tanimi kod ile ayrismis"
+
+
+# ---------------------------------------------------------------------
+# 1b. Migration 0042 — kalite bayragi + terim sozlugu + skipped_quality
+# ---------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_quality_flag_check_constraint_rejects_unknown_value(
+    semi_auto_tenant: tuple[User, UUID, str],
+) -> None:
+    """0042 CHECK ck_reviews_quality_flag: gecersiz deger IntegrityError
+    firlatir. 0041'deki ayni gerekceyle ayri throwaway oturum kullanilir
+    — kasitli IntegrityError paylasilan admin_session'i zehirleyip
+    fixture teardown'ini MissingGreenlet'e dusuruyordu."""
+    from imga_db import create_engine, create_session_factory
+
+    _user, tid, _pw = semi_auto_tenant
+    engine = create_engine("admin")
+    try:
+        factory = create_session_factory(engine)
+        async with factory() as throwaway:
+            with pytest.raises(IntegrityError):
+                await _seed_review(
+                    throwaway,
+                    tenant_id=tid,
+                    text_value="gecersiz kalite bayragi denemesi",
+                    quality_flag="spam",
+                )
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_entered_by_source_and_quality_flag_roundtrip(
+    admin_session: AsyncSession,
+    semi_auto_tenant: tuple[User, UUID, str],
+) -> None:
+    """reviews.entered_by / reviews.source / reviews.quality_flag (0042)
+    yazilir ve okunur."""
+    _user, tid, _pw = semi_auto_tenant
+    review_id = await _seed_review(
+        admin_session,
+        tenant_id=tid,
+        text_value="calisan tarafindan girilen, kaynak email olan yorum",
+        quality_flag="duplicate",
+        entered_by="Ayse Yilmaz",
+        source="email",
+    )
+    row = await _fetch_review(admin_session, review_id)
+    assert row.quality_flag == "duplicate"
+    assert row.entered_by == "Ayse Yilmaz"
+    assert row.source == "email"
+
+
+@pytest.mark.asyncio
+async def test_skipped_quality_decision_value_accepted(
+    admin_session: AsyncSession,
+    semi_auto_tenant: tuple[User, UUID, str],
+) -> None:
+    """0042'de genisleyen ck_reviews_decision: 'skipped_quality' artik
+    gecerli bir deger — bos icerik satiri artik ticket koprusune hic
+    girmeden bu decision'la satir olarak yazilabiliyor."""
+    _user, tid, _pw = semi_auto_tenant
+    review_id = await _seed_review(
+        admin_session,
+        tenant_id=tid,
+        text_value="",
+        sentiment_label="NÖTR",
+        sentiment_score=0.0,
+        primary_category="belirsiz",
+        decision=ReviewDecision.SKIPPED_QUALITY,
+        quality_flag="empty",
+    )
+    row = await _fetch_review(admin_session, review_id)
+    assert row.decision == ReviewDecision.SKIPPED_QUALITY
+    assert row.quality_flag == "empty"
+
+
+@pytest.mark.asyncio
+async def test_tenant_terminology_jsonb_roundtrip(
+    admin_session: AsyncSession,
+    semi_auto_tenant: tuple[User, UUID, str],
+) -> None:
+    """tenants.terminology (0042) — list[{term, note}] JSONB yazilir ve
+    okunur. Tenant tablosu RLS'siz (cross-tenant kok varlik)."""
+    _user, tid, _pw = semi_auto_tenant
+    terms = [
+        {"term": "navlun", "note": "kargo ucreti anlaminda kullanilir"},
+        {"term": "gumruk", "note": "customs; iade sureciyle karistirilmasin"},
+    ]
+    async with admin_session.begin():
+        tenant = await admin_session.get(Tenant, tid)
+        assert tenant is not None
+        tenant.terminology = terms
+    async with admin_session.begin():
+        refetched = await admin_session.get(Tenant, tid)
+        assert refetched is not None
+        assert refetched.terminology == terms
 
 
 # ---------------------------------------------------------------------

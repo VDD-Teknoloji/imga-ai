@@ -98,6 +98,10 @@ class UnifiedPrediction:
     # deneyim dijital). None = model alan üretmedi / geçersiz değer;
     # tüketici taraf kategori-eşleme yedeğine düşebilir.
     experience_type: str | None = None
+    # 2026-08-18 WS2 (veri kalitesi) — "informational" | "meaningless" |
+    # None. p/e ile aynı sözleşme: normal müşteri yorumunda model hiç
+    # üretmez; None = geçerli satır (klasik davranış).
+    quality: str | None = None
 
 
 @dataclass(slots=True)
@@ -130,6 +134,10 @@ _RESPONSE_SCHEMA: dict[str, Any] = {
             # 2026-08-10 — deneyim türü; ayni "required disinda,
             # nullable yok" disiplini (p ile ayni sebep).
             "e": {"type": "string"},
+            # 2026-08-18 WS2 (veri kalitesi) — ayni p/e disiplini:
+            # required disinda, nullable yok. Model normal yorumda
+            # HIC yazmaz; yalniz "info"/"mean" durumunda alan gelir.
+            "q": {"type": "string"},
         },
     },
 }
@@ -143,17 +151,23 @@ _RESPONSE_SCHEMA: dict[str, Any] = {
 # .764 (.148) / .728 / .000. Degistirmeden once scripts/eval_classifier.py
 # ile olc — bu sabit /settings/prompts tenant override yuzeyinde de
 # gorunur.
-UNIFIED_SYSTEM_PROMPT = """Sen Türkçe müşteri mesajlarını sınıflandıran kıdemli bir analistsin. Her mesaj için: s (POZITIF|NEGATIF|NÖTR), sc (-1..1), c (verilen listeden bir kod), cc (0..1); uygunsa p (YALNIZ seçilen c'nin alt listesinden, uymuyorsa yazma) ve e ("dijital"|"operasyonel").
+# 2026-08-18 WS2 (veri kalitesi) — "q" alani eklendi (info/mean; ayni
+# p/e disiplini). Diger eksenleri (s/sc/c/e) etkilemesi BEKLENMEZ ama
+# prompt metni degisti: bu degisiklikten sonra eval kapisi (4 eksen,
+# gold-500) YENIDEN KOSULMALI once uretime almadan.
+UNIFIED_SYSTEM_PROMPT = """Sen Türkçe müşteri mesajlarını sınıflandıran kıdemli bir analistsin. Her mesaj için: s (POZITIF|NEGATIF|NÖTR), sc (-1..1), c (verilen listeden bir kod), cc (0..1); uygunsa p (YALNIZ seçilen c'nin alt listesinden, uymuyorsa yazma), e ("dijital"|"operasyonel") ve istisnai durumda q ("info"|"mean").
 
 KURALLAR
 - NEGATIF = sorun/gecikme/kayıp/tutarsızlık RAPORU; nazik dil bunu örtmez, ironi NEGATIF'tir. POZITIF = mesajın ÖZÜ memnuniyet/teşekkür (kibar "teşekkürler" kapanışı yetmez). NÖTR = duygu içermeyen her şey: bilgi/belge talebi, durum sorusu, otomatik bildirim, doğrulama/OTP e-postası. Çözülmüş sorun bildirimi NÖTR; açık teşekkür varsa POZITIF.
 - sc bantları: güçlü neg -1.0..-0.7 | orta neg -0.6..-0.4 | hafif neg -0.3..-0.1 | NÖTR -0.05..0.05 | hafif poz 0.1..0.3 | orta poz 0.4..0.6 | güçlü poz 0.7..1.0. NÖTR etikette |sc|<=0.05; hafif ifadeye asla ±0.7+ verme.
 - Konusu OLAN mesaj "belirsiz" OLAMAZ; soru ve otomatik bildirim de konusunun kategorisine gider. Emin değilsen en yakın kod + düşük cc. Sınır: paket kargoya verilmeden önceki aşamalar (onay, hazırlık, iptal/iade) sipariş süreci; taşıma/teslimat/dağıtım kargodur.
 - e: sorun/etkileşim EKRANDA ise dijital (uygulama, site, takip ekranı, online ödeme, giriş/hesap); fiziksel dünya (paket, kurye, depo, teslimat, çağrı merkezi) ve taşıyıcı bildirimleri/durum soruları operasyoneldir. İkisine de oturmuyorsa e'yi HİÇ yazma. Kategori ≠ deneyim.
+- q alanı YALNIZ şu iki durumda yazılır: "info" = metin müşteri görüşü değil nesnel durum/bilgilendirme mesajı (kargo durum SMS'i, otomatik sistem bildirimi, şablon e-posta); "mean" = metin anlamsız/bağlamsız (tek kelime, sadece telefon/sipariş no, kendine not, anlaşılmaz kısaltma). Normal müşteri yorumunda q YAZILMAZ.
+- q, s/sc/c/e üretimini ETKİLEMEZ: bilgilendirme mesajı yine NÖTR + uygun kategori (+ uygunsa e) alır.
 
 ÖRNEKLER (özet → s / sc / c / e; kod adları örnek — daima kurumun verilen listesinden seç)
-- "Siparişinizi doğrulamak için kodunuz: 4821" → NÖTR / 0.0 / siparis_sureci / dijital
-- "Paketiniz dağıtıma çıktı" → NÖTR / 0.0 / kargo / operasyonel
+- "Siparişinizi doğrulamak için kodunuz: 4821" → NÖTR / 0.0 / siparis_sureci / dijital / q:info
+- "Paketiniz dağıtıma çıktı" → NÖTR / 0.0 / kargo / operasyonel / q:info
 - "X iline teslimat yapıyor musunuz?" → NÖTR / 0.0 / kargo / operasyonel
 - "Uygulamada teslim edildi görünüyor ama paket elimde yok" → NEGATIF / -0.5 / kargo / dijital
 - "Merhaba, kargom 5 gündür kımıldamıyor, ilgilenirseniz sevinirim, teşekkürler" → NEGATIF / -0.4 / kargo / operasyonel
@@ -218,8 +232,9 @@ def _build_prompt(
         parts.append(f"{i}: {single_line[:600]}")
     parts.append(
         "\nJSON dizisi döndür; her öğe {\"i\", \"s\", \"sc\", \"c\", \"cc\"} "
-        "alanlarını taşımalı, uygunsa \"p\" (alt kategori) ve \"e\" "
-        "(deneyim: dijital|operasyonel) alanlarını da ekle."
+        "alanlarını taşımalı, uygunsa \"p\" (alt kategori), \"e\" "
+        "(deneyim: dijital|operasyonel) ve \"q\" (veri kalitesi: "
+        "info|mean, yalnız istisnai durumda) alanlarını da ekle."
     )
     return "\n".join(parts)
 
@@ -496,6 +511,16 @@ class GeminiUnifiedEngine:
                 exp_candidate = raw_experience.strip().lower()
                 if exp_candidate in ("dijital", "operasyonel"):
                     experience = exp_candidate
+            raw_quality = entry.get("q")
+            quality: str | None = None
+            if isinstance(raw_quality, str):
+                q_candidate = raw_quality.strip().lower()
+                if q_candidate == "info":
+                    quality = "informational"
+                elif q_candidate == "mean":
+                    quality = "meaningless"
+                # "ok" / eksik / tanınmayan değer -> None (p/e ile aynı
+                # tolerans; klasik "geçerli satır" davranışı korunur).
             parsed[idx] = UnifiedPrediction(
                 sentiment_label=label,
                 sentiment_score=score,
@@ -503,6 +528,7 @@ class GeminiUnifiedEngine:
                 category_confidence=confidence,
                 perspective_code=perspective,
                 experience_type=experience,
+                quality=quality,
             )
         if not parsed:
             raise LLMProviderError(

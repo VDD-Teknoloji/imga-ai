@@ -50,6 +50,14 @@ class ReviewDecision(StrEnum):
       4. ``skipped_dedup``    — same text_hash already produced a
          ticket within the last 24h; this row points at that ticket.
       5. ``create``           — all guards passed; new ticket minted.
+
+    ``SKIPPED_QUALITY`` (migration 0042, 2026-08-18) is a newer branch
+    for content-quality skips — an empty-text row now gets WRITTEN
+    (quality_flag='empty') instead of being dropped, and never reaches
+    the ticket bridge. Its exact precedence slot in ReviewService's
+    evaluation order is wired in the write path (Dalga 2 scope); this
+    enum member and the widened ``ck_reviews_decision`` CHECK only
+    make the value legal at the DB layer.
     """
 
     CREATE = "create"
@@ -57,6 +65,7 @@ class ReviewDecision(StrEnum):
     SKIPPED_MODE = "skipped_mode"
     SKIPPED_THRESHOLD = "skipped_threshold"
     SKIPPED_DEDUP = "skipped_dedup"
+    SKIPPED_QUALITY = "skipped_quality"
 
 
 class Review(Base, TimestampMixin, SoftDeleteMixin):
@@ -186,3 +195,23 @@ class Review(Base, TimestampMixin, SoftDeleteMixin):
     product_line: Mapped[str | None] = mapped_column(Text(), nullable=True)
     channel: Mapped[str | None] = mapped_column(Text(), nullable=True)
     customer_tier: Mapped[str | None] = mapped_column(Text(), nullable=True)
+
+    # 2026-08-18 (migration 0042) — 5. business dimension: yorumu kuruma
+    # giren çalışanın adı, yükleme dosyasından okunur (smart-parser
+    # EmployeeNameDetector öneri amaçlı). ck_tenant_business_dimensions_key
+    # 'entered_by' değerini de kabul eder. Kalite raporundaki çalışan
+    # bazlı kırılımın anahtarı.
+    entered_by: Mapped[str | None] = mapped_column(Text(), nullable=True)
+
+    # 2026-08-18 (migration 0042) — şablondaki 'kaynak' kolonu bugüne
+    # kadar parse edilip düşürülüyordu; artık kalıcı.
+    source: Mapped[str | None] = mapped_column(Text(), nullable=True)
+
+    # 2026-08-18 (migration 0042) — düşük kaliteli veri işareti. NULL =
+    # geçerli satır. 'duplicate' eski satırlar için decision=
+    # 'skipped_dedup'tan deterministik backfill edildi; empty/
+    # informational/meaningless yalnızca yazım-anı birleşik LLM kararından
+    # (q alanı, Dalga 2) gelir — geriye dönük türetilemez. Analitik/rapor/
+    # heatmap include_flagged filtresi VARSAYILAN HARİÇ tutar. CHECK
+    # ck_reviews_quality_flag bu dört değerden başkasını kabul etmez.
+    quality_flag: Mapped[str | None] = mapped_column(String(16), nullable=True)
