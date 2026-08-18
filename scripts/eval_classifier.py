@@ -65,8 +65,10 @@ async def main() -> None:
     # kullanilir ama model kimligi buradan ezilebilir (ayni saglayici).
     ap.add_argument("--model", default=None)
     # Muhakemeli modeller (ör. Qwen) buyuk partilerde 240s zaman
-    # asimina takiliyor — parti kucultme imkani.
+    # asimina takiliyor — parti kucultme imkani. Dar rate-limit'li
+    # saglayicilar icin esz. dusurme.
     ap.add_argument("--call-batch-size", type=int, default=None)
+    ap.add_argument("--concurrency", type=int, default=4)
     args = ap.parse_args()
 
     rows = list(csv.DictReader(open(args.gold_csv, encoding="utf-8")))
@@ -101,7 +103,7 @@ async def main() -> None:
     ue = GeminiUnifiedEngine(
         selection.keys,
         model_name=model,
-        concurrency=4,
+        concurrency=args.concurrency,
         provider=selection.provider,
         system_prompt=system_prompt,
         **engine_kwargs,  # type: ignore[arg-type]
