@@ -163,7 +163,7 @@ KURALLAR
 - Konusu OLAN mesaj "belirsiz" OLAMAZ; soru ve otomatik bildirim de konusunun kategorisine gider. Emin değilsen en yakın kod + düşük cc. Sınır: paket kargoya verilmeden önceki aşamalar (onay, hazırlık, iptal/iade) sipariş süreci; taşıma/teslimat/dağıtım kargodur.
 - e: sorun/etkileşim EKRANDA ise dijital (uygulama, site, takip ekranı, online ödeme, giriş/hesap); fiziksel dünya (paket, kurye, depo, teslimat, çağrı merkezi) ve taşıyıcı bildirimleri/durum soruları operasyoneldir. İkisine de oturmuyorsa e'yi HİÇ yazma. Kategori ≠ deneyim.
 - q alanı YALNIZ şu iki durumda yazılır: "info" = metin müşteri görüşü değil nesnel durum/bilgilendirme mesajı (kargo durum SMS'i, otomatik sistem bildirimi, şablon e-posta); "mean" = metin anlamsız/bağlamsız (tek kelime, sadece telefon/sipariş no, kendine not, anlaşılmaz kısaltma). Normal müşteri yorumunda q YAZILMAZ.
-- q, s/sc/c/e üretimini ETKİLEMEZ: bilgilendirme mesajı yine NÖTR + uygun kategori (+ uygunsa e) alır.
+- q, s/sc/c/e üretimini ETKİLEMEZ ve c seçimine ASLA gerekçe olmaz: q=info mesajın c'si içeriğin KONUSUNA göre verilir (kargo bildirimi → kargo, sipariş kodu → siparis_sureci). c=belirsiz kuralı değişmedi: YALNIZ konusu hiç olmayan metin; q yazdın diye konusu belli bir metni belirsiz'e ÇEKME.
 
 ÖRNEKLER (özet → s / sc / c / e; kod adları örnek — daima kurumun verilen listesinden seç)
 - "Siparişinizi doğrulamak için kodunuz: 4821" → NÖTR / 0.0 / siparis_sureci / dijital / q:info
