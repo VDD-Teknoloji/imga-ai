@@ -48,6 +48,8 @@ from uuid import UUID
 from imga_db.models import LlmCallAudit
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from imga_api.services.llm_pricing import cost_usd as _price_call
+
 _logger = logging.getLogger(__name__)
 
 
@@ -62,6 +64,9 @@ CALL_TYPE_OKR = "okr"
 CALL_TYPE_ROOT_CAUSE = "root_cause"
 # Dalga 2 — toplu yükleme veri kalitesi raporu özeti (kısıt: 0043).
 CALL_TYPE_QUALITY_REPORT = "quality_report"
+# 2026-08-20 (süper-admin envanteri, migration 0045) — onboarding
+# sihirbazının AI kategori önerisi çağrısı. SA2 kullanacak.
+CALL_TYPE_ONBOARDING_SUGGEST = "onboarding_suggest"
 
 ERROR_TIMEOUT = "timeout"
 ERROR_RATE_LIMIT = "rate_limit"
@@ -251,6 +256,12 @@ class LLMCallAuditor:
                     model_max_tokens=self._ctx.model_max_tokens,
                     input_tokens=self._input_tokens,
                     output_tokens=self._output_tokens,
+                    cost_usd=_price_call(
+                        self._ctx.model_provider,
+                        self._ctx.model_name,
+                        self._input_tokens,
+                        self._output_tokens,
+                    ),
                     duration_ms=elapsed,
                     success=self._success,
                     error_type=self._error_type,
@@ -311,6 +322,7 @@ __all__ = [
     "CALL_TYPE_BRIEFING",
     "CALL_TYPE_CLASSIFICATION",
     "CALL_TYPE_OKR",
+    "CALL_TYPE_ONBOARDING_SUGGEST",
     "CALL_TYPE_QUALITY_REPORT",
     "CALL_TYPE_ROOT_CAUSE",
     "CALL_TYPE_STRATEGIC_REPORT",

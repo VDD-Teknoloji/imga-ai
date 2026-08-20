@@ -11,7 +11,8 @@ is a one-file change.
 from __future__ import annotations
 
 import logging
-from datetime import UTC, datetime
+from collections.abc import Awaitable, Callable
+from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
@@ -107,19 +108,39 @@ def schedule_cleanup(
     upload_root: Any,
     retention_hours: int,
     job_id: str | None = None,
+    keep_paths_provider: (
+        Callable[[], Awaitable[set[str]]] | None
+    ) = None,
 ) -> None:
     """Daily file-reaper for ``upload_root``. Runs at startup once (so a
     fresh container cleans whatever the previous run left behind) plus
     daily thereafter. ``job_id`` defaults to a path-derived id so the
     function can be called multiple times for distinct directories
-    (uploads + reports) without one replacing the other."""
+    (uploads + reports) without one replacing the other.
+
+    ``keep_paths_provider`` (2026-08-19 Kitap1 vakası): terminal olmayan
+    (queued/processing/failed) işlerin dosya yolları — retention dolsa
+    da silinmez, yoksa checkpoint "Tekrar Dene" imkânsızlaşır. Liste
+    alınamazsa o tur HİÇBİR ŞEY silinmez (güvenli taraf)."""
     from imga_api.workers.cleanup import reap_stale_uploads
 
     label = job_id or f"cleanup-{upload_root}"
 
-    def _job() -> None:
+    async def _job() -> None:
+        keep: set[str] = set()
+        if keep_paths_provider is not None:
+            try:
+                keep = await keep_paths_provider()
+            except Exception:
+                log.warning(
+                    "cleanup [%s]: keep listesi alinamadi, tur atlandi",
+                    label,
+                )
+                return
         deleted = reap_stale_uploads(
-            root=upload_root, retention_hours=retention_hours
+            root=upload_root,
+            retention_hours=retention_hours,
+            keep_paths=keep,
         )
         if deleted:
             log.info("cleanup [%s]: reaped %s stale files", label, deleted)
@@ -128,13 +149,21 @@ def schedule_cleanup(
         _job,
         trigger="interval",
         hours=24,
-        next_run_time=None,  # start at +24h; lifespan calls _job() directly once
+        next_run_time=None,
         id=label,
         replace_existing=True,
     )
-    # Also run once immediately so a long-stopped container doesn't
-    # delay cleanup until the next 24h tick.
-    _job()
+    # Also run once shortly after startup so a long-stopped container
+    # doesn't delay cleanup until the next 24h tick. (async job — sync
+    # doğrudan çağrı yerine date-trigger; scheduler.start() lifespan'da
+    # hemen sonra geliyor.)
+    scheduler.add_job(
+        _job,
+        trigger="date",
+        run_date=datetime.now(UTC) + timedelta(seconds=30),
+        id=f"{label}-startup",
+        replace_existing=True,
+    )
 
 
 def schedule_provider_healthcheck(

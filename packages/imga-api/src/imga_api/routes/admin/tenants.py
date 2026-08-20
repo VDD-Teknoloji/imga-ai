@@ -31,6 +31,7 @@ from imga_api.services import (
     TenantSlugTakenError,
     UserService,
 )
+from imga_api.services.tenant_service import TenantListRow
 
 router = APIRouter(prefix="/admin/tenants", tags=["Admin: Tenants"])
 
@@ -105,6 +106,17 @@ class TenantSummary(BaseModel):
     language: str
     created_at: datetime
     deleted_at: datetime | None
+    # 2026-08-20 (C3+B7, süper-admin envanteri) — yalnız list_tenants
+    # doldurur (tek ana sorgu + LEFT JOIN alt-sorgular, TenantService.list
+    # bkz.). create/get/update/delete tek kurum döner ve bu toplu
+    # metrikleri HESAPLAMAZ; None burada "bilinmiyor" değil "bu yanıtta
+    # hesaplanmadı" demek — frontend'i yanlış sıfırla yanıltmamak için
+    # 0 yerine None kullanılır.
+    review_count: int | None = None
+    last_upload_at: datetime | None = None
+    tokens_30d: int | None = None
+    cost_30d_usd: float | None = None
+    engagement_band: str | None = None
 
 
 class TenantListResponse(BaseModel):
@@ -119,7 +131,7 @@ class TenantCreateResponse(BaseModel):
 # --- helpers ----------------------------------------------------------
 
 
-def _to_summary(tenant: Any) -> TenantSummary:
+def _to_summary(tenant: Any, *, stats: TenantListRow | None = None) -> TenantSummary:
     return TenantSummary(
         id=tenant.id,
         name=tenant.name,
@@ -129,6 +141,15 @@ def _to_summary(tenant: Any) -> TenantSummary:
         language=getattr(tenant, "language", "tr"),
         created_at=tenant.created_at,
         deleted_at=tenant.deleted_at,
+        review_count=stats.review_count if stats is not None else None,
+        last_upload_at=stats.last_upload_at if stats is not None else None,
+        tokens_30d=stats.tokens_30d if stats is not None else None,
+        cost_30d_usd=(
+            float(stats.cost_30d_usd)
+            if stats is not None and stats.cost_30d_usd is not None
+            else None
+        ),
+        engagement_band=stats.engagement_band if stats is not None else None,
     )
 
 
@@ -174,9 +195,7 @@ async def create_tenant(
             actor_user_id=current.user_id,
         )
     except TenantSlugTakenError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT, detail=str(exc)
-        ) from exc
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
 
     token: str | None = None
     if body.initial_admin is not None:
@@ -206,7 +225,7 @@ async def list_tenants(
     audit = AuditService(admin_session)
     tenants = TenantService(admin_session, audit)
     rows = await tenants.list(include_deleted=include_deleted)
-    return TenantListResponse(tenants=[_to_summary(t) for t in rows])
+    return TenantListResponse(tenants=[_to_summary(r.tenant, stats=r) for r in rows])
 
 
 @router.get(
@@ -223,9 +242,7 @@ async def get_tenant(
     tenants = TenantService(admin_session, audit)
     tenant = await tenants.get(tenant_id)
     if tenant is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="tenant not found"
-        )
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="tenant not found")
     return _to_summary(tenant)
 
 
@@ -253,9 +270,7 @@ async def update_tenant(
             actor_user_id=current.user_id,
         )
     except TenantNotFoundError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)
-        ) from exc
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     return _to_summary(tenant)
 
 
@@ -274,7 +289,5 @@ async def delete_tenant(
     try:
         tenant = await tenants.soft_delete(tenant_id, actor_user_id=current.user_id)
     except TenantNotFoundError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)
-        ) from exc
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     return _to_summary(tenant)

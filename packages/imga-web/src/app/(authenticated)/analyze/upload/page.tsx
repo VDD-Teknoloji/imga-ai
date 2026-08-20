@@ -96,6 +96,21 @@ function BatchUploadPageInner() {
     return null;
   }, [preview, overrides]);
 
+  // 2026-08-20 (migration 0044) — derivedTextColumn ile BİREBİR AYNI
+  // desen: smart parser'ın "date" önerisi ön-seçili gelir, kullanıcı
+  // herhangi bir kolonun dropdown'ını "Tarih"e çevirerek override
+  // edebilir. Hiçbir kolon "date"e eşlenmemişse ("tarih yok") null
+  // kalır — upload isteğine date_column hiç yazılmaz, backend
+  // otomatik tespite düşer.
+  const derivedDateColumn = useMemo(() => {
+    if (!preview) return null;
+    for (const col of preview.detected) {
+      const effective = overrides[col.column_name] ?? col.field_name;
+      if (effective === "date") return col.column_name;
+    }
+    return null;
+  }, [preview, overrides]);
+
   const upload = useBatchUploadMutation();
   const cancel = useCancelBatchJobMutation();
   // Sprint 9.0.5-B A — was useBatchJob(activeJobId) (3s polling);
@@ -213,6 +228,7 @@ function BatchUploadPageInner() {
           onOverrideChange={(column, next) =>
             setOverrides((prev) => ({ ...prev, [column]: next }))
           }
+          hasDateColumn={derivedDateColumn !== null}
           piiConsented={piiConsented}
           onPiiConsentChange={setPiiConsented}
           onBack={() => setStep(1)}
@@ -222,6 +238,7 @@ function BatchUploadPageInner() {
                 file,
                 textColumn: derivedTextColumn,
                 sourceColumn: sourceColumn.trim() || null,
+                dateColumn: derivedDateColumn,
                 autoCreateTickets,
               },
               {
@@ -462,6 +479,7 @@ function Step2ColumnMapping({
   previewLoading,
   overrides,
   onOverrideChange,
+  hasDateColumn,
   piiConsented,
   onPiiConsentChange,
   onBack,
@@ -475,6 +493,11 @@ function Step2ColumnMapping({
   previewLoading: boolean;
   overrides: Record<string, SmartFieldName | undefined>;
   onOverrideChange: (column: string, next: SmartFieldName | undefined) => void;
+  /** 2026-08-20 — bir kolon şu an "Tarih"e eşli mi (auto-detect ya da
+   *  override ile). ValidationReportPanel'in no_date_column uyarısını
+   *  yerel olarak bastırmak için — sunucu önizleme anında kullanıcının
+   *  SONRADAN yapacağı seçimden habersizdir. */
+  hasDateColumn: boolean;
   piiConsented: boolean;
   onPiiConsentChange: (next: boolean) => void;
   onBack: () => void;
@@ -510,7 +533,10 @@ function Step2ColumnMapping({
           </div>
         ) : preview ? (
           <>
-            <ValidationReportPanel report={preview.validation} />
+            <ValidationReportPanel
+              report={preview.validation}
+              hasDateColumn={hasDateColumn}
+            />
             <PiiWarningBanner
               preview={preview}
               consented={piiConsented}
@@ -768,12 +794,28 @@ function QualityCard({ job }: { job: LiveBatchJob }) {
  * Sprint 13 — code="duplicate" uyarıları tamamen gizlenir (kopyalar
  * zaten bir kez analiz edilir; kullanıcı bunu hata sanıyordu).
  * Sayaçlar ve yeşil-panel kararı filtrelenmiş listeden hesaplanır.
+ *
+ * 2026-08-20 — code="no_date_column" da koşullu gizlenir: sunucu bu
+ * bulguyu ÖNİZLEME anında, kullanıcı henüz hiçbir kolonu "Tarih"e
+ * eşlemeden üretir. Kullanıcı sonradan mapping dropdown'ından bir
+ * kolonu "Tarih" yaparsa (``hasDateColumn``) bulgu artık geçersizdir
+ * — sunucu bunu yeniden hesaplamaz, o yüzden burada yerel olarak
+ * bastırılır.
  */
-function ValidationReportPanel({ report }: { report: ValidationReport }) {
+function ValidationReportPanel({
+  report,
+  hasDateColumn,
+}: {
+  report: ValidationReport;
+  hasDateColumn: boolean;
+}) {
   const { t } = useTranslation();
   const errors = report.issues.filter((i) => i.severity === "error");
   const warnings = report.issues.filter(
-    (i) => i.severity === "warning" && i.code !== "duplicate",
+    (i) =>
+      i.severity === "warning" &&
+      i.code !== "duplicate" &&
+      !(i.code === "no_date_column" && hasDateColumn),
   );
   // Satır-bazlı bulgular birebir sayılır; 50+ satırlık taşma tek
   // "…ve N daha" özet bulgusuna katlandığı için burada ancak

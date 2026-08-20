@@ -238,24 +238,40 @@ class RootCauseService:
         provider = self._provider or build_structured_provider(provider_name)
 
         perspective_label = await self._perspective_label(perspective_code)
-        user_prompt = render_root_cause_user_prompt(
-            {
-                "primary_category_label": _CATEGORY_LABELS.get(
-                    primary_category, primary_category
-                ),
-                "perspective_label": perspective_label,
-                "date_from": date_from,
-                "date_to": date_to,
-                "bucket_total": sample.total,
-                "bucket_negative": sample.negative,
-                "sample_count": len(sample.reviews),
-                "reviews": sample.reviews,
-            }
+
+        # B1a — DB override (tenant > global) varsa onu kullan, yoksa
+        # kod sabitleri (swot_service.py:181-194 ile aynı desen; bu
+        # servisin kendi Jinja2 user-prompt render mekanizması zaten
+        # var — root_cause_v1.render_root_cause_user_prompt — bu yüzden
+        # select_prompt hem system hem user prompt'u kapsar, SWOT'takiyle
+        # birebir aynı şekilde).
+        from imga_api.services.prompt_override import select_prompt
+
+        _ctx: dict[str, Any] = {
+            "primary_category_label": _CATEGORY_LABELS.get(
+                primary_category, primary_category
+            ),
+            "perspective_label": perspective_label,
+            "date_from": date_from,
+            "date_to": date_to,
+            "bucket_total": sample.total,
+            "bucket_negative": sample.negative,
+            "sample_count": len(sample.reviews),
+            "reviews": sample.reviews,
+        }
+        selection = await select_prompt(
+            self._session,
+            tenant_id=self._tenant_id,
+            template_key="root_cause",
+            variables=_ctx,
+            default_system_prompt=ROOT_CAUSE_SYSTEM_PROMPT,
+            default_user_prompt=lambda: render_root_cause_user_prompt(_ctx),
         )
+        user_prompt = selection.user_prompt
         language = await self._tenant_language()
         terminology = await self._tenant_terminology()
         system_prompt = (
-            ROOT_CAUSE_SYSTEM_PROMPT
+            selection.system_prompt
             + language_directive(language)
             + terminology_directive(terminology)
         )
@@ -290,7 +306,7 @@ class RootCauseService:
             model_name=model_name,
             model_provider=provider_name,
             prompt_template_key="root_cause",
-            prompt_template_version="v1",
+            prompt_template_version=selection.version,
             actor_user_id=self._user_id,
             related_entity_type="root_cause_analysis",
         )

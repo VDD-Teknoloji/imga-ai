@@ -18,7 +18,11 @@ Kapsam (worker semantiğiyle birebir):
                           dosya içi kopya (atlanacak satır) /
                           şablon-görünümlü / anlamsız içerik (2026-08-18,
                           migration 0042 WS2 — satır YİNE analiz edilir,
-                          yalnız kullanıcı önceden uyarılır).
+                          yalnız kullanıcı önceden uyarılır) /
+                          tarih kolonu bulunamadı (2026-08-20, dosya
+                          seviyesi — ``code='no_date_column'``, satırlar
+                          YİNE analiz edilir, yalnız hepsi yükleme
+                          tarihini alır).
   * valid_rows:           analiz edilecek satır = toplam − boş − kopya.
                           informational/meaningless satırlar dahildir —
                           onlar da worker'da analiz edilip quality_flag'li
@@ -244,9 +248,19 @@ def validate_upload(
     meaningless_rows: list[int] = []
     seen_hashes: set[str] = set()
     valid_rows = 0
+    # 2026-08-20 — Kitap1.xlsx (21.684 satır) vakası: tarih kolonu
+    # sessizce kaçırılınca dönem karşılaştırmaları haftalarca boş kaldı.
+    # iter_rows zaten (güçlendirilmiş) auto-detect'i her satırda koşturur;
+    # tüm dosya boyunca TEK bir satır bile review_date kazanmadıysa dosyada
+    # kullanılabilir bir tarih kolonu yok demektir — boş metinli satırlar
+    # DAHİL (onlar da kendi hücresinden tarih taşıyabilir), bu yüzden bu
+    # bayrak aşağıdaki ``if not text: continue``'dan ÖNCE güncellenir.
+    any_date_detected = False
 
     try:
         for parsed in iter_rows(file_path, text_column=scan_column):
+            if parsed.review_date is not None:
+                any_date_detected = True
             text = parsed.text
             if not text:
                 empty_rows.append(parsed.row_number)
@@ -355,6 +369,30 @@ def validate_upload(
         + len(informational_rows)
         + len(meaningless_rows)
     )
+    # 2026-08-20 — dosya seviyesi bulgu (row=None): ne başlık deseni ne
+    # değer-tabanlı yedek bir tarih kolonu bulabildi. Bu, kullanıcının
+    # Step-2'de ELLE bir kolon seçmesi gerektiğinin sinyalidir — önizleme
+    # zamanında henüz bir seçim yapılmamış olur, o yüzden burada yalnız
+    # otomatik tespitin durumu değerlendirilir; kullanıcı manuel seçim
+    # yaparsa frontend bu uyarıyı yerel olarak çözülmüş sayar (bkz.
+    # upload/page.tsx — sunucu seçimden habersizdir).
+    if not any_date_detected:
+        issues.append(
+            UploadValidationIssue(
+                severity="warning",
+                code="no_date_column",
+                message=(
+                    "Tarih kolonu bulunamadı — tüm yorumlar yükleme "
+                    "tarihini alır; dönem karşılaştırmaları ve zaman "
+                    "analizleri çalışmaz."
+                ),
+                hint=(
+                    "Şablondaki 'tarih' kolonunu doldurun ya da yükleme "
+                    "ekranında tarih kolonunu elle seçin."
+                ),
+            )
+        )
+        warning_count += 1
     return UploadValidationReport(
         ok=True,
         total_rows=total_rows,

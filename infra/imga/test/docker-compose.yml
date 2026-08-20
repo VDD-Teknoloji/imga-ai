@@ -112,6 +112,9 @@ services:
       - ../../../packages/imga-api/tests:/app/tests:ro
       - ../../../packages/imga-api/pyproject.toml:/app/pyproject.toml:ro
       - ../../../packages/imga-core/tests:/app/tests-core:ro
+      # backfill script testi konteynerde de kossun diye (scripts/
+      # imaja girmiyor; test yol-yuruyusuyle /app/scripts'i bulur).
+      - ../../../scripts:/app/scripts:ro
     working_dir: /app
     command:
       - sh
@@ -134,6 +137,7 @@ services:
           tests/test_batch_quality_report.py \
           tests/test_reviews_list.py \
           tests/test_orphan_recovery.py \
+          tests/test_cleanup.py \
           tests/test_review_manual_ticket.py \
           tests/test_report_generation.py \
           tests/test_analytics.py \
@@ -196,6 +200,7 @@ services:
           tests/test_admin_invitations.py \
           tests/test_admin_llm_credentials.py \
           tests/test_file_parser.py \
+          tests/test_backfill_review_dates.py \
           tests/test_monthly_metrics_engagement.py \
           tests/test_default_model_name_constants.py \
           tests/test_batch_audit_token_capture.py \
@@ -213,6 +218,8 @@ services:
           tests/test_api_token_security.py \
           tests/test_api_tokens_service.py \
           tests/test_admin_session_regression.py \
+          tests/test_admin_overview.py \
+          tests/test_llm_pricing.py \
           tests/test_sse_streaming.py \
           tests/contract/test_error_envelope.py \
           tests/contract/test_response_envelope.py \

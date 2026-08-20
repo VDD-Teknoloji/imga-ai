@@ -6,7 +6,7 @@ Every state-changing operator action that lands outside the
 distinguishing question: "Did a *human* decide this?" If yes, the
 service writes a row.
 
-Decision types (CHECK constraint in Migration 0027 enforces):
+Decision types (CHECK constraint in Migration 0027, extended by 0045):
   * briefing_acknowledged / dismissed
   * strategic_report_approved / rejected
   * action_item_assigned / priority_changed (mirrors
@@ -18,6 +18,9 @@ Decision types (CHECK constraint in Migration 0027 enforces):
   * webhook_dispatched_manually
   * tenant_setting_changed
   * prompt_template_overridden
+  * batch_retried / reanalysis_started / review_corrected /
+    onboarding_categories_applied (2026-08-20, migration 0045 —
+    super-admin inventory report; recorded by SA2's call sites)
 
 The service is session-bound; callers wrap the call in their own
 ``async with session.begin():`` so the audit row commits with the
@@ -51,6 +54,11 @@ DECISION_KPI_GOAL_SET = "kpi_goal_set"
 DECISION_WEBHOOK_DISPATCHED_MANUALLY = "webhook_dispatched_manually"
 DECISION_TENANT_SETTING_CHANGED = "tenant_setting_changed"
 DECISION_PROMPT_TEMPLATE_OVERRIDDEN = "prompt_template_overridden"
+# 2026-08-20 (migration 0045) — super-admin inventory report additions.
+DECISION_BATCH_RETRIED = "batch_retried"
+DECISION_REANALYSIS_STARTED = "reanalysis_started"
+DECISION_REVIEW_CORRECTED = "review_corrected"
+DECISION_ONBOARDING_CATEGORIES_APPLIED = "onboarding_categories_applied"
 
 
 class DecisionAuditService:
@@ -101,10 +109,14 @@ class DecisionAuditService:
 __all__ = [
     "DECISION_ACTION_ITEM_ASSIGNED",
     "DECISION_ACTION_ITEM_PRIORITY_CHANGED",
+    "DECISION_BATCH_RETRIED",
     "DECISION_BRIEFING_ACKNOWLEDGED",
     "DECISION_BRIEFING_DISMISSED",
     "DECISION_KPI_GOAL_SET",
+    "DECISION_ONBOARDING_CATEGORIES_APPLIED",
     "DECISION_PROMPT_TEMPLATE_OVERRIDDEN",
+    "DECISION_REANALYSIS_STARTED",
+    "DECISION_REVIEW_CORRECTED",
     "DECISION_SLA_RULE_CHANGED",
     "DECISION_STRATEGIC_REPORT_APPROVED",
     "DECISION_STRATEGIC_REPORT_REJECTED",

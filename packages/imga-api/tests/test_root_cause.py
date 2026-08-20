@@ -244,6 +244,56 @@ async def test_service_generates_persists_and_caches(
 
 
 @pytest.mark.asyncio
+async def test_service_uses_tenant_prompt_override(
+    admin_session: AsyncSession,
+    semi_auto_tenant: tuple[User, UUID, str],
+    mock_gemini_credential: Any,
+    fake_redis_client: Any,
+) -> None:
+    """B1a — bir tenant override'ı ``prompt_templates``'a yazıldığında
+    ``RootCauseService.generate`` sağlayıcıya override'ın system/user
+    prompt'unu göndermeli, kod sabitlerini DEĞİL. Öncesinde
+    ``root_cause_service.py`` hiç ``select_prompt`` çağırmıyordu — bir
+    admin şablonu düzenlese bile üretim sessizce kod sabitiyle akardı
+    (süper-admin denetim raporu B1)."""
+    del fake_redis_client
+    from imga_db.models import PromptTemplate
+
+    _user, tid, _pw = semi_auto_tenant
+    await mock_gemini_credential(tid, "fake-key", priority=0)
+    await _seed_reviews(admin_session, tenant_id=tid, count=12)
+
+    async with admin_session.begin():
+        await _bind_tenant(admin_session, tid)
+        admin_session.add(
+            PromptTemplate(
+                template_key="root_cause",
+                tenant_id=tid,
+                system_prompt="ÖZEL SİSTEM PROMPTU - TEST OVERRIDE",
+                user_prompt_template="ÖZEL KULLANICI PROMPTU - TEST OVERRIDE",
+                response_schema={},
+                model_name="gemini-3-flash-preview",
+                is_active=True,
+                is_default=True,
+                required_variables=[],
+            )
+        )
+        await admin_session.flush()
+
+    provider = _build_mock_provider()
+    async with admin_session.begin():
+        await _bind_tenant(admin_session, tid)
+        service = RootCauseService(admin_session, tid, None, provider=provider)
+        await service.generate(
+            primary_category="kargo", perspective_code="order_status_wrong"
+        )
+
+    kwargs = provider.generate_root_cause.await_args.kwargs
+    assert "ÖZEL SİSTEM PROMPTU - TEST OVERRIDE" in kwargs["system_prompt"]
+    assert kwargs["user_prompt"] == "ÖZEL KULLANICI PROMPTU - TEST OVERRIDE"
+
+
+@pytest.mark.asyncio
 async def test_service_cache_hit_skips_llm(
     admin_session: AsyncSession,
     semi_auto_tenant: tuple[User, UUID, str],

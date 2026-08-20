@@ -96,6 +96,7 @@ class BatchJobResponse(BaseModel):
     file_size_bytes: int
     text_column: str
     source_column: str | None
+    date_column: str | None = None
     auto_create_tickets: bool
     total_rows: int
     processed_rows: int
@@ -320,6 +321,7 @@ def _job_view(job: Any) -> BatchJobResponse:
         file_size_bytes=job.file_size_bytes,
         text_column=job.text_column,
         source_column=job.source_column,
+        date_column=getattr(job, "date_column", None),
         auto_create_tickets=job.auto_create_tickets,
         total_rows=job.total_rows,
         processed_rows=job.processed_rows,
@@ -570,6 +572,7 @@ async def create_batch(
     file: Annotated[UploadFile, File(...)],
     text_column: Annotated[str, Form()] = "yorum",
     source_column: Annotated[str | None, Form()] = None,
+    date_column: Annotated[str | None, Form()] = None,
     auto_create_tickets: Annotated[bool, Form()] = False,
 ) -> BatchJobResponse:
     # Sprint 9.8 — text_column default'u "yorum"a çekildi
@@ -697,6 +700,7 @@ async def create_batch(
             file_path=str(file_path),
             text_column=text_column,
             source_column=source_column,
+            date_column=date_column or None,
             auto_create_tickets=auto_create_tickets,
             total_rows=total_rows,
             ip_address=_client_ip(request),

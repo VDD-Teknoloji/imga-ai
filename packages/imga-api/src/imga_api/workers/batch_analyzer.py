@@ -85,6 +85,7 @@ from imga_api.workers.file_parser import (
     FileParseError,
     UnknownColumnError,
     iter_rows,
+    peek_date_column_found,
     peek_detected_nps_column,
 )
 
@@ -345,6 +346,10 @@ async def _run_job(
         file_path = Path(job.file_path)
         text_column = job.text_column
         source_column = job.source_column
+        # 2026-08-20 (migration 0044) — operatörün Step-2'de elle seçtiği
+        # tarih kolonu; boşsa file_parser'ın (güçlendirilmiş) otomatik
+        # tespitine düşülür. Bkz. aşağıdaki uyarı bloğu + iter_rows çağrısı.
+        date_column = job.date_column
         auto_create = job.auto_create_tickets
         triggered_by_user_id = job.triggered_by_user_id
         chunk_size = context.settings.chunk_size
@@ -394,6 +399,38 @@ async def _run_job(
                 .values(detected_nps_column=detected_nps)
             )
 
+    # 2026-08-20 (migration 0044) — operatör açıkça bir tarih kolonu
+    # seçtiyse ama bu dosyada o başlık yoksa (ör. önizlemeden sonra
+    # dosya değiştirildi), iş YİNE DE işlenir — satırlar tarihsiz kalır
+    # (bkz. file_parser._resolve_columns) — ama operatör "neden tüm
+    # yorumlar bugüne düştü" sorusunu kendi kendine cevaplayabilsin diye
+    # job üzerinde görünür bir uyarı bırakılır. apply_progress zaten
+    # var olan error_summary'ye EKLER (100 kayıt tavanıyla), üzerine
+    # yazmaz.
+    if date_column:
+        date_column_found = True
+        with contextlib.suppress(FileParseError):
+            date_column_found = peek_date_column_found(file_path, date_column)
+        if not date_column_found:
+            async with context.admin_session_factory() as admin_session, admin_session.begin():
+                await set_current_tenant(admin_session, tenant_id)
+                warn_audit = AuditService(admin_session)
+                await BatchAnalyzeService(admin_session, warn_audit).apply_progress(
+                    job_id=job_id,
+                    progress=BatchProgress(
+                        error_entries=[
+                            {
+                                "row": None,
+                                "error": (
+                                    f"Seçilen tarih kolonu '{date_column}' "
+                                    "dosyada bulunamadı; tüm satırlar "
+                                    "yükleme anının tarihini alacak."
+                                ),
+                            }
+                        ]
+                    ),
+                )
+
     # Sprint 9.4 D — fetch the per-tenant business-dimension mapping
     # once at job start. Each enabled dimension with a non-null
     # ``csv_column_mapping`` contributes one entry; the file parser
@@ -407,6 +444,7 @@ async def _run_job(
             text_column=text_column,
             source_column=source_column,
             dimension_mapping=dimension_mapping,
+            date_column=date_column,
         )
     except (FileParseError, UnknownColumnError) as exc:
         await _record_catastrophic_failure(

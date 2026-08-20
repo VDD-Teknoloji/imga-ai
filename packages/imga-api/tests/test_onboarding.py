@@ -360,6 +360,104 @@ async def test_suggest_categories_excludes_archived_custom_code(
 
 
 @pytest.mark.asyncio
+async def test_suggest_categories_uses_tenant_prompt_override(
+    admin_session: AsyncSession,
+    semi_auto_tenant: tuple[User, UUID, str],
+    mock_gemini_credential: Any,
+) -> None:
+    """B1c — bir tenant override'ı ``prompt_templates``'a yazıldığında
+    ``OnboardingService.suggest_categories`` sağlayıcıya override'ın
+    system/user prompt'unu göndermeli, kod sabitlerini DEĞİL (öncesinde
+    hiç ``select_prompt`` çağrılmıyordu — süper-admin denetim raporu
+    B1). Override satırı hem system hem user prompt taşıdığında ikisi
+    de birlikte kazanır — ``_render_user_prompt`` yalnız override YOKKEN
+    ya da render PATLADIĞINDA devreye giren fallback'tir."""
+    from imga_db.models import PromptTemplate
+
+    from imga_api.services.onboarding_service import OnboardingService
+
+    _user, tid, _pw = semi_auto_tenant
+    await mock_gemini_credential(tid, "fake-key", priority=0)
+
+    async with admin_session.begin():
+        await _bind_tenant_raw(admin_session, tid)
+        admin_session.add(
+            PromptTemplate(
+                template_key="onboarding_suggest",
+                tenant_id=tid,
+                system_prompt="ÖZEL SİSTEM PROMPTU - TEST OVERRIDE",
+                user_prompt_template="ÖZEL KULLANICI PROMPTU - TEST OVERRIDE",
+                response_schema={},
+                model_name="gemini-3-flash-preview",
+                is_active=True,
+                is_default=True,
+                required_variables=[],
+            )
+        )
+        await admin_session.flush()
+
+    provider = _build_mock_onboarding_provider()
+    async with admin_session.begin():
+        await _bind_tenant_raw(admin_session, tid)
+        service = OnboardingService(admin_session, tid, provider=provider)
+        await service.suggest_categories(sample_limit=0)
+
+    kwargs = provider.generate_root_cause.await_args.kwargs
+    assert kwargs["system_prompt"] == "ÖZEL SİSTEM PROMPTU - TEST OVERRIDE"
+    assert kwargs["user_prompt"] == "ÖZEL KULLANICI PROMPTU - TEST OVERRIDE"
+
+
+@pytest.mark.asyncio
+async def test_suggest_categories_records_llm_audit_row(
+    admin_session: AsyncSession,
+    semi_auto_tenant: tuple[User, UUID, str],
+    mock_gemini_credential: Any,
+) -> None:
+    """B5 — süper-admin denetim raporu: onboarding önerisi artık
+    llm_call_audit'e yazıyor (öncesinde swot/root_cause'un aksine hiç
+    auditor sarmalaması yoktu — bkz. onboarding_service.py modül
+    docstring'i, 'Dalga-1 dışında yasak' notu). Migration 0045
+    ``ck_llm_call_audit_call_type`` kısıtına ``'onboarding_suggest'``
+    eklenmeden bu satır CheckViolation ile SESSİZCE düşer
+    (``LLMCallAuditor`` savepoint içinde yutar, bkz. o dosyanın
+    ``_insert_row`` docstring'i) — bu test yalnız 0045 sonrası
+    anlamlıdır (lokalde şu an koşulamıyor)."""
+    from imga_db.models import LlmCallAudit
+
+    from imga_api.services.onboarding_service import OnboardingService
+
+    _user, tid, _pw = semi_auto_tenant
+    await mock_gemini_credential(tid, "fake-key", priority=0)
+
+    async with admin_session.begin():
+        await _bind_tenant_raw(admin_session, tid)
+        service = OnboardingService(
+            admin_session, tid, provider=_build_mock_onboarding_provider()
+        )
+        await service.suggest_categories(sample_limit=0)
+
+    async with admin_session.begin():
+        await _bind_tenant_raw(admin_session, tid)
+        rows = (
+            await admin_session.execute(
+                select(LlmCallAudit)
+                .where(LlmCallAudit.tenant_id == tid)
+                .where(LlmCallAudit.call_type == "onboarding_suggest")
+            )
+        ).scalars().all()
+
+    assert len(rows) == 1, (
+        "onboarding_suggest cagrisi tam olarak bir llm_call_audit satiri "
+        "birakmali; 0 ise migration 0045 (ck_llm_call_audit_call_type + "
+        "'onboarding_suggest') henuz uygulanmamis demektir"
+    )
+    audit = rows[0]
+    assert audit.success is True
+    assert audit.related_entity_type == "tenant"
+    assert audit.prompt_template_key == "onboarding_suggest"
+
+
+@pytest.mark.asyncio
 async def test_suggest_categories_no_credentials_raises(
     admin_session: AsyncSession,
     semi_auto_tenant: tuple[User, UUID, str],
@@ -451,6 +549,66 @@ async def test_apply_categories_creates_rows_and_disables_global(
         tc = await admin_session.get(TenantCategory, (tid, urun_kalitesi_id))
         assert tc is not None
         assert tc.is_enabled is False
+
+
+@pytest.mark.asyncio
+async def test_apply_categories_records_decision_audit(
+    admin_session: AsyncSession,
+    semi_auto_tenant: tuple[User, UUID, str],
+) -> None:
+    """B3d — süper-admin denetim raporu: Karar Geçmişi'ne 'onboarding
+    categories applied' eylemi (``tenant_kpi_goals.py:195``'teki
+    ``DecisionAuditService`` çağrı deseniyle aynı). Migration 0045
+    ``ck_decision_audit_log_type`` kısıtına
+    ``'onboarding_categories_applied'`` eklenmeden bu çağrı
+    CheckViolation ile PATLAR (``DecisionAuditService.record_decision``
+    hatayı yutmaz) — bu test yalnız 0045 sonrası anlamlıdır (lokalde
+    şu an koşulamıyor)."""
+    from cachetools import TTLCache
+    from imga_db.models import DecisionAuditLog
+
+    from imga_api.services.onboarding_service import OnboardingService
+    from imga_api.services.tenant_config_service import TenantConfigService
+
+    user, tid, _pw = semi_auto_tenant
+    async with admin_session.begin():
+        await _bind_tenant_raw(admin_session, tid)
+        cache: TTLCache[UUID, dict[str, Any]] = TTLCache(maxsize=10, ttl=60)
+        config = TenantConfigService(admin_session, AuditService(admin_session), cache)
+        service = OnboardingService(admin_session, tid)
+        await service.apply_categories(
+            config=config,
+            top_categories=[
+                {
+                    "code": "abonelik_iptali",
+                    "label_tr": "Abonelik İptali",
+                    "description": "test",
+                }
+            ],
+            subcategories=[],
+            disable_global_codes=[],
+            actor_user_id=user.id,
+        )
+
+    async with admin_session.begin():
+        await _bind_tenant_raw(admin_session, tid)
+        row = (
+            await admin_session.execute(
+                select(DecisionAuditLog)
+                .where(DecisionAuditLog.tenant_id == tid)
+                .where(
+                    DecisionAuditLog.decision_type
+                    == "onboarding_categories_applied"
+                )
+            )
+        ).scalar_one()
+
+    assert row.related_entity_type == "tenant"
+    assert row.related_entity_id == tid
+    assert row.actor_user_id == user.id
+    assert row.payload["created_categories_count"] == 1
+    assert row.payload["created_taxonomies_count"] == 0
+    assert row.payload["disabled_global_codes_count"] == 0
 
 
 @pytest.mark.asyncio

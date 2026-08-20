@@ -175,3 +175,14 @@ class AnalyzeBatchJob(Base):
     quality_summary: Mapped[dict[str, Any] | None] = mapped_column(
         JSONB, nullable=True
     )
+
+    # 2026-08-20 (migration 0044) — kullanıcının Step-2'de elle seçtiği
+    # tarih kolonu başlığı (``text_column``/``source_column`` ile aynı
+    # sözleşme). NULL = seçim yok, worker mevcut otomatik tespite düşer
+    # (bkz. workers.file_parser._detect_date_column). Doluysa otomatik
+    # tespitin ÖNÜNE geçer; dosyada bulunamazsa satırlar tarihsiz kalır
+    # ve worker error_summary'ye bir uyarı ekler — iş başarısız SAYILMAZ.
+    # Kitap1.xlsx (21.684 satır) vakası: başlık-tabanlı otomatik tespit
+    # sessizce None'a düşmüş, dönem karşılaştırmaları haftalarca boş
+    # kalmıştı; bu kolon o riski elle seçimle tamamen ortadan kaldırır.
+    date_column: Mapped[str | None] = mapped_column(String(64), nullable=True)

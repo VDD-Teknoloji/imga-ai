@@ -147,14 +147,24 @@ class CorrectionService:
         else:
             effective_score = old_score
 
-        changed = (
-            effective_sentiment != old_sentiment
-            or effective_category != old_category
-            or (new_score is not None and new_score != old_score)
-            or (new_experience is not None and new_experience != old_experience)
-            or (new_perspective is not None and new_perspective != old_perspective)
-        )
-        if not changed:
+        # B3c — hangi alanların FİİLEN değiştiğini ayrı ayrı toplar
+        # (eskiden tek bir OR'lu ``changed`` booleanıydı); Karar
+        # Geçmişi'nin ``changed_fields`` payload'u bunu birebir okur
+        # (tenant_profile.py:258'deki ``sorted(payload.keys())``
+        # deseniyle aynı ruh — burada anahtar isimleri sabit olduğundan
+        # elle listelenir).
+        changed_fields: list[str] = []
+        if effective_sentiment != old_sentiment:
+            changed_fields.append("sentiment_label")
+        if effective_category != old_category:
+            changed_fields.append("primary_category")
+        if new_score is not None and new_score != old_score:
+            changed_fields.append("sentiment_score")
+        if new_experience is not None and new_experience != old_experience:
+            changed_fields.append("experience_type")
+        if new_perspective is not None and new_perspective != old_perspective:
+            changed_fields.append("company_perspective_code")
+        if not changed_fields:
             raise CorrectionError(
                 "Düzeltme mevcut karardan farksız — değişiklik yok."
             )
@@ -210,6 +220,36 @@ class CorrectionService:
         review.overrides_applied = trace
 
         await self._session.flush()
+
+        # B3c — süper-admin denetim raporu: Karar Geçmişi'ne 'review
+        # corrected' eylemi. tenant_kpi_goals.py:195'teki DecisionAudit
+        # Service çağrı deseniyle aynı; çağıran (routes/tenant_reviews.
+        # py's ``correct_review``) zaten açık bir ``async with app_
+        # session.begin():`` içinde — bu satır o transaction'a katılır.
+        # ``DECISION_REVIEW_CORRECTED`` migration 0045 ile decision_
+        # audit_service.py'ye ekleniyor (SA1); henüz diskte yoksa bu
+        # import başarısız olur.
+        from imga_api.services.decision_audit_service import (
+            DECISION_REVIEW_CORRECTED,
+            DecisionAuditService,
+        )
+
+        await DecisionAuditService(self._session).record_decision(
+            tenant_id=tenant_id,
+            decision_type=DECISION_REVIEW_CORRECTED,
+            related_entity_type="review",
+            related_entity_id=review.id,
+            actor_user_id=corrected_by_user_id,
+            payload={
+                "review_id": str(review.id),
+                "changed_fields": sorted(changed_fields),
+                "old_sentiment_label": old_sentiment,
+                "new_sentiment_label": effective_sentiment,
+                "old_score": old_score,
+                "new_score": effective_score,
+            },
+        )
+
         # 2026-08-18 (bulgu) — ``correction.new_score`` kayıtlı ham
         # değerdir (None'a kalabilir); çağıran (route) skor korunduğunda
         # SCORE_FOR_LABEL fallback'ine yanlışlıkla düşmesin diye

@@ -34,6 +34,11 @@ export interface BatchUploadInput {
    *  smart detector ile kendisi çözer. */
   textColumn?: string | null;
   sourceColumn?: string | null;
+  /** 2026-08-20 (migration 0044) — Step-2 eşleme ekranında "Tarih"e
+   *  atanmış kolon (smart parser önerisi ya da kullanıcı override'ı).
+   *  null/"" = seçim yok, backend otomatik tespite düşer (bkz.
+   *  workers.file_parser._detect_date_column). */
+  dateColumn?: string | null;
   autoCreateTickets: boolean;
 }
 
@@ -46,11 +51,18 @@ const TERMINAL_STATUSES = new Set<BatchJob["status"]>([
 export function useBatchUploadMutation() {
   const queryClient = useQueryClient();
   return useMutation<BatchJob, Error, BatchUploadInput>({
-    mutationFn: async ({ file, textColumn, sourceColumn, autoCreateTickets }) => {
+    mutationFn: async ({
+      file,
+      textColumn,
+      sourceColumn,
+      dateColumn,
+      autoCreateTickets,
+    }) => {
       const fd = new FormData();
       fd.append("file", file);
       if (textColumn) fd.append("text_column", textColumn);
       if (sourceColumn) fd.append("source_column", sourceColumn);
+      if (dateColumn) fd.append("date_column", dateColumn);
       fd.append("auto_create_tickets", autoCreateTickets ? "true" : "false");
       return apiRequest<BatchJob>("/tenants/me/analyze/batch", {
         method: "POST",
@@ -241,7 +253,7 @@ export function useBatchProgressStream(
       setError(null);
       return;
     }
-     
+
     setIsLoading(true);
     setError(null);
     let cancelled = false;

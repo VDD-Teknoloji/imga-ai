@@ -36,6 +36,25 @@ DATE_HEADER_PATTERNS: Final[tuple[str, ...]] = (
     "siparis tarihi",
     "siparis_tarihi",
     "gun",
+    # 2026-08-20 — Kitap1.xlsx (21.684 satır) vakası: başlık bu listenin
+    # dışındaydı, tespit sessizce None'a düştü. header_matches_any zaten
+    # Türkçe-aware ASCII fold yapıyor (bkz. smart_parser.base), o yüzden
+    # "kayıt tarihi" gibi aksanlı biçimler için ayrı bir girdi gerekmez —
+    # ASCII biçimi yeter.
+    "olusturulma",
+    "olusturma",
+    "kayit_tarihi",
+    "kayit tarihi",
+    "islem tarihi",
+    "islem_tarihi",
+    "yorum tarihi",
+    "yorum_tarihi",
+    "tarih saat",
+    "tarih_saat",
+    "zaman",
+    "timestamp",
+    "datetime",
+    "time",
 )
 
 _TR_MONTHS: Final[tuple[str, ...]] = (

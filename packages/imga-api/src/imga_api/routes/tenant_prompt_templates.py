@@ -147,6 +147,16 @@ def _build_code_defaults() -> list[CodeDefaultTemplate]:
         OKR_SYSTEM_PROMPT,
         OKR_USER_PROMPT_TEMPLATE,
     )
+    from imga_api.llm.prompts.quality_report_v1 import (
+        QUALITY_REPORT_RESPONSE_SCHEMA,
+        QUALITY_REPORT_SYSTEM_PROMPT,
+        QUALITY_REPORT_USER_PROMPT_TEMPLATE,
+    )
+    from imga_api.llm.prompts.root_cause_v1 import (
+        ROOT_CAUSE_RESPONSE_SCHEMA,
+        ROOT_CAUSE_SYSTEM_PROMPT,
+        ROOT_CAUSE_USER_PROMPT_TEMPLATE,
+    )
     from imga_api.llm.prompts.swot_v1 import (
         SWOT_RESPONSE_SCHEMA,
         SWOT_SYSTEM_PROMPT,
@@ -155,8 +165,15 @@ def _build_code_defaults() -> list[CodeDefaultTemplate]:
     from imga_api.services.executive_briefing_service import (
         DEFAULT_MODEL_NAME as BRIEFING_MODEL,
     )
+    from imga_api.services.llm_provider_factory import (
+        GEMINI_STRUCTURED_DEFAULT_MODEL,
+    )
     from imga_api.services.okr_service import (
         DEFAULT_MODEL_NAME as OKR_MODEL,
+    )
+    from imga_api.services.onboarding_service import (
+        ONBOARDING_SUGGEST_RESPONSE_SCHEMA,
+        ONBOARDING_SUGGEST_SYSTEM_PROMPT,
     )
     from imga_api.services.swot_service import (
         DEFAULT_MODEL_NAME as SWOT_MODEL,
@@ -215,6 +232,57 @@ def _build_code_defaults() -> list[CodeDefaultTemplate]:
             user_prompt_template="(yorum listesi sistem tarafından kurulur)",
             response_schema={},
             model_name="gemini-3-flash-preview",
+            required_variables=[],
+            user_prompt_editable=False,
+        ),
+        # B8 (süper-admin denetim raporu) — root_cause/quality_report/
+        # onboarding_suggest daha önce select_prompt()'a hiç bağlı
+        # değildi (B1); katalogdaki eksiklikleri kapatıldıktan sonra
+        # bunlar da /settings/prompts sayfasında görünür + override
+        # edilebilir olmalı. required_variables=[] mevcut 4 girdinin
+        # şekliyle bilinçli tutarlı (SWOT/OKR/briefing de gerçek Jinja
+        # değişkenlerini burada listelemiyor).
+        CodeDefaultTemplate(
+            template_key="root_cause",
+            title="Kök Neden Analizi",
+            description=(
+                "Bir alt kategori kovasındaki ham yorumlardan nokta "
+                "atışı operasyonel kök nedenler çıkaran prompt."
+            ),
+            system_prompt=ROOT_CAUSE_SYSTEM_PROMPT,
+            user_prompt_template=ROOT_CAUSE_USER_PROMPT_TEMPLATE,
+            response_schema=ROOT_CAUSE_RESPONSE_SCHEMA,
+            model_name=GEMINI_STRUCTURED_DEFAULT_MODEL,
+            required_variables=[],
+        ),
+        CodeDefaultTemplate(
+            template_key="quality_report",
+            title="Veri Kalitesi Raporu",
+            description=(
+                "Toplu yükleme veri kalitesi bayraklarından (kopya/boş/"
+                "şablon/anlamsız) Türkçe değerlendirme üreten prompt."
+            ),
+            system_prompt=QUALITY_REPORT_SYSTEM_PROMPT,
+            user_prompt_template=QUALITY_REPORT_USER_PROMPT_TEMPLATE,
+            response_schema=QUALITY_REPORT_RESPONSE_SCHEMA,
+            model_name=GEMINI_STRUCTURED_DEFAULT_MODEL,
+            required_variables=[],
+        ),
+        CodeDefaultTemplate(
+            template_key="onboarding_suggest",
+            title="Onboarding Kategori Önerisi",
+            description=(
+                "Kurumun sektörü/büyüklüğü/iş tanımına göre özel "
+                "kategori ve alt taksonomi önerisi üreten prompt. Kurum "
+                "bağlamı ve örnek yorumlar sistem tarafından otomatik "
+                "eklenir — yalnız sistem talimatı düzenlenebilir."
+            ),
+            system_prompt=ONBOARDING_SUGGEST_SYSTEM_PROMPT,
+            user_prompt_template=(
+                "(kurum bağlamı ve örnek yorumlar sistem tarafından kurulur)"
+            ),
+            response_schema=ONBOARDING_SUGGEST_RESPONSE_SCHEMA,
+            model_name=GEMINI_STRUCTURED_DEFAULT_MODEL,
             required_variables=[],
             user_prompt_editable=False,
         ),
@@ -317,6 +385,25 @@ async def create_override(
     app_session: Annotated[AsyncSession, Depends(get_app_session)],
 ) -> PromptTemplateResponse:
     tenant_id = _require_active_tenant(current)
+    # B8 — süper-admin denetim raporu: B1'in "sessiz tuzak" yarısını
+    # kapatır. Öncesinde herhangi bir template_key kabul ediliyordu;
+    # bir yanlış yazım (ör. "roon_cause") ya da var olmayan bir anahtar
+    # DB'ye sorunsuzca yazılıyor ama HİÇBİR select_prompt() çağrısı onu
+    # asla okumuyordu (kod hangi anahtarları aradığını sabit string
+    # olarak biliyor). Doğrulama YALNIZ burada (yeni yazım) — GET
+    # listelemesi bilerek değişmedi: DB'de whitelist-dışı eski bir satır
+    # varsa yine görünür, yalnız yeni POST'lar reddedilir. PATCH/DELETE/
+    # test endpoint'leri template_key almaz/değiştirmez, bu yüzden
+    # doğrulama yalnız burada gerekli.
+    valid_keys = {t.template_key for t in _build_code_defaults()}
+    if body.template_key not in valid_keys:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=(
+                f"bilinmeyen şablon anahtarı: {body.template_key!r}; "
+                f"geçerliler: {', '.join(sorted(valid_keys))}"
+            ),
+        )
     try:
         async with app_session.begin():
             await bind_tenant(app_session, current)

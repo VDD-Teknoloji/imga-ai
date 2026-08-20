@@ -48,6 +48,27 @@ def test_missing_root_returns_zero(tmp_path: Path) -> None:
     assert deleted == 0
 
 
+def test_keep_paths_survive_retention(tmp_path: Path) -> None:
+    """2026-08-19 Kitap1 vakası: FAILED bir işin dosyası retention'ı
+    aşsa da silinmemeli — yoksa checkpoint "Tekrar Dene" dosyasız kalır."""
+    kept = tmp_path / "tenant-a" / "job-failed" / "kitap1.xlsx"
+    kept.parent.mkdir(parents=True, exist_ok=True)
+    kept.write_bytes(b"x")
+    _set_mtime(kept, hours_ago=200)
+
+    doomed = tmp_path / "tenant-a" / "job-done" / "old.csv"
+    doomed.parent.mkdir(parents=True, exist_ok=True)
+    doomed.write_bytes(b"y")
+    _set_mtime(doomed, hours_ago=200)
+
+    deleted = reap_stale_uploads(
+        root=tmp_path, retention_hours=24, keep_paths={str(kept)}
+    )
+    assert deleted == 1
+    assert kept.exists()
+    assert not doomed.exists()
+
+
 def test_leaves_empty_directories_alone(tmp_path: Path) -> None:
     """Directories aren't collected — only files. Saves race-with-upload
     headaches when a fresh upload lands during cron."""

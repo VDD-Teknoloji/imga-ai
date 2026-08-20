@@ -42,14 +42,15 @@ class DecisionAuditLog(Base):
             "'action_item_assigned', 'action_item_priority_changed', "
             "'sla_rule_changed', 'kpi_goal_set', "
             "'webhook_dispatched_manually', 'tenant_setting_changed', "
-            "'prompt_template_overridden')",
+            "'prompt_template_overridden', "
+            # 2026-08-20 (migration 0045) — süper-admin envanteri.
+            "'batch_retried', 'reanalysis_started', 'review_corrected', "
+            "'onboarding_categories_applied')",
             name="ck_decision_audit_log_type",
         ),
     )
 
-    id: Mapped[UUID] = mapped_column(
-        PG_UUID(as_uuid=True), primary_key=True, default=uuid4
-    )
+    id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4)
     tenant_id: Mapped[UUID] = mapped_column(
         PG_UUID(as_uuid=True),
         ForeignKey("tenants.id", ondelete="CASCADE"),
@@ -57,17 +58,13 @@ class DecisionAuditLog(Base):
     )
     decision_type: Mapped[str] = mapped_column(Text(), nullable=False)
     related_entity_type: Mapped[str] = mapped_column(Text(), nullable=False)
-    related_entity_id: Mapped[UUID] = mapped_column(
-        PG_UUID(as_uuid=True), nullable=False
-    )
+    related_entity_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
     actor_user_id: Mapped[UUID | None] = mapped_column(
         PG_UUID(as_uuid=True),
         ForeignKey("users.id", ondelete="SET NULL"),
         nullable=True,
     )
-    payload: Mapped[dict[str, Any]] = mapped_column(
-        JSONB, nullable=False, default=dict
-    )
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
     rationale: Mapped[str | None] = mapped_column(Text(), nullable=True)
     request_id: Mapped[str | None] = mapped_column(Text(), nullable=True)
     created_at: Mapped[datetime] = mapped_column(

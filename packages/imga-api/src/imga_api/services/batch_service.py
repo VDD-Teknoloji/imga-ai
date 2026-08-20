@@ -119,6 +119,7 @@ class BatchAnalyzeService:
         auto_create_tickets: bool,
         total_rows: int,
         ip_address: str | None = None,
+        date_column: str | None = None,
     ) -> AnalyzeBatchJob:
         now = datetime.now(UTC)
         job = AnalyzeBatchJob(
@@ -130,6 +131,7 @@ class BatchAnalyzeService:
             file_path=file_path,
             text_column=text_column,
             source_column=source_column,
+            date_column=date_column,
             auto_create_tickets=auto_create_tickets,
             total_rows=total_rows,
             error_summary=[],
@@ -383,6 +385,33 @@ class BatchAnalyzeService:
                 "previous_error": previous_error,
             },
         )
+
+        # B3a — süper-admin denetim raporu: Karar Geçmişi'ne 'batch
+        # retried' eylemi. ``self._audit.log`` (yukarıda) genel
+        # audit_logs izini bırakır; bu ayrı, tenant_kpi_goals.py:195'teki
+        # DecisionAuditService çağrı deseniyle aynı kayıttır. Çağıran
+        # (routes/tenant_batch.py's ``retry_batch``) zaten açık bir
+        # ``async with app_session.begin():`` içinde — bu satır o
+        # transaction'a katılır, ayrı bir transaction açmaz. ``DECISION_
+        # BATCH_RETRIED`` migration 0045 ile decision_audit_service.py'ye
+        # ekleniyor (SA1); henüz diskte yoksa bu import başarısız olur.
+        from imga_api.services.decision_audit_service import (
+            DECISION_BATCH_RETRIED,
+            DecisionAuditService,
+        )
+
+        await DecisionAuditService(self._session).record_decision(
+            tenant_id=job.tenant_id,
+            decision_type=DECISION_BATCH_RETRIED,
+            related_entity_type="batch_job",
+            related_entity_id=job.id,
+            actor_user_id=actor_user_id,
+            payload={
+                "job_id": str(job.id),
+                "file_name": job.file_name,
+                "checkpoint": job.last_checkpoint_row,
+            },
+        )
         return job
 
 
@@ -494,18 +523,33 @@ class QualityReportService:
         model_name = resolve_model_name(provider_name, key_selection.model)
         provider = self._provider or build_structured_provider(provider_name)
 
-        user_prompt = render_quality_report_user_prompt(
-            {
-                "total_rows": report["total_rows"],
-                "succeeded_rows": report["succeeded_rows"],
-                "quality_duplicate_rows": report["counts"]["duplicate"],
-                "quality_empty_rows": report["counts"]["empty"],
-                "quality_informational_rows": report["counts"]["informational"],
-                "quality_meaningless_rows": report["counts"]["meaningless"],
-                "top_repeated_texts": report["top_repeated_texts"],
-                "entered_by_breakdown": report["entered_by_breakdown"],
-            }
+        # B1b — DB override (tenant > global) varsa onu kullan, yoksa
+        # kod sabitleri (swot_service.py:181-194 ile aynı desen).
+        # Dil/terim yönergesi kasıtlı olarak EKLENMEDİ — kalite raporu
+        # bugüne kadar bunları hiç uygulamıyordu (root_cause/swot'un
+        # aksine); bu değişiklik yalnız override yolunu açar, davranışı
+        # başka yönde genişletmez.
+        from imga_api.services.prompt_override import select_prompt
+
+        _ctx: dict[str, Any] = {
+            "total_rows": report["total_rows"],
+            "succeeded_rows": report["succeeded_rows"],
+            "quality_duplicate_rows": report["counts"]["duplicate"],
+            "quality_empty_rows": report["counts"]["empty"],
+            "quality_informational_rows": report["counts"]["informational"],
+            "quality_meaningless_rows": report["counts"]["meaningless"],
+            "top_repeated_texts": report["top_repeated_texts"],
+            "entered_by_breakdown": report["entered_by_breakdown"],
+        }
+        selection = await select_prompt(
+            self._session,
+            tenant_id=tenant_id,
+            template_key="quality_report",
+            variables=_ctx,
+            default_system_prompt=QUALITY_REPORT_SYSTEM_PROMPT,
+            default_user_prompt=lambda: render_quality_report_user_prompt(_ctx),
         )
+        user_prompt = selection.user_prompt
 
         failed_invalid_key_ids: list[UUID] = []
 
@@ -515,7 +559,7 @@ class QualityReportService:
             try:
                 return await provider.generate_root_cause(
                     api_key=api_key,
-                    system_prompt=QUALITY_REPORT_SYSTEM_PROMPT,
+                    system_prompt=selection.system_prompt,
                     user_prompt=user_prompt,
                     response_schema=QUALITY_REPORT_RESPONSE_SCHEMA,
                     model_name=model_name,
@@ -545,7 +589,7 @@ class QualityReportService:
             model_name=model_name,
             model_provider=provider_name,
             prompt_template_key="quality_report",
-            prompt_template_version="v1",
+            prompt_template_version=selection.version,
             actor_user_id=self._actor_user_id,
             related_entity_type="analyze_batch_job",
             related_entity_id=job.id,

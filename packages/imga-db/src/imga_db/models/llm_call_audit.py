@@ -42,14 +42,12 @@ class LlmCallAudit(Base):
         CheckConstraint(
             "call_type IN ('classification', 'briefing', "
             "'strategic_report', 'action_extraction', 'okr', "
-            "'root_cause', 'quality_report')",
+            "'root_cause', 'quality_report', 'onboarding_suggest')",
             name="ck_llm_call_audit_call_type",
         ),
     )
 
-    id: Mapped[UUID] = mapped_column(
-        PG_UUID(as_uuid=True), primary_key=True, default=uuid4
-    )
+    id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4)
     tenant_id: Mapped[UUID] = mapped_column(
         PG_UUID(as_uuid=True),
         ForeignKey("tenants.id", ondelete="CASCADE"),
@@ -57,22 +55,14 @@ class LlmCallAudit(Base):
     )
     call_type: Mapped[str] = mapped_column(Text(), nullable=False)
     related_entity_type: Mapped[str | None] = mapped_column(Text(), nullable=True)
-    related_entity_id: Mapped[UUID | None] = mapped_column(
-        PG_UUID(as_uuid=True), nullable=True
-    )
+    related_entity_id: Mapped[UUID | None] = mapped_column(PG_UUID(as_uuid=True), nullable=True)
     prompt_template_key: Mapped[str | None] = mapped_column(Text(), nullable=True)
-    prompt_template_version: Mapped[str | None] = mapped_column(
-        Text(), nullable=True
-    )
+    prompt_template_version: Mapped[str | None] = mapped_column(Text(), nullable=True)
     prompt_hash: Mapped[str] = mapped_column(Text(), nullable=False)
     model_name: Mapped[str] = mapped_column(Text(), nullable=False)
     model_provider: Mapped[str] = mapped_column(Text(), nullable=False)
-    model_temperature: Mapped[Decimal | None] = mapped_column(
-        Numeric(), nullable=True
-    )
-    model_max_tokens: Mapped[int | None] = mapped_column(
-        Integer(), nullable=True
-    )
+    model_temperature: Mapped[Decimal | None] = mapped_column(Numeric(), nullable=True)
+    model_max_tokens: Mapped[int | None] = mapped_column(Integer(), nullable=True)
     input_tokens: Mapped[int | None] = mapped_column(Integer(), nullable=True)
     output_tokens: Mapped[int | None] = mapped_column(Integer(), nullable=True)
     # Sprint 9.4.2 hotfix — Migration 0027 ships ``total_tokens`` as a
@@ -92,12 +82,16 @@ class LlmCallAudit(Base):
         nullable=True,
     )
     duration_ms: Mapped[int | None] = mapped_column(Integer(), nullable=True)
+    # 2026-08-20 (migration 0045, B6) — çağrı başına tahmini USD
+    # maliyeti. ``imga_api.services.llm_pricing.cost_usd`` statik
+    # fiyat tablosundan hesaplanır (provider+model bilinmiyorsa ya da
+    # fiyatı elle girilmemişse None). NULL = "bilinmiyor", 0 DEĞİL —
+    # backfill yok, eski satırlar kalıcı olarak NULL.
+    cost_usd: Mapped[Decimal | None] = mapped_column(Numeric(12, 6), nullable=True)
     success: Mapped[bool] = mapped_column(Boolean(), nullable=False)
     error_type: Mapped[str | None] = mapped_column(Text(), nullable=True)
     error_message: Mapped[str | None] = mapped_column(Text(), nullable=True)
-    fallback_used: Mapped[bool] = mapped_column(
-        Boolean(), nullable=False, default=False
-    )
+    fallback_used: Mapped[bool] = mapped_column(Boolean(), nullable=False, default=False)
     actor_user_id: Mapped[UUID | None] = mapped_column(
         PG_UUID(as_uuid=True),
         ForeignKey("users.id", ondelete="SET NULL"),

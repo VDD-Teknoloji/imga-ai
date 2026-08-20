@@ -16,22 +16,36 @@ with the upload/report writers landing into a fresh subdir).
 from __future__ import annotations
 
 import logging
+from collections.abc import Iterable
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 log = logging.getLogger("imga-api.workers.cleanup")
 
 
-def reap_stale_uploads(*, root: Path, retention_hours: int) -> int:
+def reap_stale_uploads(
+    *,
+    root: Path,
+    retention_hours: int,
+    keep_paths: Iterable[str] = (),
+) -> int:
     """Walk ``root`` and unlink files older than retention. Returns the
     deletion count for log visibility / metric.
 
     Safe to call when ``root`` doesn't exist (returns 0). Errors on
     individual files are logged but don't abort the sweep — one
     locked / permission-denied file shouldn't strand the cron.
+
+    ``keep_paths``: mutlak yol dizgeleri — 2026-08-19 Kitap1 vakası:
+    kör mtime süpürmesi FAILED bir işin dosyasını da silip checkpoint
+    "Tekrar Dene" özelliğini imkânsız kılıyordu. Terminal olmayan
+    (queued/processing/failed) işlerin dosyaları çağıran tarafından
+    buraya verilir ve yaşlansa da silinmez.
     """
     if not root.exists():
         return 0
+
+    keep = {str(p) for p in keep_paths}
 
     cutoff = datetime.now(UTC) - timedelta(hours=retention_hours)
     cutoff_ts = cutoff.timestamp()
@@ -39,6 +53,8 @@ def reap_stale_uploads(*, root: Path, retention_hours: int) -> int:
 
     for path in root.rglob("*"):
         if not path.is_file():
+            continue
+        if str(path) in keep:
             continue
         try:
             mtime = path.stat().st_mtime

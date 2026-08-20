@@ -145,6 +145,70 @@ async def test_correct_review_updates_decision_and_records_correction(
 
 
 @pytest.mark.asyncio
+async def test_correct_review_records_decision_audit(
+    batch_client: TestClient,
+    semi_auto_tenant: tuple[User, UUID, str],
+    admin_session: AsyncSession,
+) -> None:
+    """B3c — süper-admin denetim raporu: Karar Geçmişi'ne 'review
+    corrected' eylemi (``tenant_kpi_goals.py:195``'teki
+    ``DecisionAuditService`` çağrı deseniyle aynı). Migration 0045
+    ``ck_decision_audit_log_type`` kısıtına ``'review_corrected'``
+    eklenmeden bu çağrı CheckViolation ile PATLAR
+    (``DecisionAuditService.record_decision`` hatayı yutmaz) — bu test
+    yalnız 0045 sonrası anlamlıdır (lokalde şu an koşulamıyor)."""
+    from imga_db.models import DecisionAuditLog
+
+    user, tid, pw = semi_auto_tenant
+    text_value = "Karar denetimi testi icin kargo yorumu burada duruyor."
+    review_id = await _seed_review(
+        admin_session,
+        tenant_id=tid,
+        text_value=text_value,
+        sentiment_label="POZITIF",
+        primary_category="musteri_hizmetleri",
+    )
+
+    token = login_token(batch_client, user.email, pw, tid)
+    r = batch_client.post(
+        f"/tenants/me/reviews/{review_id}/correct",
+        headers={"Authorization": f"Bearer {token}"},
+        json={
+            "sentiment_label": "NEGATIF",
+            "primary_category": "kargo",
+            "reason": "Karar denetimi testi.",
+        },
+    )
+    assert r.status_code == 200, r.text
+
+    async with admin_session.begin():
+        await admin_session.execute(
+            text("SELECT set_config('app.current_tenant_id', :t, true)"),
+            {"t": str(tid)},
+        )
+        row = (
+            await admin_session.execute(
+                select(DecisionAuditLog)
+                .where(DecisionAuditLog.tenant_id == tid)
+                .where(DecisionAuditLog.decision_type == "review_corrected")
+            )
+        ).scalar_one()
+
+    assert row.related_entity_type == "review"
+    assert row.related_entity_id == review_id
+    assert row.actor_user_id == user.id
+    assert row.payload["review_id"] == str(review_id)
+    assert set(row.payload["changed_fields"]) == {
+        "sentiment_label",
+        "primary_category",
+    }
+    assert row.payload["old_sentiment_label"] == "POZITIF"
+    assert row.payload["new_sentiment_label"] == "NEGATIF"
+    assert row.payload["old_score"] == 0.8
+    assert row.payload["new_score"] == -0.9
+
+
+@pytest.mark.asyncio
 async def test_correct_review_validation_errors(
     batch_client: TestClient,
     semi_auto_tenant: tuple[User, UUID, str],

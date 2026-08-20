@@ -43,13 +43,16 @@ def test_clean_file_passes(tmp_path: Path) -> None:
     # "ilk yorum" would legitimately trip the <=2-meaningful-word
     # 'meaningless' rule and this test is specifically about a file
     # with ZERO warnings.
+    # 2026-08-20 — a 'tarih' column is now required for a truly clean
+    # file too: without one, ``no_date_column`` fires (see
+    # test_no_date_column_warns_when_absent below).
     path = tmp_path / "ok.csv"
     _write_csv(
         path,
         [
-            ["yorum"],
-            ["Ürün tam zamanında elime ulaştı"],
-            ["Paketleme oldukça özenliydi bence"],
+            ["yorum", "tarih"],
+            ["Ürün tam zamanında elime ulaştı", "01.05.2026"],
+            ["Paketleme oldukça özenliydi bence", "02.05.2026"],
         ],
     )
     report = validate_upload(path, text_column="yorum", max_rows=10_000)
@@ -234,3 +237,72 @@ def test_corrupt_xlsx_raises_file_parse_error_for_preview_sampler(
     path = _write_corrupt_xlsx(tmp_path / "bozuk.xlsx")
     with pytest.raises(FileParseError):
         sample_columns(path)
+
+
+# --- no_date_column: dosya seviyesi uyarı (2026-08-20, Kitap1.xlsx vakası) -
+
+
+def test_no_date_column_warns_when_absent(tmp_path: Path) -> None:
+    """Ne başlık deseni ne değer-tabanlı yedek bir tarih kolonu
+    bulabildiğinde: engelleyici DEĞİL ama görünür bir dosya seviyesi
+    uyarı (row=None)."""
+    path = tmp_path / "no-date.csv"
+    _write_csv(
+        path,
+        [
+            ["yorum"],
+            ["Ürün tam zamanında elime ulaştı"],
+            ["Paketleme oldukça özenliydi bence"],
+        ],
+    )
+    report = validate_upload(path, text_column="yorum", max_rows=10_000)
+    assert report.ok is True  # engelleyici değil
+    no_date = [i for i in report.issues if i.code == "no_date_column"]
+    assert len(no_date) == 1
+    assert no_date[0].severity == "warning"
+    assert no_date[0].row is None
+    assert "Tarih kolonu bulunamadı" in no_date[0].message
+    assert report.warning_count == 1
+
+
+def test_no_date_column_warning_absent_when_template_column_present(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "has-date.csv"
+    _write_csv(
+        path,
+        [
+            ["yorum", "tarih"],
+            ["Ürün tam zamanında elime ulaştı", "01.05.2026"],
+        ],
+    )
+    report = validate_upload(path, text_column="yorum", max_rows=10_000)
+    assert "no_date_column" not in [i.code for i in report.issues]
+
+
+def test_no_date_column_warning_absent_when_value_based_fallback_detects(
+    tmp_path: Path,
+) -> None:
+    """Başlığı tanınmayan ama içeriği %70+ tarih olan bir kolon da
+    uyarıyı bastırır — güçlendirilmiş auto-detect'in kendisi test
+    edilmiyor (bkz. test_file_parser.py), yalnız uyarının bu durumda
+    hiç doğmadığı doğrulanıyor."""
+    path = tmp_path / "value-fallback.csv"
+    _write_csv(
+        path,
+        [
+            ["yorum", "X"],
+            ["Ürün tam zamanında elime ulaştı", "01.05.2026"],
+            ["Paketleme oldukça özenliydi bence", "02.05.2026"],
+        ],
+    )
+    report = validate_upload(path, text_column="yorum", max_rows=10_000)
+    assert "no_date_column" not in [i.code for i in report.issues]
+
+
+def test_no_date_column_warns_xlsx(tmp_path: Path) -> None:
+    path = tmp_path / "no-date.xlsx"
+    _write_xlsx(path, [["yorum"], ["bir"], ["iki"], ["üç"]])
+    report = validate_upload(path, text_column="yorum", max_rows=10_000)
+    assert report.ok is True
+    assert "no_date_column" in [i.code for i in report.issues]

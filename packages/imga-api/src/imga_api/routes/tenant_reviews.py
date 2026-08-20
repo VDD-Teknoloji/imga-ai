@@ -585,6 +585,35 @@ async def reanalyze_all_reviews(
                 status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)
             ) from exc
         job_id = job.id
+        # ORM attribute'ları transaction KAPANMADAN (aşağıdaki commit'ten
+        # önce) okunur — flush sonrası expire olabilirler, blok dışında
+        # erişim MissingGreenlet'e çarpar (root_cause_service.py'deki
+        # aynı gerekçeyle).
+        candidate_row_count = job.total_rows
+
+        # B3b — süper-admin denetim raporu: Karar Geçmişi'ne 'reanalysis
+        # started' eylemi. tenant_kpi_goals.py:195'teki DecisionAudit
+        # Service çağrı deseniyle aynı; ``create_reanalysis_job``'ın
+        # AuditService.log çağrısı genel audit_logs izini bırakır, bu
+        # ayrı bir kayıttır. ``source_batch_job_id=None`` her zaman
+        # geçildiği için kapsam sabit "all" (tüm kurum) — bu route'ta
+        # tek-batch kapsamlı yeniden analiz yok. ``DECISION_REANALYSIS_
+        # STARTED`` migration 0045 ile decision_audit_service.py'ye
+        # ekleniyor (SA1); henüz diskte yoksa bu import başarısız olur.
+        from imga_api.services.decision_audit_service import (
+            DECISION_REANALYSIS_STARTED,
+            DecisionAuditService,
+        )
+
+        await DecisionAuditService(app_session).record_decision(
+            tenant_id=tenant_id,
+            decision_type=DECISION_REANALYSIS_STARTED,
+            related_entity_type="batch_job",
+            related_entity_id=job_id,
+            actor_user_id=current.user_id,
+            payload={"scope": "all", "row_count": candidate_row_count},
+            request_id=getattr(request.state, "request_id", None),
+        )
 
     return await dispatch_reanalysis(
         request, current, app_session, job_id=job_id, tenant_id=tenant_id

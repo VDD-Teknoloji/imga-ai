@@ -305,6 +305,57 @@ async def test_generate_summary_persists_and_caches(
 
 
 @pytest.mark.asyncio
+async def test_generate_summary_uses_tenant_prompt_override(
+    admin_session: AsyncSession,
+    manual_tenant: tuple[User, UUID, str],
+    mock_gemini_credential: Any,
+) -> None:
+    """B1b — bir tenant override'ı ``prompt_templates``'a yazıldığında
+    ``QualityReportService.generate_summary`` sağlayıcıya override'ın
+    system/user prompt'unu göndermeli, kod sabitlerini DEĞİL (öncesinde
+    hiç ``select_prompt`` çağrılmıyordu — süper-admin denetim raporu B1)."""
+    from imga_db.models import PromptTemplate
+
+    from imga_api.services.batch_service import QualityReportService
+
+    user, tid, _pw = manual_tenant
+    await mock_gemini_credential(tid, "fake-key", priority=0)
+    job_id = await _seed_completed_job(
+        admin_session, tenant_id=tid, triggered_by_user_id=user.id
+    )
+
+    async with admin_session.begin():
+        await _bind(admin_session, tid)
+        admin_session.add(
+            PromptTemplate(
+                template_key="quality_report",
+                tenant_id=tid,
+                system_prompt="ÖZEL SİSTEM PROMPTU - TEST OVERRIDE",
+                user_prompt_template="ÖZEL KULLANICI PROMPTU - TEST OVERRIDE",
+                response_schema={},
+                model_name="gemini-3-flash-preview",
+                is_active=True,
+                is_default=True,
+                required_variables=[],
+            )
+        )
+        await admin_session.flush()
+
+    provider = _build_mock_provider()
+    async with admin_session.begin():
+        await _bind(admin_session, tid)
+        audit = AuditService(admin_session)
+        job = await BatchAnalyzeService(admin_session, audit).get_job(job_id)
+
+        service = QualityReportService(admin_session, provider=provider)
+        await service.generate_summary(job, tenant_id=tid)
+
+    kwargs = provider.generate_root_cause.await_args.kwargs
+    assert kwargs["system_prompt"] == "ÖZEL SİSTEM PROMPTU - TEST OVERRIDE"
+    assert kwargs["user_prompt"] == "ÖZEL KULLANICI PROMPTU - TEST OVERRIDE"
+
+
+@pytest.mark.asyncio
 async def test_generate_summary_raises_without_credentials(
     admin_session: AsyncSession,
     manual_tenant: tuple[User, UUID, str],

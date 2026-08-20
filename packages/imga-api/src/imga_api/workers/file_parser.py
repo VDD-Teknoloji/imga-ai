@@ -15,11 +15,30 @@ spreadsheets that mix Turkish + English column names):
 CSV encoding is fixed to UTF-8 with BOM tolerance (``utf-8-sig``);
 TR-CP1254 was considered but introduces ambiguity around the Turkish
 characters and spreadsheet exports default to UTF-8 today.
+
+Date-column resolution (2026-08-20 — Kitap1.xlsx, 21.684 satır, vakası:
+başlık tanınan desenlerden hiçbiriyle örtüşmedi, tespit sessizce None'a
+düştü, tüm satırlar yükleme anına düştü ve dönem karşılaştırmaları boş
+kaldı). Öncelik sırası ``_resolve_columns`` içinde:
+
+  1. Kullanıcının Step-2'de elle seçtiği ``date_column`` (job üzerinde
+     kalıcı, migration 0044) doluysa DOĞRUDAN o başlık kullanılır —
+     otomatik tespite hiç girilmez. Dosyada yoksa satır tarihsiz kalır
+     (None); bu bir hata değildir, worker katmanında ayrı bir uyarı
+     olarak işlenir.
+  2. Boşsa otomatik tespit: önce şablonun ``tarih`` kolonu birebir,
+     sonra ``DATE_HEADER_PATTERNS`` başlık desenleri.
+  3. İkisi de bulamazsa DEĞER-TABANLI YEDEK: ilk ~50 veri satırının
+     hücreleri kolon kolon taranır (text/source/nps/dimension olarak
+     eşlenmiş kolonlar hariç); hücrelerinin >= %70'i ``parse_date_value``
+     ile çözülen İLK (eşitlikte en soldaki) kolon tarih kolonu sayılır.
+     Başlık adı tahmin edilemez; değer kanıtı daha güvenilir.
 """
 
 from __future__ import annotations
 
 import csv
+import itertools
 import zipfile
 from collections.abc import Iterator
 from dataclasses import dataclass
@@ -58,6 +77,15 @@ class UnsupportedFormatError(FileParseError):
 # (TEMPLATE_OPTIONAL_COLUMNS); upload_validation'daki 'yorum' aynası
 # gibi burada da literal duruyor.
 _TEMPLATE_DATE_COLUMN: str = "tarih"
+
+# Değer-tabanlı tarih tespiti (2026-08-20). Başlıktan bulunamayınca ilk
+# bu kadar VERİ satırı kolon kolon taranır; bir kolon aday olmak için
+# taranan (boş olmayan) hücrelerinin en az bu oranı parse_date_value ile
+# çözülmeli. Eşik TurkishDateDetector._scan'in smart_parser tarafındaki
+# 0.7'siyle bilinçli olarak aynı — iki tespit yolu aynı veriye farklı
+# eşiklerle bakmasın.
+_DATE_VALUE_SAMPLE_SIZE = 50
+_DATE_VALUE_MATCH_THRESHOLD = 0.7
 
 _DIMENSION_KEYS: tuple[str, ...] = (
     "business_segment",
@@ -135,6 +163,8 @@ def _resolve_columns(
     text_column: str,
     source_column: str | None,
     dimension_mapping: dict[str, str] | None = None,
+    date_column: str | None = None,
+    value_sample: list[Any] | None = None,
 ) -> tuple[int, int | None, int | None, dict[str, int], int | None]:
     """Return ``(text_idx, source_idx | None, nps_idx | None,
     dimension_idx_by_key, date_idx | None)``. Raises UnknownColumnError
@@ -142,10 +172,25 @@ def _resolve_columns(
     imga-core pattern set; missing NPS is fine (returns None) — the
     upload doesn't have to carry an NPS column.
 
-    The date column (``review_date``) is auto-detected the same way:
-    şablondaki ``tarih`` kolonu birebir eşleşmeyle önce denenir, sonra
-    smart_parser'ın tarih başlık desenleri. Bulunamazsa None — yorumun
-    kendi tarihi yok demektir, satır yine analiz edilir.
+    The date column (``review_date``) resolves in priority order:
+
+      1. ``date_column`` (migration 0044 — the operator's explicit
+         Step-2 choice). When given, it's looked up directly against
+         the header with NO skip filtering: an explicit pick isn't
+         auto-detection guessing, so even if the user (oddly) points
+         it at the text/source/nps column, we honour that literally.
+         Not found in the header → ``date_idx`` is ``None``; this is
+         NOT an error — the caller (worker) surfaces a job-level
+         warning instead of failing the batch.
+      2. Şablondaki ``tarih`` kolonu birebir eşleşmeyle, sonra
+         smart_parser'ın tarih başlık desenleri, sonra (2026-08-20)
+         değer-tabanlı yedek (bkz. ``_detect_date_column``). Bu üçü
+         için text/source/nps/dimension olarak eşlenmiş kolonlar
+         ELENİR — aksi halde otomatik tespit kullanıcının seçtiği
+         başka bir alanı "tarih" sanabilir.
+
+    Bulunamazsa (her iki yolda da) None — yorumun kendi tarihi yok
+    demektir, satır yine analiz edilir.
 
     Sprint 9.4 D — ``dimension_mapping`` is ``{dimension_key:
     csv_column_name}`` (e.g. ``{"customer_tier": "tier"}``). A
@@ -204,10 +249,23 @@ def _resolve_columns(
             if target in norm_header:
                 dimension_idx_by_key[dim_key] = norm_header.index(target)
 
-    skip_idx = {text_idx}
-    if source_idx is not None:
-        skip_idx.add(source_idx)
-    date_idx = _detect_date_column(header, norm_header, skip=skip_idx)
+    if date_column:
+        # Explicit selection wins outright — no skip filtering (see
+        # docstring point 1). Not found → None, not an error.
+        target_date = _normalize_header(date_column)
+        date_idx: int | None = (
+            norm_header.index(target_date) if target_date in norm_header else None
+        )
+    else:
+        skip_idx = {text_idx}
+        if source_idx is not None:
+            skip_idx.add(source_idx)
+        if nps_idx is not None:
+            skip_idx.add(nps_idx)
+        skip_idx.update(dimension_idx_by_key.values())
+        date_idx = _detect_date_column(
+            header, norm_header, skip=skip_idx, value_sample=value_sample
+        )
 
     return text_idx, source_idx, nps_idx, dimension_idx_by_key, date_idx
 
@@ -217,13 +275,22 @@ def _detect_date_column(
     norm_header: list[str],
     *,
     skip: set[int],
+    value_sample: list[Any] | None = None,
 ) -> int | None:
-    """Index of the review-date column, or None.
+    """Index of the auto-detected review-date column, or None.
 
-    Şablonun ``tarih`` kolonu birebir eşleşmeyle önceliklidir; dosyada
-    hem ``tarih`` hem ``sipariş tarihi`` varsa şablona uyan kazanır.
-    ``skip`` kullanıcının açıkça metin/kaynak olarak seçtiği kolonların
-    tarih sanılmasını engeller."""
+    Only called when the caller has no explicit ``date_column`` — see
+    ``_resolve_columns``. Three stages, in order:
+
+      1. Şablonun ``tarih`` kolonu birebir eşleşmeyle önceliklidir;
+         dosyada hem ``tarih`` hem ``sipariş tarihi`` varsa şablona
+         uyan kazanır.
+      2. ``DATE_HEADER_PATTERNS`` başlık desenleri.
+      3. (2026-08-20) Değer-tabanlı yedek — ``value_sample`` verildiyse
+         ``_detect_date_column_by_values``'a düşülür.
+
+    ``skip`` kullanıcının açıkça metin/kaynak/nps/boyut olarak seçtiği
+    kolonların tarih sanılmasını engeller (üç aşamanın hepsinde)."""
     template_target = _normalize_header(_TEMPLATE_DATE_COLUMN)
     for idx, name in enumerate(norm_header):
         if idx not in skip and name == template_target:
@@ -231,7 +298,60 @@ def _detect_date_column(
     for idx, name in enumerate(header):
         if idx not in skip and header_matches_any(name, DATE_HEADER_PATTERNS):
             return idx
+    if value_sample:
+        return _detect_date_column_by_values(
+            value_sample, column_count=len(header), skip=skip
+        )
     return None
+
+
+def _detect_date_column_by_values(
+    value_sample: list[Any],
+    *,
+    column_count: int,
+    skip: set[int],
+) -> int | None:
+    """Başlıktan tarih kolonu bulunamayınca yedek (2026-08-20, Kitap1.xlsx
+    vakası): ilk ~50 veri satırının hücrelerini kolon kolon tarar.
+
+    ``skip`` dışındaki her kolon için, o kolonun BOŞ OLMAYAN hücreleri
+    arasında ``parse_date_value`` ile çözülenlerin oranı hesaplanır
+    (boş hücreler paydaya girmez — smart_parser.TurkishDateDetector._scan
+    ile aynı konvansiyon, iki tespit yolu aynı veriyi farklı eşiklerle
+    değerlendirmesin). Oranı >= ``_DATE_VALUE_MATCH_THRESHOLD`` olan
+    kolonlar arasında en yükseği kazanır; eşitlikte en soldaki (ilk
+    karşılaşılan) korunur çünkü değiştirme koşulu kesin ``>``'tir.
+
+    Hiçbir kolon hücresiz (tamamı boş) ya da eşiğin altındaysa None —
+    başlık adı tahmin edilemedi VE değer kanıtı da yetersiz, satır
+    tarihsiz kalır.
+    """
+    best_idx: int | None = None
+    best_rate = 0.0
+    for idx in range(column_count):
+        if idx in skip:
+            continue
+        total = 0
+        hits = 0
+        for row in value_sample:
+            if row is None or idx >= len(row):
+                continue
+            cell = row[idx]
+            if cell is None:
+                continue
+            text = str(cell).strip()
+            if not text:
+                continue
+            total += 1
+            if parse_date_value(cell) is not None:
+                hits += 1
+        if total == 0:
+            continue
+        rate = hits / total
+        if rate >= _DATE_VALUE_MATCH_THRESHOLD and rate > best_rate:
+            best_rate = rate
+            best_idx = idx
+    return best_idx
 
 
 def _extract_dimensions(
@@ -259,6 +379,7 @@ def _iter_csv(
     text_column: str,
     source_column: str | None,
     dimension_mapping: dict[str, str] | None = None,
+    date_column: str | None = None,
 ) -> Iterator[ParsedRow]:
     with path.open("r", encoding="utf-8-sig", newline="") as fh:
         reader = csv.reader(fh)
@@ -269,6 +390,20 @@ def _iter_csv(
                 "Dosya boş görünüyor. Lütfen şablonu indirin, "
                 "yorumlarınızı doldurun ve yeniden deneyin."
             ) from exc
+
+        # Değer-tabanlı tarih tespiti için ilk ~50 veri satırı önden
+        # okunur. Yalnız ``date_column`` boşken (auto-detect yolu) —
+        # açık seçim varsa bu tarama hiç kullanılmayacağından atlanır.
+        # CSV akışı tek yönlü: tükettiğimiz satırlar aşağıda reader'ın
+        # geri kalanıyla zincirlenip aynı sırayla yeniden verilir, hiçbir
+        # satır atlanmaz/tekrarlanmaz — bellek maliyeti sabit (<= 50 satır)
+        # ve dosya büyüklüğünden bağımsızdır.
+        date_sample: list[list[str]] = []
+        if not date_column:
+            for row in reader:
+                date_sample.append(row)
+                if len(date_sample) >= _DATE_VALUE_SAMPLE_SIZE:
+                    break
 
         (
             text_idx,
@@ -281,8 +416,10 @@ def _iter_csv(
             text_column=text_column,
             source_column=source_column,
             dimension_mapping=dimension_mapping,
+            date_column=date_column,
+            value_sample=date_sample,
         )
-        for i, row in enumerate(reader, start=1):
+        for i, row in enumerate(itertools.chain(date_sample, reader), start=1):
             if not row:
                 continue
             try:
@@ -320,6 +457,7 @@ def _iter_xlsx(
     text_column: str,
     source_column: str | None,
     dimension_mapping: dict[str, str] | None = None,
+    date_column: str | None = None,
 ) -> Iterator[ParsedRow]:
     workbook = _load_xlsx(path)
     try:
@@ -340,6 +478,17 @@ def _iter_xlsx(
             ) from exc
 
         header = [str(c) if c is not None else "" for c in raw_header]
+
+        # Bkz. _iter_csv — aynı gerekçe. openpyxl'in native datetime
+        # hücreleri parse_date_value'ce zaten yakalandığından bu tarama
+        # XLSX'te ucuz ve kesin sonuç verir.
+        date_sample: list[Any] = []
+        if not date_column:
+            for row in rows_iter:
+                date_sample.append(row)
+                if len(date_sample) >= _DATE_VALUE_SAMPLE_SIZE:
+                    break
+
         (
             text_idx,
             source_idx,
@@ -351,8 +500,12 @@ def _iter_xlsx(
             text_column=text_column,
             source_column=source_column,
             dimension_mapping=dimension_mapping,
+            date_column=date_column,
+            value_sample=date_sample,
         )
-        for i, row in enumerate(rows_iter, start=1):
+        for i, row in enumerate(
+            itertools.chain(date_sample, rows_iter), start=1
+        ):
             if row is None:
                 continue
             text_cell = row[text_idx] if text_idx < len(row) else None
@@ -393,6 +546,7 @@ def iter_rows(
     text_column: str,
     source_column: str | None = None,
     dimension_mapping: dict[str, str] | None = None,
+    date_column: str | None = None,
 ) -> Iterator[ParsedRow]:
     """Stream rows from a CSV or XLSX upload.
 
@@ -406,9 +560,13 @@ def iter_rows(
     row column lookup. ``None`` (default) preserves the pre-9.4
     behaviour for callers that haven't been migrated.
 
-    ``ParsedRow.review_date`` comes from the auto-detected ``tarih``
-    column; None when the upload has no date column or the cell
-    doesn't parse.
+    ``date_column`` (migration 0044, 2026-08-20) is the operator's
+    explicit Step-2 pick — when set, it wins outright over
+    auto-detection (found or not; see ``_resolve_columns``). ``None``
+    (default) auto-detects: template header, then ``DATE_HEADER_
+    PATTERNS``, then a value-based fallback over the first ~50 data
+    rows. ``ParsedRow.review_date`` is None whenever neither path
+    resolves a column or the row's own cell doesn't parse.
     """
     suffix = path.suffix.lower()
     if suffix == ".csv":
@@ -417,6 +575,7 @@ def iter_rows(
             text_column=text_column,
             source_column=source_column,
             dimension_mapping=dimension_mapping,
+            date_column=date_column,
         )
     if suffix == ".xlsx":
         return _iter_xlsx(
@@ -424,6 +583,7 @@ def iter_rows(
             text_column=text_column,
             source_column=source_column,
             dimension_mapping=dimension_mapping,
+            date_column=date_column,
         )
     raise UnsupportedFormatError(
         f"Desteklenmeyen dosya türü: {suffix!r}. "
@@ -496,6 +656,25 @@ def peek_detected_nps_column(path: Path) -> str | None:
     return detect_nps_column(peek_header(path))
 
 
+def peek_date_column_found(path: Path, date_column: str) -> bool:
+    """2026-08-20 (migration 0044). True if ``date_column``'s header
+    literally exists in the upload (Türkçe-aware fold, same rule
+    ``_resolve_columns`` applies). Header-only — cheap, mirrors
+    ``peek_detected_nps_column``'s "read the header once, decide
+    before any row lands" shape.
+
+    Used by the worker right at job start: when the operator picked an
+    explicit date column that turns out not to exist in THIS file
+    (e.g. picked at preview time against a file that was then swapped
+    before submit), the worker still processes the batch — rows just
+    come back date-less — but records a job-level warning instead of
+    failing silently. No value-based fallback here: an explicit
+    selection names a header, not "whatever column looks date-like".
+    """
+    norm_header = [_normalize_header(h) for h in peek_header(path)]
+    return _normalize_header(date_column) in norm_header
+
+
 __all__ = [
     "FileParseError",
     "ParsedRow",
@@ -503,6 +682,7 @@ __all__ = [
     "UnsupportedFormatError",
     "count_rows",
     "iter_rows",
+    "peek_date_column_found",
     "peek_detected_nps_column",
     "peek_header",
 ]

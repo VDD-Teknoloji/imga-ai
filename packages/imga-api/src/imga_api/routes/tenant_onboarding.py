@@ -225,7 +225,8 @@ async def suggest_categories(
         service = OnboardingService(app_session, tenant_id)
         try:
             suggestion = await service.suggest_categories(
-                sample_limit=body.sample_limit
+                sample_limit=body.sample_limit,
+                actor_user_id=current.user_id,
             )
         except Exception as exc:
             raise _onboarding_error_to_http(exc) from exc

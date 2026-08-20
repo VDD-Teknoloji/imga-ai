@@ -77,6 +77,12 @@ class LlmAuditSummary(BaseModel):
     total_calls: int
     total_failures: int
     total_tokens: int
+    # 2026-08-20 (B6, migration 0045) — bilinen maliyetlerin toplamı.
+    # cost_usd NULL olan satırlar (fiyatı bilinmeyen model / token
+    # sayısı yok) toplama KATILMAZ ve 0 sayılmaz; kaç tanesi
+    # bilinmediğini ``unknown_cost_calls`` ayrı taşır.
+    total_cost_usd: float
+    unknown_cost_calls: int
 
 
 def _require_active_tenant(current: CurrentUser) -> UUID:
@@ -100,9 +106,7 @@ def _row_to_response(row: LlmCallAudit) -> LlmCallAuditResponse:
         model_name=row.model_name,
         model_provider=row.model_provider,
         model_temperature=(
-            float(row.model_temperature)
-            if row.model_temperature is not None
-            else None
+            float(row.model_temperature) if row.model_temperature is not None else None
         ),
         model_max_tokens=row.model_max_tokens,
         input_tokens=row.input_tokens,
@@ -142,11 +146,7 @@ async def list_audit(
             base_filters.append(LlmCallAudit.call_type == call_type)
         if success is not None:
             base_filters.append(LlmCallAudit.success.is_(success))
-        count_stmt = (
-            select(func.count())
-            .select_from(LlmCallAudit)
-            .where(*base_filters)
-        )
+        count_stmt = select(func.count()).select_from(LlmCallAudit).where(*base_filters)
         total = (await app_session.execute(count_stmt)).scalar_one() or 0
         list_stmt = (
             select(LlmCallAudit)
@@ -196,15 +196,30 @@ async def audit_summary(
                     func.sum(func.cast(failure_marker, Integer)),
                     0,
                 ).label("failures"),
-                func.coalesce(
-                    func.sum(LlmCallAudit.total_tokens), 0
-                ).label("tokens"),
+                func.coalesce(func.sum(LlmCallAudit.total_tokens), 0).label("tokens"),
             )
             .where(LlmCallAudit.tenant_id == tenant_id)
             .group_by(day_col)
             .order_by(day_col)
         )
         rows = (await app_session.execute(stmt)).all()
+
+        # 2026-08-20 (B6) — ayrı bir sorgu: cost_usd NULL'ları (SUM zaten
+        # yok sayar) 0 sayılmaz, ayrıca kaç satırın maliyeti bilinmediği
+        # ``unknown_cost_calls`` ile taşınır. Günlük seriyle birleştirmek
+        # (call_type gibi) burada gereksiz — dashboard tek toplam kart
+        # gösterir; ihtiyaç doğarsa günlük kırılım ayrı eklenir.
+        unknown_cost_marker = case(
+            (LlmCallAudit.cost_usd.is_(None), 1),
+            else_=0,
+        )
+        cost_stmt = select(
+            func.sum(LlmCallAudit.cost_usd).label("total_cost_usd"),
+            func.coalesce(func.sum(func.cast(unknown_cost_marker, Integer)), 0).label(
+                "unknown_cost_calls"
+            ),
+        ).where(LlmCallAudit.tenant_id == tenant_id)
+        cost_row = (await app_session.execute(cost_stmt)).one()
 
         days: list[DailyUsagePoint] = []
         total_calls = 0
@@ -233,4 +248,6 @@ async def audit_summary(
         total_calls=total_calls,
         total_failures=total_failures,
         total_tokens=total_tokens,
+        total_cost_usd=float(cost_row.total_cost_usd or 0),
+        unknown_cost_calls=int(cost_row.unknown_cost_calls or 0),
     )

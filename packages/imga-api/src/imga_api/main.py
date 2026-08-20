@@ -83,6 +83,7 @@ from imga_api.routes import (
 from imga_api.routes import tenant_trend_alerts as tenant_trend_alerts_routes
 from imga_api.routes import tenant_twitter as tenant_twitter_routes
 from imga_api.routes import tickets as tickets_routes
+from imga_api.routes.admin import audit_logs as admin_audit_logs_routes
 from imga_api.routes.admin import (
     engagement_bands as admin_engagement_bands_routes,
 )
@@ -90,8 +91,12 @@ from imga_api.routes.admin import invitations as admin_invitation_routes
 from imga_api.routes.admin import (
     llm_credentials as admin_llm_credentials_routes,
 )
+from imga_api.routes.admin import llm_usage as admin_llm_usage_routes
 from imga_api.routes.admin import (
     prompt_templates as admin_prompt_templates_routes,
+)
+from imga_api.routes.admin import (
+    system_health as admin_system_health_routes,
 )
 from imga_api.routes.admin import tenants as admin_tenant_routes
 from imga_api.schemas import (
@@ -204,17 +209,34 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     if not os.environ.get("REDIS_URL"):
         orphans = await recover_orphans(worker_context)
         if orphans:
-            log.warning(
-                "startup: marked %s orphaned batch jobs as failed", orphans
-            )
+            log.warning("startup: marked %s orphaned batch jobs as failed", orphans)
     report_orphans = await recover_report_orphans(report_context)
     if report_orphans:
         log.warning("startup: marked %s orphaned report jobs as failed", report_orphans)
+
+    # Terminal olmayan islerin dosyalari retention'a ragmen korunur —
+    # yoksa checkpoint "Tekrar Dene" dosyasiz kalir (2026-08-19 vakasi).
+    async def _batch_keep_paths() -> set[str]:
+        from imga_db.models import AnalyzeBatchJob
+        from sqlalchemy import select
+
+        async with worker_context.admin_session_factory() as session:
+            rows = (
+                await session.execute(
+                    select(AnalyzeBatchJob.file_path).where(
+                        AnalyzeBatchJob.status.in_(
+                            ("queued", "processing", "failed")
+                        )
+                    )
+                )
+            ).scalars()
+            return set(rows)
 
     schedule_cleanup(
         scheduler,
         upload_root=settings.batch.upload_dir,
         retention_hours=settings.batch.retention_hours,
+        keep_paths_provider=_batch_keep_paths,
     )
     schedule_cleanup(
         scheduler,
@@ -424,6 +446,11 @@ app.include_router(admin_engagement_bands_routes.router)
 app.include_router(admin_invitation_routes.router)
 app.include_router(admin_llm_credentials_routes.router)
 app.include_router(admin_prompt_templates_routes.router)
+# 2026-08-20 — süper-admin envanter raporu (C1/C2/C4): LLM maliyet/
+# kullanım raporu, altyapı sağlık özeti, çapraz-kurum denetim kaydı.
+app.include_router(admin_llm_usage_routes.router)
+app.include_router(admin_system_health_routes.router)
+app.include_router(admin_audit_logs_routes.router)
 app.include_router(public_invitation_routes.router)
 # Sprint 9.7 — imga.ai marketing-site trial proxy.
 app.include_router(public_trial_routes.router)

@@ -12,24 +12,40 @@ existing tenants — they have to opt in via the config API.
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
+from decimal import Decimal
 from typing import Any
 from uuid import UUID
 
 from imga_db.models import (
+    AnalyzeBatchJob,
     AutomationMode,
     Category,
     CategoryTaxonomy,
+    LlmCallAudit,
+    Review,
     Tenant,
     TenantCategory,
+    TenantEngagementSetting,
+    TenantMonthlyMetric,
     TenantPlanTier,
 )
 from imga_db.seeds import DEFAULT_COMPANY_TAXONOMY
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from imga_api.services.audit_service import AuditService
+from imga_api.services.engagement_service import (
+    DEFAULT_BANDS,
+    add_months,
+    compute_engagement_pct,
+    normalize_month,
+    resolve_band,
+)
+
+_COST_WINDOW_DAYS = 30
 
 
 class TenantSlugTakenError(ValueError):
@@ -38,6 +54,23 @@ class TenantSlugTakenError(ValueError):
 
 class TenantNotFoundError(LookupError):
     """Raised when a tenant lookup fails or the row is soft-deleted."""
+
+
+@dataclass(frozen=True, slots=True)
+class TenantListRow:
+    """One ``list()`` row: the ORM ``Tenant`` + the C3/B7 super-admin
+    inventory metrics (2026-08-20). ``engagement_band`` is the CURRENT
+    month's band label, computed by re-using (not copying)
+    ``engagement_service.compute_engagement_pct`` / ``resolve_band`` —
+    same math the per-tenant engagement table uses, applied here to
+    every tenant in one pass so the list endpoint stays one query."""
+
+    tenant: Tenant
+    review_count: int
+    last_upload_at: datetime | None
+    tokens_30d: int
+    cost_30d_usd: Decimal | None
+    engagement_band: str | None
 
 
 class TenantService:
@@ -88,13 +121,17 @@ class TenantService:
         # globals added by a future migration are intentionally not auto-
         # enabled for already-existing tenants (opt-in by design).
         global_ids = (
-            await self._session.execute(
-                select(Category.id).where(
-                    Category.tenant_id.is_(None),
-                    Category.deleted_at.is_(None),
+            (
+                await self._session.execute(
+                    select(Category.id).where(
+                        Category.tenant_id.is_(None),
+                        Category.deleted_at.is_(None),
+                    )
                 )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         for cat_id in global_ids:
             self._session.add(
                 TenantCategory(
@@ -145,9 +182,7 @@ class TenantService:
         return await self._session.get(Tenant, tenant_id)
 
     async def get_by_slug(self, slug: str) -> Tenant | None:
-        result = await self._session.execute(
-            select(Tenant).where(Tenant.slug == slug)
-        )
+        result = await self._session.execute(select(Tenant).where(Tenant.slug == slug))
         return result.scalar_one_or_none()
 
     async def update_settings(
@@ -196,14 +231,156 @@ class TenantService:
             )
         return tenant
 
-    async def list(self, *, include_deleted: bool = False) -> list[Tenant]:
-        """All tenants in the system. Super-admin only — caller is
-        responsible for the role check."""
-        stmt = select(Tenant).order_by(Tenant.created_at.desc())
+    async def _bulk_bands(self, tenant_ids: list[UUID]) -> dict[UUID, list[dict[str, Any]]]:
+        """Per-tenant band overrides for every id in one query. Tenants
+        without a row fall back to ``DEFAULT_BANDS`` in the caller —
+        mirrors ``EngagementService.get_bands`` (not reused directly:
+        that method is one-tenant-at-a-time by design, see its own
+        docstring; re-implementing the same one-line fallback here is
+        cheaper than adding a bulk variant to EngagementService for a
+        single caller).
+
+        NOTE: this must stay defined BEFORE ``list`` below. A method
+        named ``list`` on this class shadows the builtin ``list[...]``
+        generic for annotations in methods that follow it in the same
+        class body (mypy resolves the bare name against the class
+        namespace being built so far) — moving this after ``list``
+        makes ``list[dict[str, Any]]`` above resolve to
+        ``TenantService.list`` instead of the builtin and mypy rejects
+        it with "Function ... is not valid as a type"."""
+        if not tenant_ids:
+            return {}
+        rows = (
+            await self._session.execute(
+                select(
+                    TenantEngagementSetting.tenant_id,
+                    TenantEngagementSetting.bands,
+                ).where(TenantEngagementSetting.tenant_id.in_(tenant_ids))
+            )
+        ).all()
+        return {tenant_id: list(bands) for tenant_id, bands in rows if bands}
+
+    async def list(self, *, include_deleted: bool = False) -> list[TenantListRow]:
+        """All tenants in the system + the C3/B7 inventory metrics
+        (review_count, last_upload_at, tokens_30d, cost_30d_usd,
+        engagement_band). Super-admin only — caller is responsible for
+        the role check.
+
+        Two queries total, neither per-tenant (no N+1): one main
+        SELECT with LEFT JOIN aggregate subqueries covers everything
+        except the band label (JSONB, can't be resolved in SQL — a
+        second bulk SELECT fetches per-tenant band overrides and the
+        band itself is computed in Python via
+        ``engagement_service.resolve_band``).
+        """
+        cost_cutoff = datetime.now(UTC) - timedelta(days=_COST_WINDOW_DAYS)
+        month_start = normalize_month(datetime.now(UTC).date())
+        month_end_exclusive = add_months(month_start, 1)
+
+        review_agg = (
+            select(
+                Review.tenant_id.label("tenant_id"),
+                func.count().label("review_count"),
+            )
+            .where(Review.deleted_at.is_(None))
+            .group_by(Review.tenant_id)
+            .subquery()
+        )
+        upload_agg = (
+            select(
+                AnalyzeBatchJob.tenant_id.label("tenant_id"),
+                func.max(AnalyzeBatchJob.created_at).label("last_upload_at"),
+            )
+            .group_by(AnalyzeBatchJob.tenant_id)
+            .subquery()
+        )
+        cost_agg = (
+            select(
+                LlmCallAudit.tenant_id.label("tenant_id"),
+                func.sum(LlmCallAudit.total_tokens).label("tokens_30d"),
+                func.sum(LlmCallAudit.cost_usd).label("cost_30d_usd"),
+            )
+            .where(LlmCallAudit.created_at >= cost_cutoff)
+            .group_by(LlmCallAudit.tenant_id)
+            .subquery()
+        )
+        txn_agg = (
+            select(
+                TenantMonthlyMetric.tenant_id.label("tenant_id"),
+                TenantMonthlyMetric.transaction_count.label("transaction_count"),
+            )
+            .where(TenantMonthlyMetric.period_month == month_start)
+            .subquery()
+        )
+        # Katılım oranının payı: cari ayın yorum sayısı, quality_flag
+        # damgalı satırlar hariç — engagement_service.monthly_review_counts
+        # ile AYNI filtre (bkz. o fonksiyonun docstring'i). review_count
+        # alanı (yukarıdaki review_agg) bilinçli olarak bunu YAPMAZ —
+        # o alan "kurumda toplam kaç yorum var" hacim göstergesi, bu
+        # ise yalnız katılım oranının girdisi.
+        month_review_agg = (
+            select(
+                Review.tenant_id.label("tenant_id"),
+                func.count().label("month_review_count"),
+            )
+            .where(Review.deleted_at.is_(None))
+            .where(Review.quality_flag.is_(None))
+            .where(Review.review_date >= month_start)
+            .where(Review.review_date < month_end_exclusive)
+            .group_by(Review.tenant_id)
+            .subquery()
+        )
+
+        stmt = (
+            select(
+                Tenant,
+                func.coalesce(review_agg.c.review_count, 0),
+                upload_agg.c.last_upload_at,
+                func.coalesce(cost_agg.c.tokens_30d, 0),
+                cost_agg.c.cost_30d_usd,
+                txn_agg.c.transaction_count,
+                func.coalesce(month_review_agg.c.month_review_count, 0),
+            )
+            .outerjoin(review_agg, review_agg.c.tenant_id == Tenant.id)
+            .outerjoin(upload_agg, upload_agg.c.tenant_id == Tenant.id)
+            .outerjoin(cost_agg, cost_agg.c.tenant_id == Tenant.id)
+            .outerjoin(txn_agg, txn_agg.c.tenant_id == Tenant.id)
+            .outerjoin(month_review_agg, month_review_agg.c.tenant_id == Tenant.id)
+            .order_by(Tenant.created_at.desc())
+        )
         if not include_deleted:
             stmt = stmt.where(Tenant.deleted_at.is_(None))
-        result = await self._session.execute(stmt)
-        return list(result.scalars())
+
+        rows = (await self._session.execute(stmt)).all()
+        bands_by_tenant = await self._bulk_bands([r[0].id for r in rows])
+
+        out: list[TenantListRow] = []
+        for (
+            tenant,
+            review_count,
+            last_upload_at,
+            tokens_30d,
+            cost_30d_usd,
+            transaction_count,
+            month_review_count,
+        ) in rows:
+            pct = compute_engagement_pct(
+                int(month_review_count or 0),
+                int(transaction_count) if transaction_count is not None else None,
+            )
+            bands = bands_by_tenant.get(tenant.id) or [dict(b) for b in DEFAULT_BANDS]
+            _, band_label = resolve_band(pct, bands)
+            out.append(
+                TenantListRow(
+                    tenant=tenant,
+                    review_count=int(review_count or 0),
+                    last_upload_at=last_upload_at,
+                    tokens_30d=int(tokens_30d or 0),
+                    cost_30d_usd=cost_30d_usd,
+                    engagement_band=band_label,
+                )
+            )
+        return out
 
     async def soft_delete(
         self,

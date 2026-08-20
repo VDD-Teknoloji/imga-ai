@@ -27,12 +27,23 @@ ama İKİ bilinçli sadeleştirmeyle:
     ``generate_root_cause`` ödünç alınır (isim sızmaz — yalnız bu
     modülün içinde görünür, audit/log tarafında ayrı bir
     ``call_type`` kullanılmaz, bkz. aşağıdaki not).
-  * ``llm_call_audit`` satırı YAZILMAZ — ``call_type`` kolonunda DB
-    CHECK constraint var (``ck_llm_call_audit_call_type``:
-    classification/briefing/strategic_report/action_extraction/okr/
-    root_cause) ve yeni bir değer eklemek migration ister (Dalga-1
-    dışında yasak). Görev bunu şart koşmuyor; SWOT/OKR'daki
-    LLMCallAuditor sarmalaması burada bilinçli olarak YOK.
+  * ``llm_call_audit`` satırı — B5 (süper-admin denetim raporu)
+    kapsamında artık YAZILIYOR: migration 0045 ``ck_llm_call_audit_
+    call_type`` kısıtına ``onboarding_suggest`` değerini ekliyor;
+    bu servis SWOT/root_cause'daki ``LLMCallAuditor`` sarmalamasını
+    birebir izler (``related_entity_type='tenant'`` — öneri henüz
+    hiçbir satıra bağlı değil, kurumun kendisine bağlanır).
+  * Sistem prompt'u artık ``select_prompt(..., "onboarding_suggest")``
+    üzerinden DB override > kod sabiti sırasıyla seçilir (B1c) — kod
+    sabiti ``ONBOARDING_SUGGEST_SYSTEM_PROMPT`` (public, ``tenant_
+    prompt_templates.py``'nin kataloğu bunu okur). Kullanıcı prompt'u
+    kasıtlı olarak DEĞİŞMEDİ: ``_render_user_prompt`` prosedürel bir
+    Python fonksiyonu (Jinja şablonu değil — ``unified_classifier``
+    ile aynı gerekçe), bu yüzden select_prompt'a yalnızca birincil
+    yapı taşları (sektör/büyüklük/iş tanımı/terimler/global kodlar/
+    örnek yorumlar) ``variables`` olarak geçirilir; DB override bugün
+    yalnız system_prompt'u anlamlı biçimde değiştirebilir (katalogda
+    ``user_prompt_editable=False``).
 """
 
 from __future__ import annotations
@@ -140,7 +151,11 @@ class AppliedCategoriesResult:
 # (8.3.6.6 round-1 çökmesi, bkz. swot_v1.py); enum yalnız
 # "type": "string" ile birlikte kabul edilir (round-3 çökmesi). İkisi
 # de burada tekrarlanmadı çünkü bu şema enum KULLANMIYOR.
-_RESPONSE_SCHEMA: dict[str, Any] = {
+#
+# Public (B8) — tenant_prompt_templates.py._build_code_defaults()
+# kataloğu bunu okur; swot/okr/briefing'deki *_RESPONSE_SCHEMA
+# sabitleriyle aynı görünürlük düzeyi.
+ONBOARDING_SUGGEST_RESPONSE_SCHEMA: dict[str, Any] = {
     "type": "object",
     "required": [
         "top_categories",
@@ -181,7 +196,10 @@ _RESPONSE_SCHEMA: dict[str, Any] = {
     },
 }
 
-_SUGGESTION_SYSTEM_PROMPT = """\
+# Public (B1c/B8) — select_prompt()'a kod-varsayılanı olarak geçer;
+# tenant_prompt_templates.py kataloğu da aynı sabiti okur (swot/okr/
+# briefing servislerindeki *_SYSTEM_PROMPT sabitleriyle aynı desen).
+ONBOARDING_SUGGEST_SYSTEM_PROMPT = """\
 Sen çok kurumlu bir müşteri geri bildirimi platformunun kategori \
 mimarısın. Görevin: bir kurumun sektörüne, büyüklüğüne, iş tanımına \
 ve (varsa) örnek müşteri yorumlarına bakarak kuruma ÖZEL üst-seviye \
@@ -316,7 +334,10 @@ class OnboardingService:
         self._provider = provider
 
     async def suggest_categories(
-        self, *, sample_limit: int = SAMPLE_LIMIT_DEFAULT
+        self,
+        *,
+        sample_limit: int = SAMPLE_LIMIT_DEFAULT,
+        actor_user_id: UUID | None = None,
     ) -> CategorySuggestion:
         tenant = await self._session.get(Tenant, self._tenant_id)
         if tenant is None:
@@ -347,7 +368,35 @@ class OnboardingService:
         model_name = resolve_model_name(provider_name, key_selection.model)
         provider = self._provider or build_structured_provider(provider_name)
 
-        user_prompt = _render_user_prompt(tenant=tenant, sample_reviews=sample_reviews)
+        # B1c — DB override (tenant > global) varsa onu kullan, yoksa
+        # kod sabiti (swot_service.py:181-194 ile aynı desen).
+        # Kullanıcı prompt'u kasıtlı olarak ``_render_user_prompt``
+        # (prosedürel, Jinja değil) kalıyor — bkz. modül docstring'i;
+        # ``variables`` yalnız birincil yapı taşlarını taşır, DB
+        # override bugün yalnız system_prompt'u anlamlı değiştirir.
+        from imga_api.services.prompt_override import select_prompt
+
+        _ctx: dict[str, Any] = {
+            "industry_label": industry_label(
+                tenant.industry, tenant.industry_other_text
+            ),
+            "company_size_label": company_size_label(tenant.company_size),
+            "business_description": tenant.business_description,
+            "terminology": tenant.terminology or [],
+            "global_category_codes": list(GLOBAL_CATEGORY_CODES),
+            "sample_reviews": sample_reviews,
+        }
+        selection = await select_prompt(
+            self._session,
+            tenant_id=self._tenant_id,
+            template_key="onboarding_suggest",
+            variables=_ctx,
+            default_system_prompt=ONBOARDING_SUGGEST_SYSTEM_PROMPT,
+            default_user_prompt=lambda: _render_user_prompt(
+                tenant=tenant, sample_reviews=sample_reviews
+            ),
+        )
+        user_prompt = selection.user_prompt
 
         failed_invalid_key_ids: list[UUID] = []
 
@@ -362,9 +411,9 @@ class OnboardingService:
                 # metodun kendi varsayılanlarına güvenilmez.
                 return await provider.generate_root_cause(
                     api_key=api_key,
-                    system_prompt=_SUGGESTION_SYSTEM_PROMPT,
+                    system_prompt=selection.system_prompt,
                     user_prompt=user_prompt,
-                    response_schema=_RESPONSE_SCHEMA,
+                    response_schema=ONBOARDING_SUGGEST_RESPONSE_SCHEMA,
                     model_name=model_name,
                     temperature=0.3,
                     top_p=0.9,
@@ -377,10 +426,61 @@ class OnboardingService:
                         break
                 raise
 
+        # B5 — süper-admin denetim raporu: onboarding önerisi
+        # llm_call_audit'e hiç yazmıyordu (bkz. modül docstring'i).
+        # swot_service.py:234-260'daki auditor sarmalamasıyla aynı
+        # desen; ``related_entity_type='tenant'`` çünkü öneri henüz
+        # hiçbir satıra bağlanmamış (persist edilmiyor).
+        from imga_api.services.llm_audit_service import (
+            CALL_TYPE_ONBOARDING_SUGGEST,
+            LLMCallAuditor,
+            LLMCallContext,
+        )
+
+        audit_ctx = LLMCallContext(
+            tenant_id=self._tenant_id,
+            call_type=CALL_TYPE_ONBOARDING_SUGGEST,
+            model_name=model_name,
+            model_provider=provider_name,
+            prompt_template_key="onboarding_suggest",
+            prompt_template_version=selection.version,
+            actor_user_id=actor_user_id,
+            related_entity_type="tenant",
+        )
+        auditor = LLMCallAuditor(self._session, audit_ctx, prompt=user_prompt)
+        token_usage: dict[str, int] | None = None
         try:
-            (response, _token_usage), _key_used = await rotator.call_with_rotation(
-                _call
-            )
+            async with auditor:
+                try:
+                    (response, token_usage), _key_used = (
+                        await rotator.call_with_rotation(_call)
+                    )
+                except AllKeysExhaustedError as exc:
+                    auditor.record_failure(
+                        error_type="all_keys_exhausted",
+                        error_message=str(exc.__cause__ or exc)[:1024],
+                    )
+                    raise
+                except LLMError as exc:
+                    auditor.record_failure(
+                        error_type="api_error",
+                        error_message=str(exc)[:1024],
+                    )
+                    raise
+                except Exception as exc:
+                    auditor.record_failure(
+                        error_type="other",
+                        error_message=f"{type(exc).__name__}: {exc}"[:1024],
+                    )
+                    raise
+                auditor.record_success(
+                    input_tokens=(
+                        token_usage.get("input") if token_usage else None
+                    ),
+                    output_tokens=(
+                        token_usage.get("output") if token_usage else None
+                    ),
+                )
         except AllKeysExhaustedError:
             # Rotator boyunca InvalidKey ile düşen key'ler burada
             # işaretlenir (SWOT/OKR servisleriyle aynı desen).
@@ -631,6 +731,34 @@ class OnboardingService:
             },
         )
 
+        # B3d — süper-admin denetim raporu: Karar Geçmişi'ne onboarding
+        # kategori uygulaması eylemi. ``self._audit.log`` (yukarıda)
+        # genel audit_logs izini bırakır; bu ayrı bir kayıttır — tenant_
+        # kpi_goals.py:195'teki DecisionAuditService çağrı deseniyle
+        # aynı (route değil, servis içinden — çağıran zaten açık bir
+        # transaction içinde: routes/tenant_onboarding.py'nin
+        # ``async with app_session.begin():`` bloğu). ``DECISION_
+        # ONBOARDING_CATEGORIES_APPLIED`` migration 0045 ile
+        # decision_audit_service.py'ye ekleniyor (SA1); henüz diskte
+        # yoksa bu import başarısız olur.
+        from imga_api.services.decision_audit_service import (
+            DECISION_ONBOARDING_CATEGORIES_APPLIED,
+            DecisionAuditService,
+        )
+
+        await DecisionAuditService(self._session).record_decision(
+            tenant_id=tenant_id,
+            decision_type=DECISION_ONBOARDING_CATEGORIES_APPLIED,
+            related_entity_type="tenant",
+            related_entity_id=tenant_id,
+            actor_user_id=actor_user_id,
+            payload={
+                "created_categories_count": len(created_categories),
+                "created_taxonomies_count": len(created_taxonomies),
+                "disabled_global_codes_count": len(disabled),
+            },
+        )
+
         return AppliedCategoriesResult(
             created_categories=created_categories,
             created_taxonomies=created_taxonomies,
@@ -643,6 +771,8 @@ def _as_list(raw: Any) -> list[Any]:
 
 
 __all__ = [
+    "ONBOARDING_SUGGEST_RESPONSE_SCHEMA",
+    "ONBOARDING_SUGGEST_SYSTEM_PROMPT",
     "SAMPLE_LIMIT_DEFAULT",
     "AppliedCategoriesResult",
     "CategorySuggestion",
