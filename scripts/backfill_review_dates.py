@@ -269,16 +269,22 @@ async def _apply_updates(
     """Toplu UPDATE — tek ``execute`` çağrısıyla executemany (SQLAlchemy
     2.0 "multiple parameter sets" deseni). 21K satırlık bir job'da
     tek-tek round-trip yerine tek istekte akar."""
+    # Core tablo uzerinden: ORM update() executemany'yi "PK'li bulk"
+    # moduna sokup bindparam WHERE'i reddediyor.
     stmt = (
-        update(Review)
-        .where(Review.id == bindparam("_review_id"))
+        update(Review.__table__)
+        .where(Review.__table__.c.id == bindparam("_review_id"))
         .values(review_date=bindparam("_review_date"))
     )
     params = [
         {"_review_id": review_id, "_review_date": review_date}
         for review_id, review_date in assignments.items()
     ]
-    await session.execute(stmt, params)
+    # executemany + WHERE, ORM oturum senkronizasyonuyla uyumsuz —
+    # kimlik haritasinda nesne tutmuyoruz, bypass guvenli.
+    await session.execute(
+        stmt, params, execution_options={"synchronize_session": None}
+    )
 
 
 async def _bust_redis_caches(tenant_id: UUID) -> None:
