@@ -3,13 +3,18 @@
 ``scripts/`` has no ``__init__.py`` — it's not an importable package —
 so the script is loaded via ``importlib.util.spec_from_file_location``
 rather than a normal ``import``. Only the SAF (pure, I/O-less) functions
-(``match_dates_by_hash_order``, ``safety_check``) and the file-reading
-helper (``extract_file_dates_by_hash``, exercised against real temp
-files) are covered here — no DB, mirrors test_file_parser.py's "runs
-without a DB" scope. The DB round-trip (``fetch_db_rows_by_hash``,
-``_apply_updates``, ``run()``) needs live Postgres and is out of scope
-for this file; it's covered by manual --dry-run verification per the
-script's own docstring.
+(``match_dates_by_hash_order`` / ``match_values_by_hash_order``,
+``safety_check``, ``should_write_target_value`` /
+``split_writable_assignments``, ``map_quality_label``,
+``has_automation_notification_tag`` / ``map_tags_to_quality_label``,
+``merge_quality_flag_assignments``) and the file-reading helpers
+(``extract_file_dates_by_hash`` / ``extract_file_column_values_by_hash``,
+exercised against real temp files — CSV and XLSX) are covered here — no
+DB, mirrors test_file_parser.py's "runs without a DB" scope. The DB
+round-trip (``fetch_db_rows_by_hash``, ``fetch_current_column_values``,
+``_apply_column_update``, ``run()``) needs live Postgres and is out of
+scope for this file; it's covered by manual --dry-run verification per
+the script's own docstring.
 """
 
 from __future__ import annotations
@@ -29,10 +34,7 @@ def _find_script() -> Path | None:
     konteynerinde (/app/tests + /app/scripts ro-mount) çalışır; ikisi de
     yoksa None — parents[i] konteynerin sığ yolunda IndexError atardı."""
     here = Path(__file__).resolve()
-    candidates = [
-        parent / "scripts" / "backfill_review_dates.py"
-        for parent in here.parents
-    ]
+    candidates = [parent / "scripts" / "backfill_review_dates.py" for parent in here.parents]
     for candidate in candidates:
         if candidate.exists():
             return candidate
@@ -48,9 +50,7 @@ if _SCRIPT_PATH is None:
 
 
 def _load_script_module() -> ModuleType:
-    spec = importlib.util.spec_from_file_location(
-        "backfill_review_dates", _SCRIPT_PATH
-    )
+    spec = importlib.util.spec_from_file_location("backfill_review_dates", _SCRIPT_PATH)
     assert spec is not None
     assert spec.loader is not None
     module = importlib.util.module_from_spec(spec)
@@ -292,3 +292,284 @@ def test_extract_file_dates_by_hash_respects_explicit_date_column(
 
     h = review_text_hash("bir yorum")
     assert dates_by_hash[h] == [datetime(2026, 3, 15, tzinfo=UTC)]
+
+
+# --- match_values_by_hash_order (genelleştirilmiş eşleme) --------------
+
+
+def test_match_values_by_hash_order_assigns_none_positionally() -> None:
+    """Genel eşleme None değerleri de POZİSYONEL olarak atar — map
+    hedefleri için boş hücre gerçek bir NULL-yazma isteğidir, tarihin
+    aksine listeden hiç atılmaz (bkz. extract_file_column_values_by_
+    hash'in docstring'i)."""
+    r1, r2 = uuid4(), uuid4()
+    db_rows = {
+        "h1": [
+            (r1, datetime(2026, 1, 1, tzinfo=UTC)),
+            (r2, datetime(2026, 1, 2, tzinfo=UTC)),
+        ]
+    }
+    file_values: dict[str, list[str | None]] = {"h1": ["Website", None]}
+    assignments = backfill.match_values_by_hash_order(file_values, db_rows)
+    assert assignments == {r1: "Website", r2: None}
+
+
+def test_match_values_by_hash_order_matches_dates_helper_behaviour() -> None:
+    """match_dates_by_hash_order artık ince bir sarmalayıcı — aynı
+    girdide aynı sonucu üretmeli."""
+    review_id = uuid4()
+    file_dates = {"h1": [_dt(5)]}
+    db_rows = {"h1": [(review_id, _dt(1, month=1))]}
+    assert backfill.match_values_by_hash_order(
+        file_dates, db_rows
+    ) == backfill.match_dates_by_hash_order(file_dates, db_rows)
+
+
+# --- map_quality_label (--quality-label-column eşleme tablosu) ---------
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        ("mükerrer", "duplicate"),
+        ("Mükerrer", "duplicate"),
+        ("  MÜKERRER  ", "duplicate"),
+        ("bilgi", "informational"),
+        ("Bilgi", "informational"),
+        ("  BİLGİ  ", "informational"),
+        ("şikayet", None),
+        ("talep", None),
+        ("teşekkür", None),
+        ("yardım", None),
+        ("", None),
+        ("   ", None),
+        (None, None),
+        ("bilinmeyen-bir-değer", None),
+    ],
+)
+def test_map_quality_label(raw: str | None, expected: str | None) -> None:
+    assert backfill.map_quality_label(raw) == expected
+
+
+# --- has_automation_notification_tag / map_tags_to_quality_label -------
+
+
+def test_has_automation_notification_tag_exact_match() -> None:
+    assert backfill.has_automation_notification_tag("otomasyon bildirim") is True
+
+
+def test_has_automation_notification_tag_among_multiple_tags() -> None:
+    assert (
+        backfill.has_automation_notification_tag("şikayet, otomasyon bildirim, öncelik-yüksek")
+        is True
+    )
+
+
+def test_has_automation_notification_tag_case_and_whitespace_folded() -> None:
+    assert backfill.has_automation_notification_tag(" Otomasyon Bildirim ,başka") is True
+
+
+def test_has_automation_notification_tag_substring_is_not_a_match() -> None:
+    """Alt-dize eşleşmesi SAYILMAZ — 'otomasyon bildirimi' ya da 'ön
+    otomasyon bildirim' tam etikete eşit değildir."""
+    assert backfill.has_automation_notification_tag("otomasyon bildirimi yapıldı") is False
+    assert backfill.has_automation_notification_tag("ön otomasyon bildirim") is False
+
+
+def test_has_automation_notification_tag_absent() -> None:
+    assert backfill.has_automation_notification_tag("şikayet, talep") is False
+
+
+def test_has_automation_notification_tag_none_or_empty() -> None:
+    assert backfill.has_automation_notification_tag(None) is False
+    assert backfill.has_automation_notification_tag("") is False
+
+
+def test_map_tags_to_quality_label() -> None:
+    assert backfill.map_tags_to_quality_label("otomasyon bildirim") == "informational"
+    assert backfill.map_tags_to_quality_label("şikayet") is None
+    assert backfill.map_tags_to_quality_label(None) is None
+
+
+# --- merge_quality_flag_assignments -------------------------------------
+
+
+def test_merge_quality_flag_assignments_label_wins_on_conflict() -> None:
+    r_conflict, r_label_only, r_tags_only = uuid4(), uuid4(), uuid4()
+    label = {r_conflict: "duplicate", r_label_only: "informational"}
+    tags = {r_conflict: "informational", r_tags_only: "informational"}
+    merged = backfill.merge_quality_flag_assignments(label, tags)
+    assert merged == {
+        r_conflict: "duplicate",  # quality-label-column kazanir
+        r_label_only: "informational",
+        r_tags_only: "informational",
+    }
+
+
+def test_merge_quality_flag_assignments_single_source_passthrough() -> None:
+    review_id = uuid4()
+    assert backfill.merge_quality_flag_assignments({review_id: "duplicate"}, {}) == {
+        review_id: "duplicate"
+    }
+    assert backfill.merge_quality_flag_assignments({}, {review_id: "informational"}) == {
+        review_id: "informational"
+    }
+
+
+# --- should_write_target_value / split_writable_assignments ------------
+
+
+@pytest.mark.parametrize(
+    ("current_value", "overwrite", "expected"),
+    [
+        (None, False, True),
+        (None, True, True),
+        ("mevcut", False, False),
+        ("mevcut", True, True),
+        ("", False, False),  # bos string NULL DEGIL -- mevcut sayilir
+    ],
+)
+def test_should_write_target_value(
+    current_value: str | None, overwrite: bool, expected: bool
+) -> None:
+    assert backfill.should_write_target_value(current_value, overwrite=overwrite) is expected
+
+
+def test_split_writable_assignments_no_overwrite_skips_existing() -> None:
+    r_null, r_has_value = uuid4(), uuid4()
+    assignments = {r_null: "Website", r_has_value: "Mobil"}
+    current_values = {r_null: None, r_has_value: "Zaten Var"}
+    to_write, skipped = backfill.split_writable_assignments(
+        assignments, current_values, overwrite=False
+    )
+    assert to_write == {r_null: "Website"}
+    assert skipped == 1
+
+
+def test_split_writable_assignments_overwrite_writes_all() -> None:
+    r1, r2 = uuid4(), uuid4()
+    assignments = {r1: "Website", r2: "Mobil"}
+    current_values = {r1: None, r2: "Zaten Var"}
+    to_write, skipped = backfill.split_writable_assignments(
+        assignments, current_values, overwrite=True
+    )
+    assert to_write == {r1: "Website", r2: "Mobil"}
+    assert skipped == 0
+
+
+def test_split_writable_assignments_missing_current_value_treated_as_null() -> None:
+    """current_values'ta karşılığı olmayan id — fetch_current_column_
+    values'ın gerçek akışta üretmeyeceği ama savunma amaçlı ele alınan
+    bir durum — NULL kabul edilir (yazılabilir)."""
+    review_id = uuid4()
+    to_write, skipped = backfill.split_writable_assignments(
+        {review_id: "Website"}, {}, overwrite=False
+    )
+    assert to_write == {review_id: "Website"}
+    assert skipped == 0
+
+
+# --- extract_file_column_values_by_hash (gerçek geçici dosya, DB yok) --
+
+
+def test_extract_file_column_values_by_hash_groups_orders_and_keeps_none(
+    tmp_path: Path,
+) -> None:
+    """extract_file_dates_by_hash'in hash+sıra mantığıyla AYNI, ama boş
+    değerler ATILMAZ (tarihin aksine) — None pozisyonda kalır."""
+    path = tmp_path / "backfill-values.csv"
+    _write_csv(
+        path,
+        [
+            ["yorum", "kaynak"],
+            ["tekrar eden yorum", "Website"],
+            ["tekil yorum", ""],
+            ["tekrar eden yorum", "Mobil"],
+            ["", "BosMetinSatiri"],  # bos metin -- tamamen dislanir
+        ],
+    )
+    values_by_target = backfill.extract_file_column_values_by_hash(
+        path, text_column="yorum", value_columns={"source": "kaynak"}
+    )
+    from imga_core.text_utils import review_text_hash
+
+    repeated_hash = review_text_hash("tekrar eden yorum")
+    unique_hash = review_text_hash("tekil yorum")
+
+    assert values_by_target["source"][repeated_hash] == ["Website", "Mobil"]
+    # Bos hucre None olarak KALIR -- extract_file_dates_by_hash'in aksine
+    # ATILMAZ (bkz. fonksiyonun docstring'i).
+    assert values_by_target["source"][unique_hash] == [None]
+    # Bos metinli satirin hash'i (BosMetinSatiri degeri) hic gorunmez.
+    assert len(values_by_target["source"]) == 2
+
+
+def test_extract_file_column_values_by_hash_multiple_targets_stay_aligned(
+    tmp_path: Path,
+) -> None:
+    """Aynı satırın FARKLI hedefler için çıkardığı değerler aynı
+    POZİSYONDA kalmalı — iki hedefin i'inci elemanı hep aynı dosya
+    satırına ait olmalı."""
+    path = tmp_path / "multi-target.csv"
+    _write_csv(
+        path,
+        [
+            ["yorum", "kaynak", "kanal"],
+            ["tekrar eden yorum", "Website", "Mobil"],
+            ["tekrar eden yorum", "", "Web"],
+        ],
+    )
+    values_by_target = backfill.extract_file_column_values_by_hash(
+        path,
+        text_column="yorum",
+        value_columns={"source": "kaynak", "channel": "kanal"},
+    )
+    from imga_core.text_utils import review_text_hash
+
+    h = review_text_hash("tekrar eden yorum")
+    assert values_by_target["source"][h] == ["Website", None]
+    assert values_by_target["channel"][h] == ["Mobil", "Web"]
+
+
+def test_extract_file_column_values_by_hash_raises_on_missing_value_header(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "missing-header.csv"
+    _write_csv(path, [["yorum", "kaynak"], ["bir yorum", "Website"]])
+    with pytest.raises(backfill.UnknownColumnError):
+        backfill.extract_file_column_values_by_hash(
+            path, text_column="yorum", value_columns={"source": "Kaynak Yok"}
+        )
+
+
+def test_extract_file_column_values_by_hash_raises_on_missing_text_column(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "missing-text.csv"
+    _write_csv(path, [["yorum", "kaynak"], ["bir yorum", "Website"]])
+    with pytest.raises(backfill.UnknownColumnError):
+        backfill.extract_file_column_values_by_hash(
+            path, text_column="olmayan-kolon", value_columns={"source": "kaynak"}
+        )
+
+
+def test_extract_file_column_values_by_hash_reads_xlsx(tmp_path: Path) -> None:
+    from imga_core.text_utils import review_text_hash
+    from openpyxl import Workbook
+
+    path = tmp_path / "backfill-source.xlsx"
+    wb = Workbook()
+    sheet = wb.active
+    assert sheet is not None
+    sheet.append(["yorum", "kaynak"])
+    sheet.append(["tekil yorum", "Website"])
+    sheet.append(["tekil yorum 2", None])  # bos hucre -> None
+    wb.save(path)
+
+    values_by_target = backfill.extract_file_column_values_by_hash(
+        path, text_column="yorum", value_columns={"source": "kaynak"}
+    )
+    h1 = review_text_hash("tekil yorum")
+    h2 = review_text_hash("tekil yorum 2")
+    assert values_by_target["source"][h1] == ["Website"]
+    assert values_by_target["source"][h2] == [None]
