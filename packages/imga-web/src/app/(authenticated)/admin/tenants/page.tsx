@@ -4,6 +4,7 @@ import { Building2, Cpu, MailPlus, Pencil, Percent, Plus, Trash2 } from "lucide-
 import Link from "next/link";
 import { useState } from "react";
 
+import { EngagementBandBadge } from "@/components/admin/engagement-band-badge";
 import { TenantCreateDialog } from "@/components/admin/tenant-create-dialog";
 import { TenantDeleteDialog } from "@/components/admin/tenant-delete-dialog";
 import { TenantEditDialog } from "@/components/admin/tenant-edit-dialog";
@@ -24,6 +25,8 @@ import { useAdminTenants } from "@/hooks/use-admin-tenants";
 import { useAuthStore } from "@/lib/auth-store";
 import { formatFullDate } from "@/lib/date-format";
 import { useTranslation } from "@/lib/i18n/use-translation";
+import { formatCompactNumber, formatUsd } from "@/lib/number-format";
+import { formatDateTr, relativeTimeTr } from "@/lib/relative-time";
 import type { AdminTenantSummary } from "@/lib/types";
 import { AUTOMATION_MODE_LABELS, PLAN_TIER_LABELS } from "@/lib/user-helpers";
 
@@ -96,11 +99,26 @@ function AdminTenantsBody() {
                 <TableHead>{t("admin.field.name")}</TableHead>
                 <TableHead className="hidden md:table-cell">{t("admin.field.slug")}</TableHead>
                 <TableHead>{t("admin.field.plan")}</TableHead>
+                <TableHead className="hidden md:table-cell">
+                  {t("admin.tenants.col.engagement")}
+                </TableHead>
                 <TableHead className="hidden lg:table-cell">
                   {t("admin.field.automation")}
                 </TableHead>
+                <TableHead className="hidden text-right lg:table-cell">
+                  {t("admin.tenants.col.reviewCount")}
+                </TableHead>
+                <TableHead className="hidden lg:table-cell">
+                  {t("admin.tenants.col.lastUpload")}
+                </TableHead>
                 <TableHead className="hidden xl:table-cell">
                   {t("admin.tenants.col.created")}
+                </TableHead>
+                <TableHead className="hidden text-right xl:table-cell">
+                  {t("admin.tenants.col.tokens30d")}
+                </TableHead>
+                <TableHead className="hidden text-right xl:table-cell">
+                  {t("admin.tenants.col.cost30d")}
                 </TableHead>
                 <TableHead className="text-right">{t("admin.tenants.col.actions")}</TableHead>
               </TableRow>
@@ -117,13 +135,31 @@ function AdminTenantsBody() {
                       {PLAN_TIER_LABELS[tenant.plan_tier] ?? tenant.plan_tier}
                     </Badge>
                   </TableCell>
+                  <TableCell className="hidden md:table-cell">
+                    <EngagementBandBadge band={tenant.engagement_band} />
+                  </TableCell>
                   <TableCell className="hidden lg:table-cell">
                     <Badge variant="secondary">
                       {AUTOMATION_MODE_LABELS[tenant.automation_mode]}
                     </Badge>
                   </TableCell>
+                  <TableCell className="text-muted-foreground hidden text-right text-xs tabular-nums lg:table-cell">
+                    {formatCompactNumber(tenant.review_count)}
+                  </TableCell>
+                  <TableCell
+                    className="text-muted-foreground hidden text-xs lg:table-cell"
+                    title={tenant.last_upload_at ? formatDateTr(tenant.last_upload_at) : undefined}
+                  >
+                    {tenant.last_upload_at ? relativeTimeTr(tenant.last_upload_at) : "—"}
+                  </TableCell>
                   <TableCell className="text-muted-foreground hidden text-xs xl:table-cell">
                     {formatFullDate(tenant.created_at)}
+                  </TableCell>
+                  <TableCell className="text-muted-foreground hidden text-right text-xs tabular-nums xl:table-cell">
+                    {formatCompactNumber(tenant.tokens_30d)}
+                  </TableCell>
+                  <TableCell className="text-muted-foreground hidden text-right text-xs tabular-nums xl:table-cell">
+                    {formatUsd(tenant.cost_30d_usd)}
                   </TableCell>
                   <TableCell className="text-right">
                     <div className="flex justify-end gap-1">
@@ -245,8 +281,13 @@ function SkeletonTable() {
             <Skeleton className="h-4 flex-1" />
             <Skeleton className="hidden h-4 w-20 md:block" />
             <Skeleton className="h-5 w-16" />
+            <Skeleton className="hidden h-5 w-16 md:block" />
             <Skeleton className="hidden h-5 w-20 lg:block" />
+            <Skeleton className="hidden h-4 w-10 lg:block" />
+            <Skeleton className="hidden h-4 w-16 lg:block" />
             <Skeleton className="hidden h-4 w-32 xl:block" />
+            <Skeleton className="hidden h-4 w-12 xl:block" />
+            <Skeleton className="hidden h-4 w-12 xl:block" />
             <Skeleton className="h-7 w-32" />
           </div>
         ))}

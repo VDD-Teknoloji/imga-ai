@@ -47,7 +47,34 @@ export interface LlmAuditSummary {
   total_calls: number;
   total_failures: number;
   total_tokens: number;
+  // 2026-08-20 (B6/C1) — routes/tenant_llm_audit.py LlmAuditSummary:
+  // total_cost_usd her zaman bir sayıdır (bilinen maliyet yoksa 0'a
+  // coalesce edilir SUNUCUDA) — /admin/llm-usage'in tenant/call_type
+  // kırılımlarındaki `float | None` ile KARIŞTIRMA, orada null "hiç
+  // bilinen maliyet yok" anlamına geliyor; burada backend zaten 0'a
+  // indirgiyor.
+  total_cost_usd: number;
+  unknown_cost_calls: number;
 }
+
+/**
+ * call_type -> i18n etiket anahtarı. Backend'in 8 geçerli call_type
+ * değerini birebir yansıtır (bkz. routes/tenant_prompt_templates.py
+ * _build_code_defaults + llm_call_audit tablosu). /admin/llm-audit'in
+ * filtre listesi ile /admin/usage'in call_type kırılım tablosu bu tek
+ * haritayı paylaşır — sıra önemli değil ama backend'in listeleme
+ * sırasıyla eşleşiyor.
+ */
+export const CALL_TYPE_LABEL_KEYS: Record<string, string> = {
+  classification: "admin.llmAudit.callType.classification",
+  briefing: "admin.llmAudit.callType.briefing",
+  strategic_report: "admin.llmAudit.callType.strategicReport",
+  action_extraction: "admin.llmAudit.callType.actionExtraction",
+  okr: "admin.llmAudit.callType.okr",
+  root_cause: "admin.llmAudit.callType.rootCause",
+  quality_report: "admin.llmAudit.callType.qualityReport",
+  onboarding_suggest: "admin.llmAudit.callType.onboardingSuggest",
+};
 
 interface ListFilters {
   call_type?: string;
@@ -66,17 +93,14 @@ export function useLlmAuditList(filters: ListFilters = {}) {
   return useQuery<LlmAuditListResponse>({
     queryKey: ["llm-audit", filters],
     queryFn: () =>
-      apiRequest<LlmAuditListResponse>(
-        `/tenants/me/llm-audit${qsStr ? `?${qsStr}` : ""}`,
-      ),
+      apiRequest<LlmAuditListResponse>(`/tenants/me/llm-audit${qsStr ? `?${qsStr}` : ""}`),
   });
 }
 
 export function useLlmAuditSummary() {
   return useQuery<LlmAuditSummary>({
     queryKey: ["llm-audit", "summary"],
-    queryFn: () =>
-      apiRequest<LlmAuditSummary>("/tenants/me/llm-audit/summary"),
+    queryFn: () => apiRequest<LlmAuditSummary>("/tenants/me/llm-audit/summary"),
     staleTime: 60_000,
   });
 }

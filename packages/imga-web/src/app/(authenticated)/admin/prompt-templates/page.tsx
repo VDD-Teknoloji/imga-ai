@@ -41,6 +41,11 @@ const KEY_TITLE_KEYS: Record<string, string> = {
   okr: "admin.promptTemplates.name.okr",
   briefing: "admin.promptTemplates.name.briefing",
   unified_classifier: "admin.promptTemplates.name.unifiedClassifier",
+  // 2026-08-20 (C1 süper-admin envanteri) — kod-varsayılan katalog 7
+  // anahtara çıktı (bkz. routes/tenant_prompt_templates.py _build_code_defaults).
+  root_cause: "admin.promptTemplates.name.rootCause",
+  quality_report: "admin.promptTemplates.name.qualityReport",
+  onboarding_suggest: "admin.promptTemplates.name.onboardingSuggest",
 };
 
 export default function PromptTemplatesPage() {

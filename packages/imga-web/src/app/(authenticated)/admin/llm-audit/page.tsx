@@ -14,20 +14,26 @@ import { AlertTriangle, CheckCircle2, Cpu, Loader2 } from "lucide-react";
 import { Suspense, useCallback, useEffect, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
+import { AdminSummaryCard } from "@/components/admin/admin-summary-card";
 import { RequireRole } from "@/components/auth/require-role";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
-import { type LlmCallAuditRow, useLlmAuditList, useLlmAuditSummary } from "@/hooks/use-llm-audit";
+import {
+  CALL_TYPE_LABEL_KEYS,
+  type LlmCallAuditRow,
+  useLlmAuditList,
+  useLlmAuditSummary,
+} from "@/hooks/use-llm-audit";
 import { useTranslation } from "@/lib/i18n/use-translation";
+import { formatUsd } from "@/lib/number-format";
 import { cn } from "@/lib/utils";
 
+// 2026-08-20 (C1) — root_cause/quality_report/onboarding_suggest üç yeni
+// call_type CALL_TYPE_LABEL_KEYS'e (use-llm-audit.ts) eklendi; bu liste
+// artık oradan türetiliyor, hardcoded kopya tutmuyor.
 const CALL_TYPES = [
   { value: "", labelKey: "admin.llmAudit.callType.all" },
-  { value: "classification", labelKey: "admin.llmAudit.callType.classification" },
-  { value: "briefing", labelKey: "admin.llmAudit.callType.briefing" },
-  { value: "strategic_report", labelKey: "admin.llmAudit.callType.strategicReport" },
-  { value: "action_extraction", labelKey: "admin.llmAudit.callType.actionExtraction" },
-  { value: "okr", labelKey: "admin.llmAudit.callType.okr" },
+  ...Object.entries(CALL_TYPE_LABEL_KEYS).map(([value, labelKey]) => ({ value, labelKey })),
 ];
 
 export default function LlmAuditPage() {
@@ -108,21 +114,30 @@ function LlmAuditPageInner() {
       </header>
 
       {summary.data && (
-        <div className="grid gap-3 md:grid-cols-3">
-          <SummaryCard
+        <div className="grid gap-3 md:grid-cols-4">
+          <AdminSummaryCard
             label={t("admin.llmAudit.summary.totalCalls")}
             value={summary.data.total_calls.toLocaleString("tr-TR")}
           />
-          <SummaryCard
+          <AdminSummaryCard
             label={t("admin.llmAudit.summary.failures")}
             value={summary.data.total_failures.toLocaleString("tr-TR")}
             tone={summary.data.total_failures > 0 ? "warn" : "ok"}
           />
-          <SummaryCard
+          <AdminSummaryCard
             label={t("admin.llmAudit.summary.totalTokens")}
             value={summary.data.total_tokens.toLocaleString("tr-TR")}
           />
+          <AdminSummaryCard
+            label={t("admin.llmAudit.summary.totalCost")}
+            value={formatUsd(summary.data.total_cost_usd)}
+          />
         </div>
+      )}
+      {summary.data && summary.data.unknown_cost_calls > 0 && (
+        <p className="text-muted-foreground text-xs">
+          {t("admin.common.unknownCostNote", { n: summary.data.unknown_cost_calls })}
+        </p>
       )}
 
       {summary.data && summary.data.days.length > 0 && (
@@ -211,34 +226,6 @@ function LlmAuditPageInner() {
         </ul>
       )}
     </main>
-  );
-}
-
-function SummaryCard({
-  label,
-  value,
-  tone = "neutral",
-}: {
-  label: string;
-  value: string;
-  tone?: "neutral" | "ok" | "warn";
-}) {
-  return (
-    <Card
-      className={cn(
-        "border-2",
-        tone === "warn"
-          ? "border-amber-300"
-          : tone === "ok"
-            ? "border-emerald-300"
-            : "border-zinc-200",
-      )}
-    >
-      <CardContent className="space-y-1 p-3">
-        <p className="text-muted-foreground text-xs">{label}</p>
-        <p className="text-2xl font-semibold tabular-nums">{value}</p>
-      </CardContent>
-    </Card>
   );
 }
 

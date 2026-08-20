@@ -8,7 +8,6 @@ import type {
   AdminInvitationCreateResponse,
   AdminTenantCreateRequest,
   AdminTenantCreateResponse,
-  AdminTenantListResponse,
   AdminTenantSummary,
   AdminTenantUpdateRequest,
 } from "@/lib/types";
@@ -24,14 +23,37 @@ import type {
 
 const ADMIN_TENANTS_KEY = "admin-tenants";
 
+/**
+ * C3/B7 (2026-08-20 süper-admin envanteri) — GET /admin/tenants artık 5
+ * opsiyonel envanter alanı dönüyor (bkz. routes/admin/tenants.py
+ * TenantSummary + services/tenant_service.py TenantListRow docstring'i).
+ * lib/types.ts'teki `AdminTenantSummary`'ye eklenmedi — bu turda
+ * types.ts başka bir ajanın bölgesi (use-analytics.ts'teki
+ * AnalyticsQueryFilters ile aynı desen: tip burada, hook dosyasında
+ * genişletiliyor). Tüm alanlar null olabilir — ya stats hiç
+ * hesaplanmadı ya da (yalnız cost_30d_usd) 30 günde bilinen maliyetli
+ * çağrı yok.
+ */
+export interface AdminTenantInventoryStats {
+  review_count: number | null;
+  last_upload_at: string | null;
+  tokens_30d: number | null;
+  cost_30d_usd: number | null;
+  engagement_band: string | null;
+}
+
+export type AdminTenantSummaryWithStats = AdminTenantSummary & AdminTenantInventoryStats;
+
+interface AdminTenantListResponseWithStats {
+  tenants: AdminTenantSummaryWithStats[];
+}
+
 export function useAdminTenants(includeDeleted = false) {
   return useQuery({
     queryKey: [ADMIN_TENANTS_KEY, "list", includeDeleted],
-    queryFn: async (): Promise<AdminTenantSummary[]> => {
+    queryFn: async (): Promise<AdminTenantSummaryWithStats[]> => {
       const qs = includeDeleted ? "?include_deleted=true" : "";
-      const data = await apiRequest<AdminTenantListResponse>(
-        `/admin/tenants${qs}`,
-      );
+      const data = await apiRequest<AdminTenantListResponseWithStats>(`/admin/tenants${qs}`);
       return data.tenants;
     },
   });
@@ -94,16 +116,12 @@ export interface CreateAdminInvitationInput {
 }
 
 export function useCreateAdminInvitation() {
-  return useMutation<
-    AdminInvitationCreateResponse,
-    Error,
-    CreateAdminInvitationInput
-  >({
+  return useMutation<AdminInvitationCreateResponse, Error, CreateAdminInvitationInput>({
     mutationFn: async ({ tenantId, body }) => {
-      return apiRequest<AdminInvitationCreateResponse>(
-        `/admin/tenants/${tenantId}/invitations`,
-        { method: "POST", body },
-      );
+      return apiRequest<AdminInvitationCreateResponse>(`/admin/tenants/${tenantId}/invitations`, {
+        method: "POST",
+        body,
+      });
     },
   });
 }

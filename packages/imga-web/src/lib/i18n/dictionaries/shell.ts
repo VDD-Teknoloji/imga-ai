@@ -27,6 +27,8 @@ export const shell: Bundle = {
     "shell.nav.section.operations": "Operasyon",
     "shell.nav.section.admin": "Yönetim",
     "shell.nav.tenants": "Kurumlar",
+    "shell.nav.platformUsage": "Platform Kullanımı",
+    "shell.nav.auditLogs": "Denetim Kayıtları",
     "shell.nav.llmAudit": "LLM Denetimi",
     "shell.nav.decisionAudit": "Karar Geçmişi",
     "shell.nav.promptTemplates": "Prompt Şablonları",
@@ -70,17 +72,13 @@ export const shell: Bundle = {
     "shell.user.logoutError": "Çıkış sırasında hata oluştu",
 
     // Davet kabul modalı.
-    "shell.invite.desc":
-      "Davet linkindeki token'ı yapıştır, mevcut hesabınla yeni kuruma katıl.",
+    "shell.invite.desc": "Davet linkindeki token'ı yapıştır, mevcut hesabınla yeni kuruma katıl.",
     "shell.invite.tokenLabel": "Davet token'ı",
     "shell.invite.checking": "Davet kontrol ediliyor...",
-    "shell.invite.invalidToken":
-      "Bu token geçersiz, süresi dolmuş veya kullanılmış.",
-    "shell.invite.otherEmailInline":
-      "⚠ Davet bu hesap için değil. Kabul edilmeyecek.",
+    "shell.invite.invalidToken": "Bu token geçersiz, süresi dolmuş veya kullanılmış.",
+    "shell.invite.otherEmailInline": "⚠ Davet bu hesap için değil. Kabul edilmeyecek.",
     "shell.invite.passwordLabel": "Şifren",
-    "shell.invite.passwordHelp":
-      "Güvenlik için yeni kuruma katılırken şifrenle doğrulan.",
+    "shell.invite.passwordHelp": "Güvenlik için yeni kuruma katılırken şifrenle doğrulan.",
     "shell.invite.otherEmailTitle": "Bu davet farklı bir e-posta için",
     "shell.invite.otherEmailDesc":
       "Davet {email} için. Bu modal sadece kendi davetlerini kabul etmek içindir.",
@@ -92,8 +90,7 @@ export const shell: Bundle = {
     "shell.invite.submit": "Daveti kabul et",
     "shell.invite.err401": "Şifre hatalı.",
     "shell.invite.err403": "Bu davet farklı bir e-posta için.",
-    "shell.invite.err404":
-      "Davet geçersiz, süresi dolmuş veya zaten kullanılmış.",
+    "shell.invite.err404": "Davet geçersiz, süresi dolmuş veya zaten kullanılmış.",
     "shell.invite.errGeneric": "Beklenmeyen bir hata oluştu.",
   },
   en: {
@@ -120,6 +117,8 @@ export const shell: Bundle = {
     "shell.nav.section.operations": "Operations",
     "shell.nav.section.admin": "Administration",
     "shell.nav.tenants": "Organizations",
+    "shell.nav.platformUsage": "Platform Usage",
+    "shell.nav.auditLogs": "Audit Logs",
     "shell.nav.llmAudit": "LLM Audit",
     "shell.nav.decisionAudit": "Decision History",
     "shell.nav.promptTemplates": "Prompt Templates",
@@ -150,8 +149,7 @@ export const shell: Bundle = {
     "shell.tenant.none": "No organization selected",
     "shell.tenant.switched": "Organization changed",
     "shell.tenant.switchFailed": "Could not change organization",
-    "shell.tenant.triggerAria":
-      "Active organization: {name}. Open to change.",
+    "shell.tenant.triggerAria": "Active organization: {name}. Open to change.",
     "shell.tenant.searchPlaceholder": "Search organizations...",
     "shell.tenant.empty": "No matching organization.",
     "shell.tenant.available": "Your organizations",
@@ -168,8 +166,7 @@ export const shell: Bundle = {
       "Paste the token from your invitation link and join the new organization with your existing account.",
     "shell.invite.tokenLabel": "Invitation token",
     "shell.invite.checking": "Checking invitation...",
-    "shell.invite.invalidToken":
-      "This token is invalid, expired, or already used.",
+    "shell.invite.invalidToken": "This token is invalid, expired, or already used.",
     "shell.invite.otherEmailInline":
       "⚠ This invitation isn't for this account. It won't be accepted.",
     "shell.invite.passwordLabel": "Your password",
@@ -186,8 +183,7 @@ export const shell: Bundle = {
     "shell.invite.submit": "Accept invitation",
     "shell.invite.err401": "Incorrect password.",
     "shell.invite.err403": "This invitation is for a different email.",
-    "shell.invite.err404":
-      "The invitation is invalid, expired, or already used.",
+    "shell.invite.err404": "The invitation is invalid, expired, or already used.",
     "shell.invite.errGeneric": "An unexpected error occurred.",
   },
 };

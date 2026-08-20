@@ -18,6 +18,9 @@ export const admin: Bundle = {
     "admin.error.invalidForm": "Form alanları geçersiz.",
     "admin.error.unexpected": "Beklenmeyen bir hata oluştu.",
     "admin.error.notFound": "Kurum bulunamadı.",
+    // 2026-08-20 (C1 süper-admin envanteri) — /admin/llm-audit +
+    // /admin/usage kartları paylaşır.
+    "admin.common.unknownCostNote": "{n} çağrının maliyeti bilinmiyor.",
 
     // --- davet linki bloğu (create + invite paylaşır) ---------------------
     "admin.invite.linkLabel": "Davet linki",
@@ -37,6 +40,12 @@ export const admin: Bundle = {
     "admin.tenants.new": "Yeni Kurum",
     "admin.tenants.loadError": "Kurum listesi yüklenemedi.",
     "admin.tenants.col.created": "Oluşturuldu",
+    // 2026-08-20 (C3/B7 süper-admin envanteri) — 5 yeni opsiyonel kolon.
+    "admin.tenants.col.engagement": "Katılım",
+    "admin.tenants.col.reviewCount": "Satır",
+    "admin.tenants.col.lastUpload": "Son Yükleme",
+    "admin.tenants.col.tokens30d": "30g Token",
+    "admin.tenants.col.cost30d": "30g Maliyet",
     "admin.tenants.col.actions": "Aksiyonlar",
     "admin.tenants.action.edit": "Düzenle",
     "admin.tenants.action.invite": "Davet",
@@ -62,13 +71,11 @@ export const admin: Bundle = {
     "admin.engagement.saving": "Kaydediliyor…",
     "admin.engagement.toast.saved": "Katılım eşikleri güncellendi.",
     "admin.engagement.toast.saveError": "Eşikler kaydedilemedi.",
-    "admin.engagement.error.minPctRange":
-      "Alt sınır 0 ile 100 arasında bir sayı olmalı.",
+    "admin.engagement.error.minPctRange": "Alt sınır 0 ile 100 arasında bir sayı olmalı.",
     "admin.engagement.error.labelRequired": "Etiket boş olamaz.",
     "admin.engagement.error.atLeastOne": "En az bir bant tanımlayın.",
     "admin.engagement.error.startsAtZero": "İlk bandın alt sınırı %0 olmalı.",
-    "admin.engagement.error.ascending":
-      "Alt sınırlar artan sırada ve birbirinden farklı olmalı.",
+    "admin.engagement.error.ascending": "Alt sınırlar artan sırada ve birbirinden farklı olmalı.",
 
     // --- llm (kurum başına model + API anahtarı yönetimi) -----------------
     // 2026-08-09: yönetim kurumdan alınıp süper yöneticiye verildi;
@@ -106,9 +113,8 @@ export const admin: Bundle = {
     "admin.llm.apiKeyField": "API anahtarı",
     "admin.llm.hideKey": "Anahtarı gizle",
     "admin.llm.showKey": "Anahtarı göster",
-    "admin.llm.keyPrefixWarning": "Gemini anahtarları \"AIza\" ile başlar.",
-    "admin.llm.orKeyPrefixWarning":
-      "OpenRouter anahtarları \"sk-or-\" ile başlar.",
+    "admin.llm.keyPrefixWarning": 'Gemini anahtarları "AIza" ile başlar.',
+    "admin.llm.orKeyPrefixWarning": 'OpenRouter anahtarları "sk-or-" ile başlar.',
     "admin.llm.keyAdded": "Anahtar eklendi.",
     "admin.llm.addFailed": "Anahtar eklenemedi.",
     "admin.llm.providerField": "Sağlayıcı",
@@ -128,12 +134,17 @@ export const admin: Bundle = {
     "admin.llmAudit.callType.strategicReport": "Stratejik rapor",
     "admin.llmAudit.callType.actionExtraction": "Eylem çıkarımı",
     "admin.llmAudit.callType.okr": "OKR",
+    // 2026-08-20 (C1 süper-admin envanteri) — 8. call_type'a çıktı.
+    "admin.llmAudit.callType.rootCause": "Kök Neden",
+    "admin.llmAudit.callType.qualityReport": "Kalite Raporu",
+    "admin.llmAudit.callType.onboardingSuggest": "Onboarding Önerisi",
     "admin.llmAudit.title": "LLM Çağrı Denetimi",
     "admin.llmAudit.subtitle":
       "Her LLM çağrısı için prompt hash + model meta + token + hata kaydı. AI kararlarımızın izlenebilirliği.",
     "admin.llmAudit.summary.totalCalls": "Son 30 gün — toplam çağrı",
     "admin.llmAudit.summary.failures": "Hata sayısı",
     "admin.llmAudit.summary.totalTokens": "Toplam token",
+    "admin.llmAudit.summary.totalCost": "Toplam maliyet",
     "admin.llmAudit.dailyChart": "Günlük token + çağrı",
     "admin.llmAudit.result.all": "Tüm sonuçlar",
     "admin.llmAudit.result.ok": "Yalnızca başarılı",
@@ -195,11 +206,57 @@ export const admin: Bundle = {
     "admin.promptTemplates.name.okr": "OKR Hedefleri",
     "admin.promptTemplates.name.briefing": "Yönetici Özeti",
     "admin.promptTemplates.name.unifiedClassifier": "Yorum Sınıflandırma",
+    // 2026-08-20 (C1 süper-admin envanteri) — kod-varsayılan katalog 7 anahtara çıktı.
+    "admin.promptTemplates.name.rootCause": "Kök Neden Analizi",
+    "admin.promptTemplates.name.qualityReport": "Veri Kalitesi Raporu",
+    "admin.promptTemplates.name.onboardingSuggest": "Onboarding Kategori Önerisi",
     "admin.promptTemplates.toast.updated": "Özelleştirme güncellendi.",
     "admin.promptTemplates.toast.created": "Kuruma özel şablon oluşturuldu.",
     "admin.promptTemplates.toast.varsParseError": "Variables JSON parse edilemedi.",
     "admin.promptTemplates.toast.testOk": "Test başarılı ({source}).",
     "admin.promptTemplates.toast.deleted": "Özelleştirme silindi.",
+
+    // --- Platform Kullanımı (2026-08-20, C1/C2 süper-admin envanteri) -----
+    "admin.usage.title": "Platform Kullanımı",
+    "admin.usage.subtitle":
+      "Sistem sağlığı + tarih aralıklı LLM kullanım ve maliyet raporu, kurum ve çağrı tipi kırılımıyla.",
+    "admin.usage.range.label": "Tarih aralığı",
+    "admin.usage.range.fromAria": "Başlangıç tarihi",
+    "admin.usage.range.toAria": "Bitiş tarihi",
+    "admin.usage.health.redisOk": "Redis çalışıyor",
+    "admin.usage.health.redisDown": "Redis erişilemiyor",
+    "admin.usage.health.queueDepth": "Kuyruk derinliği",
+    "admin.usage.health.workers": "Worker",
+    "admin.usage.health.jobs7d": "Son 7 gün",
+    "admin.usage.platform.calls": "Toplam çağrı",
+    "admin.usage.platform.tokens": "Toplam token",
+    "admin.usage.platform.cost": "Toplam maliyet",
+    "admin.usage.platform.errorRate": "Hata oranı",
+    "admin.usage.tenantTable": "Kurum bazında kullanım",
+    "admin.usage.callTypeBreakdown": "Çağrı tipi kırılımı",
+    "admin.usage.col.callType": "Çağrı tipi",
+    "admin.usage.col.calls": "Çağrı",
+    "admin.usage.col.inputTokens": "Giriş token",
+    "admin.usage.col.outputTokens": "Çıkış token",
+    "admin.usage.col.cost": "Maliyet",
+    "admin.usage.col.unknownCost": "Bilinmeyen maliyet",
+    "admin.usage.col.errorRate": "Hata oranı",
+
+    // --- Denetim Kayıtları (2026-08-20, C4/B2 süper-admin envanteri) ------
+    "admin.auditLogs.title": "Denetim Kayıtları",
+    "admin.auditLogs.subtitle":
+      "Çapraz-kurum denetim izi: kim, ne zaman, hangi kurumda, hangi kaynak üzerinde ne yaptı.",
+    "admin.auditLogs.allTenants": "Tüm kurumlar",
+    "admin.auditLogs.actionPlaceholder": "Aksiyon ara…",
+    "admin.auditLogs.col.time": "Zaman",
+    "admin.auditLogs.col.tenant": "Kurum",
+    "admin.auditLogs.col.actor": "Aktör",
+    "admin.auditLogs.col.action": "Aksiyon",
+    "admin.auditLogs.col.resource": "Kaynak",
+    "admin.auditLogs.col.ip": "IP",
+    "admin.auditLogs.prev": "Önceki",
+    "admin.auditLogs.next": "Sonraki",
+    "admin.auditLogs.pageInfo": "Sayfa {page} / {total}",
 
     // --- Kurum oluştur diyaloğu -------------------------------------------
     "admin.tenantCreate.title": "Yeni kurum",
@@ -231,7 +288,7 @@ export const admin: Bundle = {
     "admin.tenantCreate.step.profileDesc":
       "Opsiyonel — sektör/büyüklük/iş tanımı SWOT, OKR ve brifing üretimini isabetlendirir. Tamamen atlanabilir.",
     "admin.tenantCreate.step.profileHelp":
-      "Bu adım opsiyoneldir; boş bırakıp \"Atla\" ile devam edebilirsiniz.",
+      'Bu adım opsiyoneldir; boş bırakıp "Atla" ile devam edebilirsiniz.',
 
     // --- Kurum düzenle diyaloğu -------------------------------------------
     "admin.tenantEdit.title": "Kurum düzenle",
@@ -318,6 +375,7 @@ export const admin: Bundle = {
     "admin.error.invalidForm": "The form fields are invalid.",
     "admin.error.unexpected": "An unexpected error occurred.",
     "admin.error.notFound": "Organization not found.",
+    "admin.common.unknownCostNote": "{n} calls have unknown cost.",
 
     // --- davet linki bloğu (create + invite paylaşır) ---------------------
     "admin.invite.linkLabel": "Invitation link",
@@ -337,6 +395,11 @@ export const admin: Bundle = {
     "admin.tenants.new": "New organization",
     "admin.tenants.loadError": "Failed to load the organization list.",
     "admin.tenants.col.created": "Created",
+    "admin.tenants.col.engagement": "Engagement",
+    "admin.tenants.col.reviewCount": "Rows",
+    "admin.tenants.col.lastUpload": "Last Upload",
+    "admin.tenants.col.tokens30d": "30d Tokens",
+    "admin.tenants.col.cost30d": "30d Cost",
     "admin.tenants.col.actions": "Actions",
     "admin.tenants.action.edit": "Edit",
     "admin.tenants.action.invite": "Invite",
@@ -348,8 +411,7 @@ export const admin: Bundle = {
 
     // --- engagement bands (super admin only) ------------------------------
     "admin.engagement.title": "Engagement Bands",
-    "admin.engagement.desc":
-      "{tenant} — define what each engagement-rate range means.",
+    "admin.engagement.desc": "{tenant} — define what each engagement-rate range means.",
     "admin.engagement.usingDefaults":
       "No custom bands defined for this organization yet; showing the defaults.",
     "admin.engagement.field.minPct": "Lower bound (%)",
@@ -362,14 +424,11 @@ export const admin: Bundle = {
     "admin.engagement.saving": "Saving…",
     "admin.engagement.toast.saved": "Engagement bands updated.",
     "admin.engagement.toast.saveError": "Failed to save bands.",
-    "admin.engagement.error.minPctRange":
-      "The lower bound must be a number between 0 and 100.",
+    "admin.engagement.error.minPctRange": "The lower bound must be a number between 0 and 100.",
     "admin.engagement.error.labelRequired": "Label cannot be empty.",
     "admin.engagement.error.atLeastOne": "Define at least one band.",
-    "admin.engagement.error.startsAtZero":
-      "The first band's lower bound must be 0%.",
-    "admin.engagement.error.ascending":
-      "Lower bounds must be in ascending order and distinct.",
+    "admin.engagement.error.startsAtZero": "The first band's lower bound must be 0%.",
+    "admin.engagement.error.ascending": "Lower bounds must be in ascending order and distinct.",
 
     // --- llm (per-organization model + API key management) ----------------
     "admin.llm.title": "AI Settings",
@@ -405,8 +464,8 @@ export const admin: Bundle = {
     "admin.llm.apiKeyField": "API key",
     "admin.llm.hideKey": "Hide key",
     "admin.llm.showKey": "Show key",
-    "admin.llm.keyPrefixWarning": "Gemini keys start with \"AIza\".",
-    "admin.llm.orKeyPrefixWarning": "OpenRouter keys start with \"sk-or-\".",
+    "admin.llm.keyPrefixWarning": 'Gemini keys start with "AIza".',
+    "admin.llm.orKeyPrefixWarning": 'OpenRouter keys start with "sk-or-".',
     "admin.llm.keyAdded": "Key added.",
     "admin.llm.addFailed": "Failed to add key.",
     "admin.llm.providerField": "Provider",
@@ -426,12 +485,16 @@ export const admin: Bundle = {
     "admin.llmAudit.callType.strategicReport": "Strategic report",
     "admin.llmAudit.callType.actionExtraction": "Action extraction",
     "admin.llmAudit.callType.okr": "OKR",
+    "admin.llmAudit.callType.rootCause": "Root Cause",
+    "admin.llmAudit.callType.qualityReport": "Quality Report",
+    "admin.llmAudit.callType.onboardingSuggest": "Onboarding Suggestion",
     "admin.llmAudit.title": "LLM Call Audit",
     "admin.llmAudit.subtitle":
       "Prompt hash + model meta + tokens + error record for every LLM call. Traceability of our AI decisions.",
     "admin.llmAudit.summary.totalCalls": "Last 30 days — total calls",
     "admin.llmAudit.summary.failures": "Failure count",
     "admin.llmAudit.summary.totalTokens": "Total tokens",
+    "admin.llmAudit.summary.totalCost": "Total cost",
     "admin.llmAudit.dailyChart": "Daily tokens + calls",
     "admin.llmAudit.result.all": "All results",
     "admin.llmAudit.result.ok": "Successful only",
@@ -493,11 +556,56 @@ export const admin: Bundle = {
     "admin.promptTemplates.name.okr": "OKR Goals",
     "admin.promptTemplates.name.briefing": "Executive Summary",
     "admin.promptTemplates.name.unifiedClassifier": "Comment Classification",
+    "admin.promptTemplates.name.rootCause": "Root Cause Analysis",
+    "admin.promptTemplates.name.qualityReport": "Data Quality Report",
+    "admin.promptTemplates.name.onboardingSuggest": "Onboarding Category Suggestion",
     "admin.promptTemplates.toast.updated": "Override updated.",
     "admin.promptTemplates.toast.created": "Organization template created.",
     "admin.promptTemplates.toast.varsParseError": "Could not parse the variables JSON.",
     "admin.promptTemplates.toast.testOk": "Test successful ({source}).",
     "admin.promptTemplates.toast.deleted": "Override deleted.",
+
+    // --- Platform Usage (2026-08-20, C1/C2 super-admin inventory) ---------
+    "admin.usage.title": "Platform Usage",
+    "admin.usage.subtitle":
+      "System health + date-ranged LLM usage and cost report, broken down by organization and call type.",
+    "admin.usage.range.label": "Date range",
+    "admin.usage.range.fromAria": "Start date",
+    "admin.usage.range.toAria": "End date",
+    "admin.usage.health.redisOk": "Redis is up",
+    "admin.usage.health.redisDown": "Redis unreachable",
+    "admin.usage.health.queueDepth": "Queue depth",
+    "admin.usage.health.workers": "Workers",
+    "admin.usage.health.jobs7d": "Last 7 days",
+    "admin.usage.platform.calls": "Total calls",
+    "admin.usage.platform.tokens": "Total tokens",
+    "admin.usage.platform.cost": "Total cost",
+    "admin.usage.platform.errorRate": "Error rate",
+    "admin.usage.tenantTable": "Usage by organization",
+    "admin.usage.callTypeBreakdown": "Call type breakdown",
+    "admin.usage.col.callType": "Call type",
+    "admin.usage.col.calls": "Calls",
+    "admin.usage.col.inputTokens": "Input tokens",
+    "admin.usage.col.outputTokens": "Output tokens",
+    "admin.usage.col.cost": "Cost",
+    "admin.usage.col.unknownCost": "Unknown cost",
+    "admin.usage.col.errorRate": "Error rate",
+
+    // --- Audit Logs (2026-08-20, C4/B2 super-admin inventory) -------------
+    "admin.auditLogs.title": "Audit Logs",
+    "admin.auditLogs.subtitle":
+      "Cross-organization audit trail: who did what, when, in which organization, on which resource.",
+    "admin.auditLogs.allTenants": "All organizations",
+    "admin.auditLogs.actionPlaceholder": "Search action…",
+    "admin.auditLogs.col.time": "Time",
+    "admin.auditLogs.col.tenant": "Organization",
+    "admin.auditLogs.col.actor": "Actor",
+    "admin.auditLogs.col.action": "Action",
+    "admin.auditLogs.col.resource": "Resource",
+    "admin.auditLogs.col.ip": "IP",
+    "admin.auditLogs.prev": "Previous",
+    "admin.auditLogs.next": "Next",
+    "admin.auditLogs.pageInfo": "Page {page} / {total}",
 
     // --- Kurum oluştur diyaloğu -------------------------------------------
     "admin.tenantCreate.title": "New organization",
@@ -527,7 +635,7 @@ export const admin: Bundle = {
     "admin.tenantCreate.step.profileDesc":
       "Optional — industry/size/description sharpen SWOT, OKR, and briefing output. Fully skippable.",
     "admin.tenantCreate.step.profileHelp":
-      "This step is optional; leave it blank and continue with \"Skip\".",
+      'This step is optional; leave it blank and continue with "Skip".',
     "admin.tenantCreate.success.title": "{name} created",
     "admin.tenantCreate.success.desc1":
       "The invitation link for the first admin is ready. This link is shown ",

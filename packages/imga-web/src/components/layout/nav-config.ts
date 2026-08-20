@@ -8,9 +8,11 @@ import {
   Cpu,
   FileBarChart,
   FileSearch,
+  Gauge,
   History,
   LayoutDashboard,
   ListChecks,
+  ScrollText,
   Send,
   Settings,
   Sparkles,
@@ -153,14 +155,23 @@ export const NAV_SECTIONS: ReadonlyArray<NavSection> = [
 
 /**
  * Sprint 7.7.4 — admin-only nav. Rendered as a separate "YÖNETİM"
- * section under the main NAV_SECTIONS, gated entirely behind
- * `user.is_super_admin === true` so non-admins never see the
- * heading at all.
+ * section under the main NAV_SECTIONS. NOT gated entirely behind
+ * `is_super_admin` (that claim was stale — see the Sprint 13 note
+ * below): the section heading shows for `tenant_admin` too, and each
+ * item's own `minRole` decides visibility — "super" items (cross-
+ * tenant: kurum CRUD'u, platform kullanım/maliyet, çapraz-kurum
+ * denetim kaydı) stay super_admin-only, "admin" items (tenant-scoped
+ * observability) are open to tenant_admin as well.
  *
  * Sprint 9.4 I — three Sprint 9.3 governance pages added: tenant
  * management first, then the three observability surfaces in the
  * order an admin typically walks them — what the LLM did, what the
  * humans decided, what prompts shaped both.
+ *
+ * 2026-08-20 (C1/C4 süper-admin envanteri) — iki yeni "super" öğe
+ * (Platform Kullanımı, Denetim Kayıtları) tenants'ın hemen altına
+ * eklendi: üçü birlikte çapraz-kurum platform görünümünü oluşturuyor,
+ * ardından tenant-scoped "admin" gözlemlenebilirlik öğeleri geliyor.
  */
 // Sprint 13 — bölüm artık tenant_admin'e de görünür: backend
 // llm-audit / decision-audit / prompt-templates GET'lerine
@@ -172,6 +183,18 @@ export const ADMIN_NAV_ITEMS: ReadonlyArray<NavItem> = [
     label: "shell.nav.tenants",
     href: "/admin/tenants",
     icon: Building2,
+    minRole: "super",
+  },
+  {
+    label: "shell.nav.platformUsage",
+    href: "/admin/usage",
+    icon: Gauge,
+    minRole: "super",
+  },
+  {
+    label: "shell.nav.auditLogs",
+    href: "/admin/audit-logs",
+    icon: ScrollText,
     minRole: "super",
   },
   {
@@ -210,6 +233,4 @@ export const ADMIN_NAV_ITEMS: ReadonlyArray<NavItem> = [
  * for tests / a11y audits that walk all routes). New code should
  * consume NAV_SECTIONS for grouped rendering.
  */
-export const NAV_ITEMS: ReadonlyArray<NavItem> = NAV_SECTIONS.flatMap(
-  (s) => s.items,
-);
+export const NAV_ITEMS: ReadonlyArray<NavItem> = NAV_SECTIONS.flatMap((s) => s.items);
