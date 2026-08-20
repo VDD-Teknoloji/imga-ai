@@ -5,6 +5,23 @@ import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tansta
 import { apiRequest } from "@/lib/api-client";
 import type { ReviewDetail, ReviewListFilters, ReviewListResponse } from "@/lib/types";
 
+// 2026-08-20 (Boyutlar filtreleri) — 6 yeni CSV filtresi. lib/types.ts'e
+// dokunulmuyor (backend ajanıyla eşzamanlı düzenleme riski — bkz.
+// use-analytics.ts AnalyticsQueryFilters'taki aynı desen); tip burada
+// yerel olarak genişletiliyor. ReviewListFilters değerleri (bu 6 alan
+// olmadan) yapısal olarak buraya atanabilir, mevcut çağıranlar
+// değişmeden derlenmeye devam eder.
+export interface ReviewDimensionFilterFields {
+  channels?: string[];
+  business_segments?: string[];
+  product_lines?: string[];
+  customer_tiers?: string[];
+  entered_bys?: string[];
+  sources?: string[];
+}
+
+export type ReviewListFiltersExt = ReviewListFilters & ReviewDimensionFilterFields;
+
 export interface ManualPromotionResponse {
   review_id: string;
   ticket_id: string;
@@ -86,7 +103,7 @@ function dateOnlyToLocalIso(value: string | undefined, endOfDay: boolean): strin
   return Number.isNaN(d.getTime()) ? undefined : d.toISOString();
 }
 
-function buildQueryString(filters: ReviewListFilters, offset: number, limit: number): string {
+function buildQueryString(filters: ReviewListFiltersExt, offset: number, limit: number): string {
   const params = new URLSearchParams();
   params.set("limit", String(limit));
   params.set("offset", String(offset));
@@ -112,6 +129,28 @@ function buildQueryString(filters: ReviewListFilters, offset: number, limit: num
   }
   if (filters.primary_categories?.length) {
     params.set("primary_categories", filters.primary_categories.join(","));
+  }
+  // 2026-08-20 — Boyutlar filtreleri (case-insensitive eşleşir, backend
+  // tarafında). Ad eşlemesi: field (tekil, dimension-values ucu) ↔
+  // filtre param'ı (çoğul, burada + reviews/page.tsx DIMENSION_FILTER_
+  // CONFIGS'te aynı sırayla tutuluyor).
+  if (filters.channels?.length) {
+    params.set("channels", filters.channels.join(","));
+  }
+  if (filters.business_segments?.length) {
+    params.set("business_segments", filters.business_segments.join(","));
+  }
+  if (filters.product_lines?.length) {
+    params.set("product_lines", filters.product_lines.join(","));
+  }
+  if (filters.customer_tiers?.length) {
+    params.set("customer_tiers", filters.customer_tiers.join(","));
+  }
+  if (filters.entered_bys?.length) {
+    params.set("entered_bys", filters.entered_bys.join(","));
+  }
+  if (filters.sources?.length) {
+    params.set("sources", filters.sources.join(","));
   }
   // Sprint 9.5.1 B1.1 — heatmap drilldown time-bucket filters. Each
   // is a single integer; the backend route applies the matching
@@ -145,7 +184,7 @@ function buildQueryString(filters: ReviewListFilters, offset: number, limit: num
   return params.toString();
 }
 
-export function useInfiniteReviews(filters: ReviewListFilters, pageSize = 50) {
+export function useInfiniteReviews(filters: ReviewListFiltersExt, pageSize = 50) {
   const baseQs = buildQueryString(filters, 0, pageSize);
   return useInfiniteQuery<ReviewListResponse>({
     queryKey: ["reviews", baseQs],

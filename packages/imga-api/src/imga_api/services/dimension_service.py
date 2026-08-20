@@ -1,7 +1,8 @@
 """Sprint 9.3 B — business impact dimension config + analytics.
 
-Every tenant can enable up to four review dimensions
-(business_segment / product_line / channel / customer_tier). The
+Every tenant can enable up to six review dimensions
+(business_segment / product_line / channel / customer_tier /
+entered_by / source — the last two added 2026-08-20, Dalga 3). The
 config table tells the CSV uploader which header column maps to
 which dimension and gives the dashboard the operator-facing
 display label. ``allowed_values`` is an optional enum constraint
@@ -18,30 +19,66 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Any
 from uuid import UUID
 
 from imga_db.models import Review, TenantBusinessDimension
 from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import InstrumentedAttribute
+from sqlalchemy.sql.elements import ColumnElement
+
+from imga_api.services.date_bounds import day_ceil, day_floor
 
 _logger = logging.getLogger(__name__)
 
 
-_VALID_DIMENSIONS = (
+VALID_DIMENSIONS = (
     "business_segment",
     "product_line",
     "channel",
     "customer_tier",
+    "entered_by",
+    "source",
 )
 
 
-_DIMENSION_COLUMNS = {
+DIMENSION_COLUMNS = {
     "business_segment": Review.business_segment,
     "product_line": Review.product_line,
     "channel": Review.channel,
     "customer_tier": Review.customer_tier,
+    "entered_by": Review.entered_by,
+    "source": Review.source,
 }
+
+
+def fold_dimension_key(
+    column: InstrumentedAttribute[str | None],
+) -> ColumnElement[str | None]:
+    """Bucket-folding key for a free-text dimension column.
+
+    Upload sources spell the same value inconsistently across rows
+    (``FEDEX`` / ``fedex`` / ``Fedex``); grouping on
+    ``lower(trim(column))`` folds every spelling into one bucket.
+    Shared by dimension_service, review_list_service (the
+    dimension-values filter facet) and cohort_analyzer so the fold
+    rule can't drift between the three call sites.
+    """
+    return func.lower(func.trim(column))
+
+
+def dimension_value_present(
+    column: InstrumentedAttribute[str | None],
+) -> ColumnElement[bool]:
+    """True when ``column`` carries a real value.
+
+    NULL and an all-whitespace / empty string (after trim) both count
+    as "no value" — a blank upload cell must not surface as a literal
+    empty-string bucket.
+    """
+    return column.is_not(None) & (func.trim(column) != "")
 
 
 class DimensionError(Exception):
@@ -49,7 +86,7 @@ class DimensionError(Exception):
 
 
 class UnknownDimension(DimensionError):
-    """``dimension`` arg is not one of the four valid keys."""
+    """``dimension`` arg is not one of the six valid keys."""
 
 
 class DimensionConfigNotFound(DimensionError):
@@ -92,10 +129,10 @@ class DimensionService:
         """Upsert a dimension config row. The unique constraint on
         (tenant_id, dimension) makes this naturally idempotent —
         same key twice updates rather than inserts."""
-        if dimension not in _VALID_DIMENSIONS:
+        if dimension not in VALID_DIMENSIONS:
             raise UnknownDimension(
                 f"unknown dimension {dimension!r}; "
-                f"valid={list(_VALID_DIMENSIONS)}"
+                f"valid={list(VALID_DIMENSIONS)}"
             )
         existing = (
             await self._session.execute(
@@ -137,7 +174,7 @@ class DimensionService:
     async def delete(
         self, *, tenant_id: UUID, dimension: str
     ) -> None:
-        if dimension not in _VALID_DIMENSIONS:
+        if dimension not in VALID_DIMENSIONS:
             raise UnknownDimension(
                 f"unknown dimension {dimension!r}"
             )
@@ -188,31 +225,59 @@ async def compute_metric_by_dimension(
     tenant_id: UUID,
     dimension: str,
     metric_key: str,
+    date_from: datetime | None = None,
+    date_to: datetime | None = None,
+    include_flagged: bool = False,
 ) -> DimensionBreakdown:
     """Compute ``metric_key`` grouped by ``dimension`` value.
 
-    Sprint 9.3 — supported metric_keys (the most-asked-for slice
-    of the registry):
+    Sprint 9.3 / Dalga 3 — supported metric_keys:
 
       * ``review_volume`` — count(*) per bucket
       * ``sentiment_distribution`` — positive_pct per bucket
       * ``nps`` — score per bucket
+      * ``negative_share`` — NEGATIF payı (%) per bucket
+      * ``avg_sentiment`` — ortalama sentiment_score per bucket
 
     Other metric_keys raise ``DimensionError``; the routes layer
     surfaces them as 400. ``buckets`` is sorted by count desc so the
     dashboard chart shows the dominant segments first.
+
+    Buckets fold on ``lower(trim(column))`` (``fold_dimension_key``) so
+    "FEDEX" and "fedex" land in one bucket; the bucket's ``value`` is
+    the most-frequent raw spelling within the fold (Postgres
+    ``mode() WITHIN GROUP``), not the folded key itself.
+
+    ``date_from``/``date_to`` accept a full datetime (not just a bare
+    date) but always widen to whole-day bounds via the day_floor/
+    day_ceil pattern (date_bounds.py) — ``datetime`` is a ``date``
+    subtype so this works directly; the effect is that a supplied
+    time-of-day is ignored and the end day is always fully included.
+    ``include_flagged`` defaults to False, matching the
+    quality_flag-excludes-by-default convention every other
+    analytics/insights endpoint in this codebase uses.
     """
-    if dimension not in _VALID_DIMENSIONS:
+    if dimension not in VALID_DIMENSIONS:
         raise UnknownDimension(f"unknown dimension {dimension!r}")
-    column = _DIMENSION_COLUMNS[dimension]
+    column = DIMENSION_COLUMNS[dimension]
+    folded = fold_dimension_key(column)
+    value_label = func.mode().within_group(func.trim(column)).label("bucket")
+
+    base_conditions: list[ColumnElement[bool]] = [
+        Review.tenant_id == tenant_id,
+        Review.deleted_at.is_(None),
+    ]
+    if date_from is not None:
+        base_conditions.append(Review.review_date >= day_floor(date_from))
+    if date_to is not None:
+        base_conditions.append(Review.review_date <= day_ceil(date_to))
+    if not include_flagged:
+        base_conditions.append(Review.quality_flag.is_(None))
 
     # Total + coverage count once (re-used as denominator for
     # percentage metrics).
     total_stmt = (
-        select(func.count())
-        .select_from(Review)
-        .where(Review.tenant_id == tenant_id)
-        .where(Review.deleted_at.is_(None))
+        select(func.count()).select_from(Review).where(*base_conditions)
     )
     total_count = (
         (await session.execute(total_stmt)).scalar_one() or 0
@@ -220,9 +285,7 @@ async def compute_metric_by_dimension(
     coverage_stmt = (
         select(func.count())
         .select_from(Review)
-        .where(Review.tenant_id == tenant_id)
-        .where(Review.deleted_at.is_(None))
-        .where(column.is_not(None))
+        .where(*base_conditions, dimension_value_present(column))
     )
     coverage_count = (
         (await session.execute(coverage_stmt)).scalar_one() or 0
@@ -230,11 +293,9 @@ async def compute_metric_by_dimension(
 
     if metric_key == "review_volume":
         stmt = (
-            select(column.label("bucket"), func.count().label("cnt"))
-            .where(Review.tenant_id == tenant_id)
-            .where(Review.deleted_at.is_(None))
-            .where(column.is_not(None))
-            .group_by(column)
+            select(value_label, func.count().label("cnt"))
+            .where(*base_conditions, dimension_value_present(column))
+            .group_by(folded)
             .order_by(func.count().desc())
         )
         rows = (await session.execute(stmt)).all()
@@ -250,16 +311,14 @@ async def compute_metric_by_dimension(
         # Positive percentage per bucket.
         stmt = (
             select(
-                column.label("bucket"),
+                value_label,
                 func.count().label("cnt"),
                 func.sum(
                     case((Review.sentiment_label == "POZITIF", 1), else_=0)
                 ).label("pos_cnt"),
             )
-            .where(Review.tenant_id == tenant_id)
-            .where(Review.deleted_at.is_(None))
-            .where(column.is_not(None))
-            .group_by(column)
+            .where(*base_conditions, dimension_value_present(column))
+            .group_by(folded)
             .order_by(func.count().desc())
         )
         rows = (await session.execute(stmt)).all()
@@ -275,11 +334,65 @@ async def compute_metric_by_dimension(
                     "score": pct,
                 }
             )
+    elif metric_key == "negative_share":
+        # Negative percentage per bucket — mirror of
+        # sentiment_distribution's positive_pct, for risk-ranked
+        # dimension views (worst channel/segment first).
+        stmt = (
+            select(
+                value_label,
+                func.count().label("cnt"),
+                func.sum(
+                    case((Review.sentiment_label == "NEGATIF", 1), else_=0)
+                ).label("neg_cnt"),
+            )
+            .where(*base_conditions, dimension_value_present(column))
+            .group_by(folded)
+            .order_by(func.count().desc())
+        )
+        rows = (await session.execute(stmt)).all()
+        buckets = []
+        for r in rows:
+            cnt = int(r.cnt or 0)
+            neg = int(r.neg_cnt or 0)
+            pct = round((neg / cnt) * 100.0, 2) if cnt else 0.0
+            buckets.append(
+                {
+                    "value": r.bucket,
+                    "count": cnt,
+                    "score": pct,
+                }
+            )
+    elif metric_key == "avg_sentiment":
+        stmt = (
+            select(
+                value_label,
+                func.count().label("cnt"),
+                func.avg(Review.sentiment_score).label("avg_sent"),
+            )
+            .where(*base_conditions, dimension_value_present(column))
+            .group_by(folded)
+            .order_by(func.count().desc())
+        )
+        rows = (await session.execute(stmt)).all()
+        buckets = []
+        for r in rows:
+            cnt = int(r.cnt or 0)
+            avg_sent = (
+                round(float(r.avg_sent), 3) if r.avg_sent is not None else 0.0
+            )
+            buckets.append(
+                {
+                    "value": r.bucket,
+                    "count": cnt,
+                    "score": avg_sent,
+                }
+            )
     elif metric_key == "nps":
         # NPS per bucket from the generated nps_category column.
         stmt = (
             select(
-                column.label("bucket"),
+                value_label,
                 func.count().label("cnt"),
                 func.sum(
                     case((Review.nps_category == "promoter", 1), else_=0)
@@ -288,11 +401,12 @@ async def compute_metric_by_dimension(
                     case((Review.nps_category == "detractor", 1), else_=0)
                 ).label("detractor"),
             )
-            .where(Review.tenant_id == tenant_id)
-            .where(Review.deleted_at.is_(None))
-            .where(column.is_not(None))
-            .where(Review.nps_score.is_not(None))
-            .group_by(column)
+            .where(
+                *base_conditions,
+                dimension_value_present(column),
+                Review.nps_score.is_not(None),
+            )
+            .group_by(folded)
             .order_by(func.count().desc())
         )
         rows = (await session.execute(stmt)).all()
@@ -314,7 +428,8 @@ async def compute_metric_by_dimension(
     else:
         raise DimensionError(
             f"metric_key {metric_key!r} not supported by dimension breakdown; "
-            f"supported: review_volume, sentiment_distribution, nps"
+            f"supported: review_volume, sentiment_distribution, nps, "
+            f"negative_share, avg_sentiment"
         )
     return DimensionBreakdown(
         metric_key=metric_key,
@@ -326,10 +441,14 @@ async def compute_metric_by_dimension(
 
 
 __all__ = [
+    "DIMENSION_COLUMNS",
+    "VALID_DIMENSIONS",
     "DimensionBreakdown",
     "DimensionConfigNotFound",
     "DimensionError",
     "DimensionService",
     "UnknownDimension",
     "compute_metric_by_dimension",
+    "dimension_value_present",
+    "fold_dimension_key",
 ]

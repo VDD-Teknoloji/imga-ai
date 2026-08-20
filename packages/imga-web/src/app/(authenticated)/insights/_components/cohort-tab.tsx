@@ -33,12 +33,8 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { useTranslation } from "@/lib/i18n/use-translation";
-import { useInsightsCohort } from "@/hooks/use-insights-cohort";
-import type {
-  CohortDimension,
-  CohortPeriod,
-  CohortResponse,
-} from "@/lib/types";
+import { useInsightsCohort, type CohortDimensionExt } from "@/hooks/use-insights-cohort";
+import type { CohortPeriod, CohortResponse } from "@/lib/types";
 
 const PERIOD_LABEL_KEYS: Record<CohortPeriod, string> = {
   week: "insights.cohort.periodWeek",
@@ -46,10 +42,20 @@ const PERIOD_LABEL_KEYS: Record<CohortPeriod, string> = {
   quarter: "insights.cohort.periodQuarter",
 };
 
-const DIMENSION_LABEL_KEYS: Record<CohortDimension, string> = {
+// 2026-08-20 — 6 yeni iş boyutu seçeneği eklendi (channel .. source).
+// Etiketler Boyutlar tab'ıyla + /reviews filtreleriyle AYNI paylaşılan
+// "dimensions.*" i18n anahtarlarını kullanır (görev notu: "aynı Türkçe
+// etiketler"). Orijinal 3 kohort-özel boyut kendi anahtarlarında kalır.
+const DIMENSION_LABEL_KEYS: Record<CohortDimensionExt, string> = {
   taxonomy: "insights.cohort.dimTaxonomy",
   company_perspective: "insights.cohort.dimPerspective",
   nps_bucket: "insights.cohort.dimNpsBucket",
+  channel: "dimensions.channel",
+  business_segment: "dimensions.businessSegment",
+  product_line: "dimensions.productLine",
+  customer_tier: "dimensions.customerTier",
+  entered_by: "dimensions.enteredBy",
+  source: "dimensions.source",
 };
 
 // Distinct line colours — picked for contrast on a white background;
@@ -71,12 +77,12 @@ const LINE_COLOURS = [
 
 interface Props {
   period: CohortPeriod;
-  dimension: CohortDimension;
+  dimension: CohortDimensionExt;
   dateFrom: string;
   dateTo: string;
   limitCohorts: number;
   onPeriodChange: (next: CohortPeriod) => void;
-  onDimensionChange: (next: CohortDimension) => void;
+  onDimensionChange: (next: CohortDimensionExt) => void;
   onLimitChange: (next: number) => void;
 }
 
@@ -127,11 +133,11 @@ export function CohortTab({
             <select
               value={dimension}
               onChange={(e) =>
-                onDimensionChange(e.target.value as CohortDimension)
+                onDimensionChange(e.target.value as CohortDimensionExt)
               }
               className="border-input bg-background mt-1 w-full rounded-md border px-3 py-2 text-sm"
             >
-              {(Object.keys(DIMENSION_LABEL_KEYS) as CohortDimension[]).map(
+              {(Object.keys(DIMENSION_LABEL_KEYS) as CohortDimensionExt[]).map(
                 (d) => (
                   <option key={d} value={d}>
                     {t(DIMENSION_LABEL_KEYS[d])}

@@ -22,6 +22,8 @@ export const insights: Bundle = {
     "insights.tabs.cohort": "Kohort",
     "insights.tabs.wordcloud": "Kelimeler",
     "insights.tabs.overrides": "Kural Katmanları",
+    // 2026-08-20 — Boyutlar sekmesi (iş boyutu breakdown'ı).
+    "insights.tabs.dimensions": "Boyutlar",
 
     // --- /insights: sayfa başlığı ---
     "insights.page.title": "İçgörüler",
@@ -92,6 +94,19 @@ export const insights: Bundle = {
     "insights.cohort.topCohorts": "Top kohort",
     "insights.cohort.trendTitle": "Kohort Trendi",
 
+    // --- /insights: boyutlar tab (2026-08-20) ---
+    "insights.dimTab.dimension": "Boyut",
+    "insights.dimTab.metric": "Metrik",
+    "insights.dimTab.metricVolume": "Yorum Sayısı",
+    "insights.dimTab.metricNegativeShare": "Olumsuz Payı %",
+    "insights.dimTab.metricAvgScore": "Ortalama Skor",
+    "insights.dimTab.metricPositiveShare": "Pozitif %",
+    "insights.dimTab.metricNps": "NPS",
+    "insights.dimTab.chartTitle": "{dimension} · {metric}",
+    "insights.dimTab.totalCoverage": "Toplam {total} · Kapsama {coverage} (%{pct})",
+    "insights.dimTab.percentValue": "%{value}",
+    "insights.dimTab.top15Note": "İlk 15 kova gösteriliyor (adet çoğa göre sıralı).",
+
     // --- /insights: ısı haritası tab ---
     "insights.heatmap.xHourOfDay": "Günün Saati",
     "insights.heatmap.dayOfWeek": "Haftanın Günü",
@@ -130,6 +145,26 @@ export const insights: Bundle = {
     "insights.wordcloud.wordTitle": "{text} · {weight} yorum · skew {skew}",
     "insights.wordcloud.top20": "İlk 20 Kelime",
     "insights.wordcloud.analyzedCount": "{count} yorum analiz edildi.",
+
+    // --- paylaşılan: iş boyutu etiketleri (2026-08-20) ---
+    // insights Boyutlar tab'ının boyut seçicisi, cohort tab'ın 6 yeni
+    // seçeneği ve /reviews'in 6 yeni filtre dropdown'ı/pill'i AYNI
+    // etiketleri kullanır — bkz. görev notu "aynı Türkçe etiketler".
+    // Kurum ayarlarında (settings/business-dimensions) özel bir
+    // display_label varsa Boyutlar tab'ı onu tercih eder; bu anahtarlar
+    // yalnız fallback + cohort/reviews için sabit etiket.
+    // NOT: "dimensions.source" (Ticket'ın kaynak boyutu — örn. Web,
+    // Mobil, Mağaza) "insights.filter.source" (manuel/toplu ingest
+    // yöntemi) ile KAVRAMSAL OLARAK FARKLI; ikisi de "Kaynak" diye
+    // görünebilir ama ayrı filtrelerdir — görev tanımındaki birebir
+    // eşleme ("Kaynak=source") bilinçli, isim çakışması kabul edildi.
+    "dimensions.channel": "Taşıyıcı/Entegratör",
+    "dimensions.businessSegment": "Departman",
+    "dimensions.productLine": "Talep Tipi",
+    "dimensions.customerTier": "Ticket Kategori",
+    "dimensions.enteredBy": "Temsilci",
+    "dimensions.source": "Kaynak",
+    "dimensions.filterSelected": "{label}: {count} seçili",
 
     // --- /reviews: kaynak + duygu etiketleri ---
     "reviews.source.manual": "Manuel",
@@ -190,6 +225,8 @@ export const insights: Bundle = {
     "reviews.pill.validOnly": "Yalnız geçerli veri",
     "reviews.pill.dateRange": "Tarih: {from} – {to}",
     "reviews.pill.removeAria": "{label} filtresini kaldır",
+    // 2026-08-20 — 6 boyut filtresinin ortak pill şablonu.
+    "reviews.pill.dimension": "{label}: {value}",
 
     // --- /reviews: perspektif filtre dropdown ---
     "reviews.perspFilter.trigger": "Şirket perspektifi",
@@ -351,6 +388,8 @@ export const insights: Bundle = {
     "insights.tabs.cohort": "Cohort",
     "insights.tabs.wordcloud": "Words",
     "insights.tabs.overrides": "Rule Layers",
+    // 2026-08-20 — Dimensions tab (business dimension breakdown).
+    "insights.tabs.dimensions": "Dimensions",
 
     // --- /insights: page header ---
     "insights.page.title": "Insights",
@@ -420,6 +459,19 @@ export const insights: Bundle = {
     "insights.cohort.topCohorts": "Top cohorts",
     "insights.cohort.trendTitle": "Cohort Trend",
 
+    // --- /insights: dimensions tab (2026-08-20) ---
+    "insights.dimTab.dimension": "Dimension",
+    "insights.dimTab.metric": "Metric",
+    "insights.dimTab.metricVolume": "Comment Count",
+    "insights.dimTab.metricNegativeShare": "Negative Share %",
+    "insights.dimTab.metricAvgScore": "Average Score",
+    "insights.dimTab.metricPositiveShare": "Positive %",
+    "insights.dimTab.metricNps": "NPS",
+    "insights.dimTab.chartTitle": "{dimension} · {metric}",
+    "insights.dimTab.totalCoverage": "Total {total} · Coverage {coverage} ({pct}%)",
+    "insights.dimTab.percentValue": "{value}%",
+    "insights.dimTab.top15Note": "Showing the first 15 buckets (ordered by count desc).",
+
     // --- /insights: heatmap tab ---
     "insights.heatmap.xHourOfDay": "Hour of Day",
     "insights.heatmap.dayOfWeek": "Day of Week",
@@ -458,6 +510,27 @@ export const insights: Bundle = {
     "insights.wordcloud.wordTitle": "{text} · {weight} comments · skew {skew}",
     "insights.wordcloud.top20": "Top 20 Words",
     "insights.wordcloud.analyzedCount": "{count} comments analysed.",
+
+    // --- shared: business dimension labels (2026-08-20) ---
+    // Used by the Insights Dimensions tab's dimension picker, the
+    // cohort tab's 6 new options, and /reviews' 6 new filter dropdowns
+    // / pills — same labels everywhere per the task spec. The
+    // Dimensions tab prefers the tenant's configured display_label
+    // (settings/business-dimensions) when one exists; these keys are
+    // the fallback + the fixed label for cohort/reviews.
+    // NOTE: "dimensions.source" (the review's source dimension — e.g.
+    // Web, Mobile, Store) is conceptually DIFFERENT from
+    // "insights.filter.source" (manual/batch ingest method) — both
+    // can read "Source" but they're separate filters. The 1:1 mapping
+    // ("Kaynak"="source") is deliberate per the task spec; the name
+    // overlap is accepted, not an oversight.
+    "dimensions.channel": "Carrier/Integrator",
+    "dimensions.businessSegment": "Department",
+    "dimensions.productLine": "Request Type",
+    "dimensions.customerTier": "Ticket Category",
+    "dimensions.enteredBy": "Agent",
+    "dimensions.source": "Source",
+    "dimensions.filterSelected": "{label}: {count} selected",
 
     // --- /reviews: source + sentiment labels ---
     "reviews.source.manual": "Manual",
@@ -518,6 +591,8 @@ export const insights: Bundle = {
     "reviews.pill.validOnly": "Valid data only",
     "reviews.pill.dateRange": "Date: {from} – {to}",
     "reviews.pill.removeAria": "Remove {label} filter",
+    // 2026-08-20 — shared pill template for the 6 dimension filters.
+    "reviews.pill.dimension": "{label}: {value}",
 
     // --- /reviews: perspective filter dropdown ---
     "reviews.perspFilter.trigger": "Company perspective",

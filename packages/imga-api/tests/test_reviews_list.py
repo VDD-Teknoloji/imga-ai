@@ -17,10 +17,12 @@ from imga_db.models import (
     Review,
     ReviewDecision,
     User,
+    UserTenantRole,
 )
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from imga_api.services import AuditService, UserService
 from tests.batch_helpers import (
     cleanup_tenant,
     login_token,
@@ -44,6 +46,14 @@ async def _insert_review(
     batch_job_id: UUID | None = None,
     analyzed_at: datetime | None = None,
     overrides_applied: list[dict[str, object]] | None = None,
+    # 2026-08-20 — Dalga 3 boyut filtreleri + dimension-values ucu.
+    channel: str | None = None,
+    business_segment: str | None = None,
+    product_line: str | None = None,
+    customer_tier: str | None = None,
+    entered_by: str | None = None,
+    source: str | None = None,
+    quality_flag: str | None = None,
 ) -> Review:
     review = Review(
         tenant_id=tenant_id,
@@ -63,6 +73,13 @@ async def _insert_review(
         # Liste sıralaması/tarih filtresi review_date ekseninde.
         review_date=analyzed_at or datetime.now(UTC),
         overrides_applied=overrides_applied,
+        channel=channel,
+        business_segment=business_segment,
+        product_line=product_line,
+        customer_tier=customer_tier,
+        entered_by=entered_by,
+        source=source,
+        quality_flag=quality_flag,
     )
     session.add(review)
     await session.flush()
@@ -491,3 +508,280 @@ async def test_reanalysis_marker_excluded_from_count_kept_in_detail(
     trace = detail_r.json()["overrides_applied"]
     assert len(trace) == 2
     assert trace[1] == {"layer": "reanalysis", "detail": "z-ai/glm-5.2"}
+
+
+# ---- 2026-08-20 (Dalga 3) — business-dimension list filters ----------
+
+
+@pytest.mark.asyncio
+async def test_filter_channels_csv_is_case_and_whitespace_insensitive(
+    batch_client: TestClient,
+    semi_auto_tenant: tuple[User, UUID, str],
+    admin_session: AsyncSession,
+) -> None:
+    """channels= filtresi lower(trim(...)) katlamalı eşleşir — filtre
+    chip'i 'fedex' gönderse de DB'deki 'FEDEX' satırını bulur."""
+    user, tid, pw = semi_auto_tenant
+    async with admin_session.begin():
+        await admin_session.execute(
+            text("SELECT set_config('app.current_tenant_id', :t, true)"),
+            {"t": str(tid)},
+        )
+        await _insert_review(
+            admin_session, tenant_id=tid, text_value="fedex satırı",
+            channel="FEDEX",
+        )
+        await _insert_review(
+            admin_session, tenant_id=tid, text_value="ups satırı",
+            channel="UPS",
+        )
+
+    token = login_token(batch_client, user.email, pw, tid)
+    r = batch_client.get(
+        "/tenants/me/reviews", params={"channels": "fedex"},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert r.status_code == 200, r.text
+    items = r.json()["items"]
+    assert len(items) == 1
+    assert items[0]["text"] == "fedex satırı"
+
+
+@pytest.mark.asyncio
+async def test_filter_remaining_business_dimensions_case_insensitive(
+    batch_client: TestClient,
+    semi_auto_tenant: tuple[User, UUID, str],
+    admin_session: AsyncSession,
+) -> None:
+    """business_segments / product_lines / customer_tiers /
+    entered_bys / sources — beşi de channels ile aynı lower(trim)
+    katlama kuralını izler."""
+    user, tid, pw = semi_auto_tenant
+    async with admin_session.begin():
+        await admin_session.execute(
+            text("SELECT set_config('app.current_tenant_id', :t, true)"),
+            {"t": str(tid)},
+        )
+        await _insert_review(
+            admin_session, tenant_id=tid, text_value="hedef satır",
+            business_segment="Satış", product_line="Kargo",
+            customer_tier="Kurumsal", entered_by="Mehmet Demir",
+            source="Portal",
+        )
+        await _insert_review(
+            admin_session, tenant_id=tid, text_value="alakasız satır",
+            business_segment="Pazarlama", product_line="Değişim",
+            customer_tier="Bireysel", entered_by="Ali Kaya",
+            source="Phone",
+        )
+
+    token = login_token(batch_client, user.email, pw, tid)
+    checks = [
+        ("business_segments", "satış"),
+        ("product_lines", "kargo"),
+        ("customer_tiers", "kurumsal"),
+        ("entered_bys", "mehmet demir"),
+        ("sources", "portal"),
+    ]
+    for param, value in checks:
+        r = batch_client.get(
+            "/tenants/me/reviews", params={param: value},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert r.status_code == 200, r.text
+        items = r.json()["items"]
+        assert len(items) == 1, f"{param}={value} beklenmedik sonuç: {items}"
+        assert items[0]["text"] == "hedef satır"
+
+
+# ---- 2026-08-20 (Dalga 3) — GET /tenants/me/reviews/dimension-values -
+
+
+@pytest.mark.asyncio
+async def test_dimension_values_folds_and_labels_most_frequent_spelling(
+    batch_client: TestClient,
+    semi_auto_tenant: tuple[User, UUID, str],
+    admin_session: AsyncSession,
+) -> None:
+    """'FEDEX' (x4) + 'fedex' (x1) tek girdiye katlanır, etiket en sık
+    ham varyantı (FEDEX); count desc sıralı döner."""
+    user, tid, pw = semi_auto_tenant
+    async with admin_session.begin():
+        await admin_session.execute(
+            text("SELECT set_config('app.current_tenant_id', :t, true)"),
+            {"t": str(tid)},
+        )
+        for i in range(4):
+            await _insert_review(
+                admin_session, tenant_id=tid, text_value=f"fedex-{i}",
+                channel="FEDEX",
+            )
+        await _insert_review(
+            admin_session, tenant_id=tid, text_value="fedex-minor",
+            channel="fedex",
+        )
+        await _insert_review(
+            admin_session, tenant_id=tid, text_value="ups-1", channel="UPS",
+        )
+
+    token = login_token(batch_client, user.email, pw, tid)
+    r = batch_client.get(
+        "/tenants/me/reviews/dimension-values",
+        params={"field": "channel"},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert r.status_code == 200, r.text
+    values = r.json()["values"]
+    assert {v["value"]: v["count"] for v in values} == {"FEDEX": 5, "UPS": 1}
+    assert values[0]["value"] == "FEDEX"  # count desc
+
+
+@pytest.mark.asyncio
+async def test_dimension_values_rejects_unknown_field(
+    batch_client: TestClient,
+    semi_auto_tenant: tuple[User, UUID, str],
+) -> None:
+    user, tid, pw = semi_auto_tenant
+    token = login_token(batch_client, user.email, pw, tid)
+    r = batch_client.get(
+        "/tenants/me/reviews/dimension-values",
+        params={"field": "zodiac_sign"},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert r.status_code == 400, r.text
+
+
+@pytest.mark.asyncio
+async def test_dimension_values_include_flagged_defaults_to_true(
+    batch_client: TestClient,
+    semi_auto_tenant: tuple[User, UUID, str],
+    admin_session: AsyncSession,
+) -> None:
+    """Bu uç bir filtre-chip kaynağıdır (liste gibi arşive bakar):
+    include_flagged varsayılanı True — analitiğin False
+    varsayılanından bilinçli olarak farklı."""
+    user, tid, pw = semi_auto_tenant
+    async with admin_session.begin():
+        await admin_session.execute(
+            text("SELECT set_config('app.current_tenant_id', :t, true)"),
+            {"t": str(tid)},
+        )
+        await _insert_review(
+            admin_session, tenant_id=tid, text_value="flagged",
+            channel="DHL", quality_flag="duplicate",
+        )
+
+    token = login_token(batch_client, user.email, pw, tid)
+    default = batch_client.get(
+        "/tenants/me/reviews/dimension-values",
+        params={"field": "channel"},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert default.status_code == 200, default.text
+    assert default.json()["values"] == [{"value": "DHL", "count": 1}]
+
+    excluded = batch_client.get(
+        "/tenants/me/reviews/dimension-values",
+        params={"field": "channel", "include_flagged": "false"},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert excluded.status_code == 200, excluded.text
+    assert excluded.json()["values"] == []
+
+
+@pytest.mark.asyncio
+async def test_dimension_values_caps_at_100_and_orders_by_count_desc(
+    batch_client: TestClient,
+    semi_auto_tenant: tuple[User, UUID, str],
+    admin_session: AsyncSession,
+) -> None:
+    """LIMIT 100 + count desc: 105 farklı ham değerden en çok görülen
+    (x2) ilk sırada; yanıt 100 satırla kesilir."""
+    user, tid, pw = semi_auto_tenant
+    async with admin_session.begin():
+        await admin_session.execute(
+            text("SELECT set_config('app.current_tenant_id', :t, true)"),
+            {"t": str(tid)},
+        )
+        for i in range(105):
+            await _insert_review(
+                admin_session, tenant_id=tid, text_value=f"kanal metni {i}",
+                channel=f"kanal-{i}",
+            )
+        # Bir değeri ikinci kez ekleyip en yüksek sayaca taşı — count
+        # desc sıralamasının gerçekten çalıştığını doğrular.
+        await _insert_review(
+            admin_session, tenant_id=tid, text_value="kanal-0 tekrar",
+            channel="kanal-0",
+        )
+
+    token = login_token(batch_client, user.email, pw, tid)
+    r = batch_client.get(
+        "/tenants/me/reviews/dimension-values",
+        params={"field": "channel"},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert r.status_code == 200, r.text
+    values = r.json()["values"]
+    assert len(values) == 100
+    assert values[0] == {"value": "kanal-0", "count": 2}
+
+
+@pytest.mark.asyncio
+async def test_dimension_values_route_is_not_shadowed_by_review_id_path(
+    batch_client: TestClient,
+    semi_auto_tenant: tuple[User, UUID, str],
+) -> None:
+    """Starlette rota sırası regresyon koruması: GET /dimension-values
+    'review_id: UUID' path parametresine düşüp 422 dönmemeli — bu uç
+    list_reviews'dan hemen sonra, get_review'dan ÖNCE kayıtlı olmalı."""
+    user, tid, pw = semi_auto_tenant
+    token = login_token(batch_client, user.email, pw, tid)
+    r = batch_client.get(
+        "/tenants/me/reviews/dimension-values",
+        params={"field": "channel"},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert r.status_code == 200, r.text
+    assert r.json() == {"values": []}
+
+
+@pytest.mark.asyncio
+async def test_dimension_values_viewer_role_can_access(
+    batch_client: TestClient,
+    semi_auto_tenant: tuple[User, UUID, str],
+    admin_session: AsyncSession,
+) -> None:
+    """Uç _AnyMember ile korunuyor (TENANT_ADMIN/ANALYST/VIEWER hepsi
+    okuyabilir) — yanlışlıkla _WriteMember'a düşürülmesine karşı
+    regresyon koruması."""
+    _admin, tid, _pw = semi_auto_tenant
+
+    audit = AuditService(admin_session)
+    usvc = UserService(admin_session, audit)
+    viewer_pw = "Viewer-Pass-123!"
+    async with admin_session.begin():
+        viewer = await usvc.create(
+            email=f"viewer-{uuid4().hex[:6]}@example.com",
+            password=viewer_pw,
+            full_name="Viewer User",
+        )
+        await usvc.attach_to_tenant(
+            user_id=viewer.id, tenant_id=tid, role=UserTenantRole.VIEWER
+        )
+        viewer_id = viewer.id
+        viewer_email = viewer.email
+
+    try:
+        token = login_token(batch_client, viewer_email, viewer_pw, tid)
+        r = batch_client.get(
+            "/tenants/me/reviews/dimension-values",
+            params={"field": "channel"},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert r.status_code == 200, r.text
+    finally:
+        async with admin_session.begin():
+            await admin_session.execute(
+                text("DELETE FROM users WHERE id = :id"), {"id": str(viewer_id)}
+            )

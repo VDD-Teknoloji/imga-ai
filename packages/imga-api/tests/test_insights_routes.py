@@ -74,6 +74,32 @@ async def test_cohort_rejects_invalid_dimension(
 
 
 @pytest.mark.asyncio
+async def test_cohort_accepts_all_dalga_3_business_dimensions(
+    batch_client: TestClient,
+    semi_auto_tenant: tuple[User, UUID, str],
+) -> None:
+    """2026-08-20 Dalga 3 — channel/business_segment/product_line/
+    customer_tier/entered_by/source ALLOWED_DIMENSIONS'a yeni katıldı;
+    hepsi 200 döner (boş kurumda cohorts=[]). Geçersiz değerin hâlâ
+    400 döndüğü test_cohort_rejects_invalid_dimension'da ayrıca
+    doğrulanıyor."""
+    user, tid, pw = semi_auto_tenant
+    token = login_token(batch_client, user.email, pw, tid)
+    for dimension in (
+        "channel", "business_segment", "product_line",
+        "customer_tier", "entered_by", "source",
+    ):
+        r = batch_client.get(
+            f"/tenants/me/insights/cohort?dimension={dimension}",
+            headers=_auth(token),
+        )
+        assert r.status_code == 200, f"{dimension}: {r.text}"
+        body = r.json()
+        assert body["dimension"] == dimension
+        assert body["cohorts"] == []
+
+
+@pytest.mark.asyncio
 async def test_cohort_clamps_limit(
     batch_client: TestClient,
     semi_auto_tenant: tuple[User, UUID, str],

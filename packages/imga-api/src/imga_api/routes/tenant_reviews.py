@@ -35,6 +35,7 @@ from imga_api.services.correction_service import (
     CorrectionError,
     CorrectionService,
 )
+from imga_api.services.dimension_service import UnknownDimension
 from imga_api.services.embedding_service import embed_text
 from imga_api.services.llm_credentials import load_active_gemini_keys
 from imga_api.services.review_list_service import (
@@ -110,6 +111,15 @@ class ReviewListResponse(BaseModel):
     total: int
     limit: int
     offset: int
+
+
+class DimensionValueItem(BaseModel):
+    value: str
+    count: int
+
+
+class DimensionValuesResponse(BaseModel):
+    values: list[DimensionValueItem]
 
 
 class SentimentBlock(BaseModel):
@@ -197,6 +207,33 @@ async def list_reviews(
             "to scope the listing to the clicked cell's category."
         ),
     ),
+    channels: str | None = Query(
+        default=None,
+        description=(
+            "CSV of Review.channel raw values (taşıyıcı). "
+            "Case/whitespace-insensitive — matched via lower(trim(...))."
+        ),
+    ),
+    business_segments: str | None = Query(
+        default=None,
+        description="CSV of Review.business_segment raw values (departman).",
+    ),
+    product_lines: str | None = Query(
+        default=None,
+        description="CSV of Review.product_line raw values (talep tipi).",
+    ),
+    customer_tiers: str | None = Query(
+        default=None,
+        description="CSV of Review.customer_tier raw values (ticket kategori).",
+    ),
+    entered_bys: str | None = Query(
+        default=None,
+        description="CSV of Review.entered_by raw values (temsilci).",
+    ),
+    sources: str | None = Query(
+        default=None,
+        description="CSV of Review.source raw values (Email/Portal/Phone...).",
+    ),
     hour_of_day: int | None = Query(
         default=None,
         ge=0,
@@ -262,6 +299,12 @@ async def list_reviews(
         decisions=_split_csv(decisions),
         perspective_codes=_split_csv(perspective_codes),
         primary_categories=_split_csv(primary_categories),
+        channels=_split_csv(channels),
+        business_segments=_split_csv(business_segments),
+        product_lines=_split_csv(product_lines),
+        customer_tiers=_split_csv(customer_tiers),
+        entered_bys=_split_csv(entered_bys),
+        sources=_split_csv(sources),
         hour_of_day=hour_of_day,
         day_of_week=day_of_week,
         week_of_year=week_of_year,
@@ -286,6 +329,66 @@ async def list_reviews(
         total=total,
         limit=limit,
         offset=offset,
+    )
+
+
+@router.get(
+    "/dimension-values",
+    response_model=DimensionValuesResponse,
+    summary="Distinct raw values for one business-dimension column.",
+    description=(
+        "Filter-chip source for the review list's business-dimension "
+        "filters (channels / business_segments / product_lines / "
+        "customer_tiers / entered_bys / sources). Folds on "
+        "lower(trim(...)) like the dimension breakdown and the list "
+        "filters themselves — 'FEDEX' and 'fedex' collapse into one "
+        "entry whose value is the most-frequent raw spelling. Ordered "
+        "by count desc, capped at 100."
+    ),
+    responses={400: {"description": "Unknown field."}},
+)
+async def list_dimension_values(
+    current: Annotated[CurrentUser, _AnyMember],
+    app_session: Annotated[AsyncSession, Depends(get_app_session)],
+    field: str = Query(
+        ...,
+        description=(
+            "channel | business_segment | product_line | "
+            "customer_tier | entered_by | source"
+        ),
+    ),
+    include_flagged: bool = Query(
+        default=True,
+        description=(
+            "Düşük kaliteli (bayraklı) yorumları da say. Varsayılan: "
+            "dahil — bu uç bir filtre kaynağıdır, liste gibi arşive "
+            "bakar (analitiğin False varsayılanından farklı)."
+        ),
+    ),
+) -> DimensionValuesResponse:
+    # NOTE: this route MUST stay registered before GET /{review_id} —
+    # Starlette matches path patterns in registration order and
+    # "dimension-values" would otherwise be swallowed by {review_id}
+    # (a str-typed path segment) and 422 on UUID coercion instead of
+    # reaching this handler.
+    tenant_id = _require_active_tenant(current)
+    async with app_session.begin():
+        await bind_tenant(app_session, current)
+        service = ReviewListService(app_session)
+        try:
+            rows = await service.dimension_values(
+                tenant_id=tenant_id,
+                field=field,
+                include_flagged=include_flagged,
+            )
+        except UnknownDimension as exc:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)
+            ) from exc
+    return DimensionValuesResponse(
+        values=[
+            DimensionValueItem(value=r.value, count=r.count) for r in rows
+        ]
     )
 
 

@@ -187,7 +187,13 @@ async def get_cohort(
     period: Annotated[str, Query(description="week | month | quarter")] = "month",
     dimension: Annotated[
         str,
-        Query(description="taxonomy | company_perspective | nps_bucket"),
+        Query(
+            description=(
+                "taxonomy | company_perspective | nps_bucket | channel | "
+                "business_segment | product_line | customer_tier | "
+                "entered_by | source"
+            )
+        ),
     ] = "taxonomy",
     date_from: date | None = None,
     date_to: date | None = None,

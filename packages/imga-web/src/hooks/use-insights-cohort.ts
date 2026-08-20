@@ -3,15 +3,27 @@
 import { useQuery } from "@tanstack/react-query";
 
 import { apiRequest } from "@/lib/api-client";
+import type { BreakdownDimensionKey } from "@/hooks/use-business-dimensions";
 import type {
   CohortDimension,
   CohortPeriod,
   CohortResponse,
 } from "@/lib/types";
 
+// 2026-08-20 (Boyutlar sekmesi) — cohort seçicisine 6 yeni boyut
+// eklendi (channel/business_segment/product_line/customer_tier/
+// entered_by/source). lib/types.ts'teki CohortDimension'a dokunmuyoruz
+// (backend ajanıyla eşzamanlı düzenleme riski — bkz. use-analytics.ts
+// AnalyticsQueryFilters'taki aynı desen); superset tip burada, tek
+// kullanım noktası (request-side dimension param) için tanımlı.
+// CohortResponse.dimension hâlâ dar CohortDimension'a bağlı ama hiçbir
+// tüketici onu okumuyor (bkz. cohort-tab.tsx buildChartData), bu yüzden
+// zararsız.
+export type CohortDimensionExt = CohortDimension | BreakdownDimensionKey;
+
 interface CohortFilters {
   period: CohortPeriod;
-  dimension: CohortDimension;
+  dimension: CohortDimensionExt;
   date_from?: string;
   date_to?: string;
   limit_cohorts?: number;

@@ -49,6 +49,13 @@ async def _seed(
     overrides_applied: list[dict[str, object]] | None = None,
     quality_flag: str | None = None,
     nps_score: int | None = None,
+    # 2026-08-20 — Dalga 3 dimension breakdown testleri.
+    channel: str | None = None,
+    business_segment: str | None = None,
+    product_line: str | None = None,
+    customer_tier: str | None = None,
+    entered_by: str | None = None,
+    source: str | None = None,
 ) -> Review:
     async with admin_session.begin():
         await admin_session.execute(
@@ -77,6 +84,12 @@ async def _seed(
             # 2026-08-18 — WS2 include_flagged testleri için.
             quality_flag=quality_flag,
             nps_score=nps_score,
+            channel=channel,
+            business_segment=business_segment,
+            product_line=product_line,
+            customer_tier=customer_tier,
+            entered_by=entered_by,
+            source=source,
         )
         admin_session.add(review)
         await admin_session.flush()
@@ -651,6 +664,208 @@ async def test_executive_briefing_compute_stats_excludes_flagged_reviews(
         stats = await service._compute_stats(today, today, None)
     assert stats.total_reviews == 1
     assert stats.top_categories == [{"label": "Kargo / Lojistik", "count": 1}]
+
+
+# ---- 2026-08-20 (Dalga 3) — business-dimension breakdown ------------
+# GET /tenants/me/business-dimensions/{dimension}/breakdown. Covers
+# bucket-folding (lower/trim, most-frequent raw label), the two new
+# metric_keys, and the new date_from/date_to + include_flagged params.
+
+
+@pytest.mark.asyncio
+async def test_dimension_breakdown_folds_case_and_whitespace_variants(
+    batch_client: TestClient,
+    semi_auto_tenant: tuple[User, UUID, str],
+    admin_session: AsyncSession,
+) -> None:
+    """'FEDEX' (x3) + '  fedex  ' (x1, trim) + 'fedex' (x1) tek kovaya
+    katlanır; görünen değer en sık ham varyantı (FEDEX — trim
+    '  fedex  'yi 'fedex' yazımına taşıdığı için oy 3-2 kalır, hâlâ
+    kesin çoğunluk). Ayrıca boş-string-sonrası-trim NULL sayılır:
+    tamamen boşluktan oluşan bir satır kovaya girmez ama total_count'a
+    girer (coverage_count'tan düşer)."""
+    user, tid, pw = semi_auto_tenant
+    for i in range(3):
+        await _seed(
+            admin_session, tenant_id=tid, text_value=f"fedex-major-{i}",
+            sentiment="NEGATIF", score=-0.5, channel="FEDEX",
+        )
+    await _seed(
+        admin_session, tenant_id=tid, text_value="fedex-whitespace",
+        sentiment="POZITIF", score=0.5, channel="  fedex  ",
+    )
+    await _seed(
+        admin_session, tenant_id=tid, text_value="fedex-minor",
+        sentiment="POZITIF", score=0.5, channel="fedex",
+    )
+    # Trim sonrası boş — dimension_value_present() bunu NULL sayar:
+    # total_count'a girer, coverage_count'a ve hiçbir kovaya girmez.
+    await _seed(
+        admin_session, tenant_id=tid, text_value="blank-channel",
+        sentiment="NÖTR", score=0.0, channel="   ",
+    )
+
+    token = login_token(batch_client, user.email, pw, tid)
+    r = batch_client.get(
+        "/tenants/me/business-dimensions/channel/breakdown",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert len(body["buckets"]) == 1
+    bucket = body["buckets"][0]
+    assert bucket["value"] == "FEDEX"
+    assert bucket["count"] == 5
+    assert bucket["score"] == 5
+    assert body["total_count"] == 6
+    assert body["coverage_count"] == 5
+
+
+@pytest.mark.asyncio
+async def test_dimension_breakdown_negative_share_and_avg_sentiment(
+    batch_client: TestClient,
+    semi_auto_tenant: tuple[User, UUID, str],
+    admin_session: AsyncSession,
+) -> None:
+    """Dalga 3'te eklenen iki yeni metric_key: negative_share (NEGATIF
+    payı %) ve avg_sentiment (ortalama sentiment_score), aynı kovada."""
+    user, tid, pw = semi_auto_tenant
+    for txt, sent, score in [
+        ("a", "NEGATIF", -0.8), ("b", "NEGATIF", -0.6), ("c", "POZITIF", 0.5),
+    ]:
+        await _seed(
+            admin_session, tenant_id=tid, text_value=txt,
+            sentiment=sent, score=score, channel="kanal-a",
+        )
+
+    token = login_token(batch_client, user.email, pw, tid)
+    neg = batch_client.get(
+        "/tenants/me/business-dimensions/channel/breakdown"
+        "?metric_key=negative_share",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert neg.status_code == 200, neg.text
+    neg_bucket = neg.json()["buckets"][0]
+    assert neg_bucket["count"] == 3
+    assert neg_bucket["score"] == pytest.approx(66.67, abs=0.01)
+
+    avg = batch_client.get(
+        "/tenants/me/business-dimensions/channel/breakdown"
+        "?metric_key=avg_sentiment",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert avg.status_code == 200, avg.text
+    avg_bucket = avg.json()["buckets"][0]
+    assert avg_bucket["score"] == pytest.approx(-0.3, abs=0.001)
+
+
+@pytest.mark.asyncio
+async def test_dimension_breakdown_date_window_filters_by_review_date(
+    batch_client: TestClient,
+    semi_auto_tenant: tuple[User, UUID, str],
+    admin_session: AsyncSession,
+) -> None:
+    """date_from/date_to review_date üzerinde gün-hassasiyetli pencere
+    açar (day_floor/day_ceil deseni) — pencere dışı satır düşer."""
+    user, tid, pw = semi_auto_tenant
+    await _seed(
+        admin_session, tenant_id=tid, text_value="inside",
+        sentiment="NÖTR", score=0.0, channel="kanal-b",
+        analyzed_at=datetime(2026, 8, 3, 12, tzinfo=UTC),
+    )
+    await _seed(
+        admin_session, tenant_id=tid, text_value="outside",
+        sentiment="NÖTR", score=0.0, channel="kanal-b",
+        analyzed_at=datetime(2026, 7, 1, 12, tzinfo=UTC),
+    )
+
+    token = login_token(batch_client, user.email, pw, tid)
+    r = batch_client.get(
+        "/tenants/me/business-dimensions/channel/breakdown"
+        "?date_from=2026-08-01&date_to=2026-08-05",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["total_count"] == 1
+    assert body["buckets"][0]["count"] == 1
+
+
+@pytest.mark.asyncio
+async def test_dimension_breakdown_include_flagged_toggle(
+    batch_client: TestClient,
+    semi_auto_tenant: tuple[User, UUID, str],
+    admin_session: AsyncSession,
+) -> None:
+    """quality_flag'lı satır varsayılanda dışlanır (include_flagged
+    varsayılanı False — analitik konvansiyonu); include_flagged=true
+    ile geri gelir."""
+    user, tid, pw = semi_auto_tenant
+    await _seed(
+        admin_session, tenant_id=tid, text_value="clean",
+        sentiment="NEGATIF", score=-0.4, channel="kanal-c",
+    )
+    await _seed(
+        admin_session, tenant_id=tid, text_value="flagged",
+        sentiment="NEGATIF", score=-0.4, channel="kanal-c",
+        quality_flag="duplicate",
+    )
+
+    token = login_token(batch_client, user.email, pw, tid)
+    default = batch_client.get(
+        "/tenants/me/business-dimensions/channel/breakdown",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert default.status_code == 200, default.text
+    assert default.json()["buckets"][0]["count"] == 1
+
+    included = batch_client.get(
+        "/tenants/me/business-dimensions/channel/breakdown"
+        "?include_flagged=true",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert included.status_code == 200, included.text
+    assert included.json()["buckets"][0]["count"] == 2
+
+
+@pytest.mark.asyncio
+async def test_dimension_breakdown_entered_by_and_source_are_valid_dimensions(
+    batch_client: TestClient,
+    semi_auto_tenant: tuple[User, UUID, str],
+    admin_session: AsyncSession,
+) -> None:
+    """Dalga 3 — entered_by/source VALID_DIMENSIONS'a yeni katılan iki
+    boyut; breakdown ucu ikisini de kabul eder ve katlar."""
+    user, tid, pw = semi_auto_tenant
+    await _seed(
+        admin_session, tenant_id=tid, text_value="a",
+        sentiment="NÖTR", score=0.0,
+        entered_by="Ayşe Yılmaz", source="Email",
+    )
+    await _seed(
+        admin_session, tenant_id=tid, text_value="b",
+        sentiment="NÖTR", score=0.0,
+        entered_by="ayşe yılmaz", source="email",
+    )
+
+    token = login_token(batch_client, user.email, pw, tid)
+    by_agent = batch_client.get(
+        "/tenants/me/business-dimensions/entered_by/breakdown",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert by_agent.status_code == 200, by_agent.text
+    agent_buckets = by_agent.json()["buckets"]
+    assert len(agent_buckets) == 1
+    assert agent_buckets[0]["count"] == 2
+
+    by_source = batch_client.get(
+        "/tenants/me/business-dimensions/source/breakdown",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert by_source.status_code == 200, by_source.text
+    source_buckets = by_source.json()["buckets"]
+    assert len(source_buckets) == 1
+    assert source_buckets[0]["count"] == 2
 
 
 # Silence unused imports.

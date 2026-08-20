@@ -30,12 +30,16 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useCategories } from "@/hooks/use-categories";
-import { useInfiniteReviews } from "@/hooks/use-reviews";
+import { type DimensionValueField, useDimensionValues } from "@/hooks/use-dimension-values";
+import {
+  useInfiniteReviews,
+  type ReviewDimensionFilterFields,
+  type ReviewListFiltersExt,
+} from "@/hooks/use-reviews";
 import { useCompanyTaxonomies } from "@/hooks/use-taxonomies";
 import { useTranslation } from "@/lib/i18n/use-translation";
 import type {
   ReviewDecision,
-  ReviewListFilters,
   ReviewListItem,
   ReviewSourceType,
 } from "@/lib/types";
@@ -113,7 +117,35 @@ const QUALITY_FLAG_LABEL_KEYS: Record<string, string> = {
   meaningless: "reviews.qualityFilter.meaningless",
 };
 
-function qualitySelectionFor(filters: ReviewListFilters): QualitySelection {
+// 2026-08-20 — Boyutlar filtreleri (Ticket'ın 6 iş boyutu). ``field``
+// dimension-values ucunun tekil parametresi, ``filterKey`` /reviews'in
+// CSV parametresi (çoğul) + yerel ReviewListFiltersExt alanı,
+// ``labelKey`` Boyutlar tab + cohort ile PAYLAŞILAN "dimensions.*"
+// i18n anahtarı (görev notu: "aynı Türkçe etiketler"). Tek bir generic
+// dropdown/pill bu config listesini map'ler — 6 ayrı bileşen yerine.
+const DIMENSION_FILTER_CONFIGS: ReadonlyArray<{
+  field: DimensionValueField;
+  filterKey: keyof ReviewDimensionFilterFields;
+  labelKey: string;
+}> = [
+  { field: "channel", filterKey: "channels", labelKey: "dimensions.channel" },
+  {
+    field: "business_segment",
+    filterKey: "business_segments",
+    labelKey: "dimensions.businessSegment",
+  },
+  { field: "product_line", filterKey: "product_lines", labelKey: "dimensions.productLine" },
+  { field: "customer_tier", filterKey: "customer_tiers", labelKey: "dimensions.customerTier" },
+  { field: "entered_by", filterKey: "entered_bys", labelKey: "dimensions.enteredBy" },
+  // NOT: bu "source" bir İŞ BOYUTU (örn. Web/Mobil/Mağaza) —
+  // sayfanın var olan source_types (manuel/toplu ingest yöntemi)
+  // filtresinden kavramsal olarak farklı; ikisi de "Kaynak" görünebilir
+  // ama ayrı filtrelerdir. Görev tanımındaki birebir eşleme
+  // ("Kaynak"="source") bilinçli, isim çakışması kabul edildi.
+  { field: "source", filterKey: "sources", labelKey: "dimensions.source" },
+];
+
+function qualitySelectionFor(filters: ReviewListFiltersExt): QualitySelection {
   const flag = filters.quality_flags?.[0];
   if (flag) return flag;
   if (filters.include_flagged === false) return "valid_only";
@@ -158,7 +190,7 @@ function ReviewsPageSkeleton() {
  *  week_of_year, month). The /insights heatmap drilldown writes them;
  *  dropping them here changes the URL but sends the API call
  *  unfiltered. */
-function readFiltersFromParams(params: URLSearchParams): ReviewListFilters {
+function readFiltersFromParams(params: URLSearchParams): ReviewListFiltersExt {
   const sentimentRaw = params.get("sentiment_labels");
   const sourceRaw = params.get("source_types");
   const perspectiveRaw = params.get("perspective_codes");
@@ -174,6 +206,13 @@ function readFiltersFromParams(params: URLSearchParams): ReviewListFilters {
     const n = Number(raw);
     return Number.isFinite(n) && Number.isInteger(n) ? n : undefined;
   };
+  // 2026-08-20 — 6 boyut filtresi, tek döngüde okunuyor (bkz.
+  // DIMENSION_FILTER_CONFIGS).
+  const dims: ReviewDimensionFilterFields = {};
+  for (const cfg of DIMENSION_FILTER_CONFIGS) {
+    const vals = params.get(cfg.filterKey)?.split(",").filter(Boolean);
+    if (vals?.length) dims[cfg.filterKey] = vals;
+  }
   return {
     // Sprint 9.5.1'de zaten ReviewListFilters'ta duruyordu ama sayfa
     // hiç okumuyordu — /insights heatmap drilldown bu paramları
@@ -200,6 +239,7 @@ function readFiltersFromParams(params: URLSearchParams): ReviewListFilters {
     // applyFilters yalnız açık false yazar (bkz. aşağı); herhangi
     // başka bir değer varsayılana (undefined = true) düşer.
     include_flagged: params.get("include_flagged") === "false" ? false : undefined,
+    ...dims,
   };
 }
 
@@ -212,7 +252,7 @@ function arrEq(a: string[] | undefined, b: string[] | undefined): boolean {
   return true;
 }
 
-function filtersEq(a: ReviewListFilters, b: ReviewListFilters): boolean {
+function filtersEq(a: ReviewListFiltersExt, b: ReviewListFiltersExt): boolean {
   return (
     a.date_from === b.date_from &&
     a.date_to === b.date_to &&
@@ -235,7 +275,8 @@ function filtersEq(a: ReviewListFilters, b: ReviewListFilters): boolean {
     a.month === b.month &&
     a.search === b.search &&
     arrEq(a.quality_flags, b.quality_flags) &&
-    a.include_flagged === b.include_flagged
+    a.include_flagged === b.include_flagged &&
+    DIMENSION_FILTER_CONFIGS.every((cfg) => arrEq(a[cfg.filterKey], b[cfg.filterKey]))
   );
 }
 
@@ -247,7 +288,7 @@ function ReviewsPageInner() {
 
   // Path B mirror — local state controlled by the URL but updated
   // immediately on user actions. See docs/agent-rules/url-state-patterns.md.
-  const [filters, setFilters] = useState<ReviewListFilters>(() =>
+  const [filters, setFilters] = useState<ReviewListFiltersExt>(() =>
     readFiltersFromParams(new URLSearchParams(searchParams.toString())),
   );
 
@@ -263,7 +304,7 @@ function ReviewsPageInner() {
   // State-first user action: update local state immediately, then push
   // the URL so the change is shareable + back-button-able.
   const applyFilters = useCallback(
-    (next: ReviewListFilters) => {
+    (next: ReviewListFiltersExt) => {
       setFilters(next);
       const params = new URLSearchParams();
       if (next.date_from) params.set("date_from", next.date_from);
@@ -307,6 +348,11 @@ function ReviewsPageInner() {
         params.set("quality_flags", next.quality_flags.join(","));
       } else if (next.include_flagged === false) {
         params.set("include_flagged", "false");
+      }
+      // 2026-08-20 — 6 boyut filtresi, tek döngüde yazılıyor.
+      for (const cfg of DIMENSION_FILTER_CONFIGS) {
+        const vals = next[cfg.filterKey];
+        if (vals?.length) params.set(cfg.filterKey, vals.join(","));
       }
       const qs = params.toString();
       router.push(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
@@ -397,6 +443,20 @@ function ReviewsPageInner() {
           selected={qualitySelectionFor(filters)}
           onApply={applyQualitySelection}
         />
+        {DIMENSION_FILTER_CONFIGS.map((cfg) => (
+          <DimensionFilterDropdown
+            key={cfg.field}
+            field={cfg.field}
+            labelKey={cfg.labelKey}
+            selected={filters[cfg.filterKey] ?? []}
+            onApply={(next) =>
+              applyFilters({
+                ...filters,
+                [cfg.filterKey]: next.length > 0 ? next : undefined,
+              })
+            }
+          />
+        ))}
         <DateRangeFilter
           dateFrom={filters.date_from ?? ""}
           dateTo={filters.date_to ?? ""}
@@ -546,11 +606,22 @@ function FilterPills({
   filters,
   onApply,
 }: {
-  filters: ReviewListFilters;
-  onApply: (next: ReviewListFilters) => void;
+  filters: ReviewListFiltersExt;
+  onApply: (next: ReviewListFiltersExt) => void;
 }) {
   const { t } = useTranslation();
   const pills: { label: string; remove: () => void }[] = [];
+  // 2026-08-20 — 6 boyut filtresi pill'i (tek şablon, bkz.
+  // DIMENSION_FILTER_CONFIGS).
+  for (const cfg of DIMENSION_FILTER_CONFIGS) {
+    const vals = filters[cfg.filterKey];
+    if (vals?.length) {
+      pills.push({
+        label: t("reviews.pill.dimension", { label: t(cfg.labelKey), value: vals.join(", ") }),
+        remove: () => onApply({ ...filters, [cfg.filterKey]: undefined }),
+      });
+    }
+  }
   if (filters.batch_job_id) {
     pills.push({
       label: t("reviews.pill.upload", { id: filters.batch_job_id.slice(0, 8) }),
@@ -929,6 +1000,82 @@ function QualityFilterDropdown({
             </DropdownMenuRadioItem>
           ))}
         </DropdownMenuRadioGroup>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+/** 2026-08-20 — Boyutlar filtresi. PerspectiveFilterDropdown /
+ *  SentimentFilterDropdown ile aynı controlled çoklu-seçim deseni;
+ *  6 boyut TEK bileşeni paylaşır (DIMENSION_FILTER_CONFIGS ile
+ *  parametrize edilir) — 6 ayrı kopya yerine. Değer listesi
+ *  use-dimension-values'tan gelir; sonuç boşsa (yükleme bittiyse)
+ *  dropdown TAMAMEN GİZLENİR — görev notu "yalnız değeri olan boyutlar
+ *  gösterilir". */
+function DimensionFilterDropdown({
+  field,
+  labelKey,
+  selected,
+  onApply,
+}: {
+  field: DimensionValueField;
+  labelKey: string;
+  selected: string[];
+  onApply: (next: string[]) => void;
+}) {
+  const { t } = useTranslation();
+  const values = useDimensionValues(field);
+
+  const toggle = useCallback(
+    (value: string) => {
+      const next = selected.includes(value)
+        ? selected.filter((v) => v !== value)
+        : [...selected, value];
+      onApply(next);
+    },
+    [selected, onApply],
+  );
+
+  const rows = values.data?.values ?? [];
+  if (values.isLoading || rows.length === 0) return null;
+
+  const dimLabel = t(labelKey);
+  const triggerLabel =
+    selected.length === 0
+      ? dimLabel
+      : t("dimensions.filterSelected", { label: dimLabel, count: selected.length });
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger
+        render={
+          <Button variant="outline" size="sm" className="gap-1">
+            {triggerLabel}
+            <ChevronDown className="size-4" aria-hidden />
+          </Button>
+        }
+      />
+      <DropdownMenuContent align="start" className="max-h-80 w-64 overflow-y-auto">
+        {rows.map((row) => (
+          <DropdownMenuCheckboxItem
+            key={row.value}
+            checked={selected.includes(row.value)}
+            onCheckedChange={() => toggle(row.value)}
+          >
+            {row.value}
+          </DropdownMenuCheckboxItem>
+        ))}
+        {selected.length > 0 ? (
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              onClick={() => onApply([])}
+              className="text-muted-foreground text-xs"
+            >
+              {t("reviews.perspFilter.clearAll")}
+            </DropdownMenuItem>
+          </>
+        ) : null}
       </DropdownMenuContent>
     </DropdownMenu>
   );

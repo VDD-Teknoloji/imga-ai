@@ -22,7 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from imga_api.auth_deps import CurrentUser, bind_tenant, require_role
 from imga_api.db_deps import get_app_session
-from imga_api.services import (
+from imga_api.services.dimension_service import (
     DimensionConfigNotFound,
     DimensionError,
     DimensionService,
@@ -186,7 +186,8 @@ async def delete_dimension(
     response_model=DimensionBreakdownResponse,
     summary=(
         "Compute a metric grouped by the dimension. "
-        "metric_key in (review_volume | sentiment_distribution | nps)."
+        "metric_key in (review_volume | sentiment_distribution | nps | "
+        "negative_share | avg_sentiment)."
     ),
 )
 async def dimension_breakdown(
@@ -194,6 +195,9 @@ async def dimension_breakdown(
     current: Annotated[CurrentUser, _AnyMember],
     app_session: Annotated[AsyncSession, Depends(get_app_session)],
     metric_key: str = "review_volume",
+    date_from: datetime | None = None,
+    date_to: datetime | None = None,
+    include_flagged: bool = False,
 ) -> DimensionBreakdownResponse:
     tenant_id = _require_active_tenant(current)
     try:
@@ -204,6 +208,9 @@ async def dimension_breakdown(
                 tenant_id=tenant_id,
                 dimension=dimension,
                 metric_key=metric_key,
+                date_from=date_from,
+                date_to=date_to,
+                include_flagged=include_flagged,
             )
         return DimensionBreakdownResponse(
             metric_key=result.metric_key,

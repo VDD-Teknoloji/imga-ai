@@ -15,7 +15,15 @@ from uuid import UUID
 from imga_db.models import CategoryTaxonomy, Review
 from sqlalchemy import and_, desc, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import InstrumentedAttribute
 from sqlalchemy.sql.elements import ColumnElement
+
+from imga_api.services.dimension_service import (
+    DIMENSION_COLUMNS,
+    UnknownDimension,
+    dimension_value_present,
+    fold_dimension_key,
+)
 
 OrderField = Literal["created_at", "sentiment_score"]
 OrderDir = Literal["asc", "desc"]
@@ -43,6 +51,17 @@ class ReviewListFilters:
     # (Review.primary_category values). Empty tuple disables the
     # filter; one or more entries OR-match.
     primary_categories: tuple[str, ...] = ()
+    # 2026-08-20 — Dalga 3. Business-dimension list filters over the
+    # six free-text Review columns. Matching folds both sides via
+    # lower(trim(...)) (fold_dimension_key) so "FEDEX"/"fedex" hit the
+    # same rows regardless of which raw spelling the filter chip
+    # carries — consistent with the dimension breakdown's bucketing.
+    channels: tuple[str, ...] = ()
+    business_segments: tuple[str, ...] = ()
+    product_lines: tuple[str, ...] = ()
+    customer_tiers: tuple[str, ...] = ()
+    entered_bys: tuple[str, ...] = ()
+    sources: tuple[str, ...] = ()
     # Sprint 9.5 B1 — time-extract filters for the /insights heatmap
     # cell-click drilldown. Each is an integer or None; non-None
     # values are compared against ``EXTRACT(<part> FROM ...)`` on the
@@ -103,6 +122,27 @@ class ReviewListItem:
     # 2026-08-10 — LLM'in temas noktası kararı ("dijital" |
     # "operasyonel"). NULL = birleşik yol koşmamış eski satır.
     experience_type: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class DimensionValueCount:
+    """One row of GET /tenants/me/reviews/dimension-values — the
+    filter chip source. ``value`` is the fold's most-frequent raw
+    spelling (see ``fold_dimension_key``), not the folded key."""
+
+    value: str
+    count: int
+
+
+def _folded_in(
+    column: InstrumentedAttribute[str | None], values: tuple[str, ...]
+) -> ColumnElement[bool]:
+    """``lower(trim(column)) IN (lowered values)`` — the list-filter
+    counterpart to the dimension breakdown's bucket folding, so a
+    filter chip built from one raw spelling still matches every other
+    spelling folded into the same bucket."""
+    lowered = tuple(v.strip().lower() for v in values)
+    return fold_dimension_key(column).in_(lowered)
 
 
 class ReviewListService:
@@ -167,6 +207,25 @@ class ReviewListService:
             conditions.append(
                 Review.primary_category.in_(filters.primary_categories)
             )
+        # 2026-08-20 — Dalga 3 business-dimension filters.
+        if filters.channels:
+            conditions.append(_folded_in(Review.channel, filters.channels))
+        if filters.business_segments:
+            conditions.append(
+                _folded_in(Review.business_segment, filters.business_segments)
+            )
+        if filters.product_lines:
+            conditions.append(
+                _folded_in(Review.product_line, filters.product_lines)
+            )
+        if filters.customer_tiers:
+            conditions.append(
+                _folded_in(Review.customer_tier, filters.customer_tiers)
+            )
+        if filters.entered_bys:
+            conditions.append(_folded_in(Review.entered_by, filters.entered_bys))
+        if filters.sources:
+            conditions.append(_folded_in(Review.source, filters.sources))
         # Sprint 9.5 B1 — heatmap cell-click drilldown. The four
         # extract conditions mirror the heatmap_generator's axis
         # expressions (``_axis_expr``) so the cell's "rows in this
@@ -267,6 +326,50 @@ class ReviewListService:
         ]
         return items, total
 
+    async def dimension_values(
+        self,
+        *,
+        tenant_id: UUID,
+        field: str,
+        include_flagged: bool = True,
+    ) -> list[DimensionValueCount]:
+        """Distinct values for one business-dimension column — backs
+        GET /tenants/me/reviews/dimension-values, the filter-chip
+        source for the list UI.
+
+        Folds on ``lower(trim(field))`` like the dimension breakdown
+        (``dimension_service.compute_metric_by_dimension``); each
+        returned ``value`` is the fold's most-frequent raw spelling.
+        Ordered by count desc, capped at 100 — a filter dropdown has
+        no use for a long tail. ``include_flagged`` defaults to True
+        (unlike the analytics default of False) because this endpoint
+        feeds the review list, which is an archive view, not a report.
+        """
+        if field not in DIMENSION_COLUMNS:
+            raise UnknownDimension(f"unknown field {field!r}")
+        column = DIMENSION_COLUMNS[field]
+        conditions: list[ColumnElement[bool]] = [
+            Review.tenant_id == tenant_id,
+            Review.deleted_at.is_(None),
+            dimension_value_present(column),
+        ]
+        if not include_flagged:
+            conditions.append(Review.quality_flag.is_(None))
+        stmt = (
+            select(
+                func.mode().within_group(func.trim(column)).label("value"),
+                func.count().label("cnt"),
+            )
+            .where(and_(*conditions))
+            .group_by(fold_dimension_key(column))
+            .order_by(func.count().desc())
+            .limit(100)
+        )
+        rows = (await self._session.execute(stmt)).all()
+        return [
+            DimensionValueCount(value=r.value, count=int(r.cnt)) for r in rows
+        ]
+
     async def get_review(
         self, *, tenant_id: UUID, review_id: UUID
     ) -> tuple[Review, str | None] | None:
@@ -299,4 +402,9 @@ class ReviewListService:
 
 _ = Any  # keep mypy quiet about the imported name when callers don't use it.
 
-__all__ = ["ReviewListFilters", "ReviewListItem", "ReviewListService"]
+__all__ = [
+    "DimensionValueCount",
+    "ReviewListFilters",
+    "ReviewListItem",
+    "ReviewListService",
+]

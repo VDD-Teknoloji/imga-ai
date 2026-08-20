@@ -4,13 +4,21 @@ Sprint 8.3.9. Pure SQL aggregation against ``reviews`` (the dashboard
 cohort tab fires this on every URL-state change, so we lean on
 Postgres date_trunc + GROUP BY rather than Python iteration).
 
-Three dimensions:
+Nine dimensions:
 
   * ``taxonomy``           — reviews.primary_category (BERT label)
   * ``company_perspective`` — reviews.company_perspective_code
                               (Sprint 8.3.5.6 heuristic match)
   * ``nps_bucket``         — reviews.nps_category (detractor / passive
                              / promoter), generated column
+  * the six free-text business dimensions (``DIMENSION_COLUMNS`` from
+    dimension_service — channel / business_segment / product_line /
+    customer_tier / entered_by / source, added 2026-08-20 Dalga 3).
+    Unlike the three dimensions above, these are upload-sourced free
+    text, so the cohort key folds on ``lower(trim(...))``
+    (``fold_dimension_key``) and the cohort's label is the fold's
+    most-frequent raw spelling (Postgres ``mode()``) — see
+    ``_FOLDED_DIMENSIONS`` below.
 
 Three periods: ``week`` / ``month`` / ``quarter`` — passed straight
 into ``date_trunc``. ``date_from`` / ``date_to`` filter the inclusive
@@ -34,6 +42,11 @@ from sqlalchemy import desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from imga_api.services.date_bounds import day_ceil
+from imga_api.services.dimension_service import (
+    DIMENSION_COLUMNS,
+    dimension_value_present,
+    fold_dimension_key,
+)
 from imga_api.services.insights_cache import cache_get_or_compute
 
 _logger = logging.getLogger(__name__)
@@ -41,11 +54,26 @@ _logger = logging.getLogger(__name__)
 CACHE_TTL_SECONDS = 3600
 
 CohortPeriod = Literal["week", "month", "quarter"]
-CohortDimension = Literal["taxonomy", "company_perspective", "nps_bucket"]
+CohortDimension = Literal[
+    "taxonomy",
+    "company_perspective",
+    "nps_bucket",
+    "channel",
+    "business_segment",
+    "product_line",
+    "customer_tier",
+    "entered_by",
+    "source",
+]
+
+# The six free-text dimensions need bucket-folding (lower/trim); the
+# three original ones are already canonical values (BERT codes,
+# taxonomy codes, a generated enum column) and must NOT be folded.
+_FOLDED_DIMENSIONS: frozenset[str] = frozenset(DIMENSION_COLUMNS)
 
 ALLOWED_PERIODS: frozenset[str] = frozenset({"week", "month", "quarter"})
 ALLOWED_DIMENSIONS: frozenset[str] = frozenset(
-    {"taxonomy", "company_perspective", "nps_bucket"}
+    {"taxonomy", "company_perspective", "nps_bucket"} | _FOLDED_DIMENSIONS
 )
 
 
@@ -129,6 +157,25 @@ class CohortAnalyzer:
     ) -> dict[str, Any]:
         # 1. Resolve the dimension column on Review.
         dim_col = self._dimension_column(dimension)
+        # The six free-text business dimensions fold on
+        # lower(trim(...)) so upload-spelling variants ("FEDEX" /
+        # "fedex") land in one cohort instead of splintering; the
+        # three original dimensions are already canonical values and
+        # are grouped as-is.
+        folded = dimension in _FOLDED_DIMENSIONS
+        group_key = fold_dimension_key(dim_col) if folded else dim_col
+        # Folded dimensions resolve their own display label here (the
+        # fold's most-frequent raw spelling, via mode()); non-folded
+        # dimensions select the raw column redundantly under the same
+        # alias — harmless, and it keeps one query shape for both
+        # cases. company_perspective's real (Türkçe) label still wins
+        # via ``_resolve_labels`` below; this column is just its
+        # fallback for the two other non-folded dimensions.
+        label_expr = (
+            func.mode().within_group(func.trim(dim_col)).label("label")
+            if folded
+            else group_key.label("label")
+        )
 
         # 2. Identify the top-N cohorts by total review count over
         #    the entire window. Without this pre-filter, a
@@ -137,12 +184,16 @@ class CohortAnalyzer:
         period_expr = func.date_trunc(period, Review.review_date)
 
         cohort_totals_stmt = (
-            select(dim_col.label("key"), func.count().label("cnt"))
+            select(group_key.label("key"), func.count().label("cnt"), label_expr)
             .where(Review.tenant_id == tenant_id)
             .where(Review.deleted_at.is_(None))
             .where(Review.quality_flag.is_(None))
-            .where(dim_col.is_not(None))
-            .group_by(dim_col)
+            .where(
+                dimension_value_present(dim_col)
+                if folded
+                else dim_col.is_not(None)
+            )
+            .group_by(group_key)
             .order_by(desc("cnt"))
             .limit(limit_cohorts)
         )
@@ -170,12 +221,13 @@ class CohortAnalyzer:
             }
 
         cohort_keys = [r.key for r in top_cohorts]
+        raw_label_map = {r.key: r.label for r in top_cohorts}
 
         # 3. Per-period aggregation, restricted to the top cohorts.
         per_period_stmt = (
             select(
                 period_expr.label("period_start"),
-                dim_col.label("key"),
+                group_key.label("key"),
                 func.count().label("cnt"),
                 func.avg(Review.sentiment_score).label("avg_sentiment"),
                 func.avg(Review.nps_score).label("avg_nps"),
@@ -183,9 +235,9 @@ class CohortAnalyzer:
             .where(Review.tenant_id == tenant_id)
             .where(Review.deleted_at.is_(None))
             .where(Review.quality_flag.is_(None))
-            .where(dim_col.in_(cohort_keys))
-            .group_by(period_expr, dim_col)
-            .order_by(period_expr, dim_col)
+            .where(group_key.in_(cohort_keys))
+            .group_by(period_expr, group_key)
+            .order_by(period_expr, group_key)
         )
         if date_from is not None:
             per_period_stmt = per_period_stmt.where(
@@ -202,8 +254,12 @@ class CohortAnalyzer:
         rows = (await self._session.execute(per_period_stmt)).all()
 
         # 4. Resolve cohort labels (Türkçe) when dimension is
-        #    company_perspective. Other dimensions surface the raw
-        #    code as label.
+        #    company_perspective — takes priority over raw_label_map
+        #    (which is a no-op passthrough for non-folded dimensions).
+        #    Folded dimensions get their label from raw_label_map
+        #    (mode() of the raw spelling, computed above); the two
+        #    remaining non-folded dimensions (taxonomy / nps_bucket)
+        #    fall through raw_label_map to the bare key.
         labels = await self._resolve_labels(tenant_id, dimension, cohort_keys)
 
         cohorts: list[dict[str, Any]] = []
@@ -233,7 +289,7 @@ class CohortAnalyzer:
             cohorts.append(
                 {
                     "key": key,
-                    "label": labels.get(key, key),
+                    "label": labels.get(key, raw_label_map.get(key, key)),
                     "data_points": data_points,
                 }
             )
@@ -270,6 +326,8 @@ class CohortAnalyzer:
             return Review.company_perspective_code
         if dimension == "nps_bucket":
             return Review.nps_category
+        if dimension in DIMENSION_COLUMNS:
+            return DIMENSION_COLUMNS[dimension]
         raise ValueError(f"unknown dimension {dimension!r}")
 
     @staticmethod

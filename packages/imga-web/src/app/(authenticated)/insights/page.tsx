@@ -44,9 +44,10 @@ import {
   useSentimentTimeline,
   useTicketResolutionTime,
 } from "@/hooks/use-analytics";
+import type { BreakdownDimensionKey, DimensionMetricKey } from "@/hooks/use-business-dimensions";
+import type { CohortDimensionExt } from "@/hooks/use-insights-cohort";
 import type {
   AnalyticsFilters,
-  CohortDimension,
   CohortPeriod,
   HeatmapMetric,
   HeatmapXAxis,
@@ -72,6 +73,11 @@ function TabLoading() {
 
 const CohortTab = dynamic(
   () => import("./_components/cohort-tab").then((m) => ({ default: m.CohortTab })),
+  { loading: () => <TabLoading />, ssr: false },
+);
+const DimensionsTab = dynamic(
+  () =>
+    import("./_components/dimensions-tab").then((m) => ({ default: m.DimensionsTab })),
   { loading: () => <TabLoading />, ssr: false },
 );
 const HeatmapTab = dynamic(
@@ -100,7 +106,9 @@ type TabKey =
   // Sprint 8.3.9 additions.
   | "cohort"
   | "wordcloud"
-  | "heatmap";
+  | "heatmap"
+  // 2026-08-20 — business dimension breakdown.
+  | "dimensions";
 
 // Sprint 9.6 redesign — tab labels tightened so the 10-tab strip
 // fits the analyst's mental model: tighter words, ordered by
@@ -117,6 +125,7 @@ const TAB_LABEL_KEYS: Record<TabKey, string> = {
   tickets: "insights.tabs.tickets",
   heatmap: "insights.tabs.heatmap",
   cohort: "insights.tabs.cohort",
+  dimensions: "insights.tabs.dimensions",
   wordcloud: "insights.tabs.wordcloud",
   // Madde 11 (UML) — "Override" yabancı kelime; Türkçe karşılığı
   // "Kural Katmanları" daha anlaşılır (tier1/tier2/critical yorum-
@@ -192,12 +201,21 @@ function InsightsContent() {
   const [cohortPeriod, setCohortPeriodState] = useState<CohortPeriod>(
     () => (searchParams.get("cohort_period") as CohortPeriod) || "month",
   );
-  const [cohortDimension, setCohortDimensionState] = useState<CohortDimension>(
+  const [cohortDimension, setCohortDimensionState] = useState<CohortDimensionExt>(
     () =>
-      (searchParams.get("cohort_dimension") as CohortDimension) || "taxonomy",
+      (searchParams.get("cohort_dimension") as CohortDimensionExt) || "taxonomy",
   );
   const [cohortLimit, setCohortLimitState] = useState<number>(
     () => Number(searchParams.get("cohort_limit") ?? "10") || 10,
+  );
+  // 2026-08-20 — Boyutlar tab URL state: dim (BreakdownDimensionKey,
+  // varsayılan "channel") + dmetric (DimensionMetricKey, varsayılan
+  // "review_volume"). Aynı Path B mirror deseni (bkz. yorum altta).
+  const [dim, setDimState] = useState<BreakdownDimensionKey>(
+    () => (searchParams.get("dim") as BreakdownDimensionKey) || "channel",
+  );
+  const [dmetric, setDmetricState] = useState<DimensionMetricKey>(
+    () => (searchParams.get("dmetric") as DimensionMetricKey) || "review_volume",
   );
   const [wcSentiment, setWcSentimentState] = useState<WordCloudSentiment>(
     () => (searchParams.get("wc_sentiment") as WordCloudSentiment) || "all",
@@ -249,7 +267,7 @@ function InsightsContent() {
       prev === urlCohortPeriod ? prev : urlCohortPeriod,
     );
     const urlCohortDimension =
-      (searchParams.get("cohort_dimension") as CohortDimension) || "taxonomy";
+      (searchParams.get("cohort_dimension") as CohortDimensionExt) || "taxonomy";
     setCohortDimensionState((prev) =>
       prev === urlCohortDimension ? prev : urlCohortDimension,
     );
@@ -258,6 +276,12 @@ function InsightsContent() {
     setCohortLimitState((prev) =>
       prev === urlCohortLimit ? prev : urlCohortLimit,
     );
+    // 2026-08-20 — Boyutlar tab mirrors.
+    const urlDim = (searchParams.get("dim") as BreakdownDimensionKey) || "channel";
+    setDimState((prev) => (prev === urlDim ? prev : urlDim));
+    const urlDmetric =
+      (searchParams.get("dmetric") as DimensionMetricKey) || "review_volume";
+    setDmetricState((prev) => (prev === urlDmetric ? prev : urlDmetric));
     const urlWcSent =
       (searchParams.get("wc_sentiment") as WordCloudSentiment) || "all";
     setWcSentimentState((prev) => (prev === urlWcSent ? prev : urlWcSent));
@@ -422,6 +446,23 @@ function InsightsContent() {
             onLimitChange={(next) => {
               setCohortLimitState(next);
               pushParam("cohort_limit", next === 10 ? null : String(next));
+            }}
+          />
+        </TabsContent>
+        <TabsContent value="dimensions">
+          <DimensionsTab
+            dimension={dim}
+            metricKey={dmetric}
+            dateFrom={dateFrom}
+            dateTo={dateTo}
+            includeFlagged={includeFlagged}
+            onDimensionChange={(next) => {
+              setDimState(next);
+              pushParam("dim", next === "channel" ? null : next);
+            }}
+            onMetricChange={(next) => {
+              setDmetricState(next);
+              pushParam("dmetric", next === "review_volume" ? null : next);
             }}
           />
         </TabsContent>
