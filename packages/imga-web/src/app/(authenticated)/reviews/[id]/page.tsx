@@ -12,11 +12,12 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useCategories } from "@/hooks/use-categories";
-import { useManualPromoteReview, useReviewDetail } from "@/hooks/use-reviews";
+import { useManualPromoteReview, useReviewDetail, type ReviewFacts } from "@/hooks/use-reviews";
 import { ApiError } from "@/lib/api-client";
 import { effectiveExperience, type ExperienceType } from "@/lib/experience";
 import { useTranslation } from "@/lib/i18n/use-translation";
 import { NPS_CATEGORY_LABELS, type ReviewDecision } from "@/lib/types";
+import { formatDurationMinutes } from "@/lib/number-format";
 
 // Map every decision branch to an i18n key + the auto-ticket rationale so
 // the detail page reads as an audit narrative, not a bag of enum values.
@@ -313,6 +314,22 @@ function ReviewDetailInner() {
             </CardContent>
           </Card>
 
+          {/* 2026-08-21 (Operasyonel analitik) — facts null/absent iken
+              kart hiç gösterilmiyor (backend paralel yazılıyor; alan
+              deploy öncesi yanıtta hiç yer almayabilir). */}
+          {detail.data.facts != null && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">
+                  {t("reviews.detail.operationalInfo")}
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <OperationalFactsGrid facts={detail.data.facts} t={t} />
+              </CardContent>
+            </Card>
+          )}
+
           <Card>
             <CardHeader>
               <CardTitle className="text-base">
@@ -389,5 +406,145 @@ function Stat({ label, value }: { label: string; value: string }) {
       <p className="text-muted-foreground text-xs">{label}</p>
       <p className="text-lg font-semibold">{value}</p>
     </div>
+  );
+}
+
+// --- 2026-08-21 (Operasyonel analitik) — "Operasyonel Bilgiler" kartı ---
+
+type Translate = (key: string, vars?: Record<string, string | number>) => string;
+
+function slaStatusLabel(
+  status: "within" | "violated" | null,
+  t: Translate,
+): string | null {
+  if (status === "within") return t("reviews.detail.facts.slaWithin");
+  if (status === "violated") return t("reviews.detail.facts.slaViolated");
+  return null;
+}
+
+/** facts'ın 13 alanını label/value satırlarına çevirir; null alanlar
+ *  ATLANIR (görev kuralı — "null alanlar atlanır"). */
+function buildFactRows(
+  facts: ReviewFacts,
+  t: Translate,
+): Array<{ key: string; label: string; value: string }> {
+  const rows: Array<{ key: string; label: string; value: string }> = [];
+
+  const slaResolution = slaStatusLabel(facts.sla_resolution_status, t);
+  if (slaResolution !== null) {
+    rows.push({
+      key: "slaResolution",
+      label: t("reviews.detail.facts.slaResolutionStatus"),
+      value: slaResolution,
+    });
+  }
+  const slaFirstResponse = slaStatusLabel(facts.sla_first_response_status, t);
+  if (slaFirstResponse !== null) {
+    rows.push({
+      key: "slaFirstResponse",
+      label: t("reviews.detail.facts.slaFirstResponseStatus"),
+      value: slaFirstResponse,
+    });
+  }
+  if (facts.resolution_time_minutes !== null) {
+    rows.push({
+      key: "resolutionTime",
+      label: t("reviews.detail.facts.resolutionTime"),
+      value: formatDurationMinutes(facts.resolution_time_minutes),
+    });
+  }
+  if (facts.first_response_time_minutes !== null) {
+    rows.push({
+      key: "firstResponseTime",
+      label: t("reviews.detail.facts.firstResponseTime"),
+      value: formatDurationMinutes(facts.first_response_time_minutes),
+    });
+  }
+  if (facts.csat_score !== null) {
+    rows.push({
+      key: "csat",
+      label: t("reviews.detail.facts.csat"),
+      value: facts.csat_raw ? `${facts.csat_score}/5 (${facts.csat_raw})` : `${facts.csat_score}/5`,
+    });
+  } else if (facts.csat_raw !== null) {
+    rows.push({
+      key: "csatRaw",
+      label: t("reviews.detail.facts.csat"),
+      value: facts.csat_raw,
+    });
+  }
+  if (facts.agent_interactions !== null) {
+    rows.push({
+      key: "agentInteractions",
+      label: t("reviews.detail.facts.agentInteractions"),
+      value: String(facts.agent_interactions),
+    });
+  }
+  if (facts.customer_interactions !== null) {
+    rows.push({
+      key: "customerInteractions",
+      label: t("reviews.detail.facts.customerInteractions"),
+      value: String(facts.customer_interactions),
+    });
+  }
+  if (facts.compensation_status !== null) {
+    rows.push({
+      key: "compensationStatus",
+      label: t("reviews.detail.facts.compensationStatus"),
+      value: facts.compensation_status,
+    });
+  }
+  if (facts.freight_cost !== null) {
+    rows.push({
+      key: "freightCost",
+      label: t("reviews.detail.facts.freightCost"),
+      value: facts.freight_cost.toLocaleString("tr-TR"),
+    });
+  }
+  if (facts.goods_cost !== null) {
+    rows.push({
+      key: "goodsCost",
+      label: t("reviews.detail.facts.goodsCost"),
+      value: facts.goods_cost.toLocaleString("tr-TR"),
+    });
+  }
+  if (facts.refund_reason !== null) {
+    rows.push({
+      key: "refundReason",
+      label: t("reviews.detail.facts.refundReason"),
+      value: facts.refund_reason,
+    });
+  }
+  if (facts.delivery_status !== null) {
+    rows.push({
+      key: "deliveryStatus",
+      label: t("reviews.detail.facts.deliveryStatus"),
+      value: facts.delivery_status,
+    });
+  }
+  if (facts.delivery_detail !== null) {
+    rows.push({
+      key: "deliveryDetail",
+      label: t("reviews.detail.facts.deliveryDetail"),
+      value: facts.delivery_detail,
+    });
+  }
+  return rows;
+}
+
+function OperationalFactsGrid({ facts, t }: { facts: ReviewFacts; t: Translate }) {
+  const rows = buildFactRows(facts, t);
+  if (rows.length === 0) {
+    return <p className="text-muted-foreground text-sm">{t("insights.state.noData")}</p>;
+  }
+  return (
+    <dl className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+      {rows.map((row) => (
+        <div key={row.key}>
+          <dt className="text-muted-foreground text-xs">{row.label}</dt>
+          <dd className="text-sm">{row.value}</dd>
+        </div>
+      ))}
+    </dl>
   );
 }

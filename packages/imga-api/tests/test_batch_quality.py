@@ -21,6 +21,11 @@ Covers:
     devre dışı global kümeden düşer, etkin custom kümeye girer,
     'belirsiz' her zaman garanti, hiç etkin kategori kalmazsa tüm
     globallere güvenli geri dönüş.
+  * 2026-08-21 (migration 0046) — operasyonel facts (SLA/CSAT/efor/
+    tazmin/teslimat): tenant_fact_mappings ile eşlenen kolonlar
+    review_facts'e parse edilerek yazılır — opt-out ve auto_create
+    yollarının ikisinde de, ve boş-metinli satırlarda da (facts metin
+    hücresinden bağımsız).
 """
 
 from __future__ import annotations
@@ -37,7 +42,9 @@ from imga_db.models import (
     Category,
     Review,
     ReviewDecision,
+    ReviewFact,
     TenantBusinessDimension,
+    TenantFactMapping,
     User,
 )
 from sqlalchemy import select, text
@@ -381,6 +388,229 @@ async def test_entered_by_and_source_persist_auto_create_backfill_path(
         ).scalar_one()
     assert row.entered_by == "Ayşe Demir"
     assert row.source == "mobil"
+
+
+# ---------------------------------------------------------------------------
+# operational facts (migration 0046) — SLA/CSAT/efor/tazmin/teslimat
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_facts_persist_via_opt_out_path(
+    batch_client: TestClient,
+    manual_tenant: tuple[User, UUID, str],
+    tmp_path: Path,
+    admin_session: AsyncSession,
+) -> None:
+    """tenant_fact_mappings ile eşlenen SLA statü + süre kolonları,
+    yükleme sonrası review_facts satırına PARSE EDİLMİŞ olarak yazılır
+    (opt-out / direkt-insert dalı — auto_create_tickets=False)."""
+    user, tid, pw = manual_tenant
+    token = login_token(batch_client, user.email, pw, tid)
+
+    async with admin_session.begin():
+        admin_session.add(
+            TenantFactMapping(
+                tenant_id=tid,
+                fact_field="sla_resolution_status",
+                csv_column_mapping="cozum_durumu",
+                enabled=True,
+            )
+        )
+        admin_session.add(
+            TenantFactMapping(
+                tenant_id=tid,
+                fact_field="resolution_time",
+                csv_column_mapping="cozum_suresi",
+                enabled=True,
+            )
+        )
+
+    csv_path = write_csv(
+        tmp_path / "facts_opt_out.csv",
+        ["yorum", "cozum_durumu", "cozum_suresi"],
+        [["ürünle ilgili genel bir yorum metni burada", "Within SLA", "00:14:19"]],
+    )
+    r = upload_csv(
+        batch_client,
+        token=token,
+        path=csv_path,
+        text_column="yorum",
+        auto_create_tickets=False,
+    )
+    job_id = UUID(r.json()["job_id"])
+    await run_worker(batch_client, job_id)
+
+    async with admin_session.begin():
+        await _bind(admin_session, tid)
+        review_row = (
+            await admin_session.execute(
+                select(Review).where(Review.batch_job_id == job_id)
+            )
+        ).scalar_one()
+        fact_row = (
+            await admin_session.execute(
+                select(ReviewFact).where(ReviewFact.review_id == review_row.id)
+            )
+        ).scalar_one()
+    assert fact_row.sla_resolution_status == "within"
+    assert fact_row.resolution_time_minutes == 14
+
+
+@pytest.mark.asyncio
+async def test_facts_persist_via_auto_create_path(
+    batch_client: TestClient,
+    manual_tenant: tuple[User, UUID, str],
+    tmp_path: Path,
+    admin_session: AsyncSession,
+) -> None:
+    """Aynı senaryo, record_and_decide (auto_create_tickets=True) yolu
+    üzerinden — result.review_id doğrudan bilindiği için facts o id'ye
+    yazılır."""
+    user, tid, pw = manual_tenant
+    token = login_token(batch_client, user.email, pw, tid)
+
+    async with admin_session.begin():
+        admin_session.add(
+            TenantFactMapping(
+                tenant_id=tid,
+                fact_field="csat",
+                csv_column_mapping="anket",
+                enabled=True,
+            )
+        )
+
+    csv_path = write_csv(
+        tmp_path / "facts_auto_create.csv",
+        ["yorum", "anket"],
+        [["ürünle ilgili başka bir yorum metni burada", "Çok memnunum"]],
+    )
+    r = upload_csv(
+        batch_client,
+        token=token,
+        path=csv_path,
+        text_column="yorum",
+        auto_create_tickets=True,
+    )
+    job_id = UUID(r.json()["job_id"])
+    await run_worker(batch_client, job_id)
+
+    async with admin_session.begin():
+        await _bind(admin_session, tid)
+        review_row = (
+            await admin_session.execute(
+                select(Review).where(Review.batch_job_id == job_id)
+            )
+        ).scalar_one()
+        fact_row = (
+            await admin_session.execute(
+                select(ReviewFact).where(ReviewFact.review_id == review_row.id)
+            )
+        ).scalar_one()
+    assert fact_row.csat_score == 5
+    assert fact_row.csat_raw == "Çok memnunum"
+
+
+@pytest.mark.asyncio
+async def test_facts_persist_for_empty_text_row(
+    batch_client: TestClient,
+    manual_tenant: tuple[User, UUID, str],
+    tmp_path: Path,
+    admin_session: AsyncSession,
+) -> None:
+    """Boş-metinli satır quality_flag='empty' olarak yazılır AMA facts
+    kolonu doluysa review_facts YİNE DE yazılır — facts metin
+    hücresinden bağımsızdır (spec: 'Boş-metin ... dahil — facts her
+    persist edilen review için yazılır')."""
+    user, tid, pw = manual_tenant
+    token = login_token(batch_client, user.email, pw, tid)
+
+    async with admin_session.begin():
+        admin_session.add(
+            TenantFactMapping(
+                tenant_id=tid,
+                fact_field="csat",
+                csv_column_mapping="anket",
+                enabled=True,
+            )
+        )
+
+    csv_path = write_csv(
+        tmp_path / "facts_empty_text.csv",
+        ["yorum", "anket"],
+        [
+            ["dolu bir yorum metni burada, facts kolonu boş", ""],
+            ["", "Orta"],
+        ],
+    )
+    r = upload_csv(
+        batch_client,
+        token=token,
+        path=csv_path,
+        text_column="yorum",
+        auto_create_tickets=False,
+    )
+    job_id = UUID(r.json()["job_id"])
+    await run_worker(batch_client, job_id)
+
+    async with admin_session.begin():
+        await _bind(admin_session, tid)
+        empty_review = (
+            await admin_session.execute(
+                select(Review)
+                .where(Review.batch_job_id == job_id)
+                .where(Review.quality_flag == "empty")
+            )
+        ).scalar_one()
+        fact_row = (
+            await admin_session.execute(
+                select(ReviewFact).where(ReviewFact.review_id == empty_review.id)
+            )
+        ).scalar_one()
+    assert fact_row.csat_score == 3
+    assert fact_row.csat_raw == "Orta"
+
+
+@pytest.mark.asyncio
+async def test_no_fact_mapping_means_no_review_facts_row(
+    batch_client: TestClient,
+    manual_tenant: tuple[User, UUID, str],
+    tmp_path: Path,
+    admin_session: AsyncSession,
+) -> None:
+    """Kurumun hiç tenant_fact_mappings satırı yoksa, upload'ta facts
+    kolonu OLSA BİLE eşlenmediği için review_facts hiç yazılmaz."""
+    user, tid, pw = manual_tenant
+    token = login_token(batch_client, user.email, pw, tid)
+
+    csv_path = write_csv(
+        tmp_path / "facts_no_mapping.csv",
+        ["yorum", "anket"],
+        [["mükemmel bir hizmet aldım gerçekten çok memnun kaldım", "Çok memnunum"]],
+    )
+    r = upload_csv(
+        batch_client,
+        token=token,
+        path=csv_path,
+        text_column="yorum",
+        auto_create_tickets=False,
+    )
+    job_id = UUID(r.json()["job_id"])
+    await run_worker(batch_client, job_id)
+
+    async with admin_session.begin():
+        await _bind(admin_session, tid)
+        review_row = (
+            await admin_session.execute(
+                select(Review).where(Review.batch_job_id == job_id)
+            )
+        ).scalar_one()
+        fact_row = (
+            await admin_session.execute(
+                select(ReviewFact).where(ReviewFact.review_id == review_row.id)
+            )
+        ).scalar_one_or_none()
+    assert fact_row is None
 
 
 # ---------------------------------------------------------------------------

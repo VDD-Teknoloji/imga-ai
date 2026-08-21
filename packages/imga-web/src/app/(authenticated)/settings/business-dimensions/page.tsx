@@ -22,6 +22,12 @@ import {
   useDeleteBusinessDimension,
   useUpsertBusinessDimension,
 } from "@/hooks/use-business-dimensions";
+import {
+  type FactField,
+  type FactMapping,
+  useFactMappings,
+  useSaveFactMappings,
+} from "@/hooks/use-operations";
 import { formatApiErrorMessage } from "@/lib/api-client";
 import { useTranslation } from "@/lib/i18n/use-translation";
 
@@ -80,7 +86,145 @@ function BusinessDimensionsPageInner() {
           })}
         </div>
       )}
+
+      <FactMappingsSection />
     </main>
+  );
+}
+
+// --- 2026-08-21 (Operasyonel analitik) — "Operasyonel Veri Eşlemeleri" ---
+//
+// DimensionCard'ın aksine burada satır-başı değil TEK Kaydet düğmesi
+// var (görev sözleşmesi): PUT /tenants/me/fact-mappings tam-replace
+// bekliyor, bu yüzden 13 satır tek mutation'da toplu gönderiliyor.
+// Yalnız csv_column_mapping'i dolu olan satırlar gönderilir — boş
+// bırakılan bir satır sunucuda o fact_field'ın eşlemesini temizler
+// (tam-replace semantiği, kasıtlı).
+
+const FACT_FIELDS: ReadonlyArray<{ key: FactField; labelKey: string }> = [
+  { key: "sla_resolution_status", labelKey: "settings.factMappings.slaResolutionStatus" },
+  {
+    key: "sla_first_response_status",
+    labelKey: "settings.factMappings.slaFirstResponseStatus",
+  },
+  { key: "resolution_time", labelKey: "settings.factMappings.resolutionTime" },
+  { key: "first_response_time", labelKey: "settings.factMappings.firstResponseTime" },
+  { key: "csat", labelKey: "settings.factMappings.csat" },
+  { key: "agent_interactions", labelKey: "settings.factMappings.agentInteractions" },
+  { key: "customer_interactions", labelKey: "settings.factMappings.customerInteractions" },
+  { key: "compensation_status", labelKey: "settings.factMappings.compensationStatus" },
+  { key: "freight_cost", labelKey: "settings.factMappings.freightCost" },
+  { key: "goods_cost", labelKey: "settings.factMappings.goodsCost" },
+  { key: "refund_reason", labelKey: "settings.factMappings.refundReason" },
+  { key: "delivery_status", labelKey: "settings.factMappings.deliveryStatus" },
+  { key: "delivery_detail", labelKey: "settings.factMappings.deliveryDetail" },
+];
+
+type FactRowState = Record<FactField, { csv: string; enabled: boolean }>;
+
+function defaultFactRowState(): FactRowState {
+  const out = {} as FactRowState;
+  for (const f of FACT_FIELDS) out[f.key] = { csv: "", enabled: true };
+  return out;
+}
+
+function rowStateFromMappings(data: FactMapping[]): FactRowState {
+  const byField = new Map(data.map((m) => [m.fact_field, m]));
+  const out = {} as FactRowState;
+  for (const f of FACT_FIELDS) {
+    const existing = byField.get(f.key);
+    out[f.key] = {
+      csv: existing?.csv_column_mapping ?? "",
+      enabled: existing?.enabled ?? true,
+    };
+  }
+  return out;
+}
+
+function FactMappingsSection() {
+  const { t } = useTranslation();
+  const list = useFactMappings();
+  const save = useSaveFactMappings();
+  const [rows, setRows] = useState<FactRowState>(defaultFactRowState);
+
+  // DimensionCard ile aynı desen — sunucu satırı ilk render'dan sonra
+  // gelir, geldiğinde local state'i onunla senkronize eder.
+  useEffect(() => {
+    if (list.data) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setRows(rowStateFromMappings(list.data));
+    }
+  }, [list.data]);
+
+  function onSave() {
+    const body: FactMapping[] = FACT_FIELDS.map((f) => ({
+      fact_field: f.key,
+      csv_column_mapping: rows[f.key].csv.trim(),
+      enabled: rows[f.key].enabled,
+    })).filter((m) => m.csv_column_mapping.length > 0);
+
+    save.mutate(body, {
+      onSuccess: () => toast.success(t("settings.factMappings.saved")),
+      onError: (err) => toast.error(formatApiErrorMessage(err)),
+    });
+  }
+
+  return (
+    <Card>
+      <CardContent className="space-y-4 p-4">
+        <div>
+          <h2 className="text-sm font-semibold">{t("settings.factMappings.title")}</h2>
+          <p className="text-muted-foreground text-xs">
+            {t("settings.factMappings.subtitle")}
+          </p>
+        </div>
+
+        {list.isLoading ? (
+          <div className="flex items-center gap-2 p-4 text-sm">
+            <Loader2 className="size-4 animate-spin" /> {t("common.loading")}
+          </div>
+        ) : (
+          <div className="divide-border divide-y">
+            {FACT_FIELDS.map((f) => (
+              <div
+                key={f.key}
+                className="grid grid-cols-1 items-center gap-2 py-2.5 sm:grid-cols-[1fr_2fr_auto]"
+              >
+                <Label className="text-sm">{t(f.labelKey)}</Label>
+                <Input
+                  value={rows[f.key].csv}
+                  onChange={(e) =>
+                    setRows((prev) => ({
+                      ...prev,
+                      [f.key]: { ...prev[f.key], csv: e.target.value },
+                    }))
+                  }
+                  placeholder={t("settings.dimensions.csvPlaceholder")}
+                />
+                <label className="inline-flex cursor-pointer items-center gap-2 text-xs whitespace-nowrap">
+                  <input
+                    type="checkbox"
+                    checked={rows[f.key].enabled}
+                    onChange={(e) =>
+                      setRows((prev) => ({
+                        ...prev,
+                        [f.key]: { ...prev[f.key], enabled: e.target.checked },
+                      }))
+                    }
+                    className="size-3.5"
+                  />
+                  {t("settings.dimensions.active")}
+                </label>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <Button size="sm" onClick={onSave} disabled={save.isPending || list.isLoading}>
+          {save.isPending ? t("settings.common.saving") : t("common.save")}
+        </Button>
+      </CardContent>
+    </Card>
   );
 }
 

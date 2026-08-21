@@ -63,6 +63,7 @@ from imga_api.routes import (
     tenant_monthly_metrics as tenant_monthly_metrics_routes,
 )
 from imga_api.routes import tenant_onboarding as tenant_onboarding_routes
+from imga_api.routes import tenant_operations as tenant_operations_routes
 from imga_api.routes import (
     tenant_pending_webhooks as tenant_pending_webhooks_routes,
 )
@@ -461,6 +462,8 @@ app.include_router(tenant_llm_audit_routes.router)
 app.include_router(tenant_decision_audit_routes.router)
 app.include_router(tenant_business_dimensions_routes.router)
 app.include_router(tenant_prompt_templates_routes.router)
+# Migration 0046 — operasyonel facts modülü (SLA/CSAT/efor/tazmin/teslimat).
+app.include_router(tenant_operations_routes.router)
 
 
 @app.get(

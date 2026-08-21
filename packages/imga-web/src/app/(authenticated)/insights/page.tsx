@@ -46,6 +46,7 @@ import {
 } from "@/hooks/use-analytics";
 import type { BreakdownDimensionKey, DimensionMetricKey } from "@/hooks/use-business-dimensions";
 import type { CohortDimensionExt } from "@/hooks/use-insights-cohort";
+import type { OperationsMetricKey } from "@/hooks/use-operations";
 import type {
   AnalyticsFilters,
   CohortPeriod,
@@ -84,6 +85,11 @@ const HeatmapTab = dynamic(
   () => import("./_components/heatmap-tab").then((m) => ({ default: m.HeatmapTab })),
   { loading: () => <TabLoading />, ssr: false },
 );
+const OperationsTab = dynamic(
+  () =>
+    import("./_components/operations-tab").then((m) => ({ default: m.OperationsTab })),
+  { loading: () => <TabLoading />, ssr: false },
+);
 const WordCloudTab = dynamic(
   () => import("./_components/word-cloud-tab").then((m) => ({ default: m.WordCloudTab })),
   { loading: () => <TabLoading />, ssr: false },
@@ -108,7 +114,9 @@ type TabKey =
   | "wordcloud"
   | "heatmap"
   // 2026-08-20 — business dimension breakdown.
-  | "dimensions";
+  | "dimensions"
+  // 2026-08-21 — operational analytics (SLA/CSAT/effort/compensation/delivery).
+  | "operations";
 
 // Sprint 9.6 redesign — tab labels tightened so the 10-tab strip
 // fits the analyst's mental model: tighter words, ordered by
@@ -126,6 +134,7 @@ const TAB_LABEL_KEYS: Record<TabKey, string> = {
   heatmap: "insights.tabs.heatmap",
   cohort: "insights.tabs.cohort",
   dimensions: "insights.tabs.dimensions",
+  operations: "insights.tabs.operations",
   wordcloud: "insights.tabs.wordcloud",
   // Madde 11 (UML) — "Override" yabancı kelime; Türkçe karşılığı
   // "Kural Katmanları" daha anlaşılır (tier1/tier2/critical yorum-
@@ -217,6 +226,15 @@ function InsightsContent() {
   const [dmetric, setDmetricState] = useState<DimensionMetricKey>(
     () => (searchParams.get("dmetric") as DimensionMetricKey) || "review_volume",
   );
+  // 2026-08-21 — Operasyon tab URL state: odim (BreakdownDimensionKey,
+  // varsayılan "channel") + ometric (OperationsMetricKey, varsayılan
+  // "violation_rate"). Aynı Path B mirror deseni, dim/dmetric ile paralel.
+  const [odim, setOdimState] = useState<BreakdownDimensionKey>(
+    () => (searchParams.get("odim") as BreakdownDimensionKey) || "channel",
+  );
+  const [ometric, setOmetricState] = useState<OperationsMetricKey>(
+    () => (searchParams.get("ometric") as OperationsMetricKey) || "violation_rate",
+  );
   const [wcSentiment, setWcSentimentState] = useState<WordCloudSentiment>(
     () => (searchParams.get("wc_sentiment") as WordCloudSentiment) || "all",
   );
@@ -282,6 +300,12 @@ function InsightsContent() {
     const urlDmetric =
       (searchParams.get("dmetric") as DimensionMetricKey) || "review_volume";
     setDmetricState((prev) => (prev === urlDmetric ? prev : urlDmetric));
+    // 2026-08-21 — Operasyon tab mirrors.
+    const urlOdim = (searchParams.get("odim") as BreakdownDimensionKey) || "channel";
+    setOdimState((prev) => (prev === urlOdim ? prev : urlOdim));
+    const urlOmetric =
+      (searchParams.get("ometric") as OperationsMetricKey) || "violation_rate";
+    setOmetricState((prev) => (prev === urlOmetric ? prev : urlOmetric));
     const urlWcSent =
       (searchParams.get("wc_sentiment") as WordCloudSentiment) || "all";
     setWcSentimentState((prev) => (prev === urlWcSent ? prev : urlWcSent));
@@ -463,6 +487,23 @@ function InsightsContent() {
             onMetricChange={(next) => {
               setDmetricState(next);
               pushParam("dmetric", next === "review_volume" ? null : next);
+            }}
+          />
+        </TabsContent>
+        <TabsContent value="operations">
+          <OperationsTab
+            dateFrom={dateFrom}
+            dateTo={dateTo}
+            includeFlagged={includeFlagged}
+            odim={odim}
+            ometric={ometric}
+            onOdimChange={(next) => {
+              setOdimState(next);
+              pushParam("odim", next === "channel" ? null : next);
+            }}
+            onOmetricChange={(next) => {
+              setOmetricState(next);
+              pushParam("ometric", next === "violation_rate" ? null : next);
             }}
           />
         </TabsContent>

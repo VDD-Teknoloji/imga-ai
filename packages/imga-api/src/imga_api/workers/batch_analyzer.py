@@ -40,7 +40,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from imga_core import (
     AnalysisPipeline,
@@ -65,10 +65,13 @@ from imga_db.models import (
     CategoryTaxonomy,
     Review,
     ReviewDecision,
+    ReviewFact,
     TenantBusinessDimension,
     TenantCategory,
+    TenantFactMapping,
 )
 from sqlalchemy import and_, or_, select, update
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from imga_api.services.audit_service import AuditService
@@ -77,6 +80,7 @@ from imga_api.services.batch_service import (
     BatchProgress,
 )
 from imga_api.services.data_quality import classify_data_quality
+from imga_api.services.fact_parsing import build_fact_row
 from imga_api.services.review_service import ReviewService
 from imga_api.services.tenant_config_service import TenantConfigService
 from imga_api.services.ticket_service import TicketService
@@ -438,12 +442,17 @@ async def _run_job(
     # (business_segment / product_line / channel / customer_tier).
     dimension_mapping = await _fetch_dimension_mapping(tenant_id, context)
 
+    # Migration 0046 — same pattern, for the operational "facts"
+    # columns (SLA/CSAT/effort/compensation/delivery).
+    fact_mapping = await _fetch_fact_mapping(tenant_id, context)
+
     try:
         rows_iter = iter_rows(
             file_path,
             text_column=text_column,
             source_column=source_column,
             dimension_mapping=dimension_mapping,
+            fact_mapping=fact_mapping,
             date_column=date_column,
         )
     except (FileParseError, UnknownColumnError) as exc:
@@ -763,10 +772,19 @@ async def _write_empty_reviews(
     onward would be misclassified as 'duplicate'. Called from both the
     normal per-chunk success path and the catastrophic-BERT-failure
     fallback (empty rows never depended on BERT, so they must not be
-    lost when the rest of the chunk fails)."""
+    lost when the rest of the chunk fails).
+
+    Migration 0046 — an empty-text row can still carry facts (SLA/CSAT/
+    etc. are independent of the review text cell); each row's
+    ``parsed.facts`` is parsed and accumulated into one bulk
+    ``review_facts`` upsert at the end, same as the three Review
+    branches in ``_process_chunk``."""
     row_moment = datetime.now(UTC)
+    fact_rows: list[dict[str, Any]] = []
     for parsed in empty_rows:
+        review_id = uuid4()
         review = Review(
+            id=review_id,
             tenant_id=tenant_id,
             text=parsed.text,
             text_hash=review_text_hash(parsed.text),
@@ -793,6 +811,13 @@ async def _write_empty_reviews(
             source=parsed.source,
         )
         app_session.add(review)
+        if parsed.facts:
+            fact_row = build_fact_row(parsed.facts)
+            if fact_row is not None:
+                fact_rows.append(
+                    {"review_id": review_id, "tenant_id": tenant_id, **fact_row}
+                )
+    await _upsert_review_facts(app_session, fact_rows)
 
 
 async def _process_chunk(
@@ -1159,6 +1184,12 @@ async def _process_chunk(
         # B-tree index on tenant_id).
         taxonomy_snapshot = await _load_taxonomy_payload(app_session, tenant_id)
 
+        # Migration 0046 — accumulated across all three Review-insertion
+        # branches below (dedup / auto_create / opt-out) and upserted
+        # in ONE bulk statement after the loop, mirroring the existing
+        # per-chunk-transaction persist shape.
+        fact_rows: list[dict[str, Any]] = []
+
         for row_index, (parsed, analysis) in enumerate(
             zip(valid_rows, analyses, strict=True)
         ):
@@ -1246,7 +1277,9 @@ async def _process_chunk(
                     seen_hashes.add(text_hash)
 
             if is_duplicate:
+                dup_review_id = uuid4()
                 review = Review(
+                    id=dup_review_id,
                     tenant_id=tenant_id,
                     text=parsed.text,
                     text_hash=text_hash,
@@ -1283,6 +1316,16 @@ async def _process_chunk(
                     source=parsed.source,
                 )
                 app_session.add(review)
+                if parsed.facts:
+                    fact_row = build_fact_row(parsed.facts)
+                    if fact_row is not None:
+                        fact_rows.append(
+                            {
+                                "review_id": dup_review_id,
+                                "tenant_id": tenant_id,
+                                **fact_row,
+                            }
+                        )
                 duplicates += 1
                 quality_duplicate += 1
                 succeeded += 1
@@ -1362,6 +1405,16 @@ async def _process_chunk(
                     if result.decision == ReviewDecision.SKIPPED_DEDUP
                     else row_quality_flag
                 )
+                if parsed.facts:
+                    fact_row = build_fact_row(parsed.facts)
+                    if fact_row is not None:
+                        fact_rows.append(
+                            {
+                                "review_id": result.review_id,
+                                "tenant_id": tenant_id,
+                                **fact_row,
+                            }
+                        )
                 await app_session.execute(
                     update(Review)
                     .where(Review.id == result.review_id)
@@ -1398,7 +1451,9 @@ async def _process_chunk(
                     if analysis.categorization
                     else 0.0
                 )
+                opt_out_review_id = uuid4()
                 review = Review(
+                    id=opt_out_review_id,
                     tenant_id=tenant_id,
                     text=parsed.text,
                     text_hash=text_hash,
@@ -1427,6 +1482,16 @@ async def _process_chunk(
                     source=parsed.source,
                 )
                 app_session.add(review)
+                if parsed.facts:
+                    fact_row = build_fact_row(parsed.facts)
+                    if fact_row is not None:
+                        fact_rows.append(
+                            {
+                                "review_id": opt_out_review_id,
+                                "tenant_id": tenant_id,
+                                **fact_row,
+                            }
+                        )
                 succeeded += 1
                 if row_quality_flag == "informational":
                     quality_informational += 1
@@ -1434,6 +1499,8 @@ async def _process_chunk(
                     quality_meaningless += 1
                 if parsed.nps_score is not None:
                     rows_with_nps_in_chunk += 1
+
+        await _upsert_review_facts(app_session, fact_rows)
 
     db_seconds = time.monotonic() - db_started_at
 
@@ -2075,6 +2142,61 @@ async def _fetch_dimension_mapping(
         )
         return {}
     return {dim: col for dim, col in rows if col}
+
+
+async def _fetch_fact_mapping(
+    tenant_id: UUID, context: WorkerContext
+) -> dict[str, str]:
+    """Migration 0046 — load the tenant's enabled operational-"facts"
+    config and return ``{fact_field: csv_column_mapping}``. Mirrors
+    ``_fetch_dimension_mapping`` exactly: best-effort (a load failure
+    logs but doesn't break the upload — facts are observability-grade,
+    not contract), empty dict when the tenant has no facts configured."""
+    try:
+        async with context.admin_session_factory() as session, session.begin():
+            await set_current_tenant(session, tenant_id)
+            stmt = (
+                select(
+                    TenantFactMapping.fact_field,
+                    TenantFactMapping.csv_column_mapping,
+                )
+                .where(TenantFactMapping.tenant_id == tenant_id)
+                .where(TenantFactMapping.enabled.is_(True))
+            )
+            rows = (await session.execute(stmt)).all()
+    except Exception:
+        log.exception(
+            "batch worker: fact mapping load failed; "
+            "reviews will land without review_facts rows",
+            extra={"tenant_id": str(tenant_id)},
+        )
+        return {}
+    return {field_name: col for field_name, col in rows if col}
+
+
+async def _upsert_review_facts(
+    app_session: AsyncSession, rows: list[dict[str, Any]]
+) -> None:
+    """Migration 0046 — one bulk upsert per chunk for the accumulated
+    ``review_facts`` rows (all four Review-insertion branches in
+    ``_process_chunk`` + ``_write_empty_reviews`` funnel here). Every
+    element of ``rows`` carries the SAME key set (``fact_parsing.
+    build_fact_row``'s full 14-column output plus review_id/tenant_id)
+    so a single ``insert().values([...])`` covers the whole chunk.
+    File is the source of truth on a re-run (reanalysis / re-upload):
+    every non-PK column is overwritten from ``excluded``."""
+    if not rows:
+        return
+    stmt = pg_insert(ReviewFact).values(rows)
+    update_columns = {
+        col.name: getattr(stmt.excluded, col.name)
+        for col in ReviewFact.__table__.columns
+        if col.name not in ("review_id", "tenant_id", "created_at")
+    }
+    stmt = stmt.on_conflict_do_update(
+        index_elements=["review_id"], set_=update_columns
+    )
+    await app_session.execute(stmt)
 
 
 @dataclass(frozen=True, slots=True)

@@ -15,7 +15,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from imga_core.llm.key_rotation import GeminiKey
-from imga_db.models import Review, UserTenantRole
+from imga_db.models import Review, ReviewFact, UserTenantRole
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -147,6 +147,29 @@ class CompanyPerspectiveBlock(BaseModel):
     label_tr: str | None
 
 
+class ReviewFactsBlock(BaseModel):
+    """Migration 0046 — operasyonel facts (SLA/CSAT/efor/tazmin/
+    teslimat), ``review_facts`` satırı varsa. ``review_id``/
+    ``tenant_id``/``created_at``/``updated_at`` hariç tüm kolonlar."""
+
+    sla_resolution_status: str | None
+    sla_first_response_status: str | None
+    resolution_time_minutes: int | None
+    first_response_time_minutes: int | None
+    csat_score: int | None
+    csat_raw: str | None
+    agent_interactions: int | None
+    customer_interactions: int | None
+    compensation_status: str | None
+    # float: Decimal pydantic json modunda string'e serilesir, frontend
+    # number bekler (operations/summary ile ayni tel-tipi).
+    freight_cost: float | None
+    goods_cost: float | None
+    refund_reason: str | None
+    delivery_status: str | None
+    delivery_detail: str | None
+
+
 class ReviewDetailResponse(BaseModel):
     id: UUID
     text: str
@@ -165,6 +188,7 @@ class ReviewDetailResponse(BaseModel):
     nps_score: int | None = None
     nps_category: str | None = None
     experience_type: str | None = None
+    facts: ReviewFactsBlock | None = None
 
 
 # --- endpoints -----------------------------------------------------
@@ -423,6 +447,41 @@ async def get_review(
         # has the trace ready to drive the divergence.
         score = float(review.sentiment_score)
         overrides_list: list[dict[str, object]] = list(review.overrides_applied or [])
+        # Migration 0046 — nullable facts enrichment (review_facts is
+        # 1:1 with reviews; most rows have none).
+        fact_row = (
+            await app_session.execute(
+                select(ReviewFact).where(ReviewFact.review_id == review_id)
+            )
+        ).scalar_one_or_none()
+        facts_block = (
+            ReviewFactsBlock(
+                sla_resolution_status=fact_row.sla_resolution_status,
+                sla_first_response_status=fact_row.sla_first_response_status,
+                resolution_time_minutes=fact_row.resolution_time_minutes,
+                first_response_time_minutes=fact_row.first_response_time_minutes,
+                csat_score=fact_row.csat_score,
+                csat_raw=fact_row.csat_raw,
+                agent_interactions=fact_row.agent_interactions,
+                customer_interactions=fact_row.customer_interactions,
+                compensation_status=fact_row.compensation_status,
+                freight_cost=(
+                    float(fact_row.freight_cost)
+                    if fact_row.freight_cost is not None
+                    else None
+                ),
+                goods_cost=(
+                    float(fact_row.goods_cost)
+                    if fact_row.goods_cost is not None
+                    else None
+                ),
+                refund_reason=fact_row.refund_reason,
+                delivery_status=fact_row.delivery_status,
+                delivery_detail=fact_row.delivery_detail,
+            )
+            if fact_row is not None
+            else None
+        )
         return ReviewDetailResponse(
             id=review.id,
             text=review.text,
@@ -452,6 +511,7 @@ async def get_review(
             nps_score=review.nps_score,
             nps_category=review.nps_category,
             experience_type=review.experience_type,
+            facts=facts_block,
         )
 
 

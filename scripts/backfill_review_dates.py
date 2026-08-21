@@ -19,12 +19,19 @@ tarih ötesinde entered_by/source/channel/business_segment/product_line/
 customer_tier ve quality_flag'i de AYNI mekanizmayla dolduracak şekilde
 genişletildi.
 
+2026-08-21 (migration 0046) — operasyonel "facts" modülü (SLA/CSAT/
+efor/tazmin/teslimat) ``--fact ALAN=BASLIK`` ile AYNI hash+sıra eşleme
+mekanizmasına eklendi. ``--map``'ten FARKLI: hedef ``review_facts``
+(ayrı, 1:1 tablo) olduğundan NULL-koruma satır-bazında değil KOLON-
+BAZINDA SQL ``COALESCE`` ile uygulanır (bkz. ``upsert_review_facts``).
+
 Kullanım (api konteyneri içinde; dosyayı önce içeri kopyalayın, ör.
 ``docker cp Kitap1.xlsx imga-api:/tmp/``):
 
     python /tmp/backfill_review_dates.py <job_id> <dosya_yolu> \\
         [--date-column BASLIK] \\
         [--map HEDEF=BASLIK ...] \\
+        [--fact ALAN=BASLIK ...] \\
         [--quality-label-column BASLIK] [--tags-column BASLIK] \\
         [--overwrite] [--dry-run]
 
@@ -61,6 +68,20 @@ Argümanlar:
                  okunmamalı). --overwrite verilmezse yalnız hedefi NULL
                  olan satırlara yazılır; --overwrite ile mevcut değer de
                  ezilir.
+  --fact         Tekrarlanabilir. ``ALAN=BASLIK`` biçiminde (ALAN
+                 fact_parsing.FACT_FIELDS'in 13 alanından biri; BASLIK
+                 dosyadaki kolon başlığı, BİREBİR). Aynı komuttaki TÜM
+                 --fact hedefleri her review_id için TEK bir ham
+                 değer sözlüğünde toplanır ve fact_parsing.
+                 build_fact_row ile parse edilir — bir satırın statü +
+                 süre çifti (ör. sla_resolution_status + resolution_
+                 time) AYNI komutta verildiyse yer tutucu normalizasyonu
+                 (00:00:00 -> None) birlikte uygulanır. review_facts'e
+                 upsert edilir; NULL-koruma --map'ten FARKLI olarak
+                 KOLON bazında SQL COALESCE ile işler (bu koşunun hiç
+                 dokunmadığı alanlar dokunulmadan kalır). --overwrite
+                 verilirse None değerler de yazılır ve önceki bir
+                 koşudan gelen değer ezilir.
   --quality-label-column
                  Opsiyonel. Dosyadaki kalite/kategori etiketi kolonu
                  başlığı. Değer 'mükerrer' ise quality_flag=duplicate,
@@ -169,6 +190,7 @@ from pathlib import Path
 from typing import Any, TypeVar
 from uuid import UUID
 
+from imga_api.services.fact_parsing import FACT_FIELDS, build_fact_row
 from imga_api.workers.file_parser import (
     FileParseError,
     UnknownColumnError,
@@ -177,10 +199,11 @@ from imga_api.workers.file_parser import (
 )
 from imga_core.text_utils import normalize_turkish, review_text_hash
 from imga_db import create_engine, create_session_factory, set_current_tenant
-from imga_db.models import AnalyzeBatchJob, ExecutiveSnapshot, Review
+from imga_db.models import AnalyzeBatchJob, ExecutiveSnapshot, Review, ReviewFact
 from openpyxl import load_workbook
 from openpyxl.utils.exceptions import InvalidFileException
-from sqlalchemy import bindparam, delete, or_, select, update
+from sqlalchemy import bindparam, delete, func, or_, select, update
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 #: Güvenlik eşiği — dosya/DB hash kümeleri bu orandan fazla ayrışıyorsa
@@ -773,6 +796,76 @@ async def _apply_column_update(
     await session.execute(stmt, params, execution_options={"synchronize_session": None})
 
 
+def build_fact_upsert_rows(
+    tenant_id: UUID,
+    fact_assignments_by_field: Mapping[str, Mapping[UUID, str | None]],
+) -> list[dict[str, Any]]:
+    """``--fact`` hedeflerinin (review_id -> ham değer) eşlemelerini
+    tek satırlık ``review_facts`` upsert sözlüklerine indirger. Saf
+    fonksiyon (I/O yok) — ``fact_parsing.build_fact_row``'un normalizasyon
+    kuralını (statü+süre çifti BİRLİKTE) uygulayabilmesi için, aynı
+    komutta gelen TÜM fact hedefleri bir review_id için TEK bir
+    ``{fact_field: ham_deger}`` sözlüğünde toplanır — hedef başına ayrı
+    çağrı DEĞİL.
+
+    ``None`` değerler (hücre boş / hash eşleşmedi) sözlüğe hiç
+    eklenmez — ``fact_parsing.build_fact_row``'un "eksik anahtar =
+    veri yok" sözleşmesi. Bir review_id için hiçbir hedef dolu
+    değilse (``build_fact_row`` None dönerse) çıktıya hiç girmez."""
+    per_review_raw: dict[UUID, dict[str, str]] = defaultdict(dict)
+    for fact_field, assignments in fact_assignments_by_field.items():
+        for review_id, value in assignments.items():
+            if value is not None:
+                per_review_raw[review_id][fact_field] = value
+
+    rows: list[dict[str, Any]] = []
+    for review_id, raw in per_review_raw.items():
+        parsed = build_fact_row(raw)
+        if parsed is not None:
+            rows.append({"review_id": review_id, "tenant_id": tenant_id, **parsed})
+    return rows
+
+
+async def upsert_review_facts(
+    session: AsyncSession, rows: list[dict[str, Any]], *, overwrite: bool
+) -> None:
+    """``review_facts`` için parçalı toplu upsert. NULL-koruma KOLON
+    BAZINDA SQL'de uygulanır ve yön ``--map`` semantiğiyle AYNIDIR:
+    ``--overwrite`` verilmediği sürece MEVCUT dolu değer kazanır
+    (``COALESCE(review_facts.col, EXCLUDED.col)``) — dolu bir alan
+    ikinci bir koşuda sessizce ezilmez, yalnız NULL alanlar dolar.
+    ``--overwrite`` ile gelen değer (None dahil) mevcut değeri ezer —
+    yalnız bilinçli tam yeniden-yazım için.
+
+    Parçalama zorunlu: tek multi-VALUES INSERT'te satır×16 bind
+    parametresi asyncpg'nin 32767 sınırına çarpar (16.5K satırlık
+    gerçek koşu ~264K parametre olurdu)."""
+    if not rows:
+        return
+    updateable = [
+        col.name
+        for col in ReviewFact.__table__.columns
+        if col.name not in ("review_id", "tenant_id", "created_at")
+    ]
+    chunk_size = 1500
+    for start in range(0, len(rows), chunk_size):
+        chunk = rows[start : start + chunk_size]
+        stmt = pg_insert(ReviewFact).values(chunk)
+        if overwrite:
+            set_ = {name: getattr(stmt.excluded, name) for name in updateable}
+        else:
+            set_ = {
+                name: func.coalesce(
+                    ReviewFact.__table__.c[name], getattr(stmt.excluded, name)
+                )
+                for name in updateable
+            }
+        stmt = stmt.on_conflict_do_update(
+            index_elements=["review_id"], set_=set_
+        )
+        await session.execute(stmt)
+
+
 async def _bust_redis_caches(tenant_id: UUID) -> None:
     """``reanalyzer._bust_redis_caches`` ile AYNI mantık — KASITLI KOPYA,
     import değil (modül docstring'i, adım 7). Best-effort: Redis
@@ -803,6 +896,7 @@ async def run(
     *,
     date_column: str | None,
     map_columns: dict[str, str],
+    fact_columns: dict[str, str],
     quality_label_column: str | None,
     tags_column: str | None,
     overwrite: bool,
@@ -837,12 +931,15 @@ async def run(
         )
         for target, header in map_columns.items():
             print(f"[backfill] --map {target}='{header}'")
+        for fact_field, header in fact_columns.items():
+            print(f"[backfill] --fact {fact_field}='{header}'")
         if quality_label_column:
             print(f"[backfill] --quality-label-column='{quality_label_column}'")
         if tags_column:
             print(f"[backfill] --tags-column='{tags_column}'")
 
         value_columns: dict[str, str] = dict(map_columns)
+        value_columns.update(fact_columns)
         if quality_label_column:
             value_columns[_QUALITY_LABEL_KEY] = quality_label_column
         if tags_column:
@@ -950,6 +1047,34 @@ async def run(
                 f"yazılacak {len(map_to_write)}, atlanan-mevcut {map_skipped}"
             )
 
+        # --- --fact hedefleri (review_facts, migration 0046) ------------
+        # NULL-koruma burada satır-bazında DEĞİL (split_writable_
+        # assignments), kolon-bazında SQL COALESCE ile uygulanır (bkz.
+        # upsert_review_facts) — bu yüzden current_values_by_target /
+        # split_writable_assignments'a hiç girmez.
+        fact_assignments_by_field: dict[str, Mapping[UUID, str | None]] = {}
+        for fact_field, header in fact_columns.items():
+            fact_assignments_by_field[fact_field] = match_values_by_hash_order(
+                raw_values_by_target.get(fact_field, {}), db_rows_by_hash
+            )
+            print(
+                f"[backfill] --fact {fact_field} (BAŞLIK='{header}'): "
+                f"eşlenen (dolu) satır "
+                f"{sum(1 for v in fact_assignments_by_field[fact_field].values() if v is not None)}"
+            )
+        fact_upsert_rows = (
+            build_fact_upsert_rows(tenant_id, fact_assignments_by_field)
+            if fact_columns
+            else []
+        )
+        if fact_columns:
+            print(
+                f"[backfill] hedef=review_facts: yazılacak (upsert) satır "
+                f"{len(fact_upsert_rows)}"
+            )
+            for sample_row in fact_upsert_rows[:5]:
+                print(f"[backfill]   örnek: {sample_row}")
+
         # --- quality_flag (--quality-label-column / --tags-column) ------
         if quality_label_column or tags_column:
             label_by_hash = _compact_mapped_values(
@@ -983,7 +1108,11 @@ async def run(
             print("[backfill] --dry-run: hiçbir UPDATE çalıştırılmadı.")
             return 0
 
-        total_writes = len(date_assignments) + sum(len(v) for v in writable_by_target.values())
+        total_writes = (
+            len(date_assignments)
+            + sum(len(v) for v in writable_by_target.values())
+            + len(fact_upsert_rows)
+        )
         if total_writes == 0:
             print("[backfill] güncellenecek satır yok, çıkılıyor.")
             return 0
@@ -995,6 +1124,10 @@ async def run(
             for target, assignments_to_write in writable_by_target.items():
                 if assignments_to_write:
                     await _apply_column_update(session, target, assignments_to_write)
+            if fact_upsert_rows:
+                await upsert_review_facts(
+                    session, fact_upsert_rows, overwrite=overwrite
+                )
 
         # Yeniden analiz işçisiyle aynı gerekçe (reanalyzer.
         # _bust_snapshot_cache): geçmiş herhangi bir satır (tarih VEYA
@@ -1011,6 +1144,7 @@ async def run(
         summary = ", ".join(
             [f"review_date={len(date_assignments)}"]
             + [f"{target}={len(v)}" for target, v in writable_by_target.items()]
+            + ([f"review_facts={len(fact_upsert_rows)}"] if fact_columns else [])
         )
         print(f"[backfill] TAMAMLANDI: {summary}")
         return 0
@@ -1041,6 +1175,29 @@ def _parse_map_arg(value: str) -> tuple[str, str]:
     return target, header
 
 
+_FACT_FIELD_HELP = ", ".join(FACT_FIELDS)
+
+
+def _parse_fact_arg(value: str) -> tuple[str, str]:
+    """--fact ALAN=BASLIK için argparse type= callback'i —
+    ``_parse_map_arg`` ile AYNI şekil, ALAN kümesi ``fact_parsing.
+    FACT_FIELDS`` (13 review_facts alanı) üzerinden doğrulanır."""
+    field, sep, header = value.partition("=")
+    field = field.strip()
+    header = header.strip()
+    if not sep:
+        raise argparse.ArgumentTypeError(
+            f"--fact değeri 'ALAN=BASLIK' biçiminde olmalı, alınan: {value!r}"
+        )
+    if field not in FACT_FIELDS:
+        raise argparse.ArgumentTypeError(
+            f"--fact alanı {field!r} tanınmıyor. İzin verilenler: {_FACT_FIELD_HELP}."
+        )
+    if not header:
+        raise argparse.ArgumentTypeError(f"--fact {field}=... için başlık boş olamaz.")
+    return field, header
+
+
 def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=__doc__,
@@ -1068,6 +1225,23 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
             f"Tekrarlanabilir. HEDEF in {{{_MAP_TARGET_HELP}}}; BASLIK "
             "dosyadaki kolon başlığı (birebir). Örn: --map source=Kanal "
             "--map entered_by='Giren Kullanıcı'"
+        ),
+    )
+    parser.add_argument(
+        "--fact",
+        dest="fact_specs",
+        action="append",
+        type=_parse_fact_arg,
+        default=[],
+        metavar="ALAN=BASLIK",
+        help=(
+            f"Tekrarlanabilir. ALAN in {{{_FACT_FIELD_HELP}}}; BASLIK "
+            "dosyadaki kolon başlığı (birebir). review_facts'e "
+            "fact_parsing.build_fact_row ile parse edilip upsert "
+            "edilir (--overwrite yoksa yalnız None-olmayan alanlar "
+            "yazılır — mevcut değer korunur). Örn: --fact "
+            "csat='Anket sonuçları' --fact resolution_time='Çözüm "
+            "süresi (saat olarak)'"
         ),
     )
     parser.add_argument(
@@ -1116,6 +1290,13 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
             parser.error(f"--map hedefi '{target}' birden fazla kez verildi.")
         map_columns[target] = header
     args.map_columns = map_columns
+
+    fact_columns: dict[str, str] = {}
+    for field, header in args.fact_specs:
+        if field in fact_columns:
+            parser.error(f"--fact alanı '{field}' birden fazla kez verildi.")
+        fact_columns[field] = header
+    args.fact_columns = fact_columns
     return args
 
 
@@ -1130,6 +1311,7 @@ def main() -> None:
             args.file_path,
             date_column=args.date_column,
             map_columns=args.map_columns,
+            fact_columns=args.fact_columns,
             quality_label_column=args.quality_label_column,
             tags_column=args.tags_column,
             overwrite=args.overwrite,

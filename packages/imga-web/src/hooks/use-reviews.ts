@@ -11,6 +11,32 @@ import type { ReviewDetail, ReviewListFilters, ReviewListResponse } from "@/lib/
 // yerel olarak genişletiliyor. ReviewListFilters değerleri (bu 6 alan
 // olmadan) yapısal olarak buraya atanabilir, mevcut çağıranlar
 // değişmeden derlenmeye devam eder.
+// 2026-08-21 (Operasyonel analitik) — /reviews/{id} yanıtına eklenen
+// nullable "facts" nesnesi. Aynı desen: lib/types.ts'e dokunulmuyor
+// (paralel backend ajanı henüz deploy etmedi — alan bir süre hiç
+// gelmeyebilir, bu yüzden optional + nullable), ReviewDetail burada
+// yerel olarak genişletiliyor.
+export interface ReviewFacts {
+  sla_resolution_status: "within" | "violated" | null;
+  sla_first_response_status: "within" | "violated" | null;
+  resolution_time_minutes: number | null;
+  first_response_time_minutes: number | null;
+  csat_score: number | null;
+  csat_raw: string | null;
+  agent_interactions: number | null;
+  customer_interactions: number | null;
+  compensation_status: string | null;
+  freight_cost: number | null;
+  goods_cost: number | null;
+  refund_reason: string | null;
+  delivery_status: string | null;
+  delivery_detail: string | null;
+}
+
+export type ReviewDetailWithFacts = ReviewDetail & {
+  facts?: ReviewFacts | null;
+};
+
 export interface ReviewDimensionFilterFields {
   channels?: string[];
   business_segments?: string[];
@@ -202,11 +228,11 @@ export function useInfiniteReviews(filters: ReviewListFiltersExt, pageSize = 50)
 }
 
 export function useReviewDetail(reviewId: string | null) {
-  return useQuery<ReviewDetail>({
+  return useQuery<ReviewDetailWithFacts>({
     queryKey: ["review-detail", reviewId],
     queryFn: async () => {
       if (!reviewId) throw new Error("missing reviewId");
-      return apiRequest<ReviewDetail>(`/tenants/me/reviews/${reviewId}`);
+      return apiRequest<ReviewDetailWithFacts>(`/tenants/me/reviews/${reviewId}`);
     },
     enabled: reviewId !== null,
   });

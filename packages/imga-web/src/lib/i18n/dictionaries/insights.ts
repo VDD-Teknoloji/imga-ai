@@ -24,6 +24,8 @@ export const insights: Bundle = {
     "insights.tabs.overrides": "Kural Katmanları",
     // 2026-08-20 — Boyutlar sekmesi (iş boyutu breakdown'ı).
     "insights.tabs.dimensions": "Boyutlar",
+    // 2026-08-21 — Operasyon sekmesi (SLA/CSAT/efor/tazmin/teslimat).
+    "insights.tabs.operations": "Operasyon",
 
     // --- /insights: sayfa başlığı ---
     "insights.page.title": "İçgörüler",
@@ -106,6 +108,37 @@ export const insights: Bundle = {
     "insights.dimTab.totalCoverage": "Toplam {total} · Kapsama {coverage} (%{pct})",
     "insights.dimTab.percentValue": "%{value}",
     "insights.dimTab.top15Note": "İlk 15 kova gösteriliyor (adet çoğa göre sıralı).",
+
+    // --- /insights: operasyon tab (2026-08-21) ---
+    "insights.opsTab.metricSlaResolutionViolation": "Çözüm İhlal Oranı %",
+    "insights.opsTab.metricSlaFirstResponseViolation": "İlk Yanıt İhlal Oranı %",
+    "insights.opsTab.metricAvgResolutionTime": "Ort. Çözüm Süresi",
+    "insights.opsTab.metricAvgFirstResponseTime": "Ort. İlk Yanıt Süresi",
+    "insights.opsTab.coverageOf": "{count} kayıt üzerinden",
+    "insights.opsTab.metricViolationRate": "İhlal Oranı %",
+    "insights.opsTab.metricFirstResponseViolationRate": "İlk Yanıt İhlal Oranı %",
+    "insights.opsTab.metricAvgResolution": "Ort. Çözüm Süresi",
+    "insights.opsTab.metricAvgFirstResponse": "Ort. İlk Yanıt Süresi",
+    "insights.opsTab.metricAvgAgentInteractions": "Ort. Temsilci Etkileşimi",
+    "insights.opsTab.metricAvgCustomerInteractions": "Ort. Müşteri Etkileşimi",
+    "insights.opsTab.metricCsatAvg": "Ort. CSAT",
+    "insights.opsTab.slaSentimentTitle": "SLA × Duygu",
+    "insights.opsTab.slaViolated": "İhlal",
+    "insights.opsTab.slaWithin": "İçinde",
+    "insights.opsTab.csatTitle": "CSAT",
+    "insights.opsTab.csatAvgLabel": "Ortalama CSAT Skoru",
+    "insights.opsTab.csatAgreementHigh":
+      "CSAT 4-5 verenlerin %{pct}'si modelce POZİTİF",
+    "insights.opsTab.csatAgreementLow":
+      "CSAT 1-2 verenlerin %{pct}'si modelce NEGATİF",
+    "insights.opsTab.lowSampleNote": "n={n} (düşük örneklem)",
+    "insights.opsTab.compensationTitle": "Tazmin",
+    "insights.opsTab.deliveryTitle": "Teslimat",
+    "insights.opsTab.freightSum": "Navlun toplamı",
+    "insights.opsTab.goodsSum": "Mal bedeli toplamı",
+    "insights.opsTab.noDataHint":
+      "Bu kurumda operasyonel veri (SLA, CSAT, efor, tazmin, teslimat) bulunamadı. Görmek için CSV kolon eşlemelerini Ayarlar'dan yapılandırın.",
+    "insights.opsTab.noDataCta": "Operasyonel Veri Eşlemeleri'ne git →",
 
     // --- /insights: ısı haritası tab ---
     "insights.heatmap.xHourOfDay": "Günün Saati",
@@ -316,6 +349,24 @@ export const insights: Bundle = {
     "reviews.detail.promoteHint":
       "Elle açıldı — sistem bu karar için Ticket açmamıştı.",
 
+    // --- /reviews/[id]: Operasyonel Bilgiler kartı (2026-08-21) ---
+    "reviews.detail.operationalInfo": "Operasyonel Bilgiler",
+    "reviews.detail.facts.slaWithin": "SLA İçinde",
+    "reviews.detail.facts.slaViolated": "SLA İhlali",
+    "reviews.detail.facts.slaResolutionStatus": "Çözüm SLA Durumu",
+    "reviews.detail.facts.slaFirstResponseStatus": "İlk Yanıt SLA Durumu",
+    "reviews.detail.facts.resolutionTime": "Çözüm Süresi",
+    "reviews.detail.facts.firstResponseTime": "İlk Yanıt Süresi",
+    "reviews.detail.facts.csat": "Anket (CSAT)",
+    "reviews.detail.facts.agentInteractions": "Temsilci Etkileşimleri",
+    "reviews.detail.facts.customerInteractions": "Müşteri Etkileşimleri",
+    "reviews.detail.facts.compensationStatus": "Tazmin Onay Durumu",
+    "reviews.detail.facts.freightCost": "Navlun Bedeli",
+    "reviews.detail.facts.goodsCost": "Mal Bedeli",
+    "reviews.detail.facts.refundReason": "İade Sebebi",
+    "reviews.detail.facts.deliveryStatus": "Teslimat Durumu",
+    "reviews.detail.facts.deliveryDetail": "Teslimat Durumu Detayı",
+
     // --- /reports: tip + durum etiketleri ---
     "reports.type.comprehensive": "Kapsamlı",
     "reports.type.reviewsOnly": "Sadece Yorumlar",
@@ -390,6 +441,8 @@ export const insights: Bundle = {
     "insights.tabs.overrides": "Rule Layers",
     // 2026-08-20 — Dimensions tab (business dimension breakdown).
     "insights.tabs.dimensions": "Dimensions",
+    // 2026-08-21 — Operations tab (SLA/CSAT/effort/compensation/delivery).
+    "insights.tabs.operations": "Operations",
 
     // --- /insights: page header ---
     "insights.page.title": "Insights",
@@ -471,6 +524,37 @@ export const insights: Bundle = {
     "insights.dimTab.totalCoverage": "Total {total} · Coverage {coverage} ({pct}%)",
     "insights.dimTab.percentValue": "{value}%",
     "insights.dimTab.top15Note": "Showing the first 15 buckets (ordered by count desc).",
+
+    // --- /insights: operations tab (2026-08-21) ---
+    "insights.opsTab.metricSlaResolutionViolation": "Resolution Violation Rate %",
+    "insights.opsTab.metricSlaFirstResponseViolation": "First Response Violation Rate %",
+    "insights.opsTab.metricAvgResolutionTime": "Avg. Resolution Time",
+    "insights.opsTab.metricAvgFirstResponseTime": "Avg. First Response Time",
+    "insights.opsTab.coverageOf": "based on {count} records",
+    "insights.opsTab.metricViolationRate": "Violation Rate %",
+    "insights.opsTab.metricFirstResponseViolationRate": "First Response Violation Rate %",
+    "insights.opsTab.metricAvgResolution": "Avg. Resolution Time",
+    "insights.opsTab.metricAvgFirstResponse": "Avg. First Response Time",
+    "insights.opsTab.metricAvgAgentInteractions": "Avg. Agent Interactions",
+    "insights.opsTab.metricAvgCustomerInteractions": "Avg. Customer Interactions",
+    "insights.opsTab.metricCsatAvg": "Avg. CSAT",
+    "insights.opsTab.slaSentimentTitle": "SLA × Sentiment",
+    "insights.opsTab.slaViolated": "Violated",
+    "insights.opsTab.slaWithin": "Within",
+    "insights.opsTab.csatTitle": "CSAT",
+    "insights.opsTab.csatAvgLabel": "Average CSAT Score",
+    "insights.opsTab.csatAgreementHigh":
+      "{pct}% of CSAT 4-5 respondents were scored POSITIVE by the model",
+    "insights.opsTab.csatAgreementLow":
+      "{pct}% of CSAT 1-2 respondents were scored NEGATIVE by the model",
+    "insights.opsTab.lowSampleNote": "n={n} (low sample size)",
+    "insights.opsTab.compensationTitle": "Compensation",
+    "insights.opsTab.deliveryTitle": "Delivery",
+    "insights.opsTab.freightSum": "Freight cost total",
+    "insights.opsTab.goodsSum": "Goods cost total",
+    "insights.opsTab.noDataHint":
+      "No operational data (SLA, CSAT, effort, compensation, delivery) found for this organization. Configure the CSV column mappings in Settings to see it.",
+    "insights.opsTab.noDataCta": "Go to Operational Data Mappings →",
 
     // --- /insights: heatmap tab ---
     "insights.heatmap.xHourOfDay": "Hour of Day",
@@ -683,6 +767,24 @@ export const insights: Bundle = {
     "reviews.detail.promoteButton": "Convert This Analysis to a Ticket",
     "reviews.detail.promoteHint":
       "Opened manually — the system hadn't opened a Ticket for this decision.",
+
+    // --- /reviews/[id]: Operational Info card (2026-08-21) ---
+    "reviews.detail.operationalInfo": "Operational Information",
+    "reviews.detail.facts.slaWithin": "Within SLA",
+    "reviews.detail.facts.slaViolated": "SLA Violated",
+    "reviews.detail.facts.slaResolutionStatus": "Resolution SLA Status",
+    "reviews.detail.facts.slaFirstResponseStatus": "First Response SLA Status",
+    "reviews.detail.facts.resolutionTime": "Resolution Time",
+    "reviews.detail.facts.firstResponseTime": "First Response Time",
+    "reviews.detail.facts.csat": "Survey (CSAT)",
+    "reviews.detail.facts.agentInteractions": "Agent Interactions",
+    "reviews.detail.facts.customerInteractions": "Customer Interactions",
+    "reviews.detail.facts.compensationStatus": "Compensation Approval Status",
+    "reviews.detail.facts.freightCost": "Freight Cost",
+    "reviews.detail.facts.goodsCost": "Goods Cost",
+    "reviews.detail.facts.refundReason": "Refund Reason",
+    "reviews.detail.facts.deliveryStatus": "Delivery Status",
+    "reviews.detail.facts.deliveryDetail": "Delivery Status Detail",
 
     // --- /reports: type + status labels ---
     "reports.type.comprehensive": "Comprehensive",

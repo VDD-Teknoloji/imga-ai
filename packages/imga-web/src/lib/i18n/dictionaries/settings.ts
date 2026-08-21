@@ -458,6 +458,25 @@ export const settings: Bundle = {
     "settings.dimensions.default.productLine": "Ürün Grubu",
     "settings.dimensions.default.channel": "Kanal",
     "settings.dimensions.default.customerTier": "Müşteri Kademesi",
+
+    // --- 2026-08-21 — Operasyonel Veri Eşlemeleri (fact-mappings) ---
+    "settings.factMappings.title": "Operasyonel Veri Eşlemeleri",
+    "settings.factMappings.subtitle":
+      "SLA, CSAT, efor, tazmin ve teslimat alanlarını CSV yükleme kolonlarınızla eşleyin. Boş bırakılan bir alan o operasyonel veriyi devre dışı bırakır.",
+    "settings.factMappings.saved": "Operasyonel veri eşlemeleri kaydedildi.",
+    "settings.factMappings.slaResolutionStatus": "Çözüm SLA Durumu",
+    "settings.factMappings.slaFirstResponseStatus": "İlk Yanıt SLA Durumu",
+    "settings.factMappings.resolutionTime": "Çözüm Süresi",
+    "settings.factMappings.firstResponseTime": "İlk Yanıt Süresi",
+    "settings.factMappings.csat": "Anket (CSAT)",
+    "settings.factMappings.agentInteractions": "Temsilci Etkileşimleri",
+    "settings.factMappings.customerInteractions": "Müşteri Etkileşimleri",
+    "settings.factMappings.compensationStatus": "Tazmin Onay Durumu",
+    "settings.factMappings.freightCost": "Navlun Bedeli",
+    "settings.factMappings.goodsCost": "Mal Bedeli",
+    "settings.factMappings.refundReason": "İade Sebebi",
+    "settings.factMappings.deliveryStatus": "Teslimat Durumu",
+    "settings.factMappings.deliveryDetail": "Teslimat Durumu Detayı",
   },
   en: {
     // --- common (within settings) ---
@@ -915,5 +934,24 @@ export const settings: Bundle = {
     "settings.dimensions.default.productLine": "Product Group",
     "settings.dimensions.default.channel": "Channel",
     "settings.dimensions.default.customerTier": "Customer Tier",
+
+    // --- 2026-08-21 — Operational Data Mappings (fact-mappings) ---
+    "settings.factMappings.title": "Operational Data Mappings",
+    "settings.factMappings.subtitle":
+      "Map SLA, CSAT, effort, compensation, and delivery fields to your CSV upload columns. Leaving a field blank disables that operational data.",
+    "settings.factMappings.saved": "Operational data mappings saved.",
+    "settings.factMappings.slaResolutionStatus": "Resolution SLA Status",
+    "settings.factMappings.slaFirstResponseStatus": "First Response SLA Status",
+    "settings.factMappings.resolutionTime": "Resolution Time",
+    "settings.factMappings.firstResponseTime": "First Response Time",
+    "settings.factMappings.csat": "Survey (CSAT)",
+    "settings.factMappings.agentInteractions": "Agent Interactions",
+    "settings.factMappings.customerInteractions": "Customer Interactions",
+    "settings.factMappings.compensationStatus": "Compensation Approval Status",
+    "settings.factMappings.freightCost": "Freight Cost",
+    "settings.factMappings.goodsCost": "Goods Cost",
+    "settings.factMappings.refundReason": "Refund Reason",
+    "settings.factMappings.deliveryStatus": "Delivery Status",
+    "settings.factMappings.deliveryDetail": "Delivery Status Detail",
   },
 };

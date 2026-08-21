@@ -55,3 +55,22 @@ export function formatUsd(value: number | null | undefined): string {
   if (value === 0) return "$0";
   return USD_FORMATTER.format(value);
 }
+
+/**
+ * İnsanca süre gösterimi (dakika girdisi) — Operasyon sekmesi (SLA
+ * özet kartları) + Review detay "Operasyonel Bilgiler" kartı paylaşır.
+ *
+ * 60 dakikanın altı: "42 dk". 60+ dakika: "37 sa 20 dk" — GÜNE
+ * ÇEVRİLMEZ (490 saat gibi büyük değerler de "sa" biriminde kalır,
+ * görev kararı). Dakika kısmı 0 ise atlanır ("37 sa", "37 sa 0 dk"
+ * değil). Yuvarlama ÖNCE yapılır (59.6 dk → 60 dk'lık "60 dk" değil,
+ * saat koluna geçip "1 sa" gösterir).
+ */
+export function formatDurationMinutes(value: number | null | undefined): string {
+  if (value === null || value === undefined || Number.isNaN(value)) return "—";
+  const totalMinutes = Math.round(value);
+  if (totalMinutes < 60) return `${totalMinutes} dk`;
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  return minutes === 0 ? `${hours} sa` : `${hours} sa ${minutes} dk`;
+}

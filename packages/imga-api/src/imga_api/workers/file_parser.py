@@ -41,7 +41,7 @@ import csv
 import itertools
 import zipfile
 from collections.abc import Iterator
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -51,6 +51,7 @@ from imga_core.text_utils import normalize_turkish
 from openpyxl import Workbook, load_workbook
 from openpyxl.utils.exceptions import InvalidFileException
 
+from imga_api.services.fact_parsing import FACT_FIELDS
 from imga_api.services.smart_parser.base import header_matches_any
 from imga_api.services.smart_parser.detectors.turkish_date import (
     DATE_HEADER_PATTERNS,
@@ -125,6 +126,15 @@ class ParsedRow:
     ``entered_by`` (migration 0042) is the 5th business dimension —
     the employee who logged the review, resolved the same way as the
     other four via the tenant's ``csv_column_mapping``.
+
+    ``facts`` (migration 0046) carries the operational "facts" columns
+    (SLA/CSAT/effort/compensation/delivery) resolved via the tenant's
+    ``tenant_fact_mappings``. Unlike the dimension fields above, this
+    is a dict keyed by ``fact_parsing.FACT_FIELDS`` name and carries
+    ONLY the fields whose cell was non-empty in this row — a missing
+    key means "no data here", not an empty string. Values are raw,
+    unparsed strings; ``fact_parsing.build_fact_row`` does the actual
+    parsing at the persist site.
     """
 
     row_number: int
@@ -137,6 +147,7 @@ class ParsedRow:
     customer_tier: str | None = None
     entered_by: str | None = None
     review_date: datetime | None = None
+    facts: dict[str, str] = field(default_factory=dict)
 
 
 def _normalize_header(name: str) -> str:
@@ -163,14 +174,15 @@ def _resolve_columns(
     text_column: str,
     source_column: str | None,
     dimension_mapping: dict[str, str] | None = None,
+    fact_mapping: dict[str, str] | None = None,
     date_column: str | None = None,
     value_sample: list[Any] | None = None,
-) -> tuple[int, int | None, int | None, dict[str, int], int | None]:
+) -> tuple[int, int | None, int | None, dict[str, int], dict[str, int], int | None]:
     """Return ``(text_idx, source_idx | None, nps_idx | None,
-    dimension_idx_by_key, date_idx | None)``. Raises UnknownColumnError
-    if text/source column is absent. NPS is auto-detected via the
-    imga-core pattern set; missing NPS is fine (returns None) — the
-    upload doesn't have to carry an NPS column.
+    dimension_idx_by_key, fact_idx_by_key, date_idx | None)``. Raises
+    UnknownColumnError if text/source column is absent. NPS is
+    auto-detected via the imga-core pattern set; missing NPS is fine
+    (returns None) — the upload doesn't have to carry an NPS column.
 
     The date column (``review_date``) resolves in priority order:
 
@@ -199,7 +211,12 @@ def _resolve_columns(
     configured dimension are common, and refusing them would break
     tenants who add a dimension config before the next CSV cycle.
 
-    Match for text/source/dimensions is case + accent + I/İ-
+    Migration 0046 — ``fact_mapping`` is ``{fact_field: csv_column_
+    name}`` (``fact_parsing.FACT_FIELDS`` keys), resolved the SAME way
+    as ``dimension_mapping``: silently skipped if the mapped column
+    isn't in this file's header.
+
+    Match for text/source/dimensions/facts is case + accent + I/İ-
     insensitive (same fold nps_detector applies to its own pattern
     set, so the two stay in sync as the rules evolve).
     """
@@ -249,6 +266,15 @@ def _resolve_columns(
             if target in norm_header:
                 dimension_idx_by_key[dim_key] = norm_header.index(target)
 
+    fact_idx_by_key: dict[str, int] = {}
+    if fact_mapping:
+        for fact_key, csv_column in fact_mapping.items():
+            if fact_key not in FACT_FIELDS:
+                continue
+            target = _normalize_header(csv_column)
+            if target in norm_header:
+                fact_idx_by_key[fact_key] = norm_header.index(target)
+
     if date_column:
         # Explicit selection wins outright — no skip filtering (see
         # docstring point 1). Not found → None, not an error.
@@ -263,11 +289,12 @@ def _resolve_columns(
         if nps_idx is not None:
             skip_idx.add(nps_idx)
         skip_idx.update(dimension_idx_by_key.values())
+        skip_idx.update(fact_idx_by_key.values())
         date_idx = _detect_date_column(
             header, norm_header, skip=skip_idx, value_sample=value_sample
         )
 
-    return text_idx, source_idx, nps_idx, dimension_idx_by_key, date_idx
+    return text_idx, source_idx, nps_idx, dimension_idx_by_key, fact_idx_by_key, date_idx
 
 
 def _detect_date_column(
@@ -373,12 +400,35 @@ def _extract_dimensions(
     return out
 
 
+def _extract_facts(
+    row: list[Any] | tuple[Any, ...],
+    fact_idx_by_key: dict[str, int],
+) -> dict[str, str]:
+    """Pull "facts" cell values out of a row given the resolved
+    indices. Unlike ``_extract_dimensions``, empty cells / missing
+    columns are OMITTED from the result (not carried as None) —
+    ``ParsedRow.facts`` docstring, and ``fact_parsing.build_fact_row``
+    relies on key-absence to mean "no data" for this field."""
+    out: dict[str, str] = {}
+    for fact_key, idx in fact_idx_by_key.items():
+        if idx >= len(row):
+            continue
+        raw = row[idx]
+        if raw is None:
+            continue
+        value = str(raw).strip()
+        if value:
+            out[fact_key] = value
+    return out
+
+
 def _iter_csv(
     path: Path,
     *,
     text_column: str,
     source_column: str | None,
     dimension_mapping: dict[str, str] | None = None,
+    fact_mapping: dict[str, str] | None = None,
     date_column: str | None = None,
 ) -> Iterator[ParsedRow]:
     with path.open("r", encoding="utf-8-sig", newline="") as fh:
@@ -410,12 +460,14 @@ def _iter_csv(
             source_idx,
             nps_idx,
             dim_idx_by_key,
+            fact_idx_by_key,
             date_idx,
         ) = _resolve_columns(
             header,
             text_column=text_column,
             source_column=source_column,
             dimension_mapping=dimension_mapping,
+            fact_mapping=fact_mapping,
             date_column=date_column,
             value_sample=date_sample,
         )
@@ -437,6 +489,7 @@ def _iter_csv(
             if date_idx is not None and date_idx < len(row):
                 review_date = parse_date_value(row[date_idx])
             dims = _extract_dimensions(row, dim_idx_by_key)
+            facts = _extract_facts(row, fact_idx_by_key)
             yield ParsedRow(
                 row_number=i,
                 text=text,
@@ -448,6 +501,7 @@ def _iter_csv(
                 customer_tier=dims["customer_tier"],
                 entered_by=dims["entered_by"],
                 review_date=review_date,
+                facts=facts,
             )
 
 
@@ -457,6 +511,7 @@ def _iter_xlsx(
     text_column: str,
     source_column: str | None,
     dimension_mapping: dict[str, str] | None = None,
+    fact_mapping: dict[str, str] | None = None,
     date_column: str | None = None,
 ) -> Iterator[ParsedRow]:
     workbook = _load_xlsx(path)
@@ -494,12 +549,14 @@ def _iter_xlsx(
             source_idx,
             nps_idx,
             dim_idx_by_key,
+            fact_idx_by_key,
             date_idx,
         ) = _resolve_columns(
             header,
             text_column=text_column,
             source_column=source_column,
             dimension_mapping=dimension_mapping,
+            fact_mapping=fact_mapping,
             date_column=date_column,
             value_sample=date_sample,
         )
@@ -524,6 +581,7 @@ def _iter_xlsx(
             if date_idx is not None and date_idx < len(row):
                 review_date = parse_date_value(row[date_idx])
             dims = _extract_dimensions(list(row), dim_idx_by_key)
+            facts = _extract_facts(list(row), fact_idx_by_key)
             yield ParsedRow(
                 row_number=i,
                 text=text,
@@ -535,6 +593,7 @@ def _iter_xlsx(
                 customer_tier=dims["customer_tier"],
                 entered_by=dims["entered_by"],
                 review_date=review_date,
+                facts=facts,
             )
     finally:
         workbook.close()
@@ -546,6 +605,7 @@ def iter_rows(
     text_column: str,
     source_column: str | None = None,
     dimension_mapping: dict[str, str] | None = None,
+    fact_mapping: dict[str, str] | None = None,
     date_column: str | None = None,
 ) -> Iterator[ParsedRow]:
     """Stream rows from a CSV or XLSX upload.
@@ -559,6 +619,12 @@ def iter_rows(
     fetched mapping in once at job start; the iterator does the per-
     row column lookup. ``None`` (default) preserves the pre-9.4
     behaviour for callers that haven't been migrated.
+
+    Migration 0046 — ``fact_mapping`` is the per-tenant operational
+    "facts" config (``{fact_field: csv_column_name}``,
+    ``fact_parsing.FACT_FIELDS`` keys), resolved the same way as
+    ``dimension_mapping``. ``ParsedRow.facts`` carries only the
+    fields whose cell was non-empty in that row.
 
     ``date_column`` (migration 0044, 2026-08-20) is the operator's
     explicit Step-2 pick — when set, it wins outright over
@@ -575,6 +641,7 @@ def iter_rows(
             text_column=text_column,
             source_column=source_column,
             dimension_mapping=dimension_mapping,
+            fact_mapping=fact_mapping,
             date_column=date_column,
         )
     if suffix == ".xlsx":
@@ -583,6 +650,7 @@ def iter_rows(
             text_column=text_column,
             source_column=source_column,
             dimension_mapping=dimension_mapping,
+            fact_mapping=fact_mapping,
             date_column=date_column,
         )
     raise UnsupportedFormatError(

@@ -39,6 +39,7 @@ from imga_db.models.report_job import (
 )
 from imga_db.models.review import Review, ReviewDecision
 from imga_db.models.review_correction import ReviewCorrection
+from imga_db.models.review_fact import ReviewFact
 from imga_db.models.root_cause_analysis import RootCauseAnalysis
 from imga_db.models.sla_rule import SlaRule
 from imga_db.models.strategic_report import StrategicReport
@@ -51,6 +52,7 @@ from imga_db.models.tenant import (
 )
 from imga_db.models.tenant_business_dimension import TenantBusinessDimension
 from imga_db.models.tenant_engagement_setting import TenantEngagementSetting
+from imga_db.models.tenant_fact_mapping import TenantFactMapping
 from imga_db.models.tenant_kpi_goal import TenantKpiGoal
 from imga_db.models.tenant_llm_credential import TenantLlmCredential
 from imga_db.models.tenant_monthly_metric import TenantMonthlyMetric
@@ -104,6 +106,7 @@ __all__ = [
     "Review",
     "ReviewCorrection",
     "ReviewDecision",
+    "ReviewFact",
     "RootCauseAnalysis",
     "SlaRule",
     "SlaWebhookDispatchMode",
@@ -115,6 +118,7 @@ __all__ = [
     "TenantCategory",
     "TenantDeletionAudit",
     "TenantEngagementSetting",
+    "TenantFactMapping",
     "TenantKpiGoal",
     "TenantLlmCredential",
     "TenantMonthlyMetric",
