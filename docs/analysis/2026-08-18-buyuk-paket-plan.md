@@ -362,6 +362,30 @@ canlı kontrol → sonraki)
   kirletti → pull sessiz iptal (boru tuzağı, yine); CRLF-only fark
   --ignore-cr-at-eol ile kanıtlanıp checkout -- ile temizlendi. Ders:
   test tar'ını prod ağacına DEĞİL ayrı bir dizine aç.
+- 2026-08-21: Kolon-analizi yol haritasının ertelenen 1-5 maddeleri tek
+  dalgada üretime alındı (162580f, migration 0046): review_facts yan
+  tablosu + tenant_fact_mappings (13 alan, CSV başlık eşleme, Ayarlar
+  UI'lı), fact_parsing (süre HH:MM:SS→dk, CSAT 10-değer, yer-tutucu
+  kuralı: durum boş + süre 0 → NULL — ham veride %96,7 ölçümüyle
+  gerekçeli), worker'da 4 persist yolunda otomatik alım, 3 analitik ucu
+  (operations/summary + breakdown + sentiment-correlation; buckets
+  metric_value — YENİ sözleşme, score hedge'i yok), İçgörüler "Operasyon"
+  sekmesi (odim/ometric URL-state), review-detail Operasyonel Bilgiler
+  kartı, backfill --fact yolu (chunk'lı upsert; asyncpg 32767-param
+  sınırı adversarial incelemede yakalandı). Adversarial inceleme 3 ajan:
+  5 doğrulanmış kusur düzeltildi. Süit 1193 passed. Navlungo backfill:
+  16.500 facts satırı (SLA çözüm 15.492 / ilk yanıt 9.588 / CSAT 587 /
+  efor 16.500 / teslimat 878 / tazmin 97); ham dosya kopyaları sunucudan
+  ve konteynerden silindi (KVKK). Tarayıcı doğrulandı. İçgörü: CSAT 4-5
+  verenlerin yalnız %0,3'ü metin-duygusunda POZİTİF (destek memnuniyeti
+  ≠ metin içeriği — köprü tam bu farkı görünür kılıyor). Madde 6
+  (Durum/Öncelik) BİLİNÇLİ dışarıda: IMGA ticket modülüyle çift kayıt +
+  bayat yaşam-döngüsü anlık görüntüsü (%93,7 Resolved, %98 Low) — doğru
+  yol Freshdesk API senkronu.
+  Test-altyapı notu: sunucuda süit artık /opt/imga-test AYRI ağacında
+  koşuyor (prod checkout kirlenmez); gitignore'lu test sırları
+  (infra/imga/test/secrets/) klona elle kopyalanmalı.
 - KALAN: q-backfill yeniden analizi (kullanıcı onayı, ~$1-2); eski
   "Navlungo Test" tenant'ının yeniden analizi (~$8-9, kullanıcı kararı);
-  SLA-facts/CSAT yol haritası (kolon-analizi dokümanında).
+  Freshdesk API senkronu (Durum/Öncelik dahil canlı yaşam döngüsü)
+  uzun-vade adayı.
