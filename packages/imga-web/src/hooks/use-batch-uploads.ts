@@ -84,6 +84,10 @@ export interface TwitterImportInput {
   term: string;
   count: number;
   excludeHandle?: string;
+  /** /plan adımının marka özeti — AI hakemine bağlam (opsiyonel). */
+  brandSummary?: string;
+  /** AI alaka hakemi (varsayılan açık). */
+  relevanceCheck?: boolean;
 }
 
 export interface TwitterImportResult {
@@ -93,21 +97,59 @@ export interface TwitterImportResult {
   /** true → X'te bu sorgu için daha fazla Türkçe sonuç yok; found <
    *  requested ise eksik çekim değil, kaynağın tamamı demektir. */
   exhausted: boolean;
+  /** X'ten çekilen toplam gönderi (filtrelerden önce). */
+  fetched_total: number;
   /** Alaka filtresinin elediği gönderi sayısı (terim metinde geçmiyor,
    *  resmi hesaba da yazılmamış — çoğunlukla aynı soyadlı yazarlar). */
   filtered_out: number;
+  /** AI hakeminin elediği gönderi sayısı. */
+  filtered_by_ai: number;
+  /** true → hakem hiç çalışmadı (LLM anahtarı yok / tüm partiler hata). */
+  ai_check_skipped: boolean;
+}
+
+export interface TwitterPlanInput {
+  brand: string;
+  handle?: string;
+}
+
+/** POST /tenants/me/analyze/twitter-import/plan — AI anahtar kelime planı.
+ *  ``term`` terim alanına hazır virgül sözdizimi; ``query_preview`` X'e
+ *  gidecek sorgu. Kalıcı değil; kullanıcı formda düzenler. */
+export interface TwitterPlanResult {
+  brand: string;
+  brand_summary: string;
+  include: string[];
+  exclude: string[];
+  handle: string | null;
+  bare_name_ambiguous: boolean;
+  notes: string | null;
+  term: string;
+  query_preview: string;
+}
+
+export function useTwitterPlanMutation() {
+  return useMutation<TwitterPlanResult, Error, TwitterPlanInput>({
+    mutationFn: async ({ brand, handle }) =>
+      apiRequest<TwitterPlanResult>("/tenants/me/analyze/twitter-import/plan", {
+        method: "POST",
+        body: { brand, handle: handle?.trim() || null },
+      }),
+  });
 }
 
 export function useTwitterImportMutation() {
   const queryClient = useQueryClient();
   return useMutation<TwitterImportResult, Error, TwitterImportInput>({
-    mutationFn: async ({ term, count, excludeHandle }) =>
+    mutationFn: async ({ term, count, excludeHandle, brandSummary, relevanceCheck }) =>
       apiRequest<TwitterImportResult>("/tenants/me/analyze/twitter-import", {
         method: "POST",
         body: {
           term,
           count,
           exclude_handle: excludeHandle?.trim() || null,
+          brand_summary: brandSummary?.trim() || null,
+          relevance_check: relevanceCheck ?? true,
         },
       }),
     onSuccess: () => {

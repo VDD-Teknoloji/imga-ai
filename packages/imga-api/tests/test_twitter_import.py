@@ -20,9 +20,14 @@ from uuid import UUID
 import httpx
 import pytest
 from fastapi.testclient import TestClient
+from imga_db.models import User, UserTenantRole
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from imga_api.main import app
 from imga_api.routes import tenant_twitter
 from imga_api.services import AuditService, UserService
+from imga_api.services.llm_credentials import NoCredentialsError
+from imga_api.services.twitter_brand_service import BrandSearchPlan, RelevanceVerdict
 from imga_api.services.twitter_import import (
     SearchTerms,
     TwitterFetchResult,
@@ -35,9 +40,6 @@ from imga_api.services.twitter_import import (
     tweet_matches_terms,
     tweet_url_from_item,
 )
-from imga_db.models import User, UserTenantRole
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from tests.batch_helpers import fetch_job, login_token
 
 # --- birim: sorgu + temizlik -----------------------------------------
@@ -210,6 +212,38 @@ def _post(client: TestClient, token: str, payload: dict[str, object]) -> httpx.R
     )
 
 
+def _post_plan(client: TestClient, token: str, payload: dict[str, object]) -> httpx.Response:
+    return client.post(
+        "/tenants/me/analyze/twitter-import/plan",
+        headers={"Authorization": f"Bearer {token}"},
+        json=payload,
+    )
+
+
+async def _keep_all_judge(session: object, tenant_id: object, **kwargs: object) -> RelevanceVerdict:
+    tweets = kwargs["tweets"]
+    assert isinstance(tweets, list)
+    return RelevanceVerdict(relevant=[True] * len(tweets), batches=1, failed_batches=0)
+
+
+def _two_tweets_fetch(**_: object) -> TwitterFetchResult:
+    return TwitterFetchResult(
+        tweets=[
+            TwitterTweet(
+                text="tencerenin dibi tuttu",
+                created_at=datetime(2026, 8, 26, 8, 0, tzinfo=UTC),
+                url="https://x.com/a/status/1",
+                raw_text="@karacaonline tencerenin dibi tuttu",
+            ),
+            TwitterTweet(text="Cem Karaca konseri harikaydı", created_at=None),
+        ],
+        fetched_total=5,
+        pages=1,
+        exhausted=True,
+        filtered_out=3,
+    )
+
+
 # --- route testleri --------------------------------------------------
 
 
@@ -257,6 +291,7 @@ async def test_twitter_import_happy_path(
         )
 
     monkeypatch.setattr(tenant_twitter, "fetch_tweets", fake_fetch)
+    monkeypatch.setattr(tenant_twitter, "judge_tweet_relevance", _keep_all_judge)
 
     r = _post(batch_client, token, {"term": "Navlungo", "count": 100})
     assert r.status_code == 201, r.text
@@ -265,6 +300,9 @@ async def test_twitter_import_happy_path(
     assert body["requested"] == 100
     assert body["exhausted"] is True
     assert body["filtered_out"] == 1
+    assert body["fetched_total"] == 3
+    assert body["filtered_by_ai"] == 0
+    assert body["ai_check_skipped"] is False
     job_view = body["job"]
     assert job_view["status"] == "queued"
     assert job_view["total_rows"] == 2
@@ -294,6 +332,217 @@ async def test_twitter_import_happy_path(
 
     scheduler = app.state.batch_scheduler
     assert len(scheduler.added) == 1
+
+
+@pytest.mark.asyncio
+async def test_twitter_import_ai_judge_drops_irrelevant_and_reports_counts(
+    batch_client: TestClient,
+    semi_auto_tenant: tuple[User, UUID, str],
+    admin_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    user, tid, pw = semi_auto_tenant
+    token = login_token(batch_client, user.email, pw, tid)
+    _enable_key(batch_client)
+
+    async def fake_fetch(**kwargs: object) -> TwitterFetchResult:
+        return _two_tweets_fetch()
+
+    captured: dict[str, object] = {}
+
+    async def fake_judge(session: object, tenant_id: object, **kwargs: object) -> RelevanceVerdict:
+        captured.update(kwargs)
+        return RelevanceVerdict(relevant=[True, False], batches=1, failed_batches=0, dropped=1)
+
+    monkeypatch.setattr(tenant_twitter, "fetch_tweets", fake_fetch)
+    monkeypatch.setattr(tenant_twitter, "judge_tweet_relevance", fake_judge)
+
+    r = _post(
+        batch_client,
+        token,
+        {
+            "term": "karaca tencere, -cem karaca",
+            "count": 50,
+            "exclude_handle": "@karacaonline",
+            "brand_summary": "Ev eşyası markası.",
+        },
+    )
+    assert r.status_code == 201, r.text
+    body = r.json()
+    assert body["found"] == 1
+    assert body["fetched_total"] == 5
+    assert body["filtered_out"] == 3
+    assert body["filtered_by_ai"] == 1
+    assert body["ai_check_skipped"] is False
+    # Hakem HAM metni görür (mention atılmamış), plan bağlamı geçer.
+    assert captured["tweets"] == [
+        "@karacaonline tencerenin dibi tuttu",
+        "Cem Karaca konseri harikaydı",
+    ]
+    assert captured["brand"] == "karaca tencere"
+    assert captured["include"] == ["karaca tencere"]
+    assert captured["exclude"] == ["cem karaca"]
+    assert captured["handle"] == "karacaonline"
+    assert captured["brand_summary"] == "Ev eşyası markası."
+
+    job = await fetch_job(admin_session, UUID(body["job"]["job_id"]))
+    with Path(job.file_path).open(encoding="utf-8-sig", newline="") as fh:
+        rows = list(csv.reader(fh))
+    assert rows[1][0] == "tencerenin dibi tuttu"
+    assert len(rows) == 2
+    assert job.file_name == "twitter-karaca-tencere.csv"
+
+
+@pytest.mark.asyncio
+async def test_twitter_import_relevance_check_off_skips_judge(
+    batch_client: TestClient,
+    semi_auto_tenant: tuple[User, UUID, str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    user, tid, pw = semi_auto_tenant
+    token = login_token(batch_client, user.email, pw, tid)
+    _enable_key(batch_client)
+
+    async def fake_fetch(**kwargs: object) -> TwitterFetchResult:
+        return _two_tweets_fetch()
+
+    async def judge_must_not_run(*args: object, **kwargs: object) -> RelevanceVerdict:
+        raise AssertionError("judge çağrılmamalıydı")
+
+    monkeypatch.setattr(tenant_twitter, "fetch_tweets", fake_fetch)
+    monkeypatch.setattr(tenant_twitter, "judge_tweet_relevance", judge_must_not_run)
+
+    r = _post(batch_client, token, {"term": "karaca", "relevance_check": False})
+    assert r.status_code == 201, r.text
+    assert r.json()["found"] == 2
+    assert r.json()["filtered_by_ai"] == 0
+
+
+@pytest.mark.asyncio
+async def test_twitter_import_no_llm_key_skips_judge_but_imports(
+    batch_client: TestClient,
+    semi_auto_tenant: tuple[User, UUID, str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    user, tid, pw = semi_auto_tenant
+    token = login_token(batch_client, user.email, pw, tid)
+    _enable_key(batch_client)
+
+    async def fake_fetch(**kwargs: object) -> TwitterFetchResult:
+        return _two_tweets_fetch()
+
+    async def no_keys(*args: object, **kwargs: object) -> RelevanceVerdict:
+        raise NoCredentialsError("yok")
+
+    monkeypatch.setattr(tenant_twitter, "fetch_tweets", fake_fetch)
+    monkeypatch.setattr(tenant_twitter, "judge_tweet_relevance", no_keys)
+
+    r = _post(batch_client, token, {"term": "karaca"})
+    assert r.status_code == 201, r.text
+    body = r.json()
+    assert body["found"] == 2
+    assert body["ai_check_skipped"] is True
+
+
+@pytest.mark.asyncio
+async def test_twitter_import_all_dropped_by_ai_is_422_with_counts(
+    batch_client: TestClient,
+    semi_auto_tenant: tuple[User, UUID, str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    user, tid, pw = semi_auto_tenant
+    token = login_token(batch_client, user.email, pw, tid)
+    _enable_key(batch_client)
+
+    async def fake_fetch(**kwargs: object) -> TwitterFetchResult:
+        return _two_tweets_fetch()
+
+    async def drop_all(session: object, tenant_id: object, **kwargs: object) -> RelevanceVerdict:
+        return RelevanceVerdict(relevant=[False, False], batches=1, failed_batches=0, dropped=2)
+
+    monkeypatch.setattr(tenant_twitter, "fetch_tweets", fake_fetch)
+    monkeypatch.setattr(tenant_twitter, "judge_tweet_relevance", drop_all)
+
+    r = _post(batch_client, token, {"term": "karaca"})
+    assert r.status_code == 422, r.text
+    assert "2 gönderi çekildi" in r.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_twitter_import_empty_fetch_422_carries_counts(
+    batch_client: TestClient,
+    semi_auto_tenant: tuple[User, UUID, str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    user, tid, pw = semi_auto_tenant
+    token = login_token(batch_client, user.email, pw, tid)
+    _enable_key(batch_client)
+
+    async def fake_fetch(**kwargs: object) -> TwitterFetchResult:
+        return TwitterFetchResult(
+            tweets=[], fetched_total=40, pages=2, exhausted=True, filtered_out=40
+        )
+
+    monkeypatch.setattr(tenant_twitter, "fetch_tweets", fake_fetch)
+    r = _post(batch_client, token, {"term": "karaca"})
+    assert r.status_code == 422, r.text
+    assert "40 gönderi çekildi, 40 tanesi" in r.json()["detail"]
+
+
+# --- /plan ------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_twitter_plan_returns_term_and_query_preview(
+    batch_client: TestClient,
+    semi_auto_tenant: tuple[User, UUID, str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    user, tid, pw = semi_auto_tenant
+    token = login_token(batch_client, user.email, pw, tid)
+
+    async def fake_plan(session: object, tenant_id: object, **kwargs: object) -> BrandSearchPlan:
+        assert kwargs["brand"] == "Karaca"
+        assert kwargs["handle"] == "karacaonline"
+        return BrandSearchPlan(
+            brand="Karaca",
+            brand_summary="Züccaciye ve ev tekstili markası.",
+            include=["karaca tencere", "@karacaonline"],
+            exclude=["cem karaca", "hidayet karaca"],
+            handle="karacaonline",
+            bare_name_ambiguous=True,
+            notes="Soyadı olarak yaygın.",
+        )
+
+    monkeypatch.setattr(tenant_twitter, "plan_brand_search", fake_plan)
+    r = _post_plan(batch_client, token, {"brand": "  Karaca ", "handle": "karacaonline"})
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["term"] == "karaca tencere, @karacaonline, -cem karaca, -hidayet karaca"
+    assert body["query_preview"] == (
+        '("karaca tencere" OR @karacaonline) -"cem karaca" -"hidayet karaca" '
+        "-from:karacaonline lang:tr -filter:retweets"
+    )
+    assert body["bare_name_ambiguous"] is True
+    assert body["handle"] == "karacaonline"
+
+
+@pytest.mark.asyncio
+async def test_twitter_plan_without_llm_key_is_412(
+    batch_client: TestClient,
+    semi_auto_tenant: tuple[User, UUID, str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    user, tid, pw = semi_auto_tenant
+    token = login_token(batch_client, user.email, pw, tid)
+
+    async def no_keys(*args: object, **kwargs: object) -> BrandSearchPlan:
+        raise NoCredentialsError("yok")
+
+    monkeypatch.setattr(tenant_twitter, "plan_brand_search", no_keys)
+    r = _post_plan(batch_client, token, {"brand": "Karaca"})
+    assert r.status_code == 412, r.text
+    assert r.json()["detail"]["code"] == "no_llm_credentials"
 
 
 @pytest.mark.asyncio

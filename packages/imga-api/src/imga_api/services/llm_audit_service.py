@@ -67,6 +67,10 @@ CALL_TYPE_QUALITY_REPORT = "quality_report"
 # 2026-08-20 (süper-admin envanteri, migration 0045) — onboarding
 # sihirbazının AI kategori önerisi çağrısı. SA2 kullanacak.
 CALL_TYPE_ONBOARDING_SUGGEST = "onboarding_suggest"
+# 2026-08-26 (migration 0048) — Twitter'dan Çek: marka anahtar kelime
+# planı + gönderi başına alaka hakemi (services/twitter_brand_service).
+CALL_TYPE_TWITTER_KEYWORDS = "twitter_keywords"
+CALL_TYPE_TWITTER_RELEVANCE = "twitter_relevance"
 
 ERROR_TIMEOUT = "timeout"
 ERROR_RATE_LIMIT = "rate_limit"

@@ -57,6 +57,14 @@ class TwitterTweet:
     text: str
     created_at: datetime | None
     url: str | None = None
+    # Mention/URL atılmamış ham metin — yalnız AI alaka hakemi için
+    # (bkz. twitter_brand_service); CSV'ye / arşive İNMEZ.
+    raw_text: str = ""
+
+
+# X gelişmiş arama sorgu uzunluğu ~512 karakterle sınırlı; plan
+# terimleri bunu aşarsa negatifler sondan düşürülür.
+MAX_QUERY_LENGTH = 500
 
 
 @dataclass(frozen=True, slots=True)
@@ -138,12 +146,19 @@ def build_search_query(term: str, exclude_handle: str | None) -> str:
     terms = parse_search_terms(term)
     handle = (exclude_handle or "").lstrip("@").strip()
     positives = [_quote_term(t) for t in terms.positive] or [_quote_term(term.strip())]
-    parts = [positives[0] if len(positives) == 1 else "(" + " OR ".join(positives) + ")"]
-    parts.extend(f"-{_quote_term(t)}" for t in terms.negative)
-    if handle:
-        parts.append(f"-from:{handle}")
-    parts.append("lang:tr -filter:retweets")
-    return " ".join(parts)
+    head = positives[0] if len(positives) == 1 else "(" + " OR ".join(positives) + ")"
+    negatives = [f"-{_quote_term(t)}" for t in terms.negative]
+    tail = [f"-from:{handle}"] if handle else []
+    tail.append("lang:tr -filter:retweets")
+
+    def _join(negs: list[str]) -> str:
+        return " ".join([head, *negs, *tail])
+
+    query = _join(negatives)
+    while len(query) > MAX_QUERY_LENGTH and negatives:
+        negatives.pop()
+        query = _join(negatives)
+    return query
 
 
 def clean_tweet_text(raw: str) -> str:
@@ -257,6 +272,7 @@ async def fetch_tweets(
                                 item.get("createdAt") or item.get("created_at")
                             ),
                             url=tweet_url_from_item(item),
+                            raw_text=_WS_RE.sub(" ", raw_text).strip(),
                         )
                     )
                     if len(tweets) >= count:

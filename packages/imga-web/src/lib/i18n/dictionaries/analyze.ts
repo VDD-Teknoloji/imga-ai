@@ -154,10 +154,31 @@ export const analyze: Bundle = {
     "analyze.twitter.subtitle":
       "X/Twitter'da markanız hakkında yazılan Türkçe gönderileri çekin; metinler toplu yükleme ile aynı boru hattında analiz edilir.",
     "analyze.twitter.formTitle": "Arama",
-    "analyze.twitter.termLabel": "Arama terimi",
-    "analyze.twitter.termPlaceholder": "Örn. marka veya ürün adı",
+    "analyze.twitter.brandLabel": "Marka / şirket adı",
+    "analyze.twitter.brandPlaceholder": "Örn. Karaca",
+    "analyze.twitter.brandHelp":
+      "AI bu addan ve kurum profilinizden (sektör, iş tanımı) arama terimlerini çıkarır; aynı adı taşıyan kişi, yer ve şarkıları hariç tutar.",
+    "analyze.twitter.planButton": "AI ile anahtar kelimeleri çıkar",
+    "analyze.twitter.planning": "Anahtar kelimeler çıkarılıyor…",
+    "analyze.twitter.planDone":
+      "Anahtar kelimeler çıkarıldı — listeyi kontrol edip düzenleyebilirsiniz.",
+    "analyze.twitter.planFailed": "Anahtar kelimeler çıkarılamadı, lütfen tekrar deneyin.",
+    "analyze.twitter.planNoKeys":
+      "Aktif LLM anahtarı yok — Ayarlar > Entegrasyonlar'dan ekleyin ya da terimleri elle yazın.",
+    "analyze.twitter.planBrandRequired": "Önce marka adını yazın.",
+    "analyze.twitter.summaryLabel": "AI marka özeti",
+    "analyze.twitter.includeLabel": "Dahil edilen terimler",
+    "analyze.twitter.excludeTermsLabel": "Hariç tutulanlar",
+    "analyze.twitter.ambiguousNote":
+      "Marka adı tek başına belirsiz (yaygın soyadı/kelime); AI terimleri ürün ve hesap birleşimleriyle kurdu.",
+    "analyze.twitter.queryPreview": "X sorgusu",
+    "analyze.twitter.termLabel": "Arama terimleri",
+    "analyze.twitter.termPlaceholder": "Örn. karaca tencere, @karacaonline, -cem karaca",
     "analyze.twitter.termHelp":
-      "Gönderi metinlerinde aranır; marka adı en iyi sonucu verir. Virgülle birden çok terim yazabilirsiniz, başına - koyduklarınız hariç tutulur: karaca tencere, @karacaonline, -cem karaca",
+      "Gönderi metinlerinde aranır. Virgülle birden çok terim yazabilirsiniz; başına - koyduklarınız hariç tutulur. AI planı bu alanı doldurur, dilediğiniz gibi düzenleyin.",
+    "analyze.twitter.relevanceLabel": "AI alaka kontrolü",
+    "analyze.twitter.relevanceHelp":
+      "Çekilen her gönderi \"bu marka hakkında mı?\" diye AI'a sorulur; alakasızlar arşive girmeden elenir. Yaygın soyadı/kelime olan markalar için önerilir.",
     "analyze.twitter.countLabel": "Kaç gönderi çekilsin?",
     "analyze.twitter.countOption": "{n} gönderi",
     "analyze.twitter.excludeLabel": "Hariç tutulacak hesap (opsiyonel)",
@@ -168,11 +189,13 @@ export const analyze: Bundle = {
     "analyze.twitter.info":
       "En yeni Türkçe gönderiler çekilir (retweet'ler hariç), bağlantılar temizlenir, kopyalar elenir ve sonuç Toplu Yükleme ilerleme ekranına düşer. X araması yazar adında da eşleştiğinden, metninde terim geçmeyen ve resmi hesaba yazılmamış gönderiler elenir. Her yorum tweet bağlantısıyla Analiz Arşivi'ne düşer; analizler diğer yüklemeler gibi arşivde ve ana sayfa yükleme filtresinde görünür.",
     "analyze.twitter.durationHint":
-      "Çekim, istenen sayıya göre 10–60 saniye sürebilir.",
+      "Çekim, istenen sayıya ve AI kontrolüne göre 30 saniye – birkaç dakika sürebilir.",
     "analyze.twitter.submit": "Çek ve Analiz Et",
     "analyze.twitter.submitting": "Gönderiler çekiliyor…",
     "analyze.twitter.queued": "{found} gönderi bulundu — analiz kuyruğa alındı.",
     "analyze.twitter.filteredNote": " {n} alakasız gönderi elendi.",
+    "analyze.twitter.aiFilteredNote": " AI alaka kontrolü {n} gönderiyi eledi.",
+    "analyze.twitter.aiSkippedNote": " (AI alaka kontrolü çalışmadı — LLM anahtarı yok ya da hata.)",
     "analyze.twitter.queuedPartial":
       "{found} gönderi bulundu (X'te bu arama için daha fazla Türkçe sonuç yok) — analiz kuyruğa alındı.",
     "analyze.twitter.notConfigured":
@@ -432,10 +455,30 @@ export const analyze: Bundle = {
     "analyze.twitter.subtitle":
       "Pull Turkish posts about your brand from X/Twitter; the texts run through the same pipeline as bulk uploads.",
     "analyze.twitter.formTitle": "Search",
-    "analyze.twitter.termLabel": "Search term",
-    "analyze.twitter.termPlaceholder": "e.g. brand or product name",
+    "analyze.twitter.brandLabel": "Brand / company name",
+    "analyze.twitter.brandPlaceholder": "e.g. Karaca",
+    "analyze.twitter.brandHelp":
+      "The AI derives search terms from this name and your company profile (industry, description) and excludes namesake people, places and songs.",
+    "analyze.twitter.planButton": "Extract keywords with AI",
+    "analyze.twitter.planning": "Extracting keywords…",
+    "analyze.twitter.planDone": "Keywords extracted — review and edit the list as needed.",
+    "analyze.twitter.planFailed": "Could not extract keywords, please try again.",
+    "analyze.twitter.planNoKeys":
+      "No active LLM key — add one under Settings > Integrations or type the terms manually.",
+    "analyze.twitter.planBrandRequired": "Enter the brand name first.",
+    "analyze.twitter.summaryLabel": "AI brand summary",
+    "analyze.twitter.includeLabel": "Included terms",
+    "analyze.twitter.excludeTermsLabel": "Excluded",
+    "analyze.twitter.ambiguousNote":
+      "The bare brand name is ambiguous (a common surname/word); the AI built the terms from product and account combinations.",
+    "analyze.twitter.queryPreview": "X query",
+    "analyze.twitter.termLabel": "Search terms",
+    "analyze.twitter.termPlaceholder": "e.g. karaca tencere, @karacaonline, -cem karaca",
     "analyze.twitter.termHelp":
-      "Matched inside post texts; a brand name works best. Separate several terms with commas; a leading - excludes a term: karaca tencere, @karacaonline, -cem karaca",
+      "Matched inside post texts. Separate several terms with commas; a leading - excludes a term. The AI plan fills this field — edit it freely.",
+    "analyze.twitter.relevanceLabel": "AI relevance check",
+    "analyze.twitter.relevanceHelp":
+      "Every fetched post is asked \"is this about the brand?\"; unrelated ones are dropped before they reach the archive. Recommended for brands that are common surnames/words.",
     "analyze.twitter.countLabel": "How many posts?",
     "analyze.twitter.countOption": "{n} posts",
     "analyze.twitter.excludeLabel": "Account to exclude (optional)",
@@ -446,11 +489,13 @@ export const analyze: Bundle = {
     "analyze.twitter.info":
       "The most recent Turkish posts are fetched (retweets excluded), links are stripped, duplicates removed, and the result lands on the Bulk Upload progress screen. Because X search also matches author names, posts whose text doesn't contain the term and that aren't addressed to the official account are dropped. Every review lands in the Review Archive with its tweet link; analyses appear in the archive and the home-page upload filter like any other upload.",
     "analyze.twitter.durationHint":
-      "Fetching takes roughly 10–60 seconds depending on the requested count.",
+      "Fetching takes 30 seconds to a few minutes depending on the requested count and the AI check.",
     "analyze.twitter.submit": "Fetch & Analyze",
     "analyze.twitter.submitting": "Fetching posts…",
     "analyze.twitter.queued": "{found} posts found — analysis queued.",
     "analyze.twitter.filteredNote": " {n} unrelated posts were dropped.",
+    "analyze.twitter.aiFilteredNote": " The AI relevance check dropped {n} posts.",
+    "analyze.twitter.aiSkippedNote": " (AI relevance check did not run — no LLM key or an error.)",
     "analyze.twitter.queuedPartial":
       "{found} posts found (no more Turkish results on X for this search) — analysis queued.",
     "analyze.twitter.notConfigured":

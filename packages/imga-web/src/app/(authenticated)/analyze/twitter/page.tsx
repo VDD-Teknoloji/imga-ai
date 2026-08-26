@@ -1,13 +1,20 @@
 "use client";
 
-// "Twitter'dan Çek" — X/Twitter'dan arama terimiyle gönderi çekip
-// standart batch pipeline'ına veren tek adımlı form. Başarıda kullanıcı
-// /analyze/upload'a yönlenir; oradaki useActiveBatchJob kuyruğa alınan
-// işi bulup ilerleme ekranına kendiliğinden bağlanır — bu sayfa ilerleme
-// tutmaz. Form tek-atımlık taslak state'tir (filtre/sekme değil), URL
-// paramı gerektirmez.
+// "Twitter'dan Çek" — X/Twitter'dan gönderi çekip standart batch
+// pipeline'ına veren form. Başarıda kullanıcı /analyze/upload'a yönlenir;
+// oradaki useActiveBatchJob kuyruğa alınan işi bulup ilerleme ekranına
+// kendiliğinden bağlanır — bu sayfa ilerleme tutmaz. Form tek-atımlık
+// taslak state'tir (filtre/sekme değil), URL paramı gerektirmez.
+//
+// 2026-08-26 — iki AI adımı (bkz. api services/twitter_brand_service):
+// "AI ile anahtar kelimeleri çıkar" marka + kurum profilinden include/
+// exclude terimleri, resmi hesap ve marka özeti üretip TERİM ALANINI
+// doldurur (kullanıcı düzenler; plan kalıcı değil). Çekimde "AI alaka
+// kontrolü" açıksa gönderiler tek tek "bu marka hakkında mı" diye
+// elenir. Sebep: X araması yazar adında da eşleştiği için "karaca"
+// Karaca soyadlı herkesin gönderisini getiriyordu.
 
-import { ChevronLeft, Loader2 } from "lucide-react";
+import { ChevronLeft, Loader2, Sparkles } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
@@ -26,8 +33,15 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { useTwitterImportMutation } from "@/hooks/use-batch-uploads";
+import { Switch } from "@/components/ui/switch";
+import { Textarea } from "@/components/ui/textarea";
+import {
+  useTwitterImportMutation,
+  useTwitterPlanMutation,
+  type TwitterPlanResult,
+} from "@/hooks/use-batch-uploads";
 import { ApiError } from "@/lib/api-client";
+import { useAuthStore } from "@/lib/auth-store";
 import { useTranslation } from "@/lib/i18n/use-translation";
 
 const COUNT_OPTIONS = ["100", "250", "500", "1000"] as const;
@@ -44,11 +58,46 @@ function TwitterImportPageInner() {
   const { t, locale } = useTranslation();
   const numberLocale = locale === "en" ? "en-US" : "tr-TR";
   const router = useRouter();
+  const activeContext = useAuthStore((s) => s.activeContext);
   const importMutation = useTwitterImportMutation();
+  const planMutation = useTwitterPlanMutation();
 
+  const [brand, setBrand] = useState(activeContext?.tenant_name ?? "");
   const [term, setTerm] = useState("");
   const [count, setCount] = useState<string>("250");
   const [excludeHandle, setExcludeHandle] = useState("");
+  const [relevanceCheck, setRelevanceCheck] = useState(true);
+  const [plan, setPlan] = useState<TwitterPlanResult | null>(null);
+
+  function handlePlan() {
+    const trimmed = brand.trim();
+    if (trimmed.length < 2) {
+      toast.error(t("analyze.twitter.planBrandRequired"));
+      return;
+    }
+    planMutation.mutate(
+      { brand: trimmed, handle: excludeHandle.trim() || undefined },
+      {
+        onSuccess: (res) => {
+          setPlan(res);
+          setTerm(res.term);
+          if (res.handle && !excludeHandle.trim()) {
+            setExcludeHandle(res.handle);
+          }
+          toast.success(t("analyze.twitter.planDone"));
+        },
+        onError: (err) => {
+          if (err instanceof ApiError && err.status === 412) {
+            toast.error(t("analyze.twitter.planNoKeys"));
+          } else if (err instanceof ApiError) {
+            toast.error(err.detail);
+          } else {
+            toast.error(t("analyze.twitter.planFailed"));
+          }
+        },
+      },
+    );
+  }
 
   function handleSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -62,6 +111,8 @@ function TwitterImportPageInner() {
         term: trimmed,
         count: Number(count),
         excludeHandle: excludeHandle.trim() || undefined,
+        brandSummary: plan?.brand_summary || undefined,
+        relevanceCheck,
       },
       {
         onSuccess: (res) => {
@@ -72,11 +123,18 @@ function TwitterImportPageInner() {
                   requested: res.requested,
                 })
               : t("analyze.twitter.queued", { found: res.found });
-          const note =
+          const notes = [
             res.filtered_out > 0
               ? t("analyze.twitter.filteredNote", { n: res.filtered_out })
-              : "";
-          toast.success(`${base}${note}`);
+              : "",
+            res.filtered_by_ai > 0
+              ? t("analyze.twitter.aiFilteredNote", { n: res.filtered_by_ai })
+              : "",
+            relevanceCheck && res.ai_check_skipped
+              ? t("analyze.twitter.aiSkippedNote")
+              : "",
+          ].join("");
+          toast.success(`${base}${notes}`);
           router.push("/analyze/upload");
         },
         onError: (err) => {
@@ -93,6 +151,7 @@ function TwitterImportPageInner() {
   }
 
   const pending = importMutation.isPending;
+  const planning = planMutation.isPending;
 
   return (
     <main className="mx-auto w-full max-w-3xl space-y-6 px-4 py-8">
@@ -120,18 +179,118 @@ function TwitterImportPageInner() {
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-5" noValidate>
+            <div className="grid gap-5 sm:grid-cols-2">
+              <div className="space-y-1.5">
+                <Label htmlFor="twitter-brand">
+                  {t("analyze.twitter.brandLabel")}
+                </Label>
+                <Input
+                  id="twitter-brand"
+                  value={brand}
+                  onChange={(e) => setBrand(e.target.value)}
+                  placeholder={t("analyze.twitter.brandPlaceholder")}
+                  maxLength={120}
+                  disabled={pending || planning}
+                  autoFocus
+                />
+                <p className="text-muted-foreground text-xs">
+                  {t("analyze.twitter.brandHelp")}
+                </p>
+              </div>
+
+              <div className="space-y-1.5">
+                <Label htmlFor="twitter-exclude">
+                  {t("analyze.twitter.excludeLabel")}
+                </Label>
+                <div className="relative">
+                  <span
+                    className="text-muted-foreground pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm"
+                    aria-hidden
+                  >
+                    @
+                  </span>
+                  <Input
+                    id="twitter-exclude"
+                    value={excludeHandle}
+                    onChange={(e) => setExcludeHandle(e.target.value)}
+                    placeholder={t("analyze.twitter.excludePlaceholder")}
+                    maxLength={50}
+                    disabled={pending || planning}
+                    className="pl-8"
+                  />
+                </div>
+                <p className="text-muted-foreground text-xs">
+                  {t("analyze.twitter.excludeHelp")}
+                </p>
+              </div>
+            </div>
+
+            <div>
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={handlePlan}
+                disabled={pending || planning || brand.trim().length < 2}
+              >
+                {planning ? (
+                  <>
+                    <Loader2 className="size-4 animate-spin" aria-hidden />
+                    {t("analyze.twitter.planning")}
+                  </>
+                ) : (
+                  <>
+                    <Sparkles className="size-4" aria-hidden />
+                    {t("analyze.twitter.planButton")}
+                  </>
+                )}
+              </Button>
+            </div>
+
+            {plan && (
+              <div className="bg-muted/50 space-y-2 rounded-lg p-3 text-xs leading-relaxed">
+                {plan.brand_summary && (
+                  <p>
+                    <span className="text-foreground font-medium">
+                      {t("analyze.twitter.summaryLabel")}:
+                    </span>{" "}
+                    <span className="text-muted-foreground">{plan.brand_summary}</span>
+                  </p>
+                )}
+                <p>
+                  <span className="text-foreground font-medium">
+                    {t("analyze.twitter.includeLabel")}:
+                  </span>{" "}
+                  <span className="text-muted-foreground">{plan.include.join(", ")}</span>
+                </p>
+                {plan.exclude.length > 0 && (
+                  <p>
+                    <span className="text-foreground font-medium">
+                      {t("analyze.twitter.excludeTermsLabel")}:
+                    </span>{" "}
+                    <span className="text-muted-foreground">{plan.exclude.join(", ")}</span>
+                  </p>
+                )}
+                {plan.bare_name_ambiguous && (
+                  <p className="text-amber-700 dark:text-amber-400">
+                    {t("analyze.twitter.ambiguousNote")}
+                  </p>
+                )}
+                {plan.notes && <p className="text-muted-foreground">{plan.notes}</p>}
+              </div>
+            )}
+
             <div className="space-y-1.5">
               <Label htmlFor="twitter-term">
                 {t("analyze.twitter.termLabel")}
               </Label>
-              <Input
+              <Textarea
                 id="twitter-term"
                 value={term}
                 onChange={(e) => setTerm(e.target.value)}
                 placeholder={t("analyze.twitter.termPlaceholder")}
-                maxLength={200}
+                maxLength={400}
+                rows={3}
                 disabled={pending}
-                autoFocus
               />
               <p className="text-muted-foreground text-xs">
                 {t("analyze.twitter.termHelp")}
@@ -168,29 +327,20 @@ function TwitterImportPageInner() {
               </div>
 
               <div className="space-y-1.5">
-                <Label htmlFor="twitter-exclude">
-                  {t("analyze.twitter.excludeLabel")}
+                <Label htmlFor="twitter-relevance">
+                  {t("analyze.twitter.relevanceLabel")}
                 </Label>
-                <div className="relative">
-                  <span
-                    className="text-muted-foreground pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm"
-                    aria-hidden
-                  >
-                    @
-                  </span>
-                  <Input
-                    id="twitter-exclude"
-                    value={excludeHandle}
-                    onChange={(e) => setExcludeHandle(e.target.value)}
-                    placeholder={t("analyze.twitter.excludePlaceholder")}
-                    maxLength={50}
+                <div className="flex items-center gap-3 pt-1.5">
+                  <Switch
+                    id="twitter-relevance"
+                    checked={relevanceCheck}
+                    onCheckedChange={(checked) => setRelevanceCheck(checked)}
                     disabled={pending}
-                    className="pl-8"
                   />
+                  <p className="text-muted-foreground text-xs">
+                    {t("analyze.twitter.relevanceHelp")}
+                  </p>
                 </div>
-                <p className="text-muted-foreground text-xs">
-                  {t("analyze.twitter.excludeHelp")}
-                </p>
               </div>
             </div>
 
@@ -205,7 +355,7 @@ function TwitterImportPageInner() {
               <p className="text-muted-foreground text-xs">
                 {t("analyze.twitter.durationHint")}
               </p>
-              <Button type="submit" disabled={pending || term.trim().length < 2}>
+              <Button type="submit" disabled={pending || planning || term.trim().length < 2}>
                 {pending ? (
                   <>
                     <Loader2 className="size-4 animate-spin" aria-hidden />
