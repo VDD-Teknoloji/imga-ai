@@ -156,26 +156,39 @@ async def plan_twitter_import(
 ) -> TwitterPlanResponse:
     tenant_id = _require_active_tenant(current)
     brand = " ".join(body.brand.split()).strip()
+    # BrandPlanError transaction'ın İÇİNDE yakalanır: başarısızlık denetim
+    # satırı istisnadan önce yazıldı, begin()'den sızarsa rollback ile
+    # kaybolur. NoCredentialsError'da yazılacak satır yok, sızabilir.
+    plan_error: BrandPlanError | None = None
+    plan = None
     try:
         async with app_session.begin():
             await bind_tenant(app_session, current)
-            plan = await plan_brand_search(
-                app_session,
-                tenant_id,
-                brand=brand,
-                handle=body.handle,
-                actor_user_id=current.user_id,
-            )
+            try:
+                plan = await plan_brand_search(
+                    app_session,
+                    tenant_id,
+                    brand=brand,
+                    handle=body.handle,
+                    actor_user_id=current.user_id,
+                )
+            except BrandPlanError as exc:
+                plan_error = exc
     except NoCredentialsError as exc:
         raise HTTPException(
             status_code=status.HTTP_412_PRECONDITION_FAILED, detail=_NO_LLM_DETAIL
         ) from exc
-    except BrandPlanError as exc:
-        log.warning("twitter plan failed for brand=%r: %s (%s)", brand, exc, exc.error_type)
+    if plan_error is not None or plan is None:
+        log.warning(
+            "twitter plan failed for brand=%r: %s (%s)",
+            brand,
+            plan_error,
+            plan_error.error_type if plan_error else "unknown",
+        )
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail="Anahtar kelime planı üretilemedi; lütfen tekrar deneyin.",
-        ) from exc
+        ) from plan_error
 
     term = compose_term(plan.include, plan.exclude)
     return TwitterPlanResponse(

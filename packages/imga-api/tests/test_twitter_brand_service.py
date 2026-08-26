@@ -202,9 +202,11 @@ async def test_plan_brand_search_raises_without_keys(
 ) -> None:
     _, tid, _ = semi_auto_tenant
     monkeypatch.delenv("IMGA_PLATFORM_LLM_KEY", raising=False)
-    with pytest.raises(NoCredentialsError):
-        async with admin_session.begin():
-            await _bind(admin_session, tid)
+    # pytest.raises transaction'ın İÇİNDE (test_onboarding deseni): istisna
+    # begin()'den dışarı sızarsa rollback + expire → teardown MissingGreenlet.
+    async with admin_session.begin():
+        await _bind(admin_session, tid)
+        with pytest.raises(NoCredentialsError):
             await plan_brand_search(
                 admin_session,
                 tid,
@@ -224,9 +226,12 @@ async def test_plan_brand_search_llm_failure_is_brand_plan_error_and_audited(
     _, tid, _ = semi_auto_tenant
     monkeypatch.setenv("IMGA_PLATFORM_LLM_KEY", "sk-or-platform")
     provider = _mock_provider(side_effect=LLMProviderError("boom"))
-    with pytest.raises(BrandPlanError):
-        async with admin_session.begin():
-            await _bind(admin_session, tid)
+    # Başarısızlık denetim satırı istisnadan ÖNCE yazılır; transaction
+    # commit etsin diye pytest.raises içeride (route da aynı şekilde
+    # BrandPlanError'ı transaction içinde yakalar).
+    async with admin_session.begin():
+        await _bind(admin_session, tid)
+        with pytest.raises(BrandPlanError):
             await plan_brand_search(
                 admin_session,
                 tid,
