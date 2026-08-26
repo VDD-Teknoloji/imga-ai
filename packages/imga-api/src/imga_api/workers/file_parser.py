@@ -225,9 +225,7 @@ def _resolve_columns(
     fact_mapping: dict[str, str] | None = None,
     date_column: str | None = None,
     value_sample: list[Any] | None = None,
-) -> tuple[
-    int, int | None, int | None, dict[str, int], dict[str, int], int | None, int | None
-]:
+) -> tuple[int, int | None, int | None, dict[str, int], dict[str, int], int | None, int | None]:
     """Return ``(text_idx, source_idx | None, nps_idx | None,
     dimension_idx_by_key, fact_idx_by_key, date_idx | None,
     url_idx | None)``. Raises UnknownColumnError if text/source column
@@ -398,9 +396,7 @@ def _detect_date_column(
         if idx not in skip and header_matches_any(name, DATE_HEADER_PATTERNS):
             return idx
     if value_sample:
-        return _detect_date_column_by_values(
-            value_sample, column_count=len(header), skip=skip
-        )
+        return _detect_date_column_by_values(value_sample, column_count=len(header), skip=skip)
     return None
 
 
@@ -638,9 +634,7 @@ def _iter_xlsx(
             date_column=date_column,
             value_sample=date_sample,
         )
-        for i, row in enumerate(
-            itertools.chain(date_sample, rows_iter), start=1
-        ):
+        for i, row in enumerate(itertools.chain(date_sample, rows_iter), start=1):
             if row is None:
                 continue
             text_cell = row[text_idx] if text_idx < len(row) else None
@@ -736,8 +730,7 @@ def iter_rows(
             date_column=date_column,
         )
     raise UnsupportedFormatError(
-        f"Desteklenmeyen dosya türü: {suffix!r}. "
-        "Yalnızca .csv ve .xlsx dosyaları kabul edilir."
+        f"Desteklenmeyen dosya türü: {suffix!r}. " "Yalnızca .csv ve .xlsx dosyaları kabul edilir."
     )
 
 
@@ -760,8 +753,7 @@ def count_rows(path: Path) -> int:
         finally:
             workbook.close()
     raise UnsupportedFormatError(
-        f"Desteklenmeyen dosya türü: {suffix!r}. "
-        "Yalnızca .csv ve .xlsx dosyaları kabul edilir."
+        f"Desteklenmeyen dosya türü: {suffix!r}. " "Yalnızca .csv ve .xlsx dosyaları kabul edilir."
     )
 
 
@@ -791,8 +783,7 @@ def peek_header(path: Path) -> list[str]:
         finally:
             workbook.close()
     raise UnsupportedFormatError(
-        f"Desteklenmeyen dosya türü: {suffix!r}. "
-        "Yalnızca .csv ve .xlsx dosyaları kabul edilir."
+        f"Desteklenmeyen dosya türü: {suffix!r}. " "Yalnızca .csv ve .xlsx dosyaları kabul edilir."
     )
 
 

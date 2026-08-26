@@ -20,9 +20,6 @@ from uuid import UUID
 import httpx
 import pytest
 from fastapi.testclient import TestClient
-from imga_db.models import User, UserTenantRole
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from imga_api.main import app
 from imga_api.routes import tenant_twitter
 from imga_api.services import AuditService, UserService
@@ -38,6 +35,9 @@ from imga_api.services.twitter_import import (
     tweet_matches_terms,
     tweet_url_from_item,
 )
+from imga_db.models import User, UserTenantRole
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from tests.batch_helpers import fetch_job, login_token
 
 # --- birim: sorgu + temizlik -----------------------------------------

@@ -71,9 +71,7 @@ class ReviewDecision(StrEnum):
 class Review(Base, TimestampMixin, SoftDeleteMixin):
     __tablename__ = "reviews"
 
-    id: Mapped[UUID] = mapped_column(
-        PG_UUID(as_uuid=True), primary_key=True, default=uuid4
-    )
+    id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4)
     tenant_id: Mapped[UUID] = mapped_column(
         PG_UUID(as_uuid=True),
         ForeignKey("tenants.id", ondelete="CASCADE"),
@@ -122,9 +120,7 @@ class Review(Base, TimestampMixin, SoftDeleteMixin):
         nullable=True,
     )
 
-    analyzed_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False
-    )
+    analyzed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
     # Yorumun kendi tarihi — yükleme dosyasındaki ``tarih`` kolonundan
     # gelir, kolon yoksa/parse edilemezse ingest anına düşer. Analitik
@@ -170,9 +166,7 @@ class Review(Base, TimestampMixin, SoftDeleteMixin):
     # editable per tenant in 8.3.7, and we don't want a delete to break
     # historical reviews; if the code stops existing, the UI renders
     # the raw code or a "removed category" badge.
-    company_perspective_code: Mapped[str | None] = mapped_column(
-        String(64), nullable=True
-    )
+    company_perspective_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
     # 2026-08-10 — temas noktası türü ("dijital" | "operasyonel").
     # LLM'in yorum başına verdiği karar; kategoriden TÜRETİLMEZ
@@ -181,9 +175,7 @@ class Review(Base, TimestampMixin, SoftDeleteMixin):
     # geçerli değer üretmemiş; okuma tarafı NULL'ı kategori
     # eşlemesine düşürür. CHECK ck_reviews_experience_type (0041)
     # iki değerden başkasını kabul etmez.
-    experience_type: Mapped[str | None] = mapped_column(
-        String(16), nullable=True
-    )
+    experience_type: Mapped[str | None] = mapped_column(String(16), nullable=True)
 
     # Sprint 9.3 B — business impact dimensions. All four nullable
     # so existing reviews stay valid; populated at upload time via

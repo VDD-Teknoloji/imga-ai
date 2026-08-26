@@ -13,8 +13,6 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from openpyxl import Workbook
-
 from imga_api.workers.file_parser import (
     FileParseError,
     UnknownColumnError,
@@ -24,6 +22,7 @@ from imga_api.workers.file_parser import (
     peek_date_column_found,
     peek_header,
 )
+from openpyxl import Workbook
 
 
 def _write_csv(path: Path, rows: list[list[str]]) -> None:
@@ -100,9 +99,7 @@ def test_iter_rows_with_source_column(tmp_path: Path) -> None:
             ["yorum b", ""],
         ],
     )
-    rows = list(
-        iter_rows(path, text_column="text", source_column="source")
-    )
+    rows = list(iter_rows(path, text_column="text", source_column="source"))
     assert rows[0].source == "trustpilot"
     assert rows[1].source is None  # empty cell collapses to None
 
@@ -134,9 +131,7 @@ def test_iter_rows_xlsx_round_trip(tmp_path: Path) -> None:
             ["başka bir yorum", ""],
         ],
     )
-    rows = list(
-        iter_rows(path, text_column="yorum", source_column="kaynak")
-    )
+    rows = list(iter_rows(path, text_column="yorum", source_column="kaynak"))
     assert [r.text for r in rows] == ["bir yorum", "başka bir yorum"]
     assert [r.source for r in rows] == ["trustpilot", None]
 
@@ -174,7 +169,7 @@ def test_iter_rows_without_date_column_yields_none(tmp_path: Path) -> None:
 
 
 def test_iter_rows_detects_source_url_column_csv(tmp_path: Path) -> None:
-    """"Twitter'dan Çek" CSV'si: yorum + tarih + kaynak + bağlantı. Geçersiz
+    """ "Twitter'dan Çek" CSV'si: yorum + tarih + kaynak + bağlantı. Geçersiz
     (http'siz / boşluklu) hücreler None'a düşer, satır yine gelir; tarih
     tespiti bağlantı kolonunu tarih sanmaz."""
     path = tmp_path / "twitter.csv"
@@ -407,9 +402,7 @@ def test_iter_rows_value_based_fallback_at_threshold_picked(
     """10 satırdan 7'si tarih (tam %70, eşiğe eşit) — eşik >= olduğundan
     kolon kazanır."""
     path = tmp_path / "at-threshold.csv"
-    date_rows = [
-        [f"yorum{i}", f"{i + 1:02d}.05.2026"] for i in range(7)
-    ]
+    date_rows = [[f"yorum{i}", f"{i + 1:02d}.05.2026"] for i in range(7)]
     text_rows = [[f"yorum{i}", "tarih değil"] for i in range(7, 10)]
     _write_csv(path, [["yorum", "X"], *date_rows, *text_rows])
     rows = list(iter_rows(path, text_column="yorum"))
@@ -431,9 +424,7 @@ def test_iter_rows_value_based_fallback_highest_rate_wins(
         body.append([f"yorum{i}", y_cell, x_cell])
     _write_csv(path, body)
     rows = list(iter_rows(path, text_column="yorum"))
-    assert all(
-        r.review_date is not None and r.review_date.month == 5 for r in rows
-    )
+    assert all(r.review_date is not None and r.review_date.month == 5 for r in rows)
 
 
 def test_iter_rows_value_based_fallback_ties_prefer_leftmost(
@@ -470,9 +461,7 @@ def test_iter_rows_explicit_date_column_overrides_autodetect(
             ["bir yorum", "01.01.2026", "15.03.2026"],
         ],
     )
-    rows = list(
-        iter_rows(path, text_column="yorum", date_column="Kayıt Günü")
-    )
+    rows = list(iter_rows(path, text_column="yorum", date_column="Kayıt Günü"))
     assert rows[0].review_date == datetime(2026, 3, 15, tzinfo=UTC)
 
 
@@ -483,9 +472,7 @@ def test_iter_rows_explicit_date_column_not_found_yields_none_dates(
     katmanı bunu job'a uyarı olarak düşürür, bkz. batch_analyzer)."""
     path = tmp_path / "explicit-missing.csv"
     _write_csv(path, [["yorum", "tarih"], ["bir yorum", "01.01.2026"]])
-    rows = list(
-        iter_rows(path, text_column="yorum", date_column="olmayan kolon")
-    )
+    rows = list(iter_rows(path, text_column="yorum", date_column="olmayan kolon"))
     assert rows[0].review_date is None
 
 

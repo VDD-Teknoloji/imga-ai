@@ -12,6 +12,7 @@ from uuid import UUID, uuid4
 
 import pytest
 from fastapi.testclient import TestClient
+from imga_api.services import AuditService, UserService
 from imga_core import review_text_hash
 from imga_db.models import (
     Review,
@@ -22,7 +23,6 @@ from imga_db.models import (
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from imga_api.services import AuditService, UserService
 from tests.batch_helpers import (
     cleanup_tenant,
     login_token,
@@ -260,7 +260,9 @@ async def test_filter_batch_job_id_scopes_to_one_upload(
             {"id": str(batch_id), "tid": str(tid)},
         )
         await _insert_review(
-            admin_session, tenant_id=tid, text_value="batch satırı",
+            admin_session,
+            tenant_id=tid,
+            text_value="batch satırı",
             batch_job_id=batch_id,
         )
         await _insert_review(admin_session, tenant_id=tid, text_value="manuel satır")
@@ -301,7 +303,9 @@ async def test_filter_source_types_distinguishes_manual_and_batch(
             {"id": str(batch_id), "tid": str(tid)},
         )
         await _insert_review(
-            admin_session, tenant_id=tid, text_value="batch",
+            admin_session,
+            tenant_id=tid,
+            text_value="batch",
             batch_job_id=batch_id,
         )
         await _insert_review(admin_session, tenant_id=tid, text_value="manuel")
@@ -403,9 +407,7 @@ async def test_rls_isolates_reviews_across_tenants(
     _user_a, tid_a, _pw_a = semi_auto_tenant
     await _seed_reviews(admin_session, tid_a, count=2)
 
-    user_b, tid_b, pw_b = await seed_tenant_with_admin(
-        admin_session, name_prefix="Beta Co"
-    )
+    user_b, tid_b, pw_b = await seed_tenant_with_admin(admin_session, name_prefix="Beta Co")
     try:
         token_b = login_token(batch_client, user_b.email, pw_b, tid_b)
         r = batch_client.get(
@@ -428,9 +430,7 @@ async def test_detail_returns_404_for_other_tenants_review(
     seeded = await _seed_reviews(admin_session, tid_a, count=1)
     target_id = seeded[0].id
 
-    user_b, tid_b, pw_b = await seed_tenant_with_admin(
-        admin_session, name_prefix="Beta Co"
-    )
+    user_b, tid_b, pw_b = await seed_tenant_with_admin(admin_session, name_prefix="Beta Co")
     try:
         token_b = login_token(batch_client, user_b.email, pw_b, tid_b)
         r = batch_client.get(
@@ -461,11 +461,15 @@ async def test_list_exposes_override_count_and_detail_returns_full_trace(
             {"t": str(tid)},
         )
         with_overrides = await _insert_review(
-            admin_session, tenant_id=tid, text_value="ileti A",
+            admin_session,
+            tenant_id=tid,
+            text_value="ileti A",
             overrides_applied=overrides,
         )
         without_overrides = await _insert_review(
-            admin_session, tenant_id=tid, text_value="ileti B",
+            admin_session,
+            tenant_id=tid,
+            text_value="ileti B",
         )
         admin_session.expunge(with_overrides)
         admin_session.expunge(without_overrides)
@@ -520,7 +524,9 @@ async def test_reanalysis_marker_excluded_from_count_kept_in_detail(
             {"t": str(tid)},
         )
         review = await _insert_review(
-            admin_session, tenant_id=tid, text_value="yeniden analizli",
+            admin_session,
+            tenant_id=tid,
+            text_value="yeniden analizli",
             overrides_applied=overrides,
         )
         admin_session.expunge(review)
@@ -562,17 +568,22 @@ async def test_filter_channels_csv_is_case_and_whitespace_insensitive(
             {"t": str(tid)},
         )
         await _insert_review(
-            admin_session, tenant_id=tid, text_value="fedex satırı",
+            admin_session,
+            tenant_id=tid,
+            text_value="fedex satırı",
             channel="FEDEX",
         )
         await _insert_review(
-            admin_session, tenant_id=tid, text_value="ups satırı",
+            admin_session,
+            tenant_id=tid,
+            text_value="ups satırı",
             channel="UPS",
         )
 
     token = login_token(batch_client, user.email, pw, tid)
     r = batch_client.get(
-        "/tenants/me/reviews", params={"channels": "fedex"},
+        "/tenants/me/reviews",
+        params={"channels": "fedex"},
         headers={"Authorization": f"Bearer {token}"},
     )
     assert r.status_code == 200, r.text
@@ -597,15 +608,23 @@ async def test_filter_remaining_business_dimensions_case_insensitive(
             {"t": str(tid)},
         )
         await _insert_review(
-            admin_session, tenant_id=tid, text_value="hedef satır",
-            business_segment="Satış", product_line="Kargo",
-            customer_tier="Kurumsal", entered_by="Mehmet Demir",
+            admin_session,
+            tenant_id=tid,
+            text_value="hedef satır",
+            business_segment="Satış",
+            product_line="Kargo",
+            customer_tier="Kurumsal",
+            entered_by="Mehmet Demir",
             source="Portal",
         )
         await _insert_review(
-            admin_session, tenant_id=tid, text_value="alakasız satır",
-            business_segment="Pazarlama", product_line="Değişim",
-            customer_tier="Bireysel", entered_by="Ali Kaya",
+            admin_session,
+            tenant_id=tid,
+            text_value="alakasız satır",
+            business_segment="Pazarlama",
+            product_line="Değişim",
+            customer_tier="Bireysel",
+            entered_by="Ali Kaya",
             source="Phone",
         )
 
@@ -619,7 +638,8 @@ async def test_filter_remaining_business_dimensions_case_insensitive(
     ]
     for param, value in checks:
         r = batch_client.get(
-            "/tenants/me/reviews", params={param: value},
+            "/tenants/me/reviews",
+            params={param: value},
             headers={"Authorization": f"Bearer {token}"},
         )
         assert r.status_code == 200, r.text
@@ -647,15 +667,22 @@ async def test_dimension_values_folds_and_labels_most_frequent_spelling(
         )
         for i in range(4):
             await _insert_review(
-                admin_session, tenant_id=tid, text_value=f"fedex-{i}",
+                admin_session,
+                tenant_id=tid,
+                text_value=f"fedex-{i}",
                 channel="FEDEX",
             )
         await _insert_review(
-            admin_session, tenant_id=tid, text_value="fedex-minor",
+            admin_session,
+            tenant_id=tid,
+            text_value="fedex-minor",
             channel="fedex",
         )
         await _insert_review(
-            admin_session, tenant_id=tid, text_value="ups-1", channel="UPS",
+            admin_session,
+            tenant_id=tid,
+            text_value="ups-1",
+            channel="UPS",
         )
 
     token = login_token(batch_client, user.email, pw, tid)
@@ -701,8 +728,11 @@ async def test_dimension_values_include_flagged_defaults_to_true(
             {"t": str(tid)},
         )
         await _insert_review(
-            admin_session, tenant_id=tid, text_value="flagged",
-            channel="DHL", quality_flag="duplicate",
+            admin_session,
+            tenant_id=tid,
+            text_value="flagged",
+            channel="DHL",
+            quality_flag="duplicate",
         )
 
     token = login_token(batch_client, user.email, pw, tid)
@@ -739,13 +769,17 @@ async def test_dimension_values_caps_at_100_and_orders_by_count_desc(
         )
         for i in range(105):
             await _insert_review(
-                admin_session, tenant_id=tid, text_value=f"kanal metni {i}",
+                admin_session,
+                tenant_id=tid,
+                text_value=f"kanal metni {i}",
                 channel=f"kanal-{i}",
             )
         # Bir değeri ikinci kez ekleyip en yüksek sayaca taşı — count
         # desc sıralamasının gerçekten çalıştığını doğrular.
         await _insert_review(
-            admin_session, tenant_id=tid, text_value="kanal-0 tekrar",
+            admin_session,
+            tenant_id=tid,
+            text_value="kanal-0 tekrar",
             channel="kanal-0",
         )
 
@@ -800,9 +834,7 @@ async def test_dimension_values_viewer_role_can_access(
             password=viewer_pw,
             full_name="Viewer User",
         )
-        await usvc.attach_to_tenant(
-            user_id=viewer.id, tenant_id=tid, role=UserTenantRole.VIEWER
-        )
+        await usvc.attach_to_tenant(user_id=viewer.id, tenant_id=tid, role=UserTenantRole.VIEWER)
         viewer_id = viewer.id
         viewer_email = viewer.email
 

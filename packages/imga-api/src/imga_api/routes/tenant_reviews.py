@@ -50,15 +50,19 @@ from imga_api.workers.reanalyzer import (
 
 router = APIRouter(prefix="/tenants/me/reviews", tags=["Analyze"])
 
-_AnyMember = Depends(require_role(
-    UserTenantRole.TENANT_ADMIN,
-    UserTenantRole.ANALYST,
-    UserTenantRole.VIEWER,
-))
-_WriteMember = Depends(require_role(
-    UserTenantRole.TENANT_ADMIN,
-    UserTenantRole.ANALYST,
-))
+_AnyMember = Depends(
+    require_role(
+        UserTenantRole.TENANT_ADMIN,
+        UserTenantRole.ANALYST,
+        UserTenantRole.VIEWER,
+    )
+)
+_WriteMember = Depends(
+    require_role(
+        UserTenantRole.TENANT_ADMIN,
+        UserTenantRole.ANALYST,
+    )
+)
 _TenantAdmin = Depends(require_role(UserTenantRole.TENANT_ADMIN))
 
 
@@ -381,8 +385,7 @@ async def list_dimension_values(
     field: str = Query(
         ...,
         description=(
-            "channel | business_segment | product_line | "
-            "customer_tier | entered_by | source"
+            "channel | business_segment | product_line | " "customer_tier | entered_by | source"
         ),
     ),
     include_flagged: bool = Query(
@@ -410,13 +413,9 @@ async def list_dimension_values(
                 include_flagged=include_flagged,
             )
         except UnknownDimension as exc:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)
-            ) from exc
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     return DimensionValuesResponse(
-        values=[
-            DimensionValueItem(value=r.value, count=r.count) for r in rows
-        ]
+        values=[DimensionValueItem(value=r.value, count=r.count) for r in rows]
     )
 
 
@@ -435,13 +434,9 @@ async def get_review(
     async with app_session.begin():
         await bind_tenant(app_session, current)
         service = ReviewListService(app_session)
-        result = await service.get_review(
-            tenant_id=tenant_id, review_id=review_id
-        )
+        result = await service.get_review(tenant_id=tenant_id, review_id=review_id)
         if result is None:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND, detail="review not found"
-            )
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="review not found")
         review, perspective_label_tr = result
         # Sprint 8.3.4 — overrides_applied JSONB now populated by the
         # bridge (and the batch worker on the dedup/opt-out paths). Rows
@@ -454,9 +449,7 @@ async def get_review(
         # Migration 0046 — nullable facts enrichment (review_facts is
         # 1:1 with reviews; most rows have none).
         fact_row = (
-            await app_session.execute(
-                select(ReviewFact).where(ReviewFact.review_id == review_id)
-            )
+            await app_session.execute(select(ReviewFact).where(ReviewFact.review_id == review_id))
         ).scalar_one_or_none()
         facts_block = (
             ReviewFactsBlock(
@@ -470,14 +463,10 @@ async def get_review(
                 customer_interactions=fact_row.customer_interactions,
                 compensation_status=fact_row.compensation_status,
                 freight_cost=(
-                    float(fact_row.freight_cost)
-                    if fact_row.freight_cost is not None
-                    else None
+                    float(fact_row.freight_cost) if fact_row.freight_cost is not None else None
                 ),
                 goods_cost=(
-                    float(fact_row.goods_cost)
-                    if fact_row.goods_cost is not None
-                    else None
+                    float(fact_row.goods_cost) if fact_row.goods_cost is not None else None
                 ),
                 refund_reason=fact_row.refund_reason,
                 delivery_status=fact_row.delivery_status,
@@ -563,13 +552,9 @@ async def manually_create_ticket(
                 status_code=status.HTTP_404_NOT_FOUND, detail="review not found"
             ) from exc
         except ReviewAlreadyTicketedError as exc:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT, detail=str(exc)
-            ) from exc
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
         except CategoryNotConfiguredError as exc:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT, detail=str(exc)
-            ) from exc
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
         return ManualPromotionResponse(
             review_id=review_id,
             ticket_id=ticket.id,
@@ -682,9 +667,7 @@ async def correct_review(
         except CorrectionError as exc:
             detail = str(exc)
             code = (
-                status.HTTP_404_NOT_FOUND
-                if "bulunamadı" in detail
-                else status.HTTP_400_BAD_REQUEST
+                status.HTTP_404_NOT_FOUND if "bulunamadı" in detail else status.HTTP_400_BAD_REQUEST
             )
             raise HTTPException(status_code=code, detail=detail) from exc
         # 2026-08-18 (bulgu düzeltmesi) — ``correction.new_score`` ham
@@ -744,14 +727,10 @@ async def reanalyze_all_reviews(
                 tenant_id=tenant_id,
                 triggered_by_user_id=current.user_id,
                 source_batch_job_id=None,
-                ip_address=(
-                    request.client.host if request.client is not None else None
-                ),
+                ip_address=(request.client.host if request.client is not None else None),
             )
         except NoReanalysisCandidatesError as exc:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)
-            ) from exc
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
         job_id = job.id
         # ORM attribute'ları transaction KAPANMADAN (aşağıdaki commit'ten
         # önce) okunur — flush sonrası expire olabilirler, blok dışında

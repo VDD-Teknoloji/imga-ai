@@ -228,9 +228,7 @@ async def build_worker_context(
     )
 
 
-def _select_pipeline(
-    context: WorkerContext, *, chunk_index: int | None
-) -> AnalysisPipeline:
+def _select_pipeline(context: WorkerContext, *, chunk_index: int | None) -> AnalysisPipeline:
     """Pick the AnalysisPipeline a chunk should run BERT through.
 
     Sprint 9.0.5-A. Serial path (or anything without a pool) gets
@@ -271,9 +269,7 @@ async def process_batch_job(job_id: UUID, context: WorkerContext) -> None:
             await _run_job(job_id, tenant_id, context)
         except Exception as exc:
             log.exception("batch worker: job %s crashed: %s", job_id, exc)
-            await _record_catastrophic_failure(
-                job_id, tenant_id, context, reason=str(exc)
-            )
+            await _record_catastrophic_failure(job_id, tenant_id, context, reason=str(exc))
 
 
 async def _read_tenant_id(
@@ -281,9 +277,7 @@ async def _read_tenant_id(
     factory: async_sessionmaker[AsyncSession],
 ) -> UUID | None:
     async with factory() as session, session.begin():
-        stmt = select(AnalyzeBatchJob.tenant_id).where(
-            AnalyzeBatchJob.id == job_id
-        )
+        stmt = select(AnalyzeBatchJob.tenant_id).where(AnalyzeBatchJob.id == job_id)
         return (await session.execute(stmt)).scalar_one_or_none()
 
 
@@ -344,7 +338,8 @@ async def _run_job(
         if job.status != BatchJobStatus.PROCESSING:
             log.info(
                 "batch worker: job %s already in terminal state %s; skipping",
-                job_id, job.status,
+                job_id,
+                job.status,
             )
             return
         file_path = Path(job.file_path)
@@ -456,9 +451,7 @@ async def _run_job(
             date_column=date_column,
         )
     except (FileParseError, UnknownColumnError) as exc:
-        await _record_catastrophic_failure(
-            job_id, tenant_id, context, reason=str(exc)
-        )
+        await _record_catastrophic_failure(job_id, tenant_id, context, reason=str(exc))
         return
 
     # Intra-batch dedup — same text twice in the same upload collapses
@@ -498,9 +491,7 @@ async def _run_job(
     # _chunked, so the worker only burns BERT inference on rows
     # the previous run hadn't reached.
     if resume_from_row > 0:
-        rows_iter = (
-            row for row in rows_iter if row.row_number > resume_from_row
-        )
+        rows_iter = (row for row in rows_iter if row.row_number > resume_from_row)
 
     chunk_concurrency = max(1, context.chunk_concurrency)
     if chunk_concurrency <= 1:
@@ -640,10 +631,13 @@ async def _run_chunks_parallel(
             if await _is_cancelled(job_id, tenant_id, context):
                 return
             await _process_chunk(
-                job_id=job_id, tenant_id=tenant_id, chunk=chunk,
+                job_id=job_id,
+                tenant_id=tenant_id,
+                chunk=chunk,
                 auto_create=auto_create,
                 triggered_by_user_id=triggered_by_user_id,
-                seen_hashes=seen_hashes, context=context,
+                seen_hashes=seen_hashes,
+                context=context,
                 classifier_override=classifier_override,
                 unified_ctx=unified_ctx,
             )
@@ -688,9 +682,7 @@ async def _run_chunks_parallel(
         # Drain finished tasks to surface exceptions early + bound
         # the in-flight queue size.
         if len(in_flight) >= drain_threshold:
-            done, pending = await asyncio.wait(
-                in_flight, return_when=asyncio.FIRST_COMPLETED
-            )
+            done, pending = await asyncio.wait(in_flight, return_when=asyncio.FIRST_COMPLETED)
             in_flight = pending
             for t in done:
                 exc = t.exception()
@@ -709,9 +701,7 @@ async def _run_chunks_parallel(
                 raise r
 
 
-async def _publish_terminal(
-    job_id: UUID, tenant_id: UUID, context: WorkerContext
-) -> None:
+async def _publish_terminal(job_id: UUID, tenant_id: UUID, context: WorkerContext) -> None:
     """Read the job's terminal state and publish a final SSE event so
     the consumer knows to disconnect.
 
@@ -746,9 +736,7 @@ async def _is_cancelled(
 ) -> bool:
     async with context.admin_session_factory() as session, session.begin():
         await set_current_tenant(session, tenant_id)
-        stmt = select(AnalyzeBatchJob.status).where(
-            AnalyzeBatchJob.id == job_id
-        )
+        stmt = select(AnalyzeBatchJob.status).where(AnalyzeBatchJob.id == job_id)
         status = (await session.execute(stmt)).scalar_one_or_none()
         return status == BatchJobStatus.CANCELLED
 
@@ -815,9 +803,7 @@ async def _write_empty_reviews(
         if parsed.facts:
             fact_row = build_fact_row(parsed.facts)
             if fact_row is not None:
-                fact_rows.append(
-                    {"review_id": review_id, "tenant_id": tenant_id, **fact_row}
-                )
+                fact_rows.append({"review_id": review_id, "tenant_id": tenant_id, **fact_row})
     await _upsert_review_facts(app_session, fact_rows)
 
 
@@ -998,9 +984,7 @@ async def _process_chunk(
         except Exception as exc:
             log.exception("batch chunk inference failed: %s", exc)
             for parsed in valid_rows:
-                error_entries.append(
-                    {"row": parsed.row_number, "error": f"pipeline failed: {exc}"}
-                )
+                error_entries.append({"row": parsed.row_number, "error": f"pipeline failed: {exc}"})
                 failed += 1
             # 2026-08-18 WS2 — boş satırlar BERT'e hiç bağımlı değildi;
             # valid_rows analizi tamamen çökse bile empty_rows kaybolmasın
@@ -1016,20 +1000,17 @@ async def _process_chunk(
                     await set_current_tenant(fallback_session, tenant_id)
                     fallback_audit = AuditService(fallback_session)
                     fallback_config_service = TenantConfigService(
-                        fallback_session, fallback_audit,
+                        fallback_session,
+                        fallback_audit,
                         context.tenant_config_cache,
                     )
-                    fallback_tenant_config = await fallback_config_service.get_config(
-                        tenant_id
-                    )
+                    fallback_tenant_config = await fallback_config_service.get_config(tenant_id)
                     await _write_empty_reviews(
                         fallback_session,
                         tenant_id=tenant_id,
                         job_id=job_id,
                         empty_rows=empty_rows,
-                        tenant_mode=str(
-                            fallback_tenant_config["automation_mode"]
-                        ),
+                        tenant_mode=str(fallback_tenant_config["automation_mode"]),
                         triggered_by_user_id=triggered_by_user_id,
                     )
                 empty_succeeded = len(empty_rows)
@@ -1063,12 +1044,8 @@ async def _process_chunk(
         await set_current_tenant(app_session, tenant_id)
         audit = AuditService(app_session)
         ticket_service = TicketService(app_session, audit)
-        config_service = TenantConfigService(
-            app_session, audit, context.tenant_config_cache
-        )
-        review_service = ReviewService(
-            app_session, audit, ticket_service, config_service
-        )
+        config_service = TenantConfigService(app_session, audit, context.tenant_config_cache)
+        review_service = ReviewService(app_session, audit, ticket_service, config_service)
 
         # Sprint 9.4.3 A — chunk-level LLM audit. One row per chunk
         # (not per review) keeps the audit table manageable on a 10K
@@ -1093,8 +1070,7 @@ async def _process_chunk(
         # row" → "this chunk" by row_number range from the structured
         # log; the prompt_hash field provides the secondary join key.
         chunk_anchor = "\n".join(
-            f"{p.row_number}:{p.text[:200]}"
-            for p in valid_rows[: min(20, len(valid_rows))]
+            f"{p.row_number}:{p.text[:200]}" for p in valid_rows[: min(20, len(valid_rows))]
         )
         # OpenRouter entegrasyonu — audit satırı artık gerçek kazanan
         # sağlayıcı/modeli taşır (eskiden kod sabitinden geliyordu).
@@ -1108,13 +1084,9 @@ async def _process_chunk(
         elif classifier_override is not None:
             _llm = getattr(classifier_override, "llm", None)
             if _llm is not None:
-                audit_model_name = getattr(
-                    _llm, "model_name", DEFAULT_MODEL_NAME
-                )
+                audit_model_name = getattr(_llm, "model_name", DEFAULT_MODEL_NAME)
                 _pname = str(getattr(_llm, "PROVIDER_NAME", "gemini"))
-                audit_provider = (
-                    "openrouter" if "openrouter" in _pname else "gemini"
-                )
+                audit_provider = "openrouter" if "openrouter" in _pname else "gemini"
         audit_ctx = LLMCallContext(
             tenant_id=tenant_id,
             call_type=CALL_TYPE_CLASSIFICATION,
@@ -1125,7 +1097,9 @@ async def _process_chunk(
             related_entity_id=job_id,
         )
         chunk_auditor = LLMCallAuditor(
-            app_session, audit_ctx, prompt=chunk_anchor,
+            app_session,
+            audit_ctx,
+            prompt=chunk_anchor,
         )
         async with chunk_auditor:
             # The BERT/LLM call already ran outside the transaction
@@ -1191,9 +1165,7 @@ async def _process_chunk(
         # per-chunk-transaction persist shape.
         fact_rows: list[dict[str, Any]] = []
 
-        for row_index, (parsed, analysis) in enumerate(
-            zip(valid_rows, analyses, strict=True)
-        ):
+        for row_index, (parsed, analysis) in enumerate(zip(valid_rows, analyses, strict=True)):
             from imga_core import review_text_hash
 
             text_hash = review_text_hash(parsed.text)
@@ -1211,9 +1183,7 @@ async def _process_chunk(
             # kodu verdiyse (ve kod hâlâ kurumun taksonomisindeyse) o
             # kazanır; aksi halde davranış 8.3.5.6'daki gibi kalır.
             llm_perspective = (
-                unified_perspectives[row_index]
-                if row_index < len(unified_perspectives)
-                else None
+                unified_perspectives[row_index] if row_index < len(unified_perspectives) else None
             )
             # 2026-08-18 (migration 0042, B3 sözleşme notu) — bu satır
             # birebir/anlamsal düzeltmeyle eşleştiyse (bkz.
@@ -1222,48 +1192,36 @@ async def _process_chunk(
             # decision alanı NULL ise (operatör o alanı boş bıraktıysa)
             # LLM/heuristik değeri aynen korunur.
             correction_override = (
-                correction_overrides[row_index]
-                if row_index < len(correction_overrides)
-                else None
+                correction_overrides[row_index] if row_index < len(correction_overrides) else None
             )
             experience_type = normalize_experience_type(
                 correction_override.experience_type
                 if correction_override is not None
                 and correction_override.experience_type is not None
                 else (
-                    unified_experiences[row_index]
-                    if row_index < len(unified_experiences)
-                    else None
+                    unified_experiences[row_index] if row_index < len(unified_experiences) else None
                 )
             )
             perspective_code: str | None
             perspective_label: str | None
             correction_perspective = (
-                correction_override.perspective_code
-                if correction_override is not None
-                else None
+                correction_override.perspective_code if correction_override is not None else None
             )
             if correction_perspective is not None:
                 perspective_code = correction_perspective
                 perspective_label = taxonomy_snapshot.labels.get(
                     correction_perspective, correction_perspective
                 )
-            elif llm_perspective is not None and (
-                llm_perspective in taxonomy_snapshot.labels
-            ):
+            elif llm_perspective is not None and (llm_perspective in taxonomy_snapshot.labels):
                 perspective_code = llm_perspective
                 perspective_label = taxonomy_snapshot.labels[llm_perspective]
             else:
                 perspective_hit = apply_company_heuristic(
                     parsed.text, taxonomy=taxonomy_snapshot.heuristic_entries
                 )
-                perspective_code = (
-                    perspective_hit.code if perspective_hit is not None else None
-                )
+                perspective_code = perspective_hit.code if perspective_hit is not None else None
                 perspective_label = (
-                    perspective_hit.label_tr
-                    if perspective_hit is not None
-                    else None
+                    perspective_hit.label_tr if perspective_hit is not None else None
                 )
 
             # Intra-batch dedup — already seen this text in this job.
@@ -1287,9 +1245,7 @@ async def _process_chunk(
                     sentiment_label=analysis.sentiment_label,
                     sentiment_score=float(analysis.sentiment_score),
                     primary_category=(
-                        analysis.categorization.primary
-                        if analysis.categorization
-                        else "belirsiz"
+                        analysis.categorization.primary if analysis.categorization else "belirsiz"
                     ),
                     primary_confidence=float(
                         analysis.categorization.primary_confidence
@@ -1350,9 +1306,7 @@ async def _process_chunk(
             # 'informational'/'meaningless' damgalayıp insan kararını
             # analitikten sessizce düşürebilirdi.
             row_quality_flag = (
-                None
-                if correction_override is not None
-                else classify_data_quality(parsed.text)
+                None if correction_override is not None else classify_data_quality(parsed.text)
             )
 
             if auto_create:
@@ -1374,10 +1328,7 @@ async def _process_chunk(
                         # record_and_decide'ın kendi heuristiğini ezer.
                         perspective_override=(
                             (perspective_code, perspective_label)
-                            if (
-                                correction_perspective is not None
-                                or llm_perspective is not None
-                            )
+                            if (correction_perspective is not None or llm_perspective is not None)
                             and perspective_code is not None
                             and perspective_label is not None
                             else None
@@ -1444,15 +1395,9 @@ async def _process_chunk(
             else:
                 # Opt-out path: persist a review row marked SKIPPED_MODE
                 # so the user still sees the analysis, but no ticket.
-                primary = (
-                    analysis.categorization.primary
-                    if analysis.categorization
-                    else "belirsiz"
-                )
+                primary = analysis.categorization.primary if analysis.categorization else "belirsiz"
                 confidence = float(
-                    analysis.categorization.primary_confidence
-                    if analysis.categorization
-                    else 0.0
+                    analysis.categorization.primary_confidence if analysis.categorization else 0.0
                 )
                 opt_out_review_id = uuid4()
                 review = Review(
@@ -1651,9 +1596,8 @@ async def recover_orphans(context: WorkerContext) -> int:
     state instead of a frozen progress bar. Returns the count for log
     visibility."""
     async with context.admin_session_factory() as session, session.begin():
-        stmt = (
-            select(AnalyzeBatchJob.id, AnalyzeBatchJob.tenant_id)
-            .where(AnalyzeBatchJob.status == BatchJobStatus.PROCESSING)
+        stmt = select(AnalyzeBatchJob.id, AnalyzeBatchJob.tenant_id).where(
+            AnalyzeBatchJob.status == BatchJobStatus.PROCESSING
         )
         rows = list((await session.execute(stmt)).all())
 
@@ -1701,8 +1645,7 @@ async def _build_tenant_classifier(
             selection = await load_active_llm_keys(session, tenant_id)
     except Exception:
         log.exception(
-            "batch worker: failed to load tenant LLM keys; "
-            "falling back to default classifier",
+            "batch worker: failed to load tenant LLM keys; " "falling back to default classifier",
             extra={"tenant_id": str(tenant_id)},
         )
         return None
@@ -1728,13 +1671,9 @@ async def _build_tenant_classifier(
     if selection.provider == "openrouter":
         from imga_core.llm import RotatingOpenRouterProvider
 
-        llm_provider: LLMProvider = RotatingOpenRouterProvider(
-            keys=keys, model_name=model_name
-        )
+        llm_provider: LLMProvider = RotatingOpenRouterProvider(keys=keys, model_name=model_name)
     else:
-        llm_provider = RotatingGeminiProvider(
-            keys=keys, model_name=model_name
-        )
+        llm_provider = RotatingGeminiProvider(keys=keys, model_name=model_name)
     log.info(
         "batch worker: tenant classifier built with %d %s key(s) "
         "(model=%s, rotator active, llm_concurrency=%d)",
@@ -1802,17 +1741,21 @@ def _bert_fallback_enabled() -> bool:
     geliştirme ortamları için varsayılan açık kalır."""
     import os
 
-    return os.environ.get(
-        "IMGA_BATCH_BERT_FALLBACK", "true"
-    ).strip().lower() in ("1", "true", "yes")
+    return os.environ.get("IMGA_BATCH_BERT_FALLBACK", "true").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+    )
 
 
 def _unified_enabled() -> bool:
     import os
 
-    return os.environ.get(
-        "IMGA_UNIFIED_CLASSIFIER_ENABLED", "true"
-    ).strip().lower() in ("1", "true", "yes")
+    return os.environ.get("IMGA_UNIFIED_CLASSIFIER_ENABLED", "true").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+    )
 
 
 def _unified_model_name() -> str:
@@ -1847,21 +1790,15 @@ async def _build_unified_context(
             # Embedding API'si Gemini'ye özgü — kazanan sağlayıcı
             # OpenRouter olsa bile RAG embedding'leri Gemini anahtarı
             # ister; yoksa boş liste (embed yolu sessizce atlanır).
-            embedding_keys = await load_active_gemini_keys(
-                session, tenant_id
-            )
+            embedding_keys = await load_active_gemini_keys(session, tenant_id)
             store = await load_correction_store(session, tenant_id)
             # Sprint 13.1 — alt kategori seçenekleri job başında bir
             # kez okunur (prompt payload'ı, chunk'lar arası sabit).
-            taxonomy_snapshot = await _load_taxonomy_payload(
-                session, tenant_id
-            )
+            taxonomy_snapshot = await _load_taxonomy_payload(session, tenant_id)
             # 2026-08-10 — kategori tanımları da job başında bir kez.
             # 2026-08-18 (WS1) — artık dinamik kod kümesiyle TEK
             # sorguda, tutarlı biçimde (bkz. TenantCategorySnapshot).
-            category_snapshot = await _load_tenant_category_snapshot(
-                session, tenant_id
-            )
+            category_snapshot = await _load_tenant_category_snapshot(session, tenant_id)
             # Sprint 11.3 — /settings/prompts override'ı: tenant
             # 'unified_classifier' şablonunu düzenlediyse system
             # prompt oradan akar (user prompt yapısını kod kurar).
@@ -1874,17 +1811,14 @@ async def _build_unified_context(
                     PromptResolver,
                 )
 
-                template_row = await PromptResolver(
-                    session
-                ).resolve_template(
+                template_row = await PromptResolver(session).resolve_template(
                     template_key="unified_classifier", tenant_id=tenant_id
                 )
                 if template_row is not None:
                     system_prompt_override = template_row.system_prompt
             except Exception:
                 log.warning(
-                    "unified prompt override lookup failed; using "
-                    "code default system prompt",
+                    "unified prompt override lookup failed; using " "code default system prompt",
                     extra={"tenant_id": str(tenant_id)},
                 )
     except Exception:
@@ -1916,8 +1850,7 @@ async def _build_unified_context(
         provider=selection.provider,
     )
     log.info(
-        "batch worker: unified classifier active (model=%s, keys=%d, "
-        "corrections=%d)",
+        "batch worker: unified classifier active (model=%s, keys=%d, " "corrections=%d)",
         engine.model_name,
         len(keys),
         len(store.exact),
@@ -1933,9 +1866,7 @@ async def _build_unified_context(
     )
 
 
-async def _embed_chunk_rows(
-    texts: list[str], keys: list[Any]
-) -> list[list[float]] | None:
+async def _embed_chunk_rows(texts: list[str], keys: list[Any]) -> list[list[float]] | None:
     """2026-08-18 (WS3 kapsam düzeltmesi) — chunk'ın TÜM satırlarını
     embed eder, ``embed_texts``'in tek çağrıda kabul ettiği 64'lük API
     partileri hâlinde (mevcut sınır — bkz. eski ``texts[:64]``
@@ -2008,18 +1939,13 @@ async def _few_shot_for_chunk(
             vectors = await _embed_chunk_rows(texts, unified_ctx.keys)
             if vectors:
                 dim = len(vectors[0])
-                centroid = [
-                    sum(v[d] for v in vectors) / len(vectors)
-                    for d in range(dim)
-                ]
+                centroid = [sum(v[d] for v in vectors) / len(vectors) for d in range(dim)]
                 async with (
                     context.admin_session_factory() as session,
                     session.begin(),
                 ):
                     await set_current_tenant(session, tenant_id)
-                    semantic = await nearest_corrections(
-                        session, tenant_id, centroid
-                    )
+                    semantic = await nearest_corrections(session, tenant_id, centroid)
                     # Satır-bazlı doğrudan override — HNSW indeksli
                     # k=1 sorgular, embed edilen TÜM chunk satırları
                     # için (ek API maliyeti yok; vektörler zaten
@@ -2028,9 +1954,7 @@ async def _few_shot_for_chunk(
                     # (artık ≤200) boş sorgu (code review bulgusu).
                     if unified_ctx.store.has_embeddings:
                         for i, vector in enumerate(vectors):
-                            decision = await semantic_override_lookup(
-                                session, tenant_id, vector
-                            )
+                            decision = await semantic_override_lookup(session, tenant_id, vector)
                             if decision is not None:
                                 semantic_hits[i] = decision
         except Exception as exc:
@@ -2111,9 +2035,7 @@ def _apply_corrections(
     return patched, applied
 
 
-async def _fetch_dimension_mapping(
-    tenant_id: UUID, context: WorkerContext
-) -> dict[str, str]:
+async def _fetch_dimension_mapping(tenant_id: UUID, context: WorkerContext) -> dict[str, str]:
     """Sprint 9.4 D — load the tenant's enabled business-dimension
     config and return ``{dimension: csv_column_mapping}`` for every
     dimension whose mapping is set. Disabled dimensions and
@@ -2148,9 +2070,7 @@ async def _fetch_dimension_mapping(
     return {dim: col for dim, col in rows if col}
 
 
-async def _fetch_fact_mapping(
-    tenant_id: UUID, context: WorkerContext
-) -> dict[str, str]:
+async def _fetch_fact_mapping(tenant_id: UUID, context: WorkerContext) -> dict[str, str]:
     """Migration 0046 — load the tenant's enabled operational-"facts"
     config and return ``{fact_field: csv_column_mapping}``. Mirrors
     ``_fetch_dimension_mapping`` exactly: best-effort (a load failure
@@ -2178,9 +2098,7 @@ async def _fetch_fact_mapping(
     return {field_name: col for field_name, col in rows if col}
 
 
-async def _upsert_review_facts(
-    app_session: AsyncSession, rows: list[dict[str, Any]]
-) -> None:
+async def _upsert_review_facts(app_session: AsyncSession, rows: list[dict[str, Any]]) -> None:
     """Migration 0046 — one bulk upsert per chunk for the accumulated
     ``review_facts`` rows (all four Review-insertion branches in
     ``_process_chunk`` + ``_write_empty_reviews`` funnel here). Every
@@ -2197,9 +2115,7 @@ async def _upsert_review_facts(
         for col in ReviewFact.__table__.columns
         if col.name not in ("review_id", "tenant_id", "created_at")
     }
-    stmt = stmt.on_conflict_do_update(
-        index_elements=["review_id"], set_=update_columns
-    )
+    stmt = stmt.on_conflict_do_update(index_elements=["review_id"], set_=update_columns)
     await app_session.execute(stmt)
 
 
@@ -2269,12 +2185,8 @@ async def _load_tenant_category_snapshot(
         )
     )
     rows = (await session.execute(stmt)).all()
-    global_codes = [
-        code for code, cat_tenant_id, _desc in rows if cat_tenant_id is None
-    ]
-    custom_codes = [
-        code for code, cat_tenant_id, _desc in rows if cat_tenant_id is not None
-    ]
+    global_codes = [code for code, cat_tenant_id, _desc in rows if cat_tenant_id is None]
+    custom_codes = [code for code, cat_tenant_id, _desc in rows if cat_tenant_id is not None]
 
     combined = global_codes + custom_codes
     if not combined:
@@ -2283,9 +2195,7 @@ async def _load_tenant_category_snapshot(
     code_set = set(codes)
 
     descriptions: dict[str, str] = {
-        code: desc
-        for code, desc in CATEGORY_DESCRIPTIONS_TR.items()
-        if code in code_set
+        code: desc for code, desc in CATEGORY_DESCRIPTIONS_TR.items() if code in code_set
     }
     for code, _cat_tenant_id, desc in rows:
         if desc and code in code_set:
@@ -2314,9 +2224,7 @@ class TenantTaxonomySnapshot:
     labels: dict[str, str]
 
 
-async def _load_taxonomy_payload(
-    session: AsyncSession, tenant_id: UUID
-) -> TenantTaxonomySnapshot:
+async def _load_taxonomy_payload(session: AsyncSession, tenant_id: UUID) -> TenantTaxonomySnapshot:
     """Read the tenant's CategoryTaxonomy rows once per chunk / job.
 
     Returns an empty snapshot when the tenant has no taxonomy (legacy /
@@ -2348,9 +2256,7 @@ async def _load_taxonomy_payload(
         )
         labels[r.code] = r.label_tr
         if r.is_active and r.primary_category_code:
-            options.setdefault(r.primary_category_code, []).append(
-                (r.code, r.label_tr)
-            )
+            options.setdefault(r.primary_category_code, []).append((r.code, r.label_tr))
     return TenantTaxonomySnapshot(
         heuristic_entries=entries, perspective_options=options, labels=labels
     )

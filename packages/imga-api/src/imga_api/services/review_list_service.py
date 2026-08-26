@@ -192,39 +192,27 @@ class ReviewListService:
             term = f"%{filters.search.lower()}%"
             conditions.append(func.lower(Review.text).like(term))
         if filters.perspective_codes:
-            real_codes = tuple(
-                c for c in filters.perspective_codes if c != "__unmatched__"
-            )
+            real_codes = tuple(c for c in filters.perspective_codes if c != "__unmatched__")
             include_unmatched = "__unmatched__" in filters.perspective_codes
             persp_clauses: list[ColumnElement[bool]] = []
             if real_codes:
-                persp_clauses.append(
-                    Review.company_perspective_code.in_(real_codes)
-                )
+                persp_clauses.append(Review.company_perspective_code.in_(real_codes))
             if include_unmatched:
                 persp_clauses.append(Review.company_perspective_code.is_(None))
             if persp_clauses:
                 conditions.append(or_(*persp_clauses))
         # Sprint 8.3.10 — cross-analysis heatmap drill-down lands here.
         if filters.primary_categories:
-            conditions.append(
-                Review.primary_category.in_(filters.primary_categories)
-            )
+            conditions.append(Review.primary_category.in_(filters.primary_categories))
         # 2026-08-20 — Dalga 3 business-dimension filters.
         if filters.channels:
             conditions.append(_folded_in(Review.channel, filters.channels))
         if filters.business_segments:
-            conditions.append(
-                _folded_in(Review.business_segment, filters.business_segments)
-            )
+            conditions.append(_folded_in(Review.business_segment, filters.business_segments))
         if filters.product_lines:
-            conditions.append(
-                _folded_in(Review.product_line, filters.product_lines)
-            )
+            conditions.append(_folded_in(Review.product_line, filters.product_lines))
         if filters.customer_tiers:
-            conditions.append(
-                _folded_in(Review.customer_tier, filters.customer_tiers)
-            )
+            conditions.append(_folded_in(Review.customer_tier, filters.customer_tiers))
         if filters.entered_bys:
             conditions.append(_folded_in(Review.entered_by, filters.entered_bys))
         if filters.sources:
@@ -236,25 +224,13 @@ class ReviewListService:
         # split: saat ``created_at``ten (yuklenen tarihler gun
         # hassasiyetinde, saat yok), gun/hafta/ay ``review_date``ten.
         if filters.hour_of_day is not None:
-            conditions.append(
-                func.extract("hour", Review.created_at)
-                == filters.hour_of_day
-            )
+            conditions.append(func.extract("hour", Review.created_at) == filters.hour_of_day)
         if filters.day_of_week is not None:
-            conditions.append(
-                func.extract("dow", Review.review_date)
-                == filters.day_of_week
-            )
+            conditions.append(func.extract("dow", Review.review_date) == filters.day_of_week)
         if filters.week_of_year is not None:
-            conditions.append(
-                func.extract("week", Review.review_date)
-                == filters.week_of_year
-            )
+            conditions.append(func.extract("week", Review.review_date) == filters.week_of_year)
         if filters.month is not None:
-            conditions.append(
-                func.extract("month", Review.review_date)
-                == filters.month
-            )
+            conditions.append(func.extract("month", Review.review_date) == filters.month)
         if filters.quality_flags:
             conditions.append(Review.quality_flag.in_(filters.quality_flags))
         elif not filters.include_flagged:
@@ -270,9 +246,7 @@ class ReviewListService:
         # kullanıcıya sırasız görünürdü. Query-string adı geriye dönük
         # uyumluluk için korundu.
         order_col = (
-            Review.review_date
-            if filters.order_by == "created_at"
-            else Review.sentiment_score
+            Review.review_date if filters.order_by == "created_at" else Review.sentiment_score
         )
         ordering = order_col.asc() if filters.order == "asc" else order_col.desc()
 
@@ -318,8 +292,7 @@ class ReviewListService:
                 override_count=sum(
                     1
                     for hit in (r.Review.overrides_applied or [])
-                    if isinstance(hit, dict)
-                    and hit.get("layer") != "reanalysis"
+                    if isinstance(hit, dict) and hit.get("layer") != "reanalysis"
                 ),
                 company_perspective_code=r.Review.company_perspective_code,
                 company_perspective_label_tr=r.label_tr,
@@ -370,9 +343,7 @@ class ReviewListService:
             .limit(100)
         )
         rows = (await self._session.execute(stmt)).all()
-        return [
-            DimensionValueCount(value=r.value, count=int(r.cnt)) for r in rows
-        ]
+        return [DimensionValueCount(value=r.value, count=int(r.cnt)) for r in rows]
 
     async def get_review(
         self, *, tenant_id: UUID, review_id: UUID
