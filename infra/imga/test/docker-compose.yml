@@ -159,6 +159,7 @@ services:
           tests/test_okr_service.py \
           tests/test_strategic_reports_routes.py \
           tests/test_llm_credentials_routes.py \
+          tests/test_platform_llm_fallback.py \
           tests/test_tenant_profile_routes.py \
           tests/test_pdf_render.py \
           tests/test_tenant_taxonomies_crud.py \
