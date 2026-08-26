@@ -108,6 +108,15 @@ def test_normalize_plan_response_caps_dedupes_and_prefers_user_handle() -> None:
     assert plan.notes == "Soyadı olarak yaygın."
 
 
+def test_normalize_plan_response_renders_handle_term_as_mention() -> None:
+    plan = normalize_plan_response(
+        {"include": ["karaca tencere", "KaracaOnline"], "exclude": []},
+        brand="Karaca",
+        handle="karacaonline",
+    )
+    assert plan.include == ["karaca tencere", "@karacaonline"]
+
+
 def test_normalize_plan_response_falls_back_to_brand_when_include_empty() -> None:
     plan = normalize_plan_response({"include": [], "exclude": []}, brand="Navlungo", handle=None)
     assert plan.include == ["Navlungo"]

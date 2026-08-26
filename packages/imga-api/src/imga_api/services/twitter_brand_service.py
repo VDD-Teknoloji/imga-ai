@@ -164,7 +164,11 @@ Bilmen gerekenler:
 - exclude: en fazla 15 terim. Aynı adı taşıyan ünlü kişiler (sanatçı,
   sporcu, siyasetçi, gazeteci), yer adları, şarkı/dizi/film adları, aynı
   isimli başka şirketler ve markanın sektörüyle ilgisiz sözlük
-  kullanımları. Bilmediğin şeyi uydurma; emin olduklarını yaz.
+  kullanımları. Her terim gerçek gönderilerde GEÇECEK somut bir ad
+  olmalı — "cem karaca", "hidayet karaca", "efecan karaca",
+  "karacaahmet" gibi; "karaca futbolcu", "karaca şarkı", "karaca soyadı"
+  gibi kategori/açıklama sözcükleri hiçbir gönderiyle eşleşmez, YAZMA.
+  Bilmediğin şeyi uydurma; emin olduklarını yaz.
 - handle: resmi X kullanıcı adı (@ olmadan) — kullanıcı verdiyse aynen
   koru, vermediyse ve kesin biliyorsan yaz, bilmiyorsan boş bırak.
 - brand_summary: şirketin ne yaptığı, ne sattığı, müşterilerinin kim
@@ -407,6 +411,15 @@ def normalize_plan_response(
         fallback = sanitize_term(brand)
         include = [fallback] if fallback else []
     resolved_handle = normalize_handle(handle) or normalize_handle(data.get("handle"))
+    if resolved_handle:
+        # Hesap adı çıplak terim olarak geldiyse X operatörü biçimine
+        # ("@hesap") çevir — mention'ları birebir yakalar.
+        include = [
+            f"@{resolved_handle}"
+            if normalize_header(t.lstrip("@")) == normalize_header(resolved_handle)
+            else t
+            for t in include
+        ]
     summary = " ".join(str(data.get("brand_summary") or "").split()).strip()[:1000]
     notes_raw = " ".join(str(data.get("notes") or "").split()).strip()[:300]
     return BrandSearchPlan(
