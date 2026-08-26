@@ -207,6 +207,13 @@ class Review(Base, TimestampMixin, SoftDeleteMixin):
     # kadar parse edilip düşürülüyordu; artık kalıcı.
     source: Mapped[str | None] = mapped_column(Text(), nullable=True)
 
+    # 2026-08-26 (migration 0047) — yorumun kaynağındaki kalıcı bağlantı
+    # (tweet URL'si, pazar yeri yorum linki). Yükleme dosyasındaki
+    # ``bağlantı``/``url`` kolonundan (file_parser otomatik tanır) gelir;
+    # arşiv kartı ve detay "Tweeti aç / Kaynağı aç" ile buna gider.
+    # NULL = kaynakta bağlantı yok (manuel analiz, şablon yüklemeleri).
+    source_url: Mapped[str | None] = mapped_column(Text(), nullable=True)
+
     # 2026-08-18 (migration 0042) — düşük kaliteli veri işareti. NULL =
     # geçerli satır. 'duplicate' eski satırlar için decision=
     # 'skipped_dedup'tan deterministik backfill edildi; empty/

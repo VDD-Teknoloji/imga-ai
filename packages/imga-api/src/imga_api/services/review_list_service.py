@@ -122,6 +122,9 @@ class ReviewListItem:
     # 2026-08-10 — LLM'in temas noktası kararı ("dijital" |
     # "operasyonel"). NULL = birleşik yol koşmamış eski satır.
     experience_type: str | None = None
+    # 2026-08-26 (migration 0047) — kaynaktaki kalıcı bağlantı (tweet
+    # URL'si vb.); kart "Tweeti aç / Kaynağı aç" düğmesi bunu kullanır.
+    source_url: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -321,6 +324,7 @@ class ReviewListService:
                 company_perspective_code=r.Review.company_perspective_code,
                 company_perspective_label_tr=r.label_tr,
                 experience_type=r.Review.experience_type,
+                source_url=r.Review.source_url,
             )
             for r in rows
         ]

@@ -104,6 +104,9 @@ class ReviewItemResponse(BaseModel):
     # "operasyonel"). NULL = birleşik yol koşmamış eski satır; UI
     # kategori eşlemesine düşer.
     experience_type: str | None = None
+    # 2026-08-26 (migration 0047) — kaynaktaki kalıcı bağlantı (tweet
+    # URL'si vb.). NULL = kaynakta bağlantı yok.
+    source_url: str | None = None
 
 
 class ReviewListResponse(BaseModel):
@@ -189,6 +192,7 @@ class ReviewDetailResponse(BaseModel):
     nps_category: str | None = None
     experience_type: str | None = None
     facts: ReviewFactsBlock | None = None
+    source_url: str | None = None
 
 
 # --- endpoints -----------------------------------------------------
@@ -512,6 +516,7 @@ async def get_review(
             nps_category=review.nps_category,
             experience_type=review.experience_type,
             facts=facts_block,
+            source_url=review.source_url,
         )
 
 
@@ -803,4 +808,5 @@ def _to_item_response(item: ReviewListItem) -> ReviewItemResponse:
         company_perspective_code=item.company_perspective_code,
         company_perspective_label_tr=item.company_perspective_label_tr,
         experience_type=item.experience_type,
+        source_url=item.source_url,
     )

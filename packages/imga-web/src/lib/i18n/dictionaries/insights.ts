@@ -221,6 +221,8 @@ export const insights: Bundle = {
     "reviews.review.removed": "kaldırılmış",
     "reviews.review.hasTicket": "Ticket var",
     "reviews.review.corrected": "düzeltildi",
+    "reviews.review.openTweet": "Tweeti aç",
+    "reviews.review.openSource": "Kaynağı aç",
 
     // --- /reviews: gün / ay etiketleri (heatmap drilldown pill'leri) ---
     "reviews.dow.0": "Pazar",
@@ -638,6 +640,8 @@ export const insights: Bundle = {
     "reviews.review.removed": "removed",
     "reviews.review.hasTicket": "Has Ticket",
     "reviews.review.corrected": "corrected",
+    "reviews.review.openTweet": "Open tweet",
+    "reviews.review.openSource": "Open source",
 
     // --- /reviews: day / month labels (heatmap drilldown pills) ---
     "reviews.dow.0": "Sunday",

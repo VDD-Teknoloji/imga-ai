@@ -54,6 +54,7 @@ async def _insert_review(
     entered_by: str | None = None,
     source: str | None = None,
     quality_flag: str | None = None,
+    source_url: str | None = None,
 ) -> Review:
     review = Review(
         tenant_id=tenant_id,
@@ -80,6 +81,7 @@ async def _insert_review(
         entered_by=entered_by,
         source=source,
         quality_flag=quality_flag,
+        source_url=source_url,
     )
     session.add(review)
     await session.flush()
@@ -111,6 +113,38 @@ async def _seed_reviews(
 
 
 # --- happy path filters ---------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_list_and_detail_expose_source_url(
+    batch_client: TestClient,
+    semi_auto_tenant: tuple[User, UUID, str],
+    admin_session: AsyncSession,
+) -> None:
+    """Migration 0047 — tweet/kaynak bağlantısı liste ve detayda döner;
+    bağlantısız satırda null."""
+    user, tid, pw = semi_auto_tenant
+    link = "https://x.com/musteri/status/2092540287411159128"
+    async with admin_session.begin():
+        await admin_session.execute(
+            text("SELECT set_config('app.current_tenant_id', :t, true)"),
+            {"t": str(tid)},
+        )
+        linked = await _insert_review(
+            admin_session, tenant_id=tid, text_value="tencere yandı", source_url=link
+        )
+        plain = await _insert_review(admin_session, tenant_id=tid, text_value="kargo geç")
+        linked_id, plain_id = linked.id, plain.id
+
+    token = login_token(batch_client, user.email, pw, tid)
+    headers = {"Authorization": f"Bearer {token}"}
+    body = batch_client.get("/tenants/me/reviews", headers=headers).json()
+    by_id = {item["id"]: item for item in body["items"]}
+    assert by_id[str(linked_id)]["source_url"] == link
+    assert by_id[str(plain_id)]["source_url"] is None
+
+    detail = batch_client.get(f"/tenants/me/reviews/{linked_id}", headers=headers).json()
+    assert detail["source_url"] == link
 
 
 @pytest.mark.asyncio

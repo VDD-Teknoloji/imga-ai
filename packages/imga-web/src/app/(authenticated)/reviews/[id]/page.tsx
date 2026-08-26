@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowRight, ChevronLeft, Loader2 } from "lucide-react";
+import { ArrowRight, ChevronLeft, ExternalLink, Loader2 } from "lucide-react";
 import Link from "next/link";
 import { useParams, useSearchParams } from "next/navigation";
 import { Suspense } from "react";
@@ -18,6 +18,7 @@ import { effectiveExperience, type ExperienceType } from "@/lib/experience";
 import { useTranslation } from "@/lib/i18n/use-translation";
 import { NPS_CATEGORY_LABELS, type ReviewDecision } from "@/lib/types";
 import { formatDurationMinutes } from "@/lib/number-format";
+import { sourceLinkLabelKey } from "@/lib/source-link";
 
 // Map every decision branch to an i18n key + the auto-ticket rationale so
 // the detail page reads as an audit narrative, not a bag of enum values.
@@ -180,6 +181,17 @@ function ReviewDetailInner() {
                   {t("reviews.detail.analyzedAt")}:{" "}
                   {new Date(detail.data.analyzed_at).toLocaleString("tr-TR")}
                 </p>
+                {detail.data.source_url && (
+                  <a
+                    href={detail.data.source_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="border-border hover:bg-muted mt-2 inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors"
+                  >
+                    <ExternalLink className="size-3.5" aria-hidden />
+                    {t(sourceLinkLabelKey(detail.data.source_url))}
+                  </a>
+                )}
               </div>
 
               <div>

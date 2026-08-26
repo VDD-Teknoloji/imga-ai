@@ -4,6 +4,12 @@ imga.ai pazarlama sitesindeki trial akışının (site repo'su
 ``src/lib/twitter.ts``) sunucu tarafı karşılığı: advanced_search
 sayfalı çekim + temizle/dedupe. Anahtar kelime çıkarımı (Gemini) bilerek
 yok — kullanıcı arama terimini kendisi verir; sorgu deterministik kalır.
+
+2026-08-26 — alaka filtresi. X araması terimi gönderi metninin yanı sıra
+YAZARIN ADINDA da eşler: "karaca" sorgusu Karaca soyadlı herkesin
+gönderisini getirdi (250'de ~15 marka yorumu). Kural: terim(lerden
+biri) gönderinin HAM metninde geçmeli ya da gönderi resmi hesaba
+yazılmış olmalı; aksi halde elenir (``filtered_out`` sayılır).
 """
 
 from __future__ import annotations
@@ -15,12 +21,15 @@ from datetime import UTC, datetime
 
 import httpx
 
+from imga_api.services.smart_parser.base import normalize_header
+
 SEARCH_URL = "https://api.twitterapi.io/twitter/tweet/advanced_search"
 # twitterapi.io sayfa başına ~20 tweet döner; 1000 hedefi için 80 sayfa
 # üst sınır yeterli (pratikte sorgu çok daha erken tükenir).
 MAX_PAGES = 80
 PAGE_DELAY_SECONDS = 0.3
 MIN_TEXT_LENGTH = 5
+MIN_TERM_LENGTH = 2
 
 _URL_RE = re.compile(r"https?://\S+")
 _LEADING_MENTIONS_RE = re.compile(r"^(?:@\w+\s+)+")
@@ -38,13 +47,16 @@ class TwitterFetchError(Exception):
 
 @dataclass(frozen=True, slots=True)
 class TwitterTweet:
-    """Tek tweet: temizlenmiş metin + atılma anı.
+    """Tek tweet: temizlenmiş metin + atılma anı + kalıcı bağlantı.
 
     ``created_at`` None ise tarih çözülemedi — batch pipeline yorumun
-    kendi tarihi olarak ingest anına düşer (yorum kaybolmaz)."""
+    kendi tarihi olarak ingest anına düşer (yorum kaybolmaz). ``url``
+    gönderinin x.com bağlantısı; arşivde "Tweeti aç" düğmesi buna
+    gider (bağlam olmadan alaka anlaşılmıyordu)."""
 
     text: str
     created_at: datetime | None
+    url: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -55,6 +67,20 @@ class TwitterFetchResult:
     # True → sayfalama bitti; istenen sayıya ulaşılamadıysa X'te bu
     # sorgu için daha fazla Türkçe sonuç yok demektir.
     exhausted: bool
+    # Alaka filtresinin elediği gönderi sayısı (terim metinde yok ve
+    # resmi hesaba yazılmamış). Kullanıcıya "neden az geldi" bilgisi.
+    filtered_out: int = 0
+
+
+@dataclass(frozen=True, slots=True)
+class SearchTerms:
+    """Kullanıcının terim alanından çözülen sorgu parçaları.
+
+    Alan virgülle birden çok terim alır; ``-`` ile başlayanlar hariç
+    tutma terimidir: ``karaca, -cem karaca, -hidayet karaca``."""
+
+    positive: tuple[str, ...]
+    negative: tuple[str, ...]
 
 
 def parse_tweet_created_at(raw: object) -> datetime | None:
@@ -75,11 +101,45 @@ def parse_tweet_created_at(raw: object) -> datetime | None:
     return parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=UTC)
 
 
+def parse_search_terms(raw: str) -> SearchTerms:
+    """Virgülle ayrılmış terim alanını pozitif/negatif listelere böl.
+
+    Tırnaklar atılır, ``MIN_TERM_LENGTH`` altındaki parçalar yok
+    sayılır, sıra ve tekrar korunmaz (dedupe). Hiç pozitif terim
+    kalmazsa ``positive`` boş döner — route 422 üretir."""
+    positive: list[str] = []
+    negative: list[str] = []
+    for chunk in raw.split(","):
+        term = _WS_RE.sub(" ", chunk.replace('"', "")).strip()
+        is_negative = term.startswith("-")
+        if is_negative:
+            term = term[1:].strip()
+        if len(term) < MIN_TERM_LENGTH:
+            continue
+        bucket = negative if is_negative else positive
+        if term not in bucket:
+            bucket.append(term)
+    return SearchTerms(positive=tuple(positive), negative=tuple(negative))
+
+
+def _quote_term(term: str) -> str:
+    # @hesap / #etiket X operatörüdür, tırnaklanmaz.
+    if term.startswith(("@", "#")) and " " not in term:
+        return term
+    return f'"{term}"'
+
+
 def build_search_query(term: str, exclude_handle: str | None) -> str:
     """Site ile aynı sorgu dili: terim tırnaklı, Türkçe, RT'siz; resmi
-    hesap verilmişse onun kendi paylaşımları hariç (müşteri sesi değil)."""
+    hesap verilmişse onun kendi paylaşımları hariç (müşteri sesi değil).
+
+    Birden çok pozitif terim OR grubuna alınır, negatif terimler ``-``
+    ile düşülür. Tek terim → eski çıktıyla birebir aynı."""
+    terms = parse_search_terms(term)
     handle = (exclude_handle or "").lstrip("@").strip()
-    parts = [f'"{term}"']
+    positives = [_quote_term(t) for t in terms.positive] or [_quote_term(term.strip())]
+    parts = [positives[0] if len(positives) == 1 else "(" + " OR ".join(positives) + ")"]
+    parts.extend(f"-{_quote_term(t)}" for t in terms.negative)
     if handle:
         parts.append(f"-from:{handle}")
     parts.append("lang:tr -filter:retweets")
@@ -93,6 +153,45 @@ def clean_tweet_text(raw: str) -> str:
     return _WS_RE.sub(" ", text).strip()
 
 
+def tweet_url_from_item(item: dict[str, object]) -> str | None:
+    """twitterapi.io öğesinden kalıcı bağlantı: ``url`` alanı varsa o;
+    yoksa ``id`` üzerinden x.com/i/web/status/{id} (hesap adı olmadan
+    da çözülür)."""
+    url = item.get("url")
+    if isinstance(url, str) and url.startswith(("https://", "http://")):
+        return url
+    tweet_id = item.get("id")
+    if tweet_id is None:
+        return None
+    tweet_id = str(tweet_id).strip()
+    return f"https://x.com/i/web/status/{tweet_id}" if tweet_id.isdigit() else None
+
+
+def tweet_matches_terms(
+    raw_text: str,
+    terms: SearchTerms,
+    official_handle: str | None,
+    *,
+    in_reply_to: str | None = None,
+) -> bool:
+    """Alaka kuralı: pozitif terimlerden biri HAM metinde (mention'lar
+    atılmadan önce) geçiyor ya da gönderi resmi hesaba yazılmış
+    (``@hesap`` metinde ya da yanıt hedefi). Karşılaştırma büyük/küçük
+    harf, Türkçe İ/ı ve aksan duyarsız düz alt-dizi eşleşmesidir —
+    "Karaca'nın" da "#karacahome" da eşleşir."""
+    folded = normalize_header(raw_text)
+    for term in terms.positive:
+        if normalize_header(term) in folded:
+            return True
+    handle = normalize_header((official_handle or "").lstrip("@"))
+    if handle:
+        if f"@{handle}" in folded:
+            return True
+        if in_reply_to and normalize_header(in_reply_to.lstrip("@")) == handle:
+            return True
+    return False
+
+
 async def fetch_tweets(
     *,
     api_key: str,
@@ -100,16 +199,22 @@ async def fetch_tweets(
     count: int,
     exclude_handle: str | None = None,
 ) -> TwitterFetchResult:
-    """En yeni tweetlerden ``count`` temiz metin + tarih topla.
+    """En yeni tweetlerden ``count`` temiz metin + tarih + bağlantı topla.
 
     İlk sayfa hatası ``TwitterFetchError`` olarak yükselir; sonraki
     sayfalardaki hatalar eldeki kısmi sonuçla sessizce döner (yarım
     veri, sıfır veriden iyidir — batch pipeline gerisini halleder).
+    Alaka filtresi (``tweet_matches_terms``) sayfa sayfa uygulanır;
+    elenenler ``count``'a sayılmaz, ``filtered_out``'a yazılır.
     """
     query = build_search_query(term, exclude_handle)
+    terms = parse_search_terms(term)
+    if not terms.positive:
+        terms = SearchTerms(positive=(term.strip(),), negative=())
     tweets: list[TwitterTweet] = []
     seen: set[str] = set()
     fetched_total = 0
+    filtered_out = 0
     pages = 0
     cursor = ""
     exhausted = False
@@ -131,7 +236,17 @@ async def fetch_tweets(
             batch = payload.get("tweets") or []
             fetched_total += len(batch)
             for item in batch:
-                cleaned = clean_tweet_text(str(item.get("text") or ""))
+                raw_text = str(item.get("text") or "")
+                reply_to = item.get("inReplyToUsername")
+                if not tweet_matches_terms(
+                    raw_text,
+                    terms,
+                    exclude_handle,
+                    in_reply_to=str(reply_to) if reply_to else None,
+                ):
+                    filtered_out += 1
+                    continue
+                cleaned = clean_tweet_text(raw_text)
                 key = cleaned.lower()
                 if len(cleaned) >= MIN_TEXT_LENGTH and key not in seen:
                     seen.add(key)
@@ -141,6 +256,7 @@ async def fetch_tweets(
                             created_at=parse_tweet_created_at(
                                 item.get("createdAt") or item.get("created_at")
                             ),
+                            url=tweet_url_from_item(item),
                         )
                     )
                     if len(tweets) >= count:
@@ -158,4 +274,5 @@ async def fetch_tweets(
         fetched_total=fetched_total,
         pages=pages,
         exhausted=exhausted,
+        filtered_out=filtered_out,
     )

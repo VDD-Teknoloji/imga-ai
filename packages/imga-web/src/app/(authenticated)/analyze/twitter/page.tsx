@@ -65,14 +65,18 @@ function TwitterImportPageInner() {
       },
       {
         onSuccess: (res) => {
-          toast.success(
+          const base =
             res.exhausted && res.found < res.requested
               ? t("analyze.twitter.queuedPartial", {
                   found: res.found,
                   requested: res.requested,
                 })
-              : t("analyze.twitter.queued", { found: res.found }),
-          );
+              : t("analyze.twitter.queued", { found: res.found });
+          const note =
+            res.filtered_out > 0
+              ? t("analyze.twitter.filteredNote", { n: res.filtered_out })
+              : "";
+          toast.success(`${base}${note}`);
           router.push("/analyze/upload");
         },
         onError: (err) => {
@@ -125,7 +129,7 @@ function TwitterImportPageInner() {
                 value={term}
                 onChange={(e) => setTerm(e.target.value)}
                 placeholder={t("analyze.twitter.termPlaceholder")}
-                maxLength={80}
+                maxLength={200}
                 disabled={pending}
                 autoFocus
               />

@@ -809,6 +809,7 @@ async def _write_empty_reviews(
             customer_tier=parsed.customer_tier,
             entered_by=parsed.entered_by,
             source=parsed.source,
+            source_url=parsed.source_url,
         )
         app_session.add(review)
         if parsed.facts:
@@ -1314,6 +1315,7 @@ async def _process_chunk(
                     customer_tier=parsed.customer_tier,
                     entered_by=parsed.entered_by,
                     source=parsed.source,
+                    source_url=parsed.source_url,
                 )
                 app_session.add(review)
                 if parsed.facts:
@@ -1424,6 +1426,7 @@ async def _process_chunk(
                         quality_flag=final_quality_flag,
                         entered_by=parsed.entered_by,
                         source=parsed.source,
+                        source_url=parsed.source_url,
                     )
                 )
                 if result.decision == ReviewDecision.CREATE:
@@ -1480,6 +1483,7 @@ async def _process_chunk(
                     customer_tier=parsed.customer_tier,
                     entered_by=parsed.entered_by,
                     source=parsed.source,
+                    source_url=parsed.source_url,
                 )
                 app_session.add(review)
                 if parsed.facts:

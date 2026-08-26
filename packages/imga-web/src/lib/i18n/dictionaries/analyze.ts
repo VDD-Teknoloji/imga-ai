@@ -157,21 +157,22 @@ export const analyze: Bundle = {
     "analyze.twitter.termLabel": "Arama terimi",
     "analyze.twitter.termPlaceholder": "Örn. marka veya ürün adı",
     "analyze.twitter.termHelp":
-      "Gönderi metinlerinde aranır; marka adı en iyi sonucu verir.",
+      "Gönderi metinlerinde aranır; marka adı en iyi sonucu verir. Virgülle birden çok terim yazabilirsiniz, başına - koyduklarınız hariç tutulur: karaca tencere, @karacaonline, -cem karaca",
     "analyze.twitter.countLabel": "Kaç gönderi çekilsin?",
     "analyze.twitter.countOption": "{n} gönderi",
     "analyze.twitter.excludeLabel": "Hariç tutulacak hesap (opsiyonel)",
     "analyze.twitter.excludePlaceholder": "resmi hesabınız",
     "analyze.twitter.excludeHelp":
-      "Resmi hesabınızın kendi paylaşımları müşteri sesi değildir; kullanıcı adını yazarsanız elenir.",
+      "Resmi hesabınızın kendi paylaşımları müşteri sesi değildir; kullanıcı adını yazarsanız elenir. Bu hesaba yazılan yanıtlar ise korunur.",
     "analyze.twitter.infoTitle": "Nasıl çalışır?",
     "analyze.twitter.info":
-      "En yeni Türkçe gönderiler çekilir (retweet'ler hariç), bağlantılar temizlenir, kopyalar elenir ve sonuç Toplu Yükleme ilerleme ekranına düşer. Analizler diğer yüklemeler gibi Analiz Arşivi'nde ve ana sayfa yükleme filtresinde görünür.",
+      "En yeni Türkçe gönderiler çekilir (retweet'ler hariç), bağlantılar temizlenir, kopyalar elenir ve sonuç Toplu Yükleme ilerleme ekranına düşer. X araması yazar adında da eşleştiğinden, metninde terim geçmeyen ve resmi hesaba yazılmamış gönderiler elenir. Her yorum tweet bağlantısıyla Analiz Arşivi'ne düşer; analizler diğer yüklemeler gibi arşivde ve ana sayfa yükleme filtresinde görünür.",
     "analyze.twitter.durationHint":
       "Çekim, istenen sayıya göre 10–60 saniye sürebilir.",
     "analyze.twitter.submit": "Çek ve Analiz Et",
     "analyze.twitter.submitting": "Gönderiler çekiliyor…",
     "analyze.twitter.queued": "{found} gönderi bulundu — analiz kuyruğa alındı.",
+    "analyze.twitter.filteredNote": " {n} alakasız gönderi elendi.",
     "analyze.twitter.queuedPartial":
       "{found} gönderi bulundu (X'te bu arama için daha fazla Türkçe sonuç yok) — analiz kuyruğa alındı.",
     "analyze.twitter.notConfigured":
@@ -434,21 +435,22 @@ export const analyze: Bundle = {
     "analyze.twitter.termLabel": "Search term",
     "analyze.twitter.termPlaceholder": "e.g. brand or product name",
     "analyze.twitter.termHelp":
-      "Matched inside post texts; a brand name works best.",
+      "Matched inside post texts; a brand name works best. Separate several terms with commas; a leading - excludes a term: karaca tencere, @karacaonline, -cem karaca",
     "analyze.twitter.countLabel": "How many posts?",
     "analyze.twitter.countOption": "{n} posts",
     "analyze.twitter.excludeLabel": "Account to exclude (optional)",
     "analyze.twitter.excludePlaceholder": "your official handle",
     "analyze.twitter.excludeHelp":
-      "Your official account's own posts aren't customer voice; enter the handle to filter them out.",
+      "Your official account's own posts aren't customer voice; enter the handle to filter them out. Replies addressed to that account are kept.",
     "analyze.twitter.infoTitle": "How it works:",
     "analyze.twitter.info":
-      "The most recent Turkish posts are fetched (retweets excluded), links are stripped, duplicates removed, and the result lands on the Bulk Upload progress screen. Analyses appear in the Review Archive and the home-page upload filter like any other upload.",
+      "The most recent Turkish posts are fetched (retweets excluded), links are stripped, duplicates removed, and the result lands on the Bulk Upload progress screen. Because X search also matches author names, posts whose text doesn't contain the term and that aren't addressed to the official account are dropped. Every review lands in the Review Archive with its tweet link; analyses appear in the archive and the home-page upload filter like any other upload.",
     "analyze.twitter.durationHint":
       "Fetching takes roughly 10–60 seconds depending on the requested count.",
     "analyze.twitter.submit": "Fetch & Analyze",
     "analyze.twitter.submitting": "Fetching posts…",
     "analyze.twitter.queued": "{found} posts found — analysis queued.",
+    "analyze.twitter.filteredNote": " {n} unrelated posts were dropped.",
     "analyze.twitter.queuedPartial":
       "{found} posts found (no more Turkish results on X for this search) — analysis queued.",
     "analyze.twitter.notConfigured":

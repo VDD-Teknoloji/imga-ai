@@ -93,6 +93,9 @@ export interface TwitterImportResult {
   /** true → X'te bu sorgu için daha fazla Türkçe sonuç yok; found <
    *  requested ise eksik çekim değil, kaynağın tamamı demektir. */
   exhausted: boolean;
+  /** Alaka filtresinin elediği gönderi sayısı (terim metinde geçmiyor,
+   *  resmi hesaba da yazılmamış — çoğunlukla aynı soyadlı yazarlar). */
+  filtered_out: number;
 }
 
 export function useTwitterImportMutation() {

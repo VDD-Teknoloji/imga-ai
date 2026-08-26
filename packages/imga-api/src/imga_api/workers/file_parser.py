@@ -135,6 +135,11 @@ class ParsedRow:
     key means "no data here", not an empty string. Values are raw,
     unparsed strings; ``fact_parsing.build_fact_row`` does the actual
     parsing at the persist site.
+
+    ``source_url`` (migration 0047) — yorumun kaynağındaki kalıcı
+    bağlantı (tweet URL'si, pazar yeri yorum linki). Başlığı
+    ``_URL_HEADER_NAMES`` ile otomatik tanınan kolondan okunur;
+    http(s) ile başlamayan / boş hücre None.
     """
 
     row_number: int
@@ -148,6 +153,49 @@ class ParsedRow:
     entered_by: str | None = None
     review_date: datetime | None = None
     facts: dict[str, str] = field(default_factory=dict)
+    source_url: str | None = None
+
+
+# Kaynak bağlantısı kolonu — şablon dışı ama "Twitter'dan Çek" CSV'si
+# ve pazar yeri dışa aktarımları taşır. Eşleşme _normalize_header
+# sonrası birebir; metin/kaynak/nps/boyut/facts olarak seçilmiş
+# kolonlar elenir (bkz. _resolve_columns).
+_URL_HEADER_NAMES: frozenset[str] = frozenset(
+    {
+        "bağlantı",
+        "baglanti",
+        "url",
+        "link",
+        "kaynak url",
+        "kaynak_url",
+        "kaynak bağlantısı",
+        "kaynak baglantisi",
+        "source_url",
+        "source url",
+        "tweet url",
+        "tweet_url",
+        "yorum url",
+        "yorum linki",
+        "yorum bağlantısı",
+        "review_url",
+        "review url",
+    }
+)
+_MAX_SOURCE_URL_LENGTH = 2048
+
+
+def parse_source_url(cell: Any) -> str | None:
+    """Hücreyi kaynak bağlantısına çevir; http(s) ile başlamıyor,
+    boşluk içeriyor ya da aşırı uzunsa None (satır yine analiz edilir)."""
+    if cell is None:
+        return None
+    value = str(cell).strip()
+    if not value or len(value) > _MAX_SOURCE_URL_LENGTH or any(ch.isspace() for ch in value):
+        return None
+    lowered = value.lower()
+    if not (lowered.startswith("https://") or lowered.startswith("http://")):
+        return None
+    return value
 
 
 def _normalize_header(name: str) -> str:
@@ -177,12 +225,18 @@ def _resolve_columns(
     fact_mapping: dict[str, str] | None = None,
     date_column: str | None = None,
     value_sample: list[Any] | None = None,
-) -> tuple[int, int | None, int | None, dict[str, int], dict[str, int], int | None]:
+) -> tuple[
+    int, int | None, int | None, dict[str, int], dict[str, int], int | None, int | None
+]:
     """Return ``(text_idx, source_idx | None, nps_idx | None,
-    dimension_idx_by_key, fact_idx_by_key, date_idx | None)``. Raises
-    UnknownColumnError if text/source column is absent. NPS is
-    auto-detected via the imga-core pattern set; missing NPS is fine
-    (returns None) — the upload doesn't have to carry an NPS column.
+    dimension_idx_by_key, fact_idx_by_key, date_idx | None,
+    url_idx | None)``. Raises UnknownColumnError if text/source column
+    is absent. NPS is auto-detected via the imga-core pattern set;
+    missing NPS is fine (returns None) — the upload doesn't have to
+    carry an NPS column. ``url_idx`` (migration 0047) is the auto-
+    detected source-link column (``_URL_HEADER_NAMES``), resolved
+    before the date column so a link column is never mistaken for a
+    date by the value-based fallback.
 
     The date column (``review_date``) resolves in priority order:
 
@@ -275,6 +329,20 @@ def _resolve_columns(
             if target in norm_header:
                 fact_idx_by_key[fact_key] = norm_header.index(target)
 
+    reserved_idx = {text_idx}
+    if source_idx is not None:
+        reserved_idx.add(source_idx)
+    if nps_idx is not None:
+        reserved_idx.add(nps_idx)
+    reserved_idx.update(dimension_idx_by_key.values())
+    reserved_idx.update(fact_idx_by_key.values())
+
+    url_idx: int | None = None
+    for idx, name in enumerate(norm_header):
+        if idx not in reserved_idx and name in _URL_HEADER_NAMES:
+            url_idx = idx
+            break
+
     if date_column:
         # Explicit selection wins outright — no skip filtering (see
         # docstring point 1). Not found → None, not an error.
@@ -283,18 +351,22 @@ def _resolve_columns(
             norm_header.index(target_date) if target_date in norm_header else None
         )
     else:
-        skip_idx = {text_idx}
-        if source_idx is not None:
-            skip_idx.add(source_idx)
-        if nps_idx is not None:
-            skip_idx.add(nps_idx)
-        skip_idx.update(dimension_idx_by_key.values())
-        skip_idx.update(fact_idx_by_key.values())
+        skip_idx = set(reserved_idx)
+        if url_idx is not None:
+            skip_idx.add(url_idx)
         date_idx = _detect_date_column(
             header, norm_header, skip=skip_idx, value_sample=value_sample
         )
 
-    return text_idx, source_idx, nps_idx, dimension_idx_by_key, fact_idx_by_key, date_idx
+    return (
+        text_idx,
+        source_idx,
+        nps_idx,
+        dimension_idx_by_key,
+        fact_idx_by_key,
+        date_idx,
+        url_idx,
+    )
 
 
 def _detect_date_column(
@@ -388,7 +460,7 @@ def _extract_dimensions(
     """Pull dimension cell values out of a row given the resolved
     indices. Empty cells / missing columns map to None; non-empty
     cells are stripped of surrounding whitespace."""
-    out: dict[str, str | None] = {key: None for key in _DIMENSION_KEYS}
+    out: dict[str, str | None] = dict.fromkeys(_DIMENSION_KEYS)
     for dim_key, idx in dimension_idx_by_key.items():
         if idx >= len(row):
             continue
@@ -462,6 +534,7 @@ def _iter_csv(
             dim_idx_by_key,
             fact_idx_by_key,
             date_idx,
+            url_idx,
         ) = _resolve_columns(
             header,
             text_column=text_column,
@@ -488,6 +561,9 @@ def _iter_csv(
             review_date: datetime | None = None
             if date_idx is not None and date_idx < len(row):
                 review_date = parse_date_value(row[date_idx])
+            source_url: str | None = None
+            if url_idx is not None and url_idx < len(row):
+                source_url = parse_source_url(row[url_idx])
             dims = _extract_dimensions(row, dim_idx_by_key)
             facts = _extract_facts(row, fact_idx_by_key)
             yield ParsedRow(
@@ -502,6 +578,7 @@ def _iter_csv(
                 entered_by=dims["entered_by"],
                 review_date=review_date,
                 facts=facts,
+                source_url=source_url,
             )
 
 
@@ -551,6 +628,7 @@ def _iter_xlsx(
             dim_idx_by_key,
             fact_idx_by_key,
             date_idx,
+            url_idx,
         ) = _resolve_columns(
             header,
             text_column=text_column,
@@ -580,6 +658,9 @@ def _iter_xlsx(
             review_date: datetime | None = None
             if date_idx is not None and date_idx < len(row):
                 review_date = parse_date_value(row[date_idx])
+            source_url: str | None = None
+            if url_idx is not None and url_idx < len(row):
+                source_url = parse_source_url(row[url_idx])
             dims = _extract_dimensions(list(row), dim_idx_by_key)
             facts = _extract_facts(list(row), fact_idx_by_key)
             yield ParsedRow(
@@ -594,6 +675,7 @@ def _iter_xlsx(
                 entered_by=dims["entered_by"],
                 review_date=review_date,
                 facts=facts,
+                source_url=source_url,
             )
     finally:
         workbook.close()

@@ -11,7 +11,7 @@
 // URL-state filtre mantığı (Suspense + Path B mirror) AYNEN korundu —
 // docs/agent-rules/url-state-patterns.md gereği değiştirilmedi.
 
-import { ChevronDown, ChevronRight, Loader2 } from "lucide-react";
+import { ChevronDown, ChevronRight, ExternalLink, Loader2 } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useState } from "react";
@@ -38,6 +38,7 @@ import {
 } from "@/hooks/use-reviews";
 import { useCompanyTaxonomies } from "@/hooks/use-taxonomies";
 import { useTranslation } from "@/lib/i18n/use-translation";
+import { sourceLinkLabelKey } from "@/lib/source-link";
 import type {
   ReviewDecision,
   ReviewListItem,
@@ -569,6 +570,23 @@ function ReviewRow({
             <span className="text-amber-700 dark:text-amber-400">
               {t("reviews.review.corrected")}
             </span>
+          )}
+          {r.source_url && (
+            // Kart bir <Link>; düğme yeni sekmede kaynağı açar ve kartın
+            // detay navigasyonunu bastırır (preventDefault + stopPropagation).
+            <button
+              type="button"
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                window.open(r.source_url ?? "", "_blank", "noopener,noreferrer");
+              }}
+              className="border-border text-foreground/80 hover:bg-muted hover:text-foreground inline-flex items-center gap-1 rounded-full border px-2 py-0.5 font-medium transition-colors"
+              title={r.source_url}
+            >
+              <ExternalLink className="size-3" aria-hidden />
+              {t(sourceLinkLabelKey(r.source_url))}
+            </button>
           )}
         </div>
       </div>

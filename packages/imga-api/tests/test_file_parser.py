@@ -170,6 +170,56 @@ def test_iter_rows_without_date_column_yields_none(tmp_path: Path) -> None:
     assert rows[0].review_date is None
 
 
+# --- kaynak bağlantısı kolonu (migration 0047) ---------------------------
+
+
+def test_iter_rows_detects_source_url_column_csv(tmp_path: Path) -> None:
+    """"Twitter'dan Çek" CSV'si: yorum + tarih + kaynak + bağlantı. Geçersiz
+    (http'siz / boşluklu) hücreler None'a düşer, satır yine gelir; tarih
+    tespiti bağlantı kolonunu tarih sanmaz."""
+    path = tmp_path / "twitter.csv"
+    _write_csv(
+        path,
+        [
+            ["yorum", "tarih", "kaynak", "Bağlantı"],
+            ["tencere yandı", "2026-08-26", "twitter", "https://x.com/a/status/1"],
+            ["kargo geç", "", "twitter", ""],
+            ["kötü", "2026-08-25", "twitter", "x.com/a/status/3"],
+            ["bozuk", "2026-08-25", "twitter", "https://x.com/a b"],
+        ],
+    )
+    rows = list(iter_rows(path, text_column="yorum", source_column="kaynak"))
+    assert [r.source_url for r in rows] == ["https://x.com/a/status/1", None, None, None]
+    assert rows[0].review_date == datetime(2026, 8, 26, tzinfo=UTC)
+    assert rows[0].source == "twitter"
+    assert rows[1].review_date is None
+
+
+def test_iter_rows_source_url_column_xlsx_and_no_column(tmp_path: Path) -> None:
+    path = tmp_path / "links.xlsx"
+    _write_xlsx(
+        path,
+        [
+            ["yorum", "URL"],
+            ["iyi", "HTTPS://www.trendyol.com/yorum/9"],
+        ],
+    )
+    rows = list(iter_rows(path, text_column="yorum"))
+    assert rows[0].source_url == "HTTPS://www.trendyol.com/yorum/9"
+
+    plain = tmp_path / "plain.csv"
+    _write_csv(plain, [["yorum"], ["bağlantısız"]])
+    assert next(iter(iter_rows(plain, text_column="yorum"))).source_url is None
+
+
+def test_iter_rows_url_named_text_column_is_not_taken_as_link(tmp_path: Path) -> None:
+    path = tmp_path / "link-as-text.csv"
+    _write_csv(path, [["link", "tarih"], ["https://x.com/a/status/1", "2026-08-26"]])
+    rows = list(iter_rows(path, text_column="link"))
+    assert rows[0].text == "https://x.com/a/status/1"
+    assert rows[0].source_url is None
+
+
 @pytest.mark.parametrize(
     "cell, expected",
     [

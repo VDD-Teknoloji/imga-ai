@@ -30,7 +30,11 @@ from imga_api.routes.tenant_batch import (
     _require_active_tenant,
 )
 from imga_api.services import AuditService, BatchAnalyzeService
-from imga_api.services.twitter_import import TwitterFetchError, fetch_tweets
+from imga_api.services.twitter_import import (
+    TwitterFetchError,
+    fetch_tweets,
+    parse_search_terms,
+)
 from imga_api.settings import Settings
 from imga_api.workers.scheduler import enqueue_batch_job
 
@@ -47,9 +51,11 @@ _TenantMember = Depends(
 
 
 class TwitterImportRequest(BaseModel):
-    """Arama terimi kurum adı / marka olabilir; sorgu dilini backend kurar."""
+    """Arama terimi kurum adı / marka olabilir; sorgu dilini backend kurar.
+    Virgülle birden çok terim, ``-`` ile hariç tutma (bkz.
+    ``twitter_import.parse_search_terms``)."""
 
-    term: str = Field(min_length=2, max_length=80)
+    term: str = Field(min_length=2, max_length=200)
     count: int = Field(default=200, ge=10, le=1000)
     # Resmi hesabın kendi paylaşımları müşteri sesi değildir — verilirse
     # -from: ile elenir. Başındaki @ opsiyonel.
@@ -64,6 +70,9 @@ class TwitterImportResponse(BaseModel):
     # True → X'te bu sorgu için daha fazla Türkçe sonuç yok; found <
     # requested ise eksik veri değil, kaynağın tamamı demektir.
     exhausted: bool
+    # Alaka filtresinin elediği gönderi sayısı (terim metinde geçmiyor
+    # ve resmi hesaba yazılmamış — çoğunlukla aynı soyadlı yazarlar).
+    filtered_out: int = 0
 
 
 @router.post(
@@ -101,10 +110,13 @@ async def import_from_twitter(
         )
 
     term = body.term.strip()
-    if len(term) < 2:
+    if len(term) < 2 or not parse_search_terms(term).positive:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="Arama terimi en az 2 karakter olmalı.",
+            detail=(
+                "En az 2 karakterlik bir arama terimi gerekli "
+                "(yalnız '-' ile başlayan hariç tutma terimleri yetmez)."
+            ),
         )
 
     try:
@@ -129,10 +141,12 @@ async def import_from_twitter(
             ),
         )
 
-    # Şablonla birebir aynı kolonlar: yorum (zorunlu) + tarih + kaynak.
-    # ``tarih`` tweet'in atılma anıdır — parser bunu Review.review_date
-    # olarak çözer, böylece analizler gerçek gönderim tarihine oturur
-    # (çekim anına değil). Tarih çözülemeyen tweet boş bırakılır.
+    # Şablonla birebir aynı kolonlar: yorum (zorunlu) + tarih + kaynak,
+    # artı ``bağlantı`` (tweet URL'si — parser otomatik tanır,
+    # Review.source_url'e iner). ``tarih`` tweet'in atılma anıdır —
+    # parser bunu Review.review_date olarak çözer, böylece analizler
+    # gerçek gönderim tarihine oturur (çekim anına değil). Tarih
+    # çözülemeyen tweet boş bırakılır.
     # Dosya normal yüklemelerle aynı dizin düzenine iner;
     # retention/reaper cron'ları ekstra kural olmadan kapsar.
     dir_id = uuid4()
@@ -143,10 +157,10 @@ async def import_from_twitter(
     file_path = job_dir / file_name
     with file_path.open("w", encoding="utf-8-sig", newline="") as fh:
         writer = csv.writer(fh)
-        writer.writerow(["yorum", "tarih", "kaynak"])
+        writer.writerow(["yorum", "tarih", "kaynak", "bağlantı"])
         for tweet in result.tweets:
             posted = tweet.created_at.isoformat() if tweet.created_at else ""
-            writer.writerow([tweet.text, posted, "twitter"])
+            writer.writerow([tweet.text, posted, "twitter", tweet.url or ""])
     file_size = file_path.stat().st_size
 
     async with app_session.begin():
@@ -184,16 +198,20 @@ async def import_from_twitter(
         view = _job_view(refreshed if refreshed is not None else job)
 
     log.info(
-        "twitter import queued: tenant=%s term=%r found=%d/%d pages=%d",
+        "twitter import queued: tenant=%s term=%r found=%d/%d pages=%d "
+        "fetched=%d filtered_out=%d",
         tenant_id,
         term,
         len(result.tweets),
         body.count,
         result.pages,
+        result.fetched_total,
+        result.filtered_out,
     )
     return TwitterImportResponse(
         job=view,
         requested=body.count,
         found=len(result.tweets),
         exhausted=result.exhausted,
+        filtered_out=result.filtered_out,
     )

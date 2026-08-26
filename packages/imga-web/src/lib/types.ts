@@ -447,6 +447,9 @@ export interface ReviewListItem {
   // "dijital" | "operasyonel"; revizyon öncesi analiz edilmiş satırlarda
   // null. Okurken lib/experience.ts#effectiveExperience kullanın.
   experience_type?: string | null;
+  // Kaynaktaki kalıcı bağlantı (tweet URL'si, pazar yeri yorum linki);
+  // null = kaynakta bağlantı yok. Kart "Tweeti aç / Kaynağı aç" düğmesi.
+  source_url?: string | null;
 }
 
 export interface ReviewListResponse {
@@ -464,6 +467,7 @@ export interface ReviewDetail {
   review_date: string;
   source_type: ReviewSourceType;
   batch_job_id: string | null;
+  source_url?: string | null;
   sentiment: {
     label: string;
     score: number;

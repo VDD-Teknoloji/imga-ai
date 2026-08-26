@@ -20,19 +20,24 @@ from uuid import UUID
 import httpx
 import pytest
 from fastapi.testclient import TestClient
+from imga_db.models import User, UserTenantRole
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from imga_api.main import app
 from imga_api.routes import tenant_twitter
 from imga_api.services import AuditService, UserService
 from imga_api.services.twitter_import import (
+    SearchTerms,
     TwitterFetchResult,
     TwitterTweet,
     build_search_query,
     clean_tweet_text,
+    fetch_tweets,
+    parse_search_terms,
     parse_tweet_created_at,
+    tweet_matches_terms,
+    tweet_url_from_item,
 )
-from imga_db.models import User, UserTenantRole
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from tests.batch_helpers import fetch_job, login_token
 
 # --- birim: sorgu + temizlik -----------------------------------------
@@ -46,6 +51,127 @@ def test_build_search_query_quotes_term_and_filters() -> None:
 def test_build_search_query_excludes_official_handle() -> None:
     q = build_search_query("Navlungo", "@navlungo")
     assert q == '"Navlungo" -from:navlungo lang:tr -filter:retweets'
+
+
+def test_parse_search_terms_splits_positive_and_negative() -> None:
+    terms = parse_search_terms(' karaca , -"cem karaca", -hidayet karaca, k, karaca ')
+    assert terms.positive == ("karaca",)
+    assert terms.negative == ("cem karaca", "hidayet karaca")
+
+
+def test_parse_search_terms_all_negative_has_no_positive() -> None:
+    assert parse_search_terms("-cem karaca, -x").positive == ()
+
+
+def test_build_search_query_multi_term_or_group_and_negatives() -> None:
+    q = build_search_query("karaca tencere, @karacaonline, -cem karaca", "karacaonline")
+    assert q == (
+        '("karaca tencere" OR @karacaonline) -"cem karaca" '
+        "-from:karacaonline lang:tr -filter:retweets"
+    )
+
+
+# --- birim: alaka filtresi + bağlantı --------------------------------
+
+
+_TERMS = SearchTerms(positive=("karaca",), negative=())
+
+
+def test_tweet_matches_when_term_in_raw_text_with_suffix_and_case() -> None:
+    assert tweet_matches_terms("KARACA'nın tencereleri berbat", _TERMS, None)
+    assert tweet_matches_terms("#karacahome çaydanlık sızdırıyor", _TERMS, None)
+
+
+def test_tweet_does_not_match_author_name_only_hit() -> None:
+    # X araması yazar adında eşledi ("Tuğçe Karaca"); metinde terim yok.
+    assert not tweet_matches_terms(
+        "ÖSYMyi de akademiye al sayın @Yusuf__Tekin", _TERMS, "karacaonline"
+    )
+
+
+def test_tweet_matches_when_addressed_to_official_handle() -> None:
+    assert tweet_matches_terms("@KaracaOnline ürün 2 ayda bozuldu", _TERMS, "karacaonline")
+    assert tweet_matches_terms(
+        "ürün 2 ayda bozuldu", _TERMS, "@karacaonline", in_reply_to="karacaonline"
+    )
+    assert not tweet_matches_terms("ürün 2 ayda bozuldu", _TERMS, None, in_reply_to="baska")
+
+
+def test_tweet_matches_is_accent_insensitive() -> None:
+    terms = SearchTerms(positive=("çaydanlık",), negative=())
+    assert tweet_matches_terms("caydanlik sızdırıyor", terms, None)
+
+
+def test_tweet_url_from_item_prefers_url_then_id() -> None:
+    assert (
+        tweet_url_from_item({"url": "https://x.com/a/status/1", "id": "1"})
+        == "https://x.com/a/status/1"
+    )
+    assert tweet_url_from_item({"id": "2092540287411159128"}) == (
+        "https://x.com/i/web/status/2092540287411159128"
+    )
+    assert tweet_url_from_item({"id": "abc"}) is None
+    assert tweet_url_from_item({}) is None
+
+
+@pytest.mark.asyncio
+async def test_fetch_tweets_filters_noise_and_keeps_url(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Yazar adıyla eşleşen gürültü elenir, markaya yazılan yanıt ve
+    metninde terim geçen gönderi bağlantısıyla kalır."""
+    page = {
+        "tweets": [
+            {
+                "id": "1",
+                "url": "https://x.com/tugce/status/1",
+                "text": "ÖSYMyi de akademiye al sayın @Yusuf__Tekin",
+                "createdAt": "Wed Aug 26 09:10:56 +0000 2026",
+                "author": {"userName": "tugce", "name": "Tuğçe Karaca"},
+            },
+            {
+                "id": "2",
+                "url": "https://x.com/musteri/status/2",
+                "text": "@karacaonline tencerenin dibi 2 ayda tuttu https://t.co/x",
+                "createdAt": "Wed Aug 26 09:00:00 +0000 2026",
+                "inReplyToUsername": "karacaonline",
+            },
+            {
+                "id": "3",
+                "text": "Karaca'nın porselenleri gerçekten kaliteli",
+                "createdAt": "2026-08-26T08:00:00Z",
+            },
+        ],
+        "has_next_page": False,
+        "next_cursor": "",
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.headers["x-api-key"] == "k"
+        assert request.url.params["queryType"] == "Latest"
+        return httpx.Response(200, json=page)
+
+    transport = httpx.MockTransport(handler)
+    real_client = httpx.AsyncClient
+
+    def patched_client(**kwargs: object) -> httpx.AsyncClient:
+        return real_client(transport=transport, **kwargs)  # type: ignore[arg-type]
+
+    # twitter_import modülü ``httpx.AsyncClient(...)`` diye çağırır; aynı
+    # modül nesnesi olduğundan httpx üzerinde yamalamak yeterli.
+    monkeypatch.setattr(httpx, "AsyncClient", patched_client)
+
+    result = await fetch_tweets(api_key="k", term="karaca", count=10, exclude_handle="karacaonline")
+    assert result.fetched_total == 3
+    assert result.filtered_out == 1
+    assert result.exhausted is True
+    assert [t.text for t in result.tweets] == [
+        "tencerenin dibi 2 ayda tuttu",
+        "Karaca'nın porselenleri gerçekten kaliteli",
+    ]
+    assert result.tweets[0].url == "https://x.com/musteri/status/2"
+    assert result.tweets[1].url == "https://x.com/i/web/status/3"
+    assert result.tweets[1].created_at == datetime(2026, 8, 26, 8, 0, tzinfo=UTC)
 
 
 def test_clean_tweet_text_strips_urls_and_leading_mentions() -> None:
@@ -120,12 +246,14 @@ async def test_twitter_import_happy_path(
                 TwitterTweet(
                     text="kargo çok iyi geldi",
                     created_at=datetime(2026, 5, 12, 8, 15, tzinfo=UTC),
+                    url="https://x.com/musteri/status/123",
                 ),
                 TwitterTweet(text="teslimat kötü ve geç", created_at=None),
             ],
             fetched_total=3,
             pages=1,
             exhausted=True,
+            filtered_out=1,
         )
 
     monkeypatch.setattr(tenant_twitter, "fetch_tweets", fake_fetch)
@@ -136,6 +264,7 @@ async def test_twitter_import_happy_path(
     assert body["found"] == 2
     assert body["requested"] == 100
     assert body["exhausted"] is True
+    assert body["filtered_out"] == 1
     job_view = body["job"]
     assert job_view["status"] == "queued"
     assert job_view["total_rows"] == 2
@@ -150,19 +279,33 @@ async def test_twitter_import_happy_path(
     assert file_path.exists()
     with file_path.open(encoding="utf-8-sig", newline="") as fh:
         rows = list(csv.reader(fh))
-    assert rows[0] == ["yorum", "tarih", "kaynak"]
+    assert rows[0] == ["yorum", "tarih", "kaynak", "bağlantı"]
     assert rows[1] == [
         "kargo çok iyi geldi",
         "2026-05-12T08:15:00+00:00",
         "twitter",
+        "https://x.com/musteri/status/123",
     ]
     # Tarihi çözülemeyen tweet boş 'tarih' hücresiyle iner — parser
-    # bunu None'a çevirir, satır yine analiz edilir.
-    assert rows[2] == ["teslimat kötü ve geç", "", "twitter"]
+    # bunu None'a çevirir, satır yine analiz edilir. Bağlantısız tweet
+    # de boş 'bağlantı' hücresiyle iner.
+    assert rows[2] == ["teslimat kötü ve geç", "", "twitter", ""]
     assert len(rows) == 3
 
     scheduler = app.state.batch_scheduler
     assert len(scheduler.added) == 1
+
+
+@pytest.mark.asyncio
+async def test_twitter_import_all_negative_terms_is_422(
+    batch_client: TestClient,
+    semi_auto_tenant: tuple[User, UUID, str],
+) -> None:
+    user, tid, pw = semi_auto_tenant
+    token = login_token(batch_client, user.email, pw, tid)
+    _enable_key(batch_client)
+    r = _post(batch_client, token, {"term": "-cem karaca, -hidayet karaca"})
+    assert r.status_code == 422, r.text
 
 
 @pytest.mark.asyncio
