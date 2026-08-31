@@ -64,7 +64,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       // doesn't briefly render dashboard chrome with stale user data.
       useAuthStore.getState().handleSessionExpired();
       // Keep query cache clean for the next user's session.
-      queryClient.clear();
+      // W1-A — resetQueries() instead of clear() for consistency with
+      // clearTenantScopedQueries() (auth-store.ts); harmless here
+      // either way since the router.replace below unmounts everything
+      // right after, but it keeps a single "how we wipe the cache"
+      // idiom across the codebase.
+      void queryClient.resetQueries();
       router.replace("/login?expired=1");
     });
     // Sprint 9.4 hotfix — skip /auth/me on public routes; flip the

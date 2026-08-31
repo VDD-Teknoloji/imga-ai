@@ -85,14 +85,24 @@ export function setAuthQueryClient(client: QueryClient | null): void {
 
 function clearTenantScopedQueries(): void {
   if (queryClientHandle === null) return;
-  // Sprint 9.1 hotfix — ``clear()`` wipes every cache entry. Most
-  // queries are tenant-scoped (reviews, insights, briefings, action
-  // items, ...); the few that aren't (auth/me itself, sentiment
-  // helpers) refetch on the next render anyway. Per-key invalidation
-  // would need every hook to opt in; ``clear()`` is the
-  // forget-nothing default that survives a future hook landing
-  // without remembering to add itself to an allow-list.
-  queryClientHandle.clear();
+  // Sprint 9.1 hotfix — most queries are tenant-scoped (reviews,
+  // insights, briefings, action items, ...); the few that aren't
+  // (auth/me itself, sentiment helpers) refetch on the next render
+  // anyway. Per-key invalidation would need every hook to opt in, so
+  // we wipe everything as the forget-nothing default that survives a
+  // future hook landing without remembering to add itself to an
+  // allow-list.
+  //
+  // W1-A fix — this used to call ``clear()``, which destroys every
+  // cache entry WITHOUT notifying mounted QueryObservers (verified in
+  // @tanstack/query-core: clear() removes the query from the cache
+  // and never calls observer.onQueryUpdate/notify). A page the user
+  // was already looking at kept rendering the old tenant's rows until
+  // a manual refresh. ``resetQueries()`` (no args = every query) does
+  // destroy + setState(initialState), which DOES notify observers,
+  // and its default ``refetchQueries({type:'active'})`` step
+  // immediately refetches every mounted query against the new tenant.
+  void queryClientHandle.resetQueries();
 }
 
 export const useAuthStore = create<AuthState>((set) => ({
@@ -140,7 +150,12 @@ export const useAuthStore = create<AuthState>((set) => ({
       // the cookie was already missing or revoked. We still clear UI
       // state below.
     } finally {
-      clearTenantScopedQueries();
+      // Bilinçli olarak clear(): resetQueries()'in refetch adımı, az önce
+      // iptal edilmiş çerezlerle hâlâ mount'lu sorguları yeniden ateşleyip
+      // 401 -> onSessionExpired -> "/login?expired=1" bandına düşürebilir.
+      // Login'e yönlendirme zaten tüm ağacı unmount ediyor; burada sessiz
+      // yıkım yeterli.
+      queryClientHandle?.clear();
       set({ user: null, activeContext: null, availableTenants: [] });
     }
   },
