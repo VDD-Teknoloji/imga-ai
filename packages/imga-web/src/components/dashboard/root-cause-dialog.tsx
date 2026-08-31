@@ -3,12 +3,14 @@
 // Sprint 13.1 — kök neden analizi diyaloğu (drill-down 3. seviye).
 //
 // Açılışta GET; kayıt varsa doğrudan render, yoksa "Analiz Oluştur"
-// CTA'sı. LLM anahtarı yoksa üretim butonu hiç etkinleşmez (proaktif
-// kapı, /strategy sayfasındaki NoCredentialBanner deseni) — sunucu
-// yine de 412 döndürürse aynı mesaj toast olarak gösterilir.
+// CTA'sı. Üretim butonu artık tenant LLM anahtarına bakılmaksızın
+// etkin — platform seviyesi LLM anahtarı yedeği (IMGA_PLATFORM_LLM_KEY,
+// 2026-08-26) sayesinde backend tenant anahtarı olmadan da üretiyor;
+// eski proaktif kapı (kayıtlı anahtar yoksa buton hiç etkinleşmezdi)
+// bu yüzden kaldırıldı. Gerçekten hiç anahtar/yedek yoksa backend yine
+// de 412 döner ve bu hâlâ toast ile gösterilir.
 
-import { useRouter } from "next/navigation";
-import { AlertTriangle, ArrowRight, Loader2 } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -21,7 +23,6 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useLlmCredentials } from "@/hooks/use-llm-credentials";
 import {
   type RootCauseItem,
   type RootCauseTarget,
@@ -48,16 +49,11 @@ export function RootCauseDialog({
   perspectiveLabel,
 }: Props) {
   const { t, locale } = useTranslation();
-  const router = useRouter();
   const numberLocale = locale === "en" ? "en-US" : "tr-TR";
 
   const analysis = useRootCause(open ? target : null);
   const generate = useGenerateRootCause();
-  const credentials = useLlmCredentials();
-  const hasActiveKey = (credentials.data ?? []).some((c) => c.is_active);
-  const credentialsLoaded = !credentials.isLoading;
-  const generateDisabled =
-    generate.isPending || !credentialsLoaded || !hasActiveKey || target === null;
+  const generateDisabled = generate.isPending || target === null;
 
   function onGenerate() {
     if (target === null) return;
@@ -93,23 +89,6 @@ export function RootCauseDialog({
             {primaryCategoryLabel} › {perspectiveLabel}
           </DialogDescription>
         </DialogHeader>
-
-        {credentialsLoaded && !hasActiveKey && (
-          <div className="flex flex-col gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-4 sm:flex-row sm:items-center sm:justify-between dark:border-amber-900/50 dark:bg-amber-950/30">
-            <div className="flex items-start gap-3">
-              <AlertTriangle className="mt-0.5 size-5 text-amber-600" aria-hidden />
-              <p className="text-sm text-amber-900">{t("dashboard.rootCause.noCredentials")}</p>
-            </div>
-            <Button
-              onClick={() => router.push("/settings/integrations")}
-              variant="outline"
-              className="shrink-0 gap-2"
-            >
-              {t("dashboard.strategy.banner.addKey")}
-              <ArrowRight className="size-4" aria-hidden />
-            </Button>
-          </div>
-        )}
 
         {analysis.isLoading || generate.isPending ? (
           <div className="space-y-3 py-2">

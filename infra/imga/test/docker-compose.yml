@@ -138,6 +138,7 @@ services:
           tests/test_fact_parsing.py \
           tests/test_operations_routes.py \
           tests/test_reviews_list.py \
+          tests/test_reviews_summary.py \
           tests/test_orphan_recovery.py \
           tests/test_cleanup.py \
           tests/test_review_manual_ticket.py \

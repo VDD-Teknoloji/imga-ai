@@ -140,6 +140,13 @@ class ParsedRow:
     bağlantı (tweet URL'si, pazar yeri yorum linki). Başlığı
     ``_URL_HEADER_NAMES`` ile otomatik tanınan kolondan okunur;
     http(s) ile başlamayan / boş hücre None.
+
+    ``source_meta`` (migration 0049) — tweet etkileşim sayaçları
+    (like_count/retweet_count/reply_count/view_count), başlığı
+    ``_META_INT_HEADERS`` ile otomatik tanınan kolonlardan okunur.
+    ``facts`` gibi yalnız DOLU/geçerli sayaç değerlerini taşır — hiçbiri
+    yoksa (kolon yok ya da tüm hücreler boş/geçersiz) None, tek anahtar
+    bile bulunursa dict.
     """
 
     row_number: int
@@ -154,6 +161,7 @@ class ParsedRow:
     review_date: datetime | None = None
     facts: dict[str, str] = field(default_factory=dict)
     source_url: str | None = None
+    source_meta: dict[str, int] | None = None
 
 
 # Kaynak bağlantısı kolonu — şablon dışı ama "Twitter'dan Çek" CSV'si
@@ -183,6 +191,19 @@ _URL_HEADER_NAMES: frozenset[str] = frozenset(
 )
 _MAX_SOURCE_URL_LENGTH = 2048
 
+# Tweet etkileşim sayaçları (migration 0049) — "Twitter'dan Çek" CSV'sinin
+# ``bağlantı``dan sonraki dört ek kolonu (bkz. tenant_twitter.py CSV
+# writer'ı ve twitter_import.TwitterTweet). ``_URL_HEADER_NAMES``
+# deseniyle birebir aynı yaklaşım: başlık kolon adından OTOMATİK tanınır,
+# tenant konfigürasyonu gerekmez. Anahtarlar ``Review.source_meta``
+# JSONB'sindeki alan adlarıyla birebir aynı.
+_META_INT_HEADERS: dict[str, frozenset[str]] = {
+    "like_count": frozenset({"beğeni", "begeni", "like", "likes", "beğeni sayısı"}),
+    "retweet_count": frozenset({"retweet", "rt", "retweet sayısı"}),
+    "reply_count": frozenset({"yanıt", "yanit", "reply", "yanıt sayısı"}),
+    "view_count": frozenset({"görüntülenme", "goruntulenme", "views", "görüntülenme sayısı"}),
+}
+
 
 def parse_source_url(cell: Any) -> str | None:
     """Hücreyi kaynak bağlantısına çevir; http(s) ile başlamıyor,
@@ -196,6 +217,42 @@ def parse_source_url(cell: Any) -> str | None:
     if not (lowered.startswith("https://") or lowered.startswith("http://")):
         return None
     return value
+
+
+def _parse_meta_int(cell: Any) -> int | None:
+    """Etkileşim sayacı hücresini int'e çevirir; boş/geçersiz -> None
+    (anahtar tamamen atlanır, satır yine analiz edilir). ``int(float(...))``
+    ondalıklı hücrelere (Excel'in "1200.0" gibi biçimlendirdiği sayılar)
+    tolerant; negatif bir sayaç anlamsız olduğundan o da atlanır."""
+    if cell is None:
+        return None
+    text = str(cell).strip()
+    if not text:
+        return None
+    try:
+        value = int(float(text))
+    except ValueError:
+        return None
+    return value if value >= 0 else None
+
+
+def _extract_meta(
+    row: list[Any] | tuple[Any, ...],
+    meta_idx_by_key: dict[str, int],
+) -> dict[str, int] | None:
+    """Pull tweet-engagement (or other source-specific) integer cell
+    values out of a row given the resolved indices. Same omit-on-empty
+    convention as ``_extract_facts`` for individual keys; unlike that
+    helper this returns ``None`` (not ``{}``) when nothing was found,
+    matching ``ParsedRow.source_meta``'s "no source metadata" sentinel."""
+    out: dict[str, int] = {}
+    for meta_key, idx in meta_idx_by_key.items():
+        if idx >= len(row):
+            continue
+        value = _parse_meta_int(row[idx])
+        if value is not None:
+            out[meta_key] = value
+    return out or None
 
 
 def _normalize_header(name: str) -> str:
@@ -225,16 +282,29 @@ def _resolve_columns(
     fact_mapping: dict[str, str] | None = None,
     date_column: str | None = None,
     value_sample: list[Any] | None = None,
-) -> tuple[int, int | None, int | None, dict[str, int], dict[str, int], int | None, int | None]:
+) -> tuple[
+    int,
+    int | None,
+    int | None,
+    dict[str, int],
+    dict[str, int],
+    int | None,
+    int | None,
+    dict[str, int],
+]:
     """Return ``(text_idx, source_idx | None, nps_idx | None,
     dimension_idx_by_key, fact_idx_by_key, date_idx | None,
-    url_idx | None)``. Raises UnknownColumnError if text/source column
-    is absent. NPS is auto-detected via the imga-core pattern set;
-    missing NPS is fine (returns None) — the upload doesn't have to
-    carry an NPS column. ``url_idx`` (migration 0047) is the auto-
-    detected source-link column (``_URL_HEADER_NAMES``), resolved
+    url_idx | None, meta_idx_by_key)``. Raises UnknownColumnError if
+    text/source column is absent. NPS is auto-detected via the imga-core
+    pattern set; missing NPS is fine (returns None) — the upload doesn't
+    have to carry an NPS column. ``url_idx`` (migration 0047) is the
+    auto-detected source-link column (``_URL_HEADER_NAMES``), resolved
     before the date column so a link column is never mistaken for a
-    date by the value-based fallback.
+    date by the value-based fallback. ``meta_idx_by_key`` (migration
+    0049) is the auto-detected tweet-engagement columns
+    (``_META_INT_HEADERS``), resolved the SAME way as ``url_idx`` —
+    header-name membership, no tenant configuration — and excluded from
+    both the date-detection skip set and each other's candidacy.
 
     The date column (``review_date``) resolves in priority order:
 
@@ -341,6 +411,23 @@ def _resolve_columns(
             url_idx = idx
             break
 
+    # Migration 0049 — tweet etkileşim sayaçları, url_idx ile aynı
+    # desen: header adından otomatik tanınır. ``meta_skip`` her eşleşen
+    # kolonu ekleye ekleye büyür, böylece aynı kolon iki farklı sayaç
+    # anahtarına ikinci kez bağlanamaz.
+    meta_idx_by_key: dict[str, int] = {}
+    meta_skip = set(reserved_idx)
+    if url_idx is not None:
+        meta_skip.add(url_idx)
+    for meta_key, meta_header_names in _META_INT_HEADERS.items():
+        for idx, name in enumerate(norm_header):
+            if idx in meta_skip:
+                continue
+            if name in meta_header_names:
+                meta_idx_by_key[meta_key] = idx
+                meta_skip.add(idx)
+                break
+
     if date_column:
         # Explicit selection wins outright — no skip filtering (see
         # docstring point 1). Not found → None, not an error.
@@ -349,11 +436,11 @@ def _resolve_columns(
             norm_header.index(target_date) if target_date in norm_header else None
         )
     else:
-        skip_idx = set(reserved_idx)
-        if url_idx is not None:
-            skip_idx.add(url_idx)
+        # meta_skip already carries reserved_idx + url_idx + every
+        # resolved meta column — an engagement-count column must never
+        # be mistaken for the date column either.
         date_idx = _detect_date_column(
-            header, norm_header, skip=skip_idx, value_sample=value_sample
+            header, norm_header, skip=meta_skip, value_sample=value_sample
         )
 
     return (
@@ -364,6 +451,7 @@ def _resolve_columns(
         fact_idx_by_key,
         date_idx,
         url_idx,
+        meta_idx_by_key,
     )
 
 
@@ -531,6 +619,7 @@ def _iter_csv(
             fact_idx_by_key,
             date_idx,
             url_idx,
+            meta_idx_by_key,
         ) = _resolve_columns(
             header,
             text_column=text_column,
@@ -562,6 +651,7 @@ def _iter_csv(
                 source_url = parse_source_url(row[url_idx])
             dims = _extract_dimensions(row, dim_idx_by_key)
             facts = _extract_facts(row, fact_idx_by_key)
+            source_meta = _extract_meta(row, meta_idx_by_key)
             yield ParsedRow(
                 row_number=i,
                 text=text,
@@ -575,6 +665,7 @@ def _iter_csv(
                 review_date=review_date,
                 facts=facts,
                 source_url=source_url,
+                source_meta=source_meta,
             )
 
 
@@ -625,6 +716,7 @@ def _iter_xlsx(
             fact_idx_by_key,
             date_idx,
             url_idx,
+            meta_idx_by_key,
         ) = _resolve_columns(
             header,
             text_column=text_column,
@@ -657,6 +749,7 @@ def _iter_xlsx(
                 source_url = parse_source_url(row[url_idx])
             dims = _extract_dimensions(list(row), dim_idx_by_key)
             facts = _extract_facts(list(row), fact_idx_by_key)
+            source_meta = _extract_meta(list(row), meta_idx_by_key)
             yield ParsedRow(
                 row_number=i,
                 text=text,
@@ -670,6 +763,7 @@ def _iter_xlsx(
                 review_date=review_date,
                 facts=facts,
                 source_url=source_url,
+                source_meta=source_meta,
             )
     finally:
         workbook.close()
@@ -730,7 +824,7 @@ def iter_rows(
             date_column=date_column,
         )
     raise UnsupportedFormatError(
-        f"Desteklenmeyen dosya türü: {suffix!r}. " "Yalnızca .csv ve .xlsx dosyaları kabul edilir."
+        f"Desteklenmeyen dosya türü: {suffix!r}. Yalnızca .csv ve .xlsx dosyaları kabul edilir."
     )
 
 
@@ -753,7 +847,7 @@ def count_rows(path: Path) -> int:
         finally:
             workbook.close()
     raise UnsupportedFormatError(
-        f"Desteklenmeyen dosya türü: {suffix!r}. " "Yalnızca .csv ve .xlsx dosyaları kabul edilir."
+        f"Desteklenmeyen dosya türü: {suffix!r}. Yalnızca .csv ve .xlsx dosyaları kabul edilir."
     )
 
 
@@ -783,7 +877,7 @@ def peek_header(path: Path) -> list[str]:
         finally:
             workbook.close()
     raise UnsupportedFormatError(
-        f"Desteklenmeyen dosya türü: {suffix!r}. " "Yalnızca .csv ve .xlsx dosyaları kabul edilir."
+        f"Desteklenmeyen dosya türü: {suffix!r}. Yalnızca .csv ve .xlsx dosyaları kabul edilir."
     )
 
 

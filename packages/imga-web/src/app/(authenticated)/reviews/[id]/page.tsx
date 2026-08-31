@@ -18,6 +18,7 @@ import { effectiveExperience, type ExperienceType } from "@/lib/experience";
 import { useTranslation } from "@/lib/i18n/use-translation";
 import { NPS_CATEGORY_LABELS, type ReviewDecision } from "@/lib/types";
 import { formatDurationMinutes } from "@/lib/number-format";
+import { sentimentScoreBucket } from "@/lib/sentiment-score";
 import { sourceLinkLabelKey } from "@/lib/source-link";
 
 // Map every decision branch to an i18n key + the auto-ticket rationale so
@@ -233,10 +234,9 @@ function ReviewDetailInner() {
                 <Stat
                   label={t("reviews.detail.scoreFinal")}
                   value={detail.data.sentiment.final_score.toFixed(2)}
-                />
-                <Stat
-                  label={t("reviews.detail.scoreRaw")}
-                  value={detail.data.sentiment.raw_score.toFixed(2)}
+                  sublabel={t(
+                    `reviews.scoreLabel.${sentimentScoreBucket(detail.data.sentiment.final_score)}`,
+                  )}
                 />
                 <Stat
                   label={t("reviews.detail.confidence")}
@@ -280,35 +280,25 @@ function ReviewDetailInner() {
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                <div>
-                  <p className="text-muted-foreground text-xs">
-                    {t("reviews.detail.bertCategory")}
-                  </p>
-                  <p className="text-sm font-medium">
-                    {categoryLabelFor(detail.data.categorization.primary)}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-muted-foreground text-xs">
-                    {t("reviews.detail.heuristicPerspective")}
-                  </p>
-                  <p className="text-sm font-medium">
-                    {detail.data.company_perspective.code === null ? (
-                      <span className="text-muted-foreground italic">
-                        {t("reviews.detail.noMatch")}
-                      </span>
-                    ) : detail.data.company_perspective.label_tr === null ? (
-                      <span className="text-muted-foreground italic">
-                        {t("reviews.detail.removedCategoryPre")}{" "}
-                        <span className="font-mono">{detail.data.company_perspective.code}</span>
-                        {t("reviews.detail.removedCategoryPost")}
-                      </span>
-                    ) : (
-                      detail.data.company_perspective.label_tr
-                    )}
-                  </p>
-                </div>
+              <div>
+                <p className="text-muted-foreground text-xs">
+                  {t("reviews.detail.heuristicPerspective")}
+                </p>
+                <p className="text-sm font-medium">
+                  {detail.data.company_perspective.code === null ? (
+                    <span className="text-muted-foreground italic">
+                      {t("reviews.detail.noMatch")}
+                    </span>
+                  ) : detail.data.company_perspective.label_tr === null ? (
+                    <span className="text-muted-foreground italic">
+                      {t("reviews.detail.removedCategoryPre")}{" "}
+                      <span className="font-mono">{detail.data.company_perspective.code}</span>
+                      {t("reviews.detail.removedCategoryPost")}
+                    </span>
+                  ) : (
+                    detail.data.company_perspective.label_tr
+                  )}
+                </p>
               </div>
               {detail.data.nps_score !== null && (
                 <div>
@@ -412,11 +402,22 @@ function ReviewDetailInner() {
   );
 }
 
-function Stat({ label, value }: { label: string; value: string }) {
+function Stat({
+  label,
+  value,
+  sublabel,
+}: {
+  label: string;
+  value: string;
+  /** Sayısal değerin altında gösterilen küçük, soluk etiket — örn.
+   *  skor kovası ("Çok olumlu"). */
+  sublabel?: string;
+}) {
   return (
     <div className="bg-muted/30 rounded-md border p-3">
       <p className="text-muted-foreground text-xs">{label}</p>
       <p className="text-lg font-semibold">{value}</p>
+      {sublabel && <p className="text-muted-foreground text-xs">{sublabel}</p>}
     </div>
   );
 }

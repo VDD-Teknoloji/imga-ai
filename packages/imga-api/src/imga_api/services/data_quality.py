@@ -161,8 +161,17 @@ _TURKISH_VOWELS: Final[frozenset[str]] = frozenset("aeıioöuü")
 # kalıbını tanımak için (örn. 'Sipariş no: 482910').
 _ORDER_PHONE_LABELS: Final[frozenset[str]] = frozenset(
     {
-        "sipariş", "siparis", "takip", "tel", "telefon", "kod", "kodu",
-        "no", "numara", "numarası", "numarasi",
+        "sipariş",
+        "siparis",
+        "takip",
+        "tel",
+        "telefon",
+        "kod",
+        "kodu",
+        "no",
+        "numara",
+        "numarası",
+        "numarasi",
     }
 )
 
@@ -170,9 +179,7 @@ _ORDER_PHONE_LABELS: Final[frozenset[str]] = frozenset(
 # bazı gövdeler ('hâlâ' gibi) şapkalı harf taşıyor; eklenmezse
 # tokenizer sözcüğü şapka noktasında bölerdi.
 _WORD_RE: Final[re.Pattern[str]] = re.compile(r"[a-zçğıöşüâîû]+")
-_URL_ONLY_RE: Final[re.Pattern[str]] = re.compile(
-    r"^(https?://\S+|www\.\S+)$", re.IGNORECASE
-)
+_URL_ONLY_RE: Final[re.Pattern[str]] = re.compile(r"^(https?://\S+|www\.\S+)$", re.IGNORECASE)
 _DIGIT_OR_PUNCT_RE: Final[re.Pattern[str]] = re.compile(r"^[\d\s\-+().:/]*$")
 
 
@@ -182,9 +189,7 @@ def _matches_template_marker(normalized: str) -> bool:
 
 def _has_first_person_complaint(normalized: str) -> bool:
     tokens = _WORD_RE.findall(normalized)
-    return any(
-        token.startswith(stem) for token in tokens for stem in _COMPLAINT_STEMS
-    )
+    return any(token.startswith(stem) for token in tokens for stem in _COMPLAINT_STEMS)
 
 
 def _is_order_or_phone_pattern(normalized: str) -> bool:
@@ -198,9 +203,7 @@ def _is_order_or_phone_pattern(normalized: str) -> bool:
     if not tokens or not all(t in _ORDER_PHONE_LABELS for t in tokens):
         return False
     remainder = _WORD_RE.sub("", normalized)
-    return bool(_DIGIT_OR_PUNCT_RE.match(remainder)) and any(
-        ch.isdigit() for ch in remainder
-    )
+    return bool(_DIGIT_OR_PUNCT_RE.match(remainder)) and any(ch.isdigit() for ch in remainder)
 
 
 def _is_keyboard_mash(token: str) -> bool:
@@ -257,9 +260,7 @@ def classify_data_quality(text: str) -> str | None:
     if not normalized:
         return None
 
-    if _matches_template_marker(normalized) and not _has_first_person_complaint(
-        normalized
-    ):
+    if _matches_template_marker(normalized) and not _has_first_person_complaint(normalized):
         return "informational"
 
     if _is_meaningless(normalized):
@@ -268,4 +269,118 @@ def classify_data_quality(text: str) -> str | None:
     return None
 
 
-__all__ = ["classify_data_quality"]
+# ---------------------------------------------------------------------------
+# content_type ('question') — migration 0049. classify_data_quality'nin
+# YANINDA, ama ondan BAĞIMSIZ bir sezgisel: dönüşü ``reviews.quality_flag``
+# DEĞİL ``reviews.content_type``'a yazılır (bkz. modül ve model
+# docstring'leri) — bir NEGATİF şikayetin soru biçiminde yazılması
+# ("Kargom nerede, ilgilenir misiniz?") hâlâ 'question'dur VE analitikte
+# KALMALIDIR; quality_flag'in aksine bu bir "düşük kalite" işareti değil,
+# metnin YAPISAL biçimidir. classify_data_quality'nin ilk tasarımındaki
+# LLM "q" alanı denemesi ölçülüp reddedildiği (2026-08-18, gold4 kapı
+# regresyonu) için burada da aynı ilke geçerli: SAF yapısal Türkçe
+# heuristik, LLM'e hiç dokunmadan.
+#
+# YÜKSEK-GÜVENİLİRLİK hedefi: kural (a) '?' VARSA VE bir soru işareti
+# taşıyorsa (soru zamiri/zarfı YA DA soru eki 'mi/mı/mu/mü' herhangi bir
+# token'da) YA DA metin '?' ile bitiyorsa; (b) '?' YOKSA ama SON token
+# çıplak soru eki ise ('mi'...'mısınız' gibi ekli biçimler dahil).
+# '?' cümle içinde gelişigüzel geçip hiçbir soru işareti taşımıyorsa
+# (ör. "Fiyat/performans? bence harika") KESİNLİKLE işaretlenmez —
+# aşağıdaki fonksiyon docstring'i bu kararı örnekle açıklar.
+# ---------------------------------------------------------------------------
+
+_INTERROGATIVE_PRONOUNS: Final[frozenset[str]] = frozenset(
+    {
+        "ne",
+        "nasıl",
+        "nasil",
+        "neden",
+        "niye",
+        "nerede",
+        "nereden",
+        "kaç",
+        "kac",
+        "hangi",
+        "kim",
+    }
+)
+
+# Soru eki 'mi' — ünlü uyumuyla dört biçim (mi/mı/mu/mü), yalın ya da
+# şahıs/zaman ekli (miyim, mısınız, miydi, muymuş, midir...). Türkçe
+# yazım kuralı gereği bu ek fiile BİTİŞMEZ, ayrı yazılır — tokenizer'da
+# (``_WORD_RE``) her zaman kendi başına bir token olarak görünür. Regex
+# TAM token eşleşmesi arar (``fullmatch``): 'mı' ile BAŞLAYIP farklı bir
+# ekle DEVAM EDEN gerçek sözcükleri ('mısır'=corn, 'resmi'=official,
+# 'mide'=stomach, 'milyon') yanlış yakalamaz — o sözcüklerin ikinci
+# hecesi aşağıdaki ek listesinde YOKTUR.
+_QUESTION_PARTICLE_RE: Final[re.Pattern[str]] = re.compile(
+    r"mi(?:yim|sin|yiz|siniz|ydim|ydin|ydi|ydik|ydiniz|ydiler|"
+    r"ymişim|ymişsin|ymiş|ymişiz|ymişsiniz|ymişler|dir)?"
+    r"|mı(?:yım|sın|yız|sınız|ydım|ydın|ydı|ydık|ydınız|ydılar|"
+    r"ymışım|ymışsın|ymış|ymışız|ymışsınız|ymışlar|dır)?"
+    r"|mu(?:yum|sun|yuz|sunuz|ydum|ydun|ydu|yduk|ydunuz|ydular|"
+    r"ymuşum|ymuşsun|ymuş|ymuşuz|ymuşsunuz|ymuşlar|dur)?"
+    r"|mü(?:yüm|sün|yüz|sünüz|ydüm|ydün|ydü|ydük|ydünüz|ydüler|"
+    r"ymüşüm|ymüşsün|ymüş|ymüşüz|ymüşsünüz|ymüşler|dür)?"
+)
+
+
+def _has_interrogative_signal(tokens: list[str]) -> bool:
+    return any(
+        token in _INTERROGATIVE_PRONOUNS or _QUESTION_PARTICLE_RE.fullmatch(token)
+        for token in tokens
+    )
+
+
+def detect_content_type(text: str) -> str | None:
+    """Tek satırlık yorum metninin YAPISAL biçimini tespit eder.
+
+    Dönüş:
+      * ``"question"`` — metin bir soru olarak yazılmış (bkz. aşağıdaki
+        iki kural).
+      * ``None`` — soru işareti yok (şüphede varsayılan; boş metin de
+        buraya düşer).
+
+    Kurallar (YÜKSEK-GÜVENİLİRLİK — belirsizlikte None):
+
+      (a) Metinde '?' VARSA VE (bir soru zamiri/zarfı — ``ne``,
+          ``nasıl``, ``neden``, ``niye``, ``nerede``, ``nereden``,
+          ``kaç``, ``hangi``, ``kim`` — ya da soru eki 'mi/mı/mu/mü'
+          herhangi bir token'da geçiyorsa YA DA metin '?' ile
+          BİTİYORSA) -> 'question'. '?' cümle içinde gelişigüzel geçip
+          hiçbir soru işareti taşımıyorsa VE metin '?' ile bitmiyorsa
+          işaretlenmez — ör. "Fiyat/performans? bence harika" burada
+          '?' salt vurgu/duraklama işareti, cümle bir soru DEĞİL;
+          soru zamiri/eki yok ve '?' son karakter değil, dolayısıyla
+          None döner (bilinçli karar — kuralın gerekçesi tam da bu
+          örneği None'da tutmak).
+      (b) Metinde '?' YOKSA ama SON token çıplak soru eki ('mi'...
+          'mısınız' gibi ekli biçimler dahil, bkz. ``_QUESTION_PARTICLE_
+          RE``) ise -> 'question' ("İade edebilir miyim" gibi soru
+          işaretsiz yazılmış gerçek sorular).
+
+    ORTOGONAL not: bu fonksiyon ``classify_data_quality``'den TAMAMEN
+    bağımsızdır ve onun sonucunu hiçbir şekilde etkilemez/etkilenmez —
+    bir şikayetin soru biçiminde yazılması onu 'question' yapar ama
+    'informational'/'meaningless' YAPMAZ.
+    """
+    if not text:
+        return None
+    normalized = normalize_turkish(text).strip()
+    if not normalized:
+        return None
+
+    tokens = _WORD_RE.findall(normalized)
+    if "?" in normalized:
+        if normalized.endswith("?") or _has_interrogative_signal(tokens):
+            return "question"
+        return None
+
+    if tokens and _QUESTION_PARTICLE_RE.fullmatch(tokens[-1]):
+        return "question"
+
+    return None
+
+
+__all__ = ["classify_data_quality", "detect_content_type"]

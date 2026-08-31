@@ -67,6 +67,8 @@ export function useManualPromoteReview() {
     onSuccess: (_data, reviewId) => {
       queryClient.invalidateQueries({ queryKey: ["review-detail", reviewId] });
       queryClient.invalidateQueries({ queryKey: ["reviews"] });
+      // W3 — ticket_linked sayacı /reviews/summary panelinde de değişir.
+      queryClient.invalidateQueries({ queryKey: ["reviews-summary"] });
     },
   });
 }
@@ -113,6 +115,9 @@ export function useCorrectReview() {
       queryClient.invalidateQueries({ queryKey: ["review-detail", reviewId] });
       queryClient.invalidateQueries({ queryKey: ["reviews"] });
       queryClient.invalidateQueries({ queryKey: ["executive-overview"] });
+      // W3 — duygu/kategori düzeltmesi /reviews/summary panelinin
+      // dağılımlarını da değiştirir (sentiment/categories/quality).
+      queryClient.invalidateQueries({ queryKey: ["reviews-summary"] });
     },
   });
 }
@@ -129,10 +134,15 @@ function dateOnlyToLocalIso(value: string | undefined, endOfDay: boolean): strin
   return Number.isNaN(d.getTime()) ? undefined : d.toISOString();
 }
 
-function buildQueryString(filters: ReviewListFiltersExt, offset: number, limit: number): string {
+/**
+ * Filter-only query params — SAME surface as GET /tenants/me/reviews
+ * minus limit/offset/order (list-only pagination/sort; the summary
+ * endpoint doesn't accept them). Exported so useReviewSummary reuses
+ * this EXACT builder instead of a second hand-maintained copy — panel
+ * counts must always match the list 1:1 (task W3 requirement).
+ */
+export function buildReviewFilterParams(filters: ReviewListFiltersExt): URLSearchParams {
   const params = new URLSearchParams();
-  params.set("limit", String(limit));
-  params.set("offset", String(offset));
   const dateFrom = dateOnlyToLocalIso(filters.date_from, false);
   const dateTo = dateOnlyToLocalIso(filters.date_to, true);
   if (dateFrom) params.set("date_from", dateFrom);
@@ -205,6 +215,19 @@ function buildQueryString(filters: ReviewListFiltersExt, offset: number, limit: 
   if (filters.include_flagged === false) {
     params.set("include_flagged", "false");
   }
+  // W3 — "Soru" filtresi (content_type). Kalite bayrağından bağımsız:
+  // aynı satır hem soru hem negatif olabilir, quality_flags gibi
+  // include_flagged'i devre dışı bırakmaz.
+  if (filters.content_types?.length) {
+    params.set("content_types", filters.content_types.join(","));
+  }
+  return params;
+}
+
+function buildQueryString(filters: ReviewListFiltersExt, offset: number, limit: number): string {
+  const params = buildReviewFilterParams(filters);
+  params.set("limit", String(limit));
+  params.set("offset", String(offset));
   if (filters.order_by) params.set("order_by", filters.order_by);
   if (filters.order) params.set("order", filters.order);
   return params.toString();

@@ -209,8 +209,31 @@ class Review(Base, TimestampMixin, SoftDeleteMixin):
     # 2026-08-18 (migration 0042) — düşük kaliteli veri işareti. NULL =
     # geçerli satır. 'duplicate' eski satırlar için decision=
     # 'skipped_dedup'tan deterministik backfill edildi; empty/
-    # informational/meaningless yalnızca yazım-anı birleşik LLM kararından
-    # (q alanı, Dalga 2) gelir — geriye dönük türetilemez. Analitik/rapor/
-    # heatmap include_flagged filtresi VARSAYILAN HARİÇ tutar. CHECK
-    # ck_reviews_quality_flag bu dört değerden başkasını kabul etmez.
+    # informational/meaningless yalnızca yazım-anında ÇALIŞAN deterministik
+    # heuristikten (``imga_api.services.data_quality.classify_data_quality``)
+    # gelir — geriye dönük türetilemez. (Bir LLM prompt "q" alanı 2026-08-18
+    # "büyük paket" WS2'de denendi ve gold4 kapısında belirsiz oranını
+    # kötüleştirdiği ölçüldüğü için TERS ALINDI; saf Python heuristiğine
+    # geçildi.) Analitik/rapor/heatmap include_flagged filtresi VARSAYILAN
+    # HARİÇ tutar. CHECK ck_reviews_quality_flag bu dört değerden
+    # başkasını kabul etmez.
     quality_flag: Mapped[str | None] = mapped_column(String(16), nullable=True)
+
+    # 2026-09-01 (migration 0049) — metnin YAPISAL biçimi ('question' |
+    # NULL). Deterministik Türkçe heuristik
+    # (``imga_api.services.data_quality.detect_content_type``) yazar,
+    # LLM'e hiç dokunmaz. ``quality_flag`` DEĞİLDİR — ORTOGONAL bir
+    # boyut: bir NEGATİF şikayetin soru biçiminde yazılması ("Kargom
+    # nerede, ilgilenir misiniz?") hâlâ 'question' sayılır VE analitikte
+    # kalır; content_type'ı quality_flag'e katmak böyle bir satırı
+    # include_flagged=False filtresiyle sessizce gömerdi. Bilinçli olarak
+    # genişletilebilir enum (experience_type/0041 deseniyle aynı desen);
+    # CHECK ck_reviews_content_type bugün tek değeri kabul eder.
+    content_type: Mapped[str | None] = mapped_column(Text(), nullable=True)
+
+    # 2026-09-01 (migration 0049) — açık uçlu kaynak-özel metadata.
+    # İlk tüketici: tweet etkileşim sayaçları (like_count/retweet_count/
+    # reply_count/view_count — file_parser'ın otomatik tanıdığı CSV
+    # kolonlarından ya da twitterapi.io'dan gelir). Şema sabit değil;
+    # ileride başka kaynak türleri farklı anahtarlarla aynı kolona yazar.
+    source_meta: Mapped[dict[str, object] | None] = mapped_column(JSONB(), nullable=True)

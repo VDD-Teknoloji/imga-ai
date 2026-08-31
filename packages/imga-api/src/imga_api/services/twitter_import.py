@@ -60,6 +60,16 @@ class TwitterTweet:
     # Mention/URL atılmamış ham metin — yalnız AI alaka hakemi için
     # (bkz. twitter_brand_service); CSV'ye / arşive İNMEZ.
     raw_text: str = ""
+    # Migration 0049 — etkileşim sayaçları (twitterapi.io: likeCount/
+    # retweetCount/replyCount/viewCount). Alan yoksa ya da sayıya
+    # çevrilemiyorsa None. KVKK: yazar kimliği (userName/name) buraya
+    # BİLEREK taşınmaz — bkz. modül docstring'i, fetch_tweets bu
+    # alanları yalnız alaka filtresi için geçici okur, hiçbir yerde
+    # kalıcı yazmaz.
+    like_count: int | None = None
+    retweet_count: int | None = None
+    reply_count: int | None = None
+    view_count: int | None = None
 
 
 # X gelişmiş arama sorgu uzunluğu ~512 karakterle sınırlı; plan
@@ -182,6 +192,18 @@ def tweet_url_from_item(item: dict[str, object]) -> str | None:
     return f"https://x.com/i/web/status/{tweet_id}" if tweet_id.isdigit() else None
 
 
+def _coerce_engagement_count(raw: object) -> int | None:
+    """twitterapi.io sayaç alanını (likeCount vb.) tolerant biçimde
+    int'e çevirir; alan yok / negatif / sayıya çevrilemiyor -> None."""
+    if raw is None:
+        return None
+    try:
+        value = int(float(str(raw).strip()))
+    except (TypeError, ValueError):
+        return None
+    return value if value >= 0 else None
+
+
 def tweet_matches_terms(
     raw_text: str,
     terms: SearchTerms,
@@ -273,6 +295,10 @@ async def fetch_tweets(
                             ),
                             url=tweet_url_from_item(item),
                             raw_text=_WS_RE.sub(" ", raw_text).strip(),
+                            like_count=_coerce_engagement_count(item.get("likeCount")),
+                            retweet_count=_coerce_engagement_count(item.get("retweetCount")),
+                            reply_count=_coerce_engagement_count(item.get("replyCount")),
+                            view_count=_coerce_engagement_count(item.get("viewCount")),
                         )
                     )
                     if len(tweets) >= count:

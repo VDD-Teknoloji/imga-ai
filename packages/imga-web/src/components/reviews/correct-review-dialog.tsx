@@ -23,6 +23,7 @@ import { Sparkles } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -47,6 +48,7 @@ import { useCorrectReview } from "@/hooks/use-reviews";
 import { useCompanyTaxonomies } from "@/hooks/use-taxonomies";
 import { ApiError } from "@/lib/api-client";
 import { useTranslation } from "@/lib/i18n/use-translation";
+import { sentimentScoreBucket } from "@/lib/sentiment-score";
 
 const SENTIMENTS = [
   { value: "POZITIF", label: "Pozitif" },
@@ -264,6 +266,12 @@ export function CorrectReviewDialog({
                 onChange={(e) => handleScoreChange(Number(e.target.value))}
                 className="border-input focus-visible:border-ring focus-visible:ring-ring/50 h-8 w-20 rounded-lg border bg-transparent px-2 text-sm tabular-nums outline-none focus-visible:ring-3"
               />
+              {/* Kaydırıcı/sayı ile canlı güncellenen kova etiketi —
+                  "çok olumsuz" gibi yazılar kullanıcının ne girdiğini
+                  anında anlamasını sağlar. */}
+              <Badge variant="outline" className="shrink-0">
+                {t(`reviews.scoreLabel.${sentimentScoreBucket(score)}`)}
+              </Badge>
             </div>
             <p className="text-muted-foreground text-xs">
               {t("reviews.correct.scoreHint")}

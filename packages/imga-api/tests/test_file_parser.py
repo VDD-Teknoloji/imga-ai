@@ -13,6 +13,8 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from openpyxl import Workbook
+
 from imga_api.workers.file_parser import (
     FileParseError,
     UnknownColumnError,
@@ -22,7 +24,6 @@ from imga_api.workers.file_parser import (
     peek_date_column_found,
     peek_header,
 )
-from openpyxl import Workbook
 
 
 def _write_csv(path: Path, rows: list[list[str]]) -> None:
@@ -499,3 +500,94 @@ def test_peek_date_column_found_false(tmp_path: Path) -> None:
     path = tmp_path / "peek2.csv"
     _write_csv(path, [["yorum", "tarih"], ["a", "01.01.2026"]])
     assert peek_date_column_found(path, "olmayan kolon") is False
+
+
+# --- source_meta: tweet etkileşim sayaçları (migration 0049) ------------
+
+
+def test_iter_rows_detects_engagement_columns_csv(tmp_path: Path) -> None:
+    """ "Twitter'dan Çek" CSV'sinin dört ek kolonu otomatik tanınır ve
+    tam sayıya çevrilir; boş hücreli anahtar dict'ten omit edilir."""
+    path = tmp_path / "engagement.csv"
+    _write_csv(
+        path,
+        [
+            ["yorum", "tarih", "kaynak", "bağlantı", "beğeni", "retweet", "yanıt", "görüntülenme"],
+            [
+                "tencere yandı",
+                "2026-08-26",
+                "twitter",
+                "https://x.com/a/status/1",
+                "12",
+                "3",
+                "1",
+                "540",
+            ],
+            ["kargo geç", "", "twitter", "", "", "", "", ""],
+        ],
+    )
+    rows = list(iter_rows(path, text_column="yorum", source_column="kaynak"))
+    assert rows[0].source_meta == {
+        "like_count": 12,
+        "retweet_count": 3,
+        "reply_count": 1,
+        "view_count": 540,
+    }
+    # Tüm hücreler boş -> None (boş dict değil).
+    assert rows[1].source_meta is None
+
+
+def test_iter_rows_detects_engagement_columns_xlsx(tmp_path: Path) -> None:
+    path = tmp_path / "engagement.xlsx"
+    _write_xlsx(
+        path,
+        [
+            ["yorum", "beğeni", "retweet sayısı"],
+            ["iyi ürün", 25, 4],
+        ],
+    )
+    rows = list(iter_rows(path, text_column="yorum"))
+    assert rows[0].source_meta == {"like_count": 25, "retweet_count": 4}
+
+
+def test_iter_rows_engagement_columns_absent_yields_none(tmp_path: Path) -> None:
+    path = tmp_path / "no-engagement.csv"
+    _write_csv(path, [["yorum"], ["bir yorum"]])
+    rows = list(iter_rows(path, text_column="yorum"))
+    assert rows[0].source_meta is None
+
+
+def test_iter_rows_engagement_invalid_cell_omits_key(tmp_path: Path) -> None:
+    """Sayıya çevrilemeyen / negatif hücre o anahtarı atlar, satırı
+    düşürmez; diğer sayaç kolonları etkilenmez."""
+    path = tmp_path / "bad-engagement.csv"
+    _write_csv(
+        path,
+        [
+            ["yorum", "beğeni", "retweet"],
+            ["iyi", "bilinmiyor", "7"],
+            ["kötü", "-3", "2"],
+        ],
+    )
+    rows = list(iter_rows(path, text_column="yorum"))
+    assert rows[0].source_meta == {"retweet_count": 7}
+    assert rows[1].source_meta == {"retweet_count": 2}
+
+
+def test_iter_rows_engagement_header_not_mistaken_for_date_or_nps(tmp_path: Path) -> None:
+    """Sayaç kolonları hem tarih tespitinin skip setine hem NPS
+    kolonuyla çakışmama beklentisine tabidir — sayısal değerler tarih
+    değer-tabanlı yedeğini de yanlış tetiklemez."""
+    path = tmp_path / "engagement-vs-date.csv"
+    rows_data = [["yorum", "beğeni", "X"]]
+    for i in range(5):
+        rows_data.append([f"yorum{i}", str(10 + i), f"{i + 1:02d}.05.2026"])
+    _write_csv(path, rows_data)
+    rows = list(iter_rows(path, text_column="yorum"))
+    # "beğeni" tarih adayı olarak taranmaz — "X" kolonu tarihi taşır.
+    assert rows[0].review_date == datetime(2026, 5, 1, tzinfo=UTC)
+    assert rows[0].source_meta == {"like_count": 10}
+    assert all(r.review_date is not None for r in rows)
+    # "beğeni" NPS deseniyle de çakışmaz — detect_nps_column onu
+    # kazanmadığından hiçbir satırda nps_score sayaç hücresinden gelmez.
+    assert all(r.nps_score is None for r in rows)

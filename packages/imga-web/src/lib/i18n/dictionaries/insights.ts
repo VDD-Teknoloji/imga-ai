@@ -88,7 +88,7 @@ export const insights: Bundle = {
     "insights.cohort.periodWeek": "Hafta",
     "insights.cohort.periodMonth": "Ay",
     "insights.cohort.periodQuarter": "Çeyrek",
-    "insights.cohort.dimTaxonomy": "Kategori (BERT)",
+    "insights.cohort.dimTaxonomy": "Kategori",
     "insights.cohort.dimPerspective": "Şirket Perspektifi",
     "insights.cohort.dimNpsBucket": "NPS Kovası",
     "insights.cohort.period": "Dönem",
@@ -223,6 +223,9 @@ export const insights: Bundle = {
     "reviews.review.corrected": "düzeltildi",
     "reviews.review.openTweet": "Tweeti aç",
     "reviews.review.openSource": "Kaynağı aç",
+    // W3 — içerik türü rozeti (content_type='question'). Kalite bayrağı
+    // DEĞİL; satır aynı zamanda negatif de olabilir.
+    "reviews.review.questionBadge": "Soru",
 
     // --- /reviews: gün / ay etiketleri (heatmap drilldown pill'leri) ---
     "reviews.dow.0": "Pazar",
@@ -286,6 +289,11 @@ export const insights: Bundle = {
     "reviews.qualityFilter.informational": "Bilgilendirme",
     "reviews.qualityFilter.meaningless": "Anlamsız",
 
+    // --- /reviews: içerik türü filtresi (W3) — tek-tuşlu toggle,
+    // kalite dropdown'ından bağımsız (content_type kalite bayrağı DEĞİL).
+    "reviews.filter.questionsToggle": "Sorular",
+    "reviews.pill.questionsOnly": "Yalnız sorular",
+
     // --- /reviews: tarih aralığı filtresi (WS5) ---
     "reviews.dateFilter.groupAria": "Tarih aralığı filtresi",
     "reviews.dateFilter.fromAria": "Başlangıç tarihi",
@@ -316,7 +324,6 @@ export const insights: Bundle = {
     "reviews.detail.analysis": "Analiz",
     "reviews.detail.sentiment": "Duygu",
     "reviews.detail.scoreFinal": "Skor (final)",
-    "reviews.detail.scoreRaw": "Skor (raw, BERT)",
     "reviews.detail.confidence": "Güven",
     "reviews.detail.percentValue": "%{value}",
     "reviews.detail.category": "Kategori",
@@ -324,13 +331,21 @@ export const insights: Bundle = {
     "reviews.experience.dijital": "Dijital",
     "reviews.experience.operasyonel": "Operasyonel",
 
+    // --- Skor kova etiketleri (canlı) — lib/sentiment-score.ts ile
+    // birlikte kullanılır: hem /reviews/[id] ana "Skor" kutusunda hem
+    // "Kararı Düzelt" dialogundaki canlı etikette.
+    "reviews.scoreLabel.veryNegative": "Çok olumsuz",
+    "reviews.scoreLabel.negative": "Olumsuz",
+    "reviews.scoreLabel.neutral": "Nötr",
+    "reviews.scoreLabel.positive": "Olumlu",
+    "reviews.scoreLabel.veryPositive": "Çok olumlu",
+
     // --- "Kararı Düzelt" dialog'u — skor/deneyim/alt-kategori (WS3,
     // 2026-08-18, migration 0042). Dialog'daki diğer metinler (başlık,
     // gerekçe vb.) bilinçli olarak eski haliyle bırakıldı — bu anahtarlar
     // yalnızca YENİ eklenen alanlara ait.
     "reviews.correct.scoreLabel": "Skor",
-    "reviews.correct.scoreHint":
-      "-1 (çok olumsuz) ile 1 (çok olumlu) arası. Duygu değişince öneri güncellenir; siz değiştirmezseniz gönderilmez.",
+    "reviews.correct.scoreHint": "-1 ile 1 arasında bir değer girin.",
     "reviews.correct.scoreSliderAria": "Skor kaydırıcısı",
     "reviews.correct.scoreNumberAria": "Skor değeri",
     "reviews.correct.experienceLabel": "Deneyim",
@@ -338,7 +353,6 @@ export const insights: Bundle = {
     "reviews.correct.noChange": "— (değiştirme)",
 
     "reviews.detail.companyPerspective": "Şirket Perspektifi",
-    "reviews.detail.bertCategory": "BERT kategorisi",
     "reviews.detail.heuristicPerspective": "Heuristik perspektif",
     "reviews.detail.noMatch": "eşleşme yok",
     "reviews.detail.removedCategoryPre": "kaldırılmış kategori (kod:",
@@ -368,6 +382,37 @@ export const insights: Bundle = {
     "reviews.detail.facts.refundReason": "İade Sebebi",
     "reviews.detail.facts.deliveryStatus": "Teslimat Durumu",
     "reviews.detail.facts.deliveryDetail": "Teslimat Durumu Detayı",
+
+    // --- /reviews: filtreye tepki veren özet paneli (W3) ---
+    "reviews.summary.panelTitle": "Filtre Özeti",
+    "reviews.summary.loading": "Özet yükleniyor…",
+    "reviews.summary.loadError": "Özet yüklenemedi.",
+    "reviews.summary.emptyTitle": "Bu filtrelerle eşleşen veri yok",
+    "reviews.summary.headline.recordCount": "{count} kayıt",
+    "reviews.summary.headline.avgScore": "Ortalama skor",
+    "reviews.summary.headline.noScore": "Skor yok",
+    "reviews.summary.headline.ticketLinked": "{count} Ticket'a bağlı",
+    "reviews.summary.sentiment.title": "Duygu dağılımı",
+    "reviews.summary.nps.title": "NPS",
+    "reviews.summary.nps.promoter": "Destekçi",
+    "reviews.summary.nps.passive": "Pasif",
+    "reviews.summary.nps.detractor": "Kötüleyen",
+    "reviews.summary.nps.score": "NPS skoru {score}",
+    "reviews.summary.nps.responses": "{count} yanıt",
+    "reviews.summary.daily.title": "Günlük eğilim (son 90 gün)",
+    "reviews.summary.daily.barAria": "{date}: {count} yorum, {negative} negatif",
+    "reviews.summary.categories.title": "En çok kategoriler",
+    "reviews.summary.sources.title": "Kaynaklar",
+    "reviews.summary.enteredBy.title": "Temsilci / veri kalitesi",
+    "reviews.summary.enteredBy.colValue": "Temsilci",
+    "reviews.summary.enteredBy.colTotal": "Toplam",
+    "reviews.summary.enteredBy.colFlagged": "Bayraklı",
+    "reviews.summary.enteredBy.colQuestion": "Soru",
+    "reviews.summary.enteredBy.colNegative": "Negatif",
+    "reviews.summary.questions.title": "En çok sorulanlar",
+    "reviews.summary.questions.totalCount": "{count} soru toplam",
+    "reviews.summary.quality.title": "Veri kalitesi kırılımı",
+    "reviews.summary.quality.clean": "Temiz",
 
     // --- /reports: tip + durum etiketleri ---
     "reports.type.comprehensive": "Kapsamlı",
@@ -506,7 +551,7 @@ export const insights: Bundle = {
     "insights.cohort.periodWeek": "Week",
     "insights.cohort.periodMonth": "Month",
     "insights.cohort.periodQuarter": "Quarter",
-    "insights.cohort.dimTaxonomy": "Category (BERT)",
+    "insights.cohort.dimTaxonomy": "Category",
     "insights.cohort.dimPerspective": "Company Perspective",
     "insights.cohort.dimNpsBucket": "NPS Bucket",
     "insights.cohort.period": "Period",
@@ -642,6 +687,9 @@ export const insights: Bundle = {
     "reviews.review.corrected": "corrected",
     "reviews.review.openTweet": "Open tweet",
     "reviews.review.openSource": "Open source",
+    // W3 — content-type badge (content_type='question'). NOT a quality
+    // flag; the row can also be negative at the same time.
+    "reviews.review.questionBadge": "Question",
 
     // --- /reviews: day / month labels (heatmap drilldown pills) ---
     "reviews.dow.0": "Sunday",
@@ -705,6 +753,12 @@ export const insights: Bundle = {
     "reviews.qualityFilter.informational": "Informational",
     "reviews.qualityFilter.meaningless": "Meaningless",
 
+    // --- /reviews: content-type filter (W3) — single-press toggle,
+    // independent of the quality dropdown (content_type is NOT a
+    // quality flag).
+    "reviews.filter.questionsToggle": "Questions",
+    "reviews.pill.questionsOnly": "Questions only",
+
     // --- /reviews: date range filter (WS5) ---
     "reviews.dateFilter.groupAria": "Date range filter",
     "reviews.dateFilter.fromAria": "Start date",
@@ -737,7 +791,6 @@ export const insights: Bundle = {
     "reviews.detail.analysis": "Analysis",
     "reviews.detail.sentiment": "Sentiment",
     "reviews.detail.scoreFinal": "Score (final)",
-    "reviews.detail.scoreRaw": "Score (raw, BERT)",
     "reviews.detail.confidence": "Confidence",
     "reviews.detail.percentValue": "{value}%",
     "reviews.detail.category": "Category",
@@ -745,13 +798,21 @@ export const insights: Bundle = {
     "reviews.experience.dijital": "Digital",
     "reviews.experience.operasyonel": "Operational",
 
+    // --- Score bucket labels (live) — used together with
+    // lib/sentiment-score.ts: both in /reviews/[id]'s main "Score" tile
+    // and the live label in the "Correct the decision" dialog.
+    "reviews.scoreLabel.veryNegative": "Very negative",
+    "reviews.scoreLabel.negative": "Negative",
+    "reviews.scoreLabel.neutral": "Neutral",
+    "reviews.scoreLabel.positive": "Positive",
+    "reviews.scoreLabel.veryPositive": "Very positive",
+
     // --- "Correct the decision" dialog — score/experience/subcategory
     // (WS3, 2026-08-18, migration 0042). The dialog's other strings
     // (title, reason field, etc.) are deliberately left as-is — these
     // keys cover only the NEWLY added fields.
     "reviews.correct.scoreLabel": "Score",
-    "reviews.correct.scoreHint":
-      "-1 (very negative) to 1 (very positive). The suggestion updates when sentiment changes; if you don't touch it, it won't be sent.",
+    "reviews.correct.scoreHint": "Enter a value between -1 and 1.",
     "reviews.correct.scoreSliderAria": "Score slider",
     "reviews.correct.scoreNumberAria": "Score value",
     "reviews.correct.experienceLabel": "Experience",
@@ -759,7 +820,6 @@ export const insights: Bundle = {
     "reviews.correct.noChange": "— (no change)",
 
     "reviews.detail.companyPerspective": "Company Perspective",
-    "reviews.detail.bertCategory": "BERT category",
     "reviews.detail.heuristicPerspective": "Heuristic perspective",
     "reviews.detail.noMatch": "no match",
     "reviews.detail.removedCategoryPre": "removed category (code:",
@@ -789,6 +849,37 @@ export const insights: Bundle = {
     "reviews.detail.facts.refundReason": "Refund Reason",
     "reviews.detail.facts.deliveryStatus": "Delivery Status",
     "reviews.detail.facts.deliveryDetail": "Delivery Status Detail",
+
+    // --- /reviews: filter-reactive summary panel (W3) ---
+    "reviews.summary.panelTitle": "Filter Summary",
+    "reviews.summary.loading": "Loading summary…",
+    "reviews.summary.loadError": "Couldn't load the summary.",
+    "reviews.summary.emptyTitle": "No data matches these filters",
+    "reviews.summary.headline.recordCount": "{count} records",
+    "reviews.summary.headline.avgScore": "Average score",
+    "reviews.summary.headline.noScore": "No score",
+    "reviews.summary.headline.ticketLinked": "{count} linked to a Ticket",
+    "reviews.summary.sentiment.title": "Sentiment distribution",
+    "reviews.summary.nps.title": "NPS",
+    "reviews.summary.nps.promoter": "Promoter",
+    "reviews.summary.nps.passive": "Passive",
+    "reviews.summary.nps.detractor": "Detractor",
+    "reviews.summary.nps.score": "NPS score {score}",
+    "reviews.summary.nps.responses": "{count} responses",
+    "reviews.summary.daily.title": "Daily trend (last 90 days)",
+    "reviews.summary.daily.barAria": "{date}: {count} comments, {negative} negative",
+    "reviews.summary.categories.title": "Top categories",
+    "reviews.summary.sources.title": "Sources",
+    "reviews.summary.enteredBy.title": "Agent / data quality",
+    "reviews.summary.enteredBy.colValue": "Agent",
+    "reviews.summary.enteredBy.colTotal": "Total",
+    "reviews.summary.enteredBy.colFlagged": "Flagged",
+    "reviews.summary.enteredBy.colQuestion": "Question",
+    "reviews.summary.enteredBy.colNegative": "Negative",
+    "reviews.summary.questions.title": "Most asked",
+    "reviews.summary.questions.totalCount": "{count} questions total",
+    "reviews.summary.quality.title": "Data quality breakdown",
+    "reviews.summary.quality.clean": "Clean",
 
     // --- /reports: type + status labels ---
     "reports.type.comprehensive": "Comprehensive",

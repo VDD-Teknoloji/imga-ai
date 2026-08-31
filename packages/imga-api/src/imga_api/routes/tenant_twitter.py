@@ -318,6 +318,10 @@ async def import_from_twitter(
     # parser bunu Review.review_date olarak çözer, böylece analizler
     # gerçek gönderim tarihine oturur (çekim anına değil). Tarih
     # çözülemeyen tweet boş bırakılır.
+    # Migration 0049 — dört etkileşim sayacı kolonu ``bağlantı``dan
+    # sonra: parser bunları ``_META_INT_HEADERS`` ile otomatik tanır ve
+    # Review.source_meta'ya yazar. Sayaç yoksa hücre boş bırakılır
+    # (None ≠ 0 — "bilinmiyor" ile "sıfır etkileşim" karıştırılmaz).
     # Dosya normal yüklemelerle aynı dizin düzenine iner;
     # retention/reaper cron'ları ekstra kural olmadan kapsar.
     dir_id = uuid4()
@@ -328,10 +332,23 @@ async def import_from_twitter(
     file_path = job_dir / file_name
     with file_path.open("w", encoding="utf-8-sig", newline="") as fh:
         writer = csv.writer(fh)
-        writer.writerow(["yorum", "tarih", "kaynak", "bağlantı"])
+        writer.writerow(
+            ["yorum", "tarih", "kaynak", "bağlantı", "beğeni", "retweet", "yanıt", "görüntülenme"]
+        )
         for tweet in tweets:
             posted = tweet.created_at.isoformat() if tweet.created_at else ""
-            writer.writerow([tweet.text, posted, "twitter", tweet.url or ""])
+            writer.writerow(
+                [
+                    tweet.text,
+                    posted,
+                    "twitter",
+                    tweet.url or "",
+                    tweet.like_count if tweet.like_count is not None else "",
+                    tweet.retweet_count if tweet.retweet_count is not None else "",
+                    tweet.reply_count if tweet.reply_count is not None else "",
+                    tweet.view_count if tweet.view_count is not None else "",
+                ]
+            )
     file_size = file_path.stat().st_size
 
     async with app_session.begin():

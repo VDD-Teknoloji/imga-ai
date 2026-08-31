@@ -137,11 +137,21 @@ async def test_fetch_tweets_filters_noise_and_keeps_url(
                 "text": "@karacaonline tencerenin dibi 2 ayda tuttu https://t.co/x",
                 "createdAt": "Wed Aug 26 09:00:00 +0000 2026",
                 "inReplyToUsername": "karacaonline",
+                # Migration 0049 — engagement counts, one absent
+                # (replyCount) and one malformed (viewCount) to hit the
+                # None path alongside the happy-path ints.
+                "likeCount": 12,
+                "retweetCount": 3,
+                "viewCount": "not-a-number",
             },
             {
                 "id": "3",
                 "text": "Karaca'nın porselenleri gerçekten kaliteli",
                 "createdAt": "2026-08-26T08:00:00Z",
+                "likeCount": 0,
+                "retweetCount": 0,
+                "replyCount": 0,
+                "viewCount": 99,
             },
         ],
         "has_next_page": False,
@@ -174,6 +184,18 @@ async def test_fetch_tweets_filters_noise_and_keeps_url(
     assert result.tweets[0].url == "https://x.com/musteri/status/2"
     assert result.tweets[1].url == "https://x.com/i/web/status/3"
     assert result.tweets[1].created_at == datetime(2026, 8, 26, 8, 0, tzinfo=UTC)
+    # Migration 0049 — likeCount/retweetCount parsed; absent replyCount
+    # and malformed viewCount both fall back to None (tolerant, never
+    # raises). Second tweet: all four counts present, including the
+    # legitimate 0 case (must NOT be confused with "absent").
+    assert result.tweets[0].like_count == 12
+    assert result.tweets[0].retweet_count == 3
+    assert result.tweets[0].reply_count is None
+    assert result.tweets[0].view_count is None
+    assert result.tweets[1].like_count == 0
+    assert result.tweets[1].retweet_count == 0
+    assert result.tweets[1].reply_count == 0
+    assert result.tweets[1].view_count == 99
 
 
 def test_clean_tweet_text_strips_urls_and_leading_mentions() -> None:
@@ -317,17 +339,31 @@ async def test_twitter_import_happy_path(
     assert file_path.exists()
     with file_path.open(encoding="utf-8-sig", newline="") as fh:
         rows = list(csv.reader(fh))
-    assert rows[0] == ["yorum", "tarih", "kaynak", "bağlantı"]
+    assert rows[0] == [
+        "yorum",
+        "tarih",
+        "kaynak",
+        "bağlantı",
+        "beğeni",
+        "retweet",
+        "yanıt",
+        "görüntülenme",
+    ]
     assert rows[1] == [
         "kargo çok iyi geldi",
         "2026-05-12T08:15:00+00:00",
         "twitter",
         "https://x.com/musteri/status/123",
+        "",
+        "",
+        "",
+        "",
     ]
     # Tarihi çözülemeyen tweet boş 'tarih' hücresiyle iner — parser
     # bunu None'a çevirir, satır yine analiz edilir. Bağlantısız tweet
-    # de boş 'bağlantı' hücresiyle iner.
-    assert rows[2] == ["teslimat kötü ve geç", "", "twitter", ""]
+    # de boş 'bağlantı' hücresiyle iner; bu fake_fetch hiçbir sayaç
+    # vermediği için dört yeni kolon da boş kalır (migration 0049).
+    assert rows[2] == ["teslimat kötü ve geç", "", "twitter", "", "", "", "", ""]
     assert len(rows) == 3
 
     scheduler = app.state.batch_scheduler

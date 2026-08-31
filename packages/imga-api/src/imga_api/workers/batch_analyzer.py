@@ -79,7 +79,7 @@ from imga_api.services.batch_service import (
     BatchAnalyzeService,
     BatchProgress,
 )
-from imga_api.services.data_quality import classify_data_quality
+from imga_api.services.data_quality import classify_data_quality, detect_content_type
 from imga_api.services.fact_parsing import build_fact_row
 from imga_api.services.review_service import ReviewService
 from imga_api.services.tenant_config_service import TenantConfigService
@@ -798,6 +798,8 @@ async def _write_empty_reviews(
             entered_by=parsed.entered_by,
             source=parsed.source,
             source_url=parsed.source_url,
+            content_type=None,  # boş metin hiçbir zaman soru olamaz
+            source_meta=parsed.source_meta,
         )
         app_session.add(review)
         if parsed.facts:
@@ -954,8 +956,7 @@ async def _process_chunk(
                             f"(IMGA_BATCH_BERT_FALLBACK=false): {exc}"
                         ) from exc
                     log.warning(
-                        "unified classifier failed for chunk; falling back "
-                        "to classic pipeline: %s",
+                        "unified classifier failed for chunk; falling back to classic pipeline: %s",
                         exc,
                     )
                     unified_analyses = None
@@ -1173,6 +1174,14 @@ async def _process_chunk(
             # analyzed_at de aynı ingest anına düşsün.
             row_moment = datetime.now(UTC)
 
+            # Migration 0049 — content_type quality_flag'ten (aşağıdaki
+            # row_quality_flag) BAĞIMSIZ: tanımlayıcı bir biçim işareti,
+            # düzeltme guard'ı (FX1, ~satır 1300) onu etkilemez ve intra-
+            # batch dedup dalı (aşağıda, row_quality_flag hesaplanmadan
+            # ÖNCE `continue` eder) da ona ihtiyaç duyar — bu yüzden
+            # burada, text_hash ile aynı anda, koşulsuz hesaplanır.
+            content_type = detect_content_type(parsed.text)
+
             # Sprint 8.3.5.6. Compute the heuristic perspective once per
             # row, reused below for whichever insertion path fires. The
             # auto_create branch routes through ReviewService which runs
@@ -1272,6 +1281,8 @@ async def _process_chunk(
                     entered_by=parsed.entered_by,
                     source=parsed.source,
                     source_url=parsed.source_url,
+                    content_type=content_type,
+                    source_meta=parsed.source_meta,
                 )
                 app_session.add(review)
                 if parsed.facts:
@@ -1358,6 +1369,11 @@ async def _process_chunk(
                     if result.decision == ReviewDecision.SKIPPED_DEDUP
                     else row_quality_flag
                 )
+                # Migration 0049 — content_type/source_meta aynı desene
+                # biner AMA final_quality_flag'in aksine dedup kararından
+                # ETKİLENMEZ: cross-batch bir tekrar da hâlâ aynı soru
+                # biçimini/sayaçları taşır — quality_flag "düşük kalite"
+                # yargısı, content_type yalnızca metnin biçimi.
                 if parsed.facts:
                     fact_row = build_fact_row(parsed.facts)
                     if fact_row is not None:
@@ -1378,6 +1394,8 @@ async def _process_chunk(
                         entered_by=parsed.entered_by,
                         source=parsed.source,
                         source_url=parsed.source_url,
+                        content_type=content_type,
+                        source_meta=parsed.source_meta,
                     )
                 )
                 if result.decision == ReviewDecision.CREATE:
@@ -1429,6 +1447,8 @@ async def _process_chunk(
                     entered_by=parsed.entered_by,
                     source=parsed.source,
                     source_url=parsed.source_url,
+                    content_type=content_type,
+                    source_meta=parsed.source_meta,
                 )
                 app_session.add(review)
                 if parsed.facts:
@@ -1645,7 +1665,7 @@ async def _build_tenant_classifier(
             selection = await load_active_llm_keys(session, tenant_id)
     except Exception:
         log.exception(
-            "batch worker: failed to load tenant LLM keys; " "falling back to default classifier",
+            "batch worker: failed to load tenant LLM keys; falling back to default classifier",
             extra={"tenant_id": str(tenant_id)},
         )
         return None
@@ -1818,7 +1838,7 @@ async def _build_unified_context(
                     system_prompt_override = template_row.system_prompt
             except Exception:
                 log.warning(
-                    "unified prompt override lookup failed; using " "code default system prompt",
+                    "unified prompt override lookup failed; using code default system prompt",
                     extra={"tenant_id": str(tenant_id)},
                 )
     except Exception:
@@ -1850,7 +1870,7 @@ async def _build_unified_context(
         provider=selection.provider,
     )
     log.info(
-        "batch worker: unified classifier active (model=%s, keys=%d, " "corrections=%d)",
+        "batch worker: unified classifier active (model=%s, keys=%d, corrections=%d)",
         engine.model_name,
         len(keys),
         len(store.exact),
@@ -2090,8 +2110,7 @@ async def _fetch_fact_mapping(tenant_id: UUID, context: WorkerContext) -> dict[s
             rows = (await session.execute(stmt)).all()
     except Exception:
         log.exception(
-            "batch worker: fact mapping load failed; "
-            "reviews will land without review_facts rows",
+            "batch worker: fact mapping load failed; reviews will land without review_facts rows",
             extra={"tenant_id": str(tenant_id)},
         )
         return {}

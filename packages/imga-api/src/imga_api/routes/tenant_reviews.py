@@ -42,6 +42,7 @@ from imga_api.services.review_list_service import (
     ReviewListFilters,
     ReviewListItem,
     ReviewListService,
+    ReviewSummary,
 )
 from imga_api.workers.reanalyzer import (
     NoReanalysisCandidatesError,
@@ -111,6 +112,8 @@ class ReviewItemResponse(BaseModel):
     # 2026-08-26 (migration 0047) — kaynaktaki kalıcı bağlantı (tweet
     # URL'si vb.). NULL = kaynakta bağlantı yok.
     source_url: str | None = None
+    # W2-A — içerik türü ("question" | None). NULL = normal yorum.
+    content_type: str | None = None
 
 
 class ReviewListResponse(BaseModel):
@@ -127,6 +130,65 @@ class DimensionValueItem(BaseModel):
 
 class DimensionValuesResponse(BaseModel):
     values: list[DimensionValueItem]
+
+
+# --- W2-A — GET /tenants/me/reviews/summary -------------------------
+
+
+class NpsSummaryBlock(BaseModel):
+    promoter: int
+    passive: int
+    detractor: int
+    with_nps: int
+    score: float | None
+
+
+class QualitySummaryBlock(BaseModel):
+    clean: int
+    duplicate: int
+    empty: int
+    informational: int
+    meaningless: int
+
+
+class CategoryCountItem(BaseModel):
+    code: str
+    count: int
+    negative_count: int
+
+
+class EnteredByCountItem(BaseModel):
+    value: str
+    total: int
+    flagged: int
+    question: int
+    negative: int
+
+
+class DailyCountItem(BaseModel):
+    date: str
+    count: int
+    negative: int
+
+
+class TopQuestionItem(BaseModel):
+    text: str
+    count: int
+
+
+class ReviewSummaryResponse(BaseModel):
+    total: int
+    sentiment: dict[str, int]
+    avg_sentiment_score: float | None
+    nps: NpsSummaryBlock
+    sources: list[DimensionValueItem]
+    categories: list[CategoryCountItem]
+    quality: QualitySummaryBlock
+    question_count: int
+    top_questions: list[TopQuestionItem]
+    entered_by: list[EnteredByCountItem]
+    daily: list[DailyCountItem]
+    ticket_linked: int
 
 
 class SentimentBlock(BaseModel):
@@ -197,6 +259,7 @@ class ReviewDetailResponse(BaseModel):
     experience_type: str | None = None
     facts: ReviewFactsBlock | None = None
     source_url: str | None = None
+    content_type: str | None = None
 
 
 # --- endpoints -----------------------------------------------------
@@ -315,6 +378,7 @@ async def list_reviews(
             "alan devre dışı kalır."
         ),
     ),
+    content_types: str | None = Query(default=None, description="CSV: question"),
     limit: int = Query(default=100, ge=1, le=500),
     offset: int = Query(default=0, ge=0),
     order_by: Literal["created_at", "sentiment_score"] = "created_at",
@@ -344,6 +408,7 @@ async def list_reviews(
         search=search,
         quality_flags=_split_csv(quality_flags),
         include_flagged=include_flagged,
+        content_types=_split_csv(content_types),
         order_by=order_by,
         order=order,
     )
@@ -385,7 +450,7 @@ async def list_dimension_values(
     field: str = Query(
         ...,
         description=(
-            "channel | business_segment | product_line | " "customer_tier | entered_by | source"
+            "channel | business_segment | product_line | customer_tier | entered_by | source"
         ),
     ),
     include_flagged: bool = Query(
@@ -417,6 +482,168 @@ async def list_dimension_values(
     return DimensionValuesResponse(
         values=[DimensionValueItem(value=r.value, count=r.count) for r in rows]
     )
+
+
+@router.get(
+    "/summary",
+    response_model=ReviewSummaryResponse,
+    summary="Filter-reactive summary panel over the tenant's analyzed-text archive.",
+    description=(
+        "W2-A. Same filter surface as GET /tenants/me/reviews (minus "
+        "pagination/ordering) collapsed into one round trip: sentiment "
+        "distribution, average score, NPS, top sources/categories, "
+        "quality-flag buckets, question count + top question texts, "
+        "an entered_by matrix and a 90-day daily trend. "
+        "``include_flagged`` defaults to True like the list — this is "
+        "an archive panel, not an analytics report."
+    ),
+)
+async def review_summary(
+    current: Annotated[CurrentUser, _AnyMember],
+    app_session: Annotated[AsyncSession, Depends(get_app_session)],
+    date_from: datetime | None = None,
+    date_to: datetime | None = None,
+    sentiment_labels: str | None = Query(
+        default=None,
+        description="CSV: NEGATIF,POZITIF,NÖTR",
+    ),
+    has_ticket: bool | None = None,
+    batch_job_id: UUID | None = None,
+    source_types: str | None = Query(default=None, description="CSV: manual,batch"),
+    decisions: str | None = Query(
+        default=None,
+        description="CSV: create,skipped_belirsiz,skipped_mode,skipped_threshold,skipped_dedup",
+    ),
+    perspective_codes: str | None = Query(
+        default=None,
+        description=(
+            "CSV of CategoryTaxonomy.code values. The literal "
+            "'__unmatched__' filters to rows where the heuristic didn't "
+            "match any code (NULL company_perspective_code)."
+        ),
+    ),
+    primary_categories: str | None = Query(
+        default=None,
+        description=(
+            "Sprint 8.3.10 — CSV of BERT primary_category codes. The "
+            "/insights cross-analysis heatmap drill-down passes this "
+            "to scope the listing to the clicked cell's category."
+        ),
+    ),
+    channels: str | None = Query(
+        default=None,
+        description=(
+            "CSV of Review.channel raw values (taşıyıcı). "
+            "Case/whitespace-insensitive — matched via lower(trim(...))."
+        ),
+    ),
+    business_segments: str | None = Query(
+        default=None,
+        description="CSV of Review.business_segment raw values (departman).",
+    ),
+    product_lines: str | None = Query(
+        default=None,
+        description="CSV of Review.product_line raw values (talep tipi).",
+    ),
+    customer_tiers: str | None = Query(
+        default=None,
+        description="CSV of Review.customer_tier raw values (ticket kategori).",
+    ),
+    entered_bys: str | None = Query(
+        default=None,
+        description="CSV of Review.entered_by raw values (temsilci).",
+    ),
+    sources: str | None = Query(
+        default=None,
+        description="CSV of Review.source raw values (Email/Portal/Phone...).",
+    ),
+    hour_of_day: int | None = Query(
+        default=None,
+        ge=0,
+        le=23,
+        description=(
+            "Sprint 9.5 B1 — heatmap drilldown filter. EXTRACT(HOUR "
+            "FROM created_at) match. Frontend passes the cell's "
+            "x_keys/y_keys value when xAxis or yAxis = hour_of_day."
+        ),
+    ),
+    day_of_week: int | None = Query(
+        default=None,
+        ge=0,
+        le=6,
+        description=(
+            "Sprint 9.5 B1 — EXTRACT(DOW FROM created_at) match. "
+            "Postgres DOW: 0=Sunday..6=Saturday."
+        ),
+    ),
+    week_of_year: int | None = Query(
+        default=None,
+        ge=1,
+        le=53,
+        description="Sprint 9.5 B1 — EXTRACT(WEEK FROM created_at) match.",
+    ),
+    month: int | None = Query(
+        default=None,
+        ge=1,
+        le=12,
+        description="Sprint 9.5 B1 — EXTRACT(MONTH FROM created_at) match.",
+    ),
+    search: str | None = Query(default=None, max_length=200),
+    quality_flags: str | None = Query(
+        default=None,
+        description=(
+            "CSV: duplicate,empty,informational,meaningless. Verilirse "
+            "yalnız bu bayraklara sahip satırlar döner (ör. 'sadece "
+            "bilgilendirmeleri göster')."
+        ),
+    ),
+    include_flagged: bool = Query(
+        default=True,
+        description=(
+            "Düşük kaliteli (bayraklı) yorumları özete dahil et. "
+            "Liste bir arşivdir; varsayılan HEPSİ (analitik "
+            "varsayılanından farklı). quality_flags verilmişse bu "
+            "alan devre dışı kalır."
+        ),
+    ),
+    content_types: str | None = Query(default=None, description="CSV: question"),
+) -> ReviewSummaryResponse:
+    # NOTE: this route MUST stay registered before GET /{review_id} —
+    # Starlette matches path patterns in registration order and
+    # "summary" would otherwise be swallowed by {review_id} (a
+    # str-typed path segment) and 422 on UUID coercion instead of
+    # reaching this handler. Same reasoning as dimension-values above.
+    tenant_id = _require_active_tenant(current)
+    filters = ReviewListFilters(
+        date_from=date_from,
+        date_to=date_to,
+        sentiment_labels=_split_csv(sentiment_labels),
+        has_ticket=has_ticket,
+        batch_job_id=batch_job_id,
+        source_types=_split_csv(source_types),
+        decisions=_split_csv(decisions),
+        perspective_codes=_split_csv(perspective_codes),
+        primary_categories=_split_csv(primary_categories),
+        channels=_split_csv(channels),
+        business_segments=_split_csv(business_segments),
+        product_lines=_split_csv(product_lines),
+        customer_tiers=_split_csv(customer_tiers),
+        entered_bys=_split_csv(entered_bys),
+        sources=_split_csv(sources),
+        hour_of_day=hour_of_day,
+        day_of_week=day_of_week,
+        week_of_year=week_of_year,
+        month=month,
+        search=search,
+        quality_flags=_split_csv(quality_flags),
+        include_flagged=include_flagged,
+        content_types=_split_csv(content_types),
+    )
+    async with app_session.begin():
+        await bind_tenant(app_session, current)
+        service = ReviewListService(app_session)
+        summary = await service.summarize(tenant_id=tenant_id, filters=filters)
+    return _to_summary_response(summary)
 
 
 @router.get(
@@ -506,6 +733,7 @@ async def get_review(
             experience_type=review.experience_type,
             facts=facts_block,
             source_url=review.source_url,
+            content_type=review.content_type,
         )
 
 
@@ -788,4 +1016,48 @@ def _to_item_response(item: ReviewListItem) -> ReviewItemResponse:
         company_perspective_label_tr=item.company_perspective_label_tr,
         experience_type=item.experience_type,
         source_url=item.source_url,
+        content_type=item.content_type,
+    )
+
+
+def _to_summary_response(summary: ReviewSummary) -> ReviewSummaryResponse:
+    return ReviewSummaryResponse(
+        total=summary.total,
+        sentiment=summary.sentiment,
+        avg_sentiment_score=summary.avg_sentiment_score,
+        nps=NpsSummaryBlock(
+            promoter=summary.nps.promoter,
+            passive=summary.nps.passive,
+            detractor=summary.nps.detractor,
+            with_nps=summary.nps.with_nps,
+            score=summary.nps.score,
+        ),
+        sources=[DimensionValueItem(value=s.value, count=s.count) for s in summary.sources],
+        categories=[
+            CategoryCountItem(code=c.code, count=c.count, negative_count=c.negative_count)
+            for c in summary.categories
+        ],
+        quality=QualitySummaryBlock(
+            clean=summary.quality.clean,
+            duplicate=summary.quality.duplicate,
+            empty=summary.quality.empty,
+            informational=summary.quality.informational,
+            meaningless=summary.quality.meaningless,
+        ),
+        question_count=summary.question_count,
+        top_questions=[TopQuestionItem(text=q.text, count=q.count) for q in summary.top_questions],
+        entered_by=[
+            EnteredByCountItem(
+                value=e.value,
+                total=e.total,
+                flagged=e.flagged,
+                question=e.question,
+                negative=e.negative,
+            )
+            for e in summary.entered_by
+        ],
+        daily=[
+            DailyCountItem(date=d.date, count=d.count, negative=d.negative) for d in summary.daily
+        ],
+        ticket_linked=summary.ticket_linked,
     )

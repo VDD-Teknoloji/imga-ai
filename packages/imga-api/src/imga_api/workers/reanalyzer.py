@@ -60,7 +60,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from imga_api.services.audit_service import AuditService
 from imga_api.services.batch_service import BatchAnalyzeService, BatchProgress
-from imga_api.services.data_quality import classify_data_quality
+from imga_api.services.data_quality import classify_data_quality, detect_content_type
 from imga_api.workers.batch_analyzer import (
     WorkerContext,
     _apply_corrections,
@@ -141,9 +141,7 @@ def _not_human_corrected() -> ColumnElement[bool]:
     ihtiyacı olanlar tam da onlar. NULL dalı bu yüzden açıkça
     yazılır."""
     contains = [
-        Review.overrides_applied.op("@>")(
-            text(f"'[{{\"layer\": \"{layer}\"}}]'::jsonb")
-        )
+        Review.overrides_applied.op("@>")(text(f'\'[{{"layer": "{layer}"}}]\'::jsonb'))
         for layer in _CORRECTION_LAYERS
     ]
     return or_(
@@ -199,9 +197,9 @@ async def count_candidates(
     """İş satırının ``total_rows``'u. Route bunu kullanır; işçi aynı
     yüklemle listeyi çeker — ikisi ayrışırsa ilerleme çubuğu asla
     %100'e varmaz."""
-    stmt = candidate_stmt(
-        tenant_id=tenant_id, source_batch_job_id=source_batch_job_id
-    ).order_by(None)
+    stmt = candidate_stmt(tenant_id=tenant_id, source_batch_job_id=source_batch_job_id).order_by(
+        None
+    )
     count_stmt = select(func.count()).select_from(stmt.subquery())
     return int((await session.execute(count_stmt)).scalar_one() or 0)
 
@@ -235,9 +233,7 @@ async def create_reanalysis_job(
             "düzeltmesi yapılmış yorumlar bilinçli olarak dışarıda "
             "bırakılır.)"
         )
-    label = (
-        str(source_batch_job_id) if source_batch_job_id else REANALYSIS_SCOPE_ALL
-    )
+    label = str(source_batch_job_id) if source_batch_job_id else REANALYSIS_SCOPE_ALL
     return await BatchAnalyzeService(session, audit).create_job(
         tenant_id=tenant_id,
         triggered_by_user_id=triggered_by_user_id,
@@ -267,36 +263,29 @@ async def process_reanalysis_job(job_id: UUID, context: WorkerContext) -> None:
         return
 
     async with context.global_semaphore, context.lock_for(tenant_id):
-        log.info(
-            "reanalysis worker: starting job %s (tenant %s)", job_id, tenant_id
-        )
+        log.info("reanalysis worker: starting job %s (tenant %s)", job_id, tenant_id)
         try:
             await _run_reanalysis(job_id, tenant_id, context)
         except Exception as exc:
             log.exception("reanalysis worker: job %s crashed: %s", job_id, exc)
-            await _record_catastrophic_failure(
-                job_id, tenant_id, context, reason=str(exc)
-            )
+            await _record_catastrophic_failure(job_id, tenant_id, context, reason=str(exc))
             # Çökme anına kadar commit edilen chunk'lar satırları
             # güncellemiş olabilir — önbellekler bayat kalmasın.
             await _bust_stale_caches(tenant_id, context)
 
 
-async def _run_reanalysis(
-    job_id: UUID, tenant_id: UUID, context: WorkerContext
-) -> None:
+async def _run_reanalysis(job_id: UUID, tenant_id: UUID, context: WorkerContext) -> None:
     job_started_at = time.monotonic()
 
     async with context.admin_session_factory() as admin_session, admin_session.begin():
         await set_current_tenant(admin_session, tenant_id)
         audit = AuditService(admin_session)
-        job = await BatchAnalyzeService(admin_session, audit).mark_processing(
-            job_id
-        )
+        job = await BatchAnalyzeService(admin_session, audit).mark_processing(job_id)
         if job.status != BatchJobStatus.PROCESSING:
             log.info(
                 "reanalysis worker: job %s already terminal (%s); skipping",
-                job_id, job.status,
+                job_id,
+                job.status,
             )
             return
         source_batch_job_id = reanalysis_scope(job.file_path)
@@ -322,9 +311,7 @@ async def _run_reanalysis(
 
     async with context.admin_session_factory() as admin_session, admin_session.begin():
         await set_current_tenant(admin_session, tenant_id)
-        taxonomy_snapshot = await _load_taxonomy_payload(
-            admin_session, tenant_id
-        )
+        taxonomy_snapshot = await _load_taxonomy_payload(admin_session, tenant_id)
         candidate_ids = list(
             (
                 await admin_session.execute(
@@ -371,9 +358,7 @@ async def _run_reanalysis(
             # say, devam et" geçidi YOK: yüzlerce parça tek tek
             # başarısızlık kaydına dönmesin diye iş burada durur ve
             # checkpoint'e kadarki güncellemeler kalıcı olur.
-            log.exception(
-                "reanalysis worker: chunk failed permanently: %s", exc
-            )
+            log.exception("reanalysis worker: chunk failed permanently: %s", exc)
             await _record_catastrophic_failure(
                 job_id,
                 tenant_id,
@@ -436,9 +421,7 @@ async def _process_reanalysis_chunk(
         await set_current_tenant(session, tenant_id)
         rows = (
             await session.execute(
-                select(Review.id, Review.text)
-                .where(Review.id.in_(chunk_ids))
-                .order_by(Review.id)
+                select(Review.id, Review.text).where(Review.id.in_(chunk_ids)).order_by(Review.id)
             )
         ).all()
     if not rows:
@@ -447,24 +430,20 @@ async def _process_reanalysis_chunk(
     ids = [r.id for r in rows]
     texts = [r.text for r in rows]
 
-    few_shot, semantic_hits = await _few_shot_for_chunk(
-        unified_ctx, texts, context, tenant_id
-    )
+    few_shot, semantic_hits = await _few_shot_for_chunk(unified_ctx, texts, context, tenant_id)
     perspectives: list[str | None] = []
     experiences: list[str | None] = []
     stats_sink: dict[str, int] = {}
-    analyses: list[AnalysisResult] = (
-        await context.pipeline.analyze_batch_unified_async(
-            texts,
-            engine=unified_ctx.engine,
-            available_categories=unified_ctx.available_categories,
-            few_shot=few_shot,
-            stats_sink=stats_sink,
-            perspective_options=unified_ctx.perspective_options,
-            perspective_sink=perspectives,
-            category_descriptions=unified_ctx.category_descriptions,
-            experience_sink=experiences,
-        )
+    analyses: list[AnalysisResult] = await context.pipeline.analyze_batch_unified_async(
+        texts,
+        engine=unified_ctx.engine,
+        available_categories=unified_ctx.available_categories,
+        few_shot=few_shot,
+        stats_sink=stats_sink,
+        perspective_options=unified_ctx.perspective_options,
+        perspective_sink=perspectives,
+        category_descriptions=unified_ctx.category_descriptions,
+        experience_sink=experiences,
     )
     # 2026-08-18 adversarial inceleme FX1 (b) — ``_apply_corrections``
     # (analyses, correction_overrides) tuple'ı döner (bkz.
@@ -475,23 +454,13 @@ async def _process_reanalysis_chunk(
     # kendi tahmini onun üzerine YAZILIYORDU. Artık aşağıdaki döngü
     # correction_overrides'ı tüketir; batch_analyzer._process_chunk
     # (satır ~1154-1197) davranışıyla birebir parite.
-    analyses, correction_overrides = _apply_corrections(
-        analyses, texts, unified_ctx, semantic_hits
-    )
+    analyses, correction_overrides = _apply_corrections(analyses, texts, unified_ctx, semantic_hits)
 
     model_name = str(unified_ctx.engine.model_name)
     succeeded = 0
     async with context.app_session_factory() as session, session.begin():
         await set_current_tenant(session, tenant_id)
-        objects = (
-            (
-                await session.execute(
-                    select(Review).where(Review.id.in_(ids))
-                )
-            )
-            .scalars()
-            .all()
-        )
+        objects = (await session.execute(select(Review).where(Review.id.in_(ids)))).scalars().all()
         by_id = {obj.id: obj for obj in objects}
         for index, review_id in enumerate(ids):
             review = by_id.get(review_id)
@@ -504,9 +473,7 @@ async def _process_reanalysis_chunk(
             review.sentiment_score = float(analysis.sentiment_score)
             if analysis.categorization is not None:
                 review.primary_category = analysis.categorization.primary
-                review.primary_confidence = float(
-                    analysis.categorization.primary_confidence
-                )
+                review.primary_confidence = float(analysis.categorization.primary_confidence)
             # 2026-08-18 adversarial inceleme FX1 (b) — insan kararı
             # (düzeltme KB eşleşmesi) LLM'in kendi tahmininin ÖNÜNE
             # geçer; batch_analyzer._process_chunk (satır ~1154-1197)
@@ -514,17 +481,11 @@ async def _process_reanalysis_chunk(
             # taksonomi üyeliği KONTROL EDİLMEZ — insan kararı koşulsuz
             # güvenilir (batch_analyzer'daki aynı asimetri).
             correction_override = (
-                correction_overrides[index]
-                if index < len(correction_overrides)
-                else None
+                correction_overrides[index] if index < len(correction_overrides) else None
             )
-            llm_perspective = (
-                perspectives[index] if index < len(perspectives) else None
-            )
+            llm_perspective = perspectives[index] if index < len(perspectives) else None
             correction_perspective = (
-                correction_override.perspective_code
-                if correction_override is not None
-                else None
+                correction_override.perspective_code if correction_override is not None else None
             )
             if correction_perspective is not None:
                 review.company_perspective_code = correction_perspective
@@ -534,9 +495,7 @@ async def _process_reanalysis_chunk(
                 correction_override.experience_type
                 if correction_override is not None
                 and correction_override.experience_type is not None
-                else (
-                    experiences[index] if index < len(experiences) else None
-                )
+                else (experiences[index] if index < len(experiences) else None)
             )
             # 2026-08-18 adversarial inceleme FX1 (a) — quality_flag
             # backfill. 'duplicate' bayrağı yalnız yükleme işçisinin
@@ -548,10 +507,16 @@ async def _process_reanalysis_chunk(
             # eski bayrağı temizler).
             if review.quality_flag != "duplicate":
                 review.quality_flag = (
-                    None
-                    if correction_override is not None
-                    else classify_data_quality(review.text)
+                    None if correction_override is not None else classify_data_quality(review.text)
                 )
+            # Migration 0049 — content_type quality_flag'in İKİ guard'ına
+            # (yukarıdaki 'duplicate' korunumu VE düzeltme eşleşen
+            # satırlarda None'a sabitleme) TABİ DEĞİLDİR: tanımlayıcı bir
+            # biçim işareti, kalite yargısı değil. 'duplicate' bayraklı
+            # bir satır da, insan tarafından düzeltilmiş bir satır da
+            # hâlâ soru biçiminde yazılmış olabilir — her iki durumda da
+            # koşulsuz yeniden hesaplanır.
+            review.content_type = detect_content_type(review.text)
             # JSONB listesi MutableList değil — yerinde append ORM'e
             # görünmez, satır kirli sayılmaz ve UPDATE hiç çıkmaz.
             # Yeni liste ATANIR.
@@ -586,8 +551,7 @@ def _rewritten_overrides(
     kept: list[dict[str, object]] = [
         entry
         for entry in (existing or [])
-        if isinstance(entry, dict)
-        and str(entry.get("layer", "")).startswith("user_correction")
+        if isinstance(entry, dict) and str(entry.get("layer", "")).startswith("user_correction")
     ]
     return [
         *kept,
@@ -626,9 +590,7 @@ async def _bust_snapshot_cache(session: AsyncSession, tenant_id: UUID) -> None:
     hesaplar."""
     from imga_db.models import ExecutiveSnapshot
 
-    await session.execute(
-        delete(ExecutiveSnapshot).where(ExecutiveSnapshot.tenant_id == tenant_id)
-    )
+    await session.execute(delete(ExecutiveSnapshot).where(ExecutiveSnapshot.tenant_id == tenant_id))
 
 
 # Yorumlardan türeyen Redis önbelleklerinin anahtar önekleri; hepsi

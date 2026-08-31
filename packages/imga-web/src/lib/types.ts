@@ -450,6 +450,9 @@ export interface ReviewListItem {
   // Kaynaktaki kalıcı bağlantı (tweet URL'si, pazar yeri yorum linki);
   // null = kaynakta bağlantı yok. Kart "Tweeti aç / Kaynağı aç" düğmesi.
   source_url?: string | null;
+  // W2-A — içerik türü ("question" | null). NULL = normal yorum. Liste
+  // kartında "Soru" rozeti, /reviews/summary panelinde ayrı sayaç.
+  content_type?: string | null;
 }
 
 export interface ReviewListResponse {
@@ -468,6 +471,8 @@ export interface ReviewDetail {
   source_type: ReviewSourceType;
   batch_job_id: string | null;
   source_url?: string | null;
+  // W2-A — bkz. ReviewListItem.content_type.
+  content_type?: string | null;
   sentiment: {
     label: string;
     score: number;
@@ -541,6 +546,10 @@ export interface ReviewListFilters {
    *  farklı) — yalnız açıkça false gönderildiğinde "yalnız geçerli"
    *  filtresi devreye girer. */
   include_flagged?: boolean;
+  /** W2-A — CSV: yalnız "question" bugün geçerli. reviews.content_type
+   *  ile filtreler; kalite bayrağı DEĞİL — kalite ile birlikte de
+   *  seçilebilir (soru aynı zamanda negatif olabilir). */
+  content_types?: string[];
   limit?: number;
   offset?: number;
   order_by?: "created_at" | "sentiment_score";

@@ -60,6 +60,9 @@
   --color-chart-3: var(--chart-3);
   --color-chart-2: var(--chart-2);
   --color-chart-1: var(--chart-1);
+  --color-sentiment-negative: var(--sentiment-negative);
+  --color-sentiment-neutral: var(--sentiment-neutral);
+  --color-sentiment-positive: var(--sentiment-positive);
   --color-ring: var(--ring);
   --color-input: var(--input);
   --color-border: var(--border);
@@ -152,6 +155,12 @@
   --chart-3: oklch(0.62 0.18 195); /* teal */
   --chart-4: oklch(0.58 0.25 17); /* rose */
   --chart-5: oklch(0.55 0.1 290); /* sakin mor */
+  /* Duygu üçlüsü — 2026-09-01: 4+ dosyada kopyalanan #dc2626/#737373/
+   * #16a34a hex'lerinin token karşılığı. Yeni grafikler BUNLARI kullanır;
+   * eski grafiklerin geçişi kademeli (bkz. docs/analysis/2026-09-01). */
+  --sentiment-negative: oklch(0.577 0.215 27.3); /* #dc2626 */
+  --sentiment-neutral: oklch(0.556 0 0); /* #737373 */
+  --sentiment-positive: oklch(0.627 0.17 149.2); /* #16a34a */
   --radius: 0.875rem; /* 14px base */
   --sidebar: oklch(0.23 0.04 265); /* marka laciverti — koyu rail */
   --sidebar-foreground: oklch(0.93 0.008 260); /* kırık beyaz */
@@ -193,6 +202,10 @@
   --chart-3: oklch(0.7 0.16 195);
   --chart-4: oklch(0.74 0.2 17);
   --chart-5: oklch(0.68 0.1 290);
+  /* Duygu üçlüsü — koyu zeminde bir tık aydınlatılmış. */
+  --sentiment-negative: oklch(0.68 0.19 25);
+  --sentiment-neutral: oklch(0.65 0 0);
+  --sentiment-positive: oklch(0.72 0.16 150);
   --sidebar: oklch(0.17 0.03 265); /* zeminden bir tık koyu lacivert */
   --sidebar-foreground: oklch(0.93 0.008 260);
   --sidebar-primary: oklch(0.72 0.17 48);

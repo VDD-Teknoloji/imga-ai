@@ -17,6 +17,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useState } from "react";
 
 import { BatchFilterDropdown } from "@/components/reviews/batch-filter-dropdown";
+import { SummaryPanel } from "@/components/reviews/summary-panel";
 import { Button } from "@/components/ui/button";
 import { DateField } from "@/components/ui/date-field";
 import {
@@ -172,7 +173,7 @@ export default function ReviewsPage() {
 function ReviewsPageSkeleton() {
   const { t } = useTranslation();
   return (
-    <main className="mx-auto w-full max-w-5xl space-y-6 px-4 py-6 md:px-8 md:py-10">
+    <main className="mx-auto w-full max-w-7xl space-y-6 px-4 py-6 md:px-8 md:py-10">
       <header className="space-y-2">
         <h1 className="text-2xl font-semibold tracking-tight md:text-3xl">
           {t("reviews.list.title")}
@@ -198,6 +199,7 @@ function readFiltersFromParams(params: URLSearchParams): ReviewListFiltersExt {
   const primaryCatsRaw = params.get("primary_categories");
   const decisionsRaw = params.get("decisions");
   const qualityFlagsRaw = params.get("quality_flags");
+  const contentTypesRaw = params.get("content_types");
   const sourceTypes = sourceRaw
     ? (sourceRaw.split(",").filter(Boolean) as ReviewSourceType[])
     : undefined;
@@ -240,6 +242,9 @@ function readFiltersFromParams(params: URLSearchParams): ReviewListFiltersExt {
     // applyFilters yalnız açık false yazar (bkz. aşağı); herhangi
     // başka bir değer varsayılana (undefined = true) düşer.
     include_flagged: params.get("include_flagged") === "false" ? false : undefined,
+    // W3 — "Soru" toggle'ı. Bugün tek değer ("question") ama backend
+    // CSV kabul ediyor; dizi olarak tutuluyor (diğer filtrelerle aynı desen).
+    content_types: contentTypesRaw?.split(",").filter(Boolean),
     ...dims,
   };
 }
@@ -277,6 +282,7 @@ function filtersEq(a: ReviewListFiltersExt, b: ReviewListFiltersExt): boolean {
     a.search === b.search &&
     arrEq(a.quality_flags, b.quality_flags) &&
     a.include_flagged === b.include_flagged &&
+    arrEq(a.content_types, b.content_types) &&
     DIMENSION_FILTER_CONFIGS.every((cfg) => arrEq(a[cfg.filterKey], b[cfg.filterKey]))
   );
 }
@@ -350,6 +356,9 @@ function ReviewsPageInner() {
       } else if (next.include_flagged === false) {
         params.set("include_flagged", "false");
       }
+      if (next.content_types?.length) {
+        params.set("content_types", next.content_types.join(","));
+      }
       // 2026-08-20 — 6 boyut filtresi, tek döngüde yazılıyor.
       for (const cfg of DIMENSION_FILTER_CONFIGS) {
         const vals = next[cfg.filterKey];
@@ -393,7 +402,7 @@ function ReviewsPageInner() {
   const total = reviews.data?.pages[0]?.total ?? 0;
 
   return (
-    <main className="mx-auto w-full max-w-5xl space-y-6 px-4 py-6 md:px-8 md:py-10">
+    <main className="mx-auto w-full max-w-7xl space-y-6 px-4 py-6 md:px-8 md:py-10">
       <header className="space-y-1.5">
         <h1 className="text-2xl font-semibold tracking-tight md:text-3xl">
           {t("reviews.list.title")}
@@ -412,107 +421,126 @@ function ReviewsPageInner() {
         </p>
       </header>
 
-      <div className="flex flex-wrap items-center gap-2">
-        <SentimentFilterDropdown
-          selected={filters.sentiment_labels ?? []}
-          onApply={(next) =>
-            applyFilters({
-              ...filters,
-              sentiment_labels: next.length > 0 ? next : undefined,
-            })
-          }
-        />
-        <PerspectiveFilterDropdown
-          selected={filters.perspective_codes ?? []}
-          onApply={(next) =>
-            applyFilters({
-              ...filters,
-              perspective_codes: next.length > 0 ? next : undefined,
-            })
-          }
-        />
-        <DecisionsFilterDropdown
-          selected={filters.decisions ?? []}
-          onApply={(next) =>
-            applyFilters({
-              ...filters,
-              decisions: next.length > 0 ? (next as ReviewDecision[]) : undefined,
-            })
-          }
-        />
-        <QualityFilterDropdown
-          selected={qualitySelectionFor(filters)}
-          onApply={applyQualitySelection}
-        />
-        {DIMENSION_FILTER_CONFIGS.map((cfg) => (
-          <DimensionFilterDropdown
-            key={cfg.field}
-            field={cfg.field}
-            labelKey={cfg.labelKey}
-            selected={filters[cfg.filterKey] ?? []}
-            onApply={(next) =>
-              applyFilters({
-                ...filters,
-                [cfg.filterKey]: next.length > 0 ? next : undefined,
-              })
-            }
-          />
-        ))}
-        <DateRangeFilter
-          dateFrom={filters.date_from ?? ""}
-          dateTo={filters.date_to ?? ""}
-          onChange={(dateFrom, dateTo) =>
-            applyFilters({
-              ...filters,
-              date_from: dateFrom || undefined,
-              date_to: dateTo || undefined,
-            })
-          }
-        />
-        <BatchFilterDropdown
-          selected={filters.batch_job_id}
-          onChange={(next) =>
-            applyFilters({ ...filters, batch_job_id: next ?? undefined })
-          }
-          inline
-        />
-        <FilterPills filters={filters} onApply={applyFilters} />
+      {/* W3 — sol: filtreler + liste (davranış AYNEN korunur); sağ:
+          filtreye tepki veren özet paneli. Mobilde grid devre dışı,
+          DOM sırası zaten panel-liste-sonra verir (order-* gerekmez).
+          Panelin lg:sticky'si çalışır çünkü app-shell içerik bölmesi
+          kendi overflow-y-auto'sunu taşıyor (bkz. app-shell.tsx). */}
+      <div className="lg:grid lg:grid-cols-[minmax(0,1fr)_340px] lg:items-start lg:gap-6">
+        <div className="space-y-6">
+          <div className="flex flex-wrap items-center gap-2">
+            <SentimentFilterDropdown
+              selected={filters.sentiment_labels ?? []}
+              onApply={(next) =>
+                applyFilters({
+                  ...filters,
+                  sentiment_labels: next.length > 0 ? next : undefined,
+                })
+              }
+            />
+            <PerspectiveFilterDropdown
+              selected={filters.perspective_codes ?? []}
+              onApply={(next) =>
+                applyFilters({
+                  ...filters,
+                  perspective_codes: next.length > 0 ? next : undefined,
+                })
+              }
+            />
+            <DecisionsFilterDropdown
+              selected={filters.decisions ?? []}
+              onApply={(next) =>
+                applyFilters({
+                  ...filters,
+                  decisions: next.length > 0 ? (next as ReviewDecision[]) : undefined,
+                })
+              }
+            />
+            <QualityFilterDropdown
+              selected={qualitySelectionFor(filters)}
+              onApply={applyQualitySelection}
+            />
+            <QuestionsToggle
+              active={(filters.content_types ?? []).includes("question")}
+              onToggle={(next) =>
+                applyFilters({ ...filters, content_types: next ? ["question"] : undefined })
+              }
+            />
+            {DIMENSION_FILTER_CONFIGS.map((cfg) => (
+              <DimensionFilterDropdown
+                key={cfg.field}
+                field={cfg.field}
+                labelKey={cfg.labelKey}
+                selected={filters[cfg.filterKey] ?? []}
+                onApply={(next) =>
+                  applyFilters({
+                    ...filters,
+                    [cfg.filterKey]: next.length > 0 ? next : undefined,
+                  })
+                }
+              />
+            ))}
+            <DateRangeFilter
+              dateFrom={filters.date_from ?? ""}
+              dateTo={filters.date_to ?? ""}
+              onChange={(dateFrom, dateTo) =>
+                applyFilters({
+                  ...filters,
+                  date_from: dateFrom || undefined,
+                  date_to: dateTo || undefined,
+                })
+              }
+            />
+            <BatchFilterDropdown
+              selected={filters.batch_job_id}
+              onChange={(next) =>
+                applyFilters({ ...filters, batch_job_id: next ?? undefined })
+              }
+              inline
+            />
+            <FilterPills filters={filters} onApply={applyFilters} />
+          </div>
+
+          {reviews.isLoading ? (
+            <div className="text-muted-foreground flex items-center gap-2 p-6 text-sm">
+              <Loader2 className="size-4 animate-spin" /> {t("common.loading")}
+            </div>
+          ) : items.length === 0 ? (
+            <div className="bg-card ring-foreground/5 rounded-3xl p-10 text-center ring-1">
+              <p className="text-base font-medium">{t("reviews.list.emptyTitle")}</p>
+              <p className="text-muted-foreground mt-1 text-sm">
+                {t("reviews.list.emptyHint")}
+              </p>
+            </div>
+          ) : (
+            <ul className="space-y-2.5">
+              {items.map((r) => (
+                <li key={r.id}>
+                  <ReviewRow review={r} listQuery={searchParams.toString()} />
+                </li>
+              ))}
+            </ul>
+          )}
+
+          {reviews.hasNextPage && (
+            <div className="flex justify-center">
+              <Button
+                variant="outline"
+                onClick={() => reviews.fetchNextPage()}
+                disabled={reviews.isFetchingNextPage}
+              >
+                {reviews.isFetchingNextPage
+                  ? t("common.loading")
+                  : t("reviews.list.loadMore")}
+              </Button>
+            </div>
+          )}
+        </div>
+
+        <div className="mt-6 lg:sticky lg:top-6 lg:mt-0">
+          <SummaryPanel filters={filters} />
+        </div>
       </div>
-
-      {reviews.isLoading ? (
-        <div className="text-muted-foreground flex items-center gap-2 p-6 text-sm">
-          <Loader2 className="size-4 animate-spin" /> {t("common.loading")}
-        </div>
-      ) : items.length === 0 ? (
-        <div className="bg-card ring-foreground/5 rounded-3xl p-10 text-center ring-1">
-          <p className="text-base font-medium">{t("reviews.list.emptyTitle")}</p>
-          <p className="text-muted-foreground mt-1 text-sm">
-            {t("reviews.list.emptyHint")}
-          </p>
-        </div>
-      ) : (
-        <ul className="space-y-2.5">
-          {items.map((r) => (
-            <li key={r.id}>
-              <ReviewRow review={r} listQuery={searchParams.toString()} />
-            </li>
-          ))}
-        </ul>
-      )}
-
-      {reviews.hasNextPage && (
-        <div className="flex justify-center">
-          <Button
-            variant="outline"
-            onClick={() => reviews.fetchNextPage()}
-            disabled={reviews.isFetchingNextPage}
-          >
-            {reviews.isFetchingNextPage
-              ? t("common.loading")
-              : t("reviews.list.loadMore")}
-          </Button>
-        </div>
-      )}
     </main>
   );
 }
@@ -555,6 +583,11 @@ function ReviewRow({
               ? t(SENTIMENT_LABEL_KEYS[r.sentiment_label]!)
               : r.sentiment_label}
           </span>
+          {r.content_type === "question" && (
+            <span className="bg-muted text-muted-foreground inline-flex items-center rounded-full px-2 py-0.5 font-medium">
+              {t("reviews.review.questionBadge")}
+            </span>
+          )}
           <span className="font-medium">{categoryLabel}</span>
           {perspective && <span>{perspective}</span>}
           <span className="tabular-nums">
@@ -690,6 +723,12 @@ function FilterPills({
     pills.push({
       label: t("reviews.pill.validOnly"),
       remove: () => onApply({ ...filters, include_flagged: undefined }),
+    });
+  }
+  if (filters.content_types?.includes("question")) {
+    pills.push({
+      label: t("reviews.pill.questionsOnly"),
+      remove: () => onApply({ ...filters, content_types: undefined }),
     });
   }
   if (filters.date_from || filters.date_to) {
@@ -1020,6 +1059,31 @@ function QualityFilterDropdown({
         </DropdownMenuRadioGroup>
       </DropdownMenuContent>
     </DropdownMenu>
+  );
+}
+
+/** W3 — "Soru" içerik-türü filtresi. Dropdown DEĞİL, tek-tuşlu toggle:
+ *  değer kümesi bugün tek seçenek ("question"), bir dropdown açmak
+ *  gereksiz tıklama ekler. QualityFilterDropdown'dan KASITLI olarak
+ *  ayrı — content_type kalite bayrağı değil (bkz. ReviewListFilters.
+ *  content_types yorumu), iki filtre birlikte de seçilebilir. */
+function QuestionsToggle({
+  active,
+  onToggle,
+}: {
+  active: boolean;
+  onToggle: (next: boolean) => void;
+}) {
+  const { t } = useTranslation();
+  return (
+    <Button
+      variant={active ? "secondary" : "outline"}
+      size="sm"
+      aria-pressed={active}
+      onClick={() => onToggle(!active)}
+    >
+      {t("reviews.filter.questionsToggle")}
+    </Button>
   );
 }
 

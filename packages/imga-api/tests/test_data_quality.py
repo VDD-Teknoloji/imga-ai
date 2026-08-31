@@ -31,7 +31,7 @@ from __future__ import annotations
 
 import pytest
 
-from imga_api.services.data_quality import classify_data_quality
+from imga_api.services.data_quality import classify_data_quality, detect_content_type
 
 # ---------------------------------------------------------------------------
 # informational — should fire (template/automation marker + no
@@ -42,17 +42,13 @@ from imga_api.services.data_quality import classify_data_quality
 @pytest.mark.parametrize(
     "text",
     [
-        "Değerli müşterimiz, siparişiniz kargoya verildi. "
-        "Takip numaranız: 482910.",
-        "Sayın müşterimiz, hesabınıza ait doğrulama kodu: 837261. "
-        "Bu kodu kimseyle paylaşmayınız.",
+        "Değerli müşterimiz, siparişiniz kargoya verildi. Takip numaranız: 482910.",
+        "Sayın müşterimiz, hesabınıza ait doğrulama kodu: 837261. Bu kodu kimseyle paylaşmayınız.",
         "Bu e-posta otomatik olarak gönderilmiştir, lütfen "
         "yanıtlamayınız. Haftalık özet raporunuz hazır. "
         "Happy number crunching!",
-        "Değerli müşterimiz, gönderiniz dağıtıma çıktı, bugün "
-        "elinize ulaşacaktır.",
-        "Sayın müşterimiz, siparişiniz kargoya verildi, takip "
-        "numaranız 482910.",
+        "Değerli müşterimiz, gönderiniz dağıtıma çıktı, bugün elinize ulaşacaktır.",
+        "Sayın müşterimiz, siparişiniz kargoya verildi, takip numaranız 482910.",
     ],
 )
 def test_informational_patterns_are_flagged(text: str) -> None:
@@ -174,20 +170,16 @@ def test_short_real_sentiment_is_never_meaningless(text: str) -> None:
 @pytest.mark.parametrize(
     "text",
     [
-        "Değerli yetkili, siparişim geldi ama içindeki ürün "
-        "hasarlıydı, ne yapmam gerekiyor acaba?",
+        "Değerli yetkili, siparişim geldi ama içindeki ürün hasarlıydı, ne yapmam gerekiyor acaba?",
         "Merhabalar, kargom bugün teslim edildi yazıyor fakat elime "
         "hiçbir şey ulaşmadı. Yardımcı olabilir misiniz?",
-        "Rica etsem kargomun nerede olduğunu öğrenebilir miyim, "
-        "hâlâ elime geçmedi.",
+        "Rica etsem kargomun nerede olduğunu öğrenebilir miyim, hâlâ elime geçmedi.",
         "Sayın müşteri hizmetleri, gönderim yola çıktı bildirimi "
         "geldi ama üç gündür hiçbir hareket yok, çok mağdur oldum.",
-        "Bu ürünle ilgili ciddi bir şikayetim var, lütfen dönüş "
-        "yapar mısınız?",
+        "Bu ürünle ilgili ciddi bir şikayetim var, lütfen dönüş yapar mısınız?",
         # Template marker present, but a first-person complaint stem
         # vetoes it — the required "marker AND no-complaint" gate.
-        "Değerli müşterimiz diye başlıyor ama paketim hâlâ yok, "
-        "bu nasıl bir hizmet anlayışı?",
+        "Değerli müşterimiz diye başlıyor ama paketim hâlâ yok, bu nasıl bir hizmet anlayışı?",
     ],
 )
 def test_polite_complaints_are_never_informational(text: str) -> None:
@@ -221,8 +213,7 @@ def test_informational_marker_without_complaint_wins() -> None:
     [
         "Sipariş verdiğim ürün 10 gündür kargoda bekliyor, müşteri "
         "hizmetlerini aradım ama kimse net bilgi veremedi.",
-        "Ürün tam istediğim gibi geldi, paketleme özenliydi, "
-        "teşekkür ederim.",
+        "Ürün tam istediğim gibi geldi, paketleme özenliydi, teşekkür ederim.",
         "Fiyatı biraz yüksek buldum ama kalitesi bu fiyatı hak ediyor.",
         "İade sürecim iki haftadır sonuçlanmadı, paramı geri istiyorum.",
         "Deneme test",  # 2 low-content words, still not meaningless.
@@ -239,10 +230,7 @@ def test_normal_reviews_are_never_flagged(text: str) -> None:
 
 
 def test_order_label_with_real_complaint_is_not_meaningless() -> None:
-    assert (
-        classify_data_quality("Sipariş no 482910 hâlâ gelmedi, çok mağdurum")
-        is None
-    )
+    assert classify_data_quality("Sipariş no 482910 hâlâ gelmedi, çok mağdurum") is None
 
 
 # ---------------------------------------------------------------------------
@@ -267,21 +255,76 @@ def test_empty_text_returns_none(text: str) -> None:
 
 def test_uppercase_turkish_informational_still_matches() -> None:
     assert (
-        classify_data_quality(
-            "DEĞERLİ MÜŞTERİMİZ, SİPARİŞİNİZ KARGOYA VERİLDİ."
-        )
-        == "informational"
+        classify_data_quality("DEĞERLİ MÜŞTERİMİZ, SİPARİŞİNİZ KARGOYA VERİLDİ.") == "informational"
     )
 
 
 def test_uppercase_turkish_complaint_veto_still_blocks() -> None:
-    assert (
-        classify_data_quality(
-            "DEĞERLİ MÜŞTERİMİZ, KARGOM HÂLÂ GELMİYOR."
-        )
-        is None
-    )
+    assert classify_data_quality("DEĞERLİ MÜŞTERİMİZ, KARGOM HÂLÂ GELMİYOR.") is None
 
 
 def test_uppercase_turkish_meaningless_still_matches() -> None:
     assert classify_data_quality("TAMAM") == "meaningless"
+
+
+# ---------------------------------------------------------------------------
+# detect_content_type — migration 0049. ORTOGONAL to classify_data_quality:
+# a NEGATIF complaint phrased as a question ("Kargom nerede, ilgilenir
+# misiniz?") must be 'question' here AND None from classify_data_quality —
+# quality_flag rows are excluded by default from analytics (FX1 class
+# risk, see module docstring), content_type rows are NOT.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "text, expected",
+    [
+        # Spec's own worked examples.
+        ("Kargom nerede, ilgilenir misiniz?", "question"),
+        ("Ürün 2 gün geç geldi.", None),
+        ("Bu nasıl bir hizmet?!", "question"),
+        ("İade edebilir miyim", "question"),
+        # Adversarial: '?' present but mid-sentence, no interrogative
+        # token, text does NOT end with '?' — deliberately None (the
+        # rule's own "do not flag mid-sentence '?' without a signal"
+        # clause forces this; '?' here reads as emphasis, not a
+        # question mark ending a sentence).
+        ("Fiyat/performans? bence harika", None),
+        # More '?'-present positives — ends with '?' alone is enough.
+        ("Kargo ne zaman gelir?", "question"),
+        ("Bu ürünü tavsiye eder misiniz?", "question"),
+        # No '?', last token is a bare/suffixed particle.
+        ("Bu ürün gerçekten kaliteli mi", "question"),
+        ("Ürün orijinal miydi", "question"),
+        ("Kargo bugün gelecek miydi", "question"),
+        ("Bu satıcıdan tekrar alışveriş yapar mısınız", "question"),
+        # No '?', interrogative pronoun present but NOT the last token
+        # and no trailing particle — high-precision design means this
+        # stays None (rule (b) only looks at the last token).
+        ("Kargo ne zaman gelir bilmiyorum", None),
+        ("Hangi kargo firması kullanılıyor anlamadım", None),
+        # Precision guards: real Turkish words that START with mi/mı/
+        # mu/mü but continue with something OTHER than a question-
+        # particle suffix must never match the particle regex.
+        ("Mısır gevreği aldım.", None),
+        ("Resmi kurumdan bir yazı geldi.", None),
+        ("Mide bulantım geçmedi.", None),
+        ("Milyonlarca kişi bu ürünü kullanıyor.", None),
+        # Plain declarative / empty text.
+        ("Değerli müşterimiz, siparişiniz kargoya verildi.", None),
+        ("", None),
+        ("   ", None),
+        ("\n\t", None),
+    ],
+)
+def test_detect_content_type_table(text: str, expected: str | None) -> None:
+    assert detect_content_type(text) == expected
+
+
+def test_detect_content_type_is_orthogonal_to_quality_flag() -> None:
+    """A complaint phrased as a question is BOTH 'question' (content_type)
+    AND None (quality_flag) — being a question never makes a row a
+    quality-flag hit, and vice versa."""
+    text = "Kargom nerede, ilgilenir misiniz?"
+    assert detect_content_type(text) == "question"
+    assert classify_data_quality(text) is None
