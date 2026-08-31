@@ -184,6 +184,10 @@ export const dashboard: Bundle = {
       "Müşterilerinizin sesini dinlemeye başlayın",
     "dashboard.executiveHero.empty.desc":
       "İlk yorum dosyanızı yükleyin — dakikalar içinde memnuniyet durumunuz, ana sorunlarınız ve yönetici özetiniz hazır olsun.",
+    "dashboard.executiveHero.empty.descPointUp":
+      "Yukarıdaki kutuya ilk yorum dosyanızı bırakın — dakikalar içinde memnuniyet durumunuz ve ana sorunlarınız hazır olsun.",
+    "dashboard.executiveHero.empty.noWriteAccess":
+      "Veri yükleme yetkiniz yok — kurum yöneticinizden ilk yorum dosyasını yüklemesini isteyin.",
     "dashboard.executiveHero.empty.upload": "İlk dosyanızı yükleyin",
     "dashboard.executiveHero.aria": "Müşteri memnuniyet durumu",
     "dashboard.executiveHero.overallLabel": "Genel müşteri memnuniyeti",
@@ -219,7 +223,7 @@ export const dashboard: Bundle = {
       "Memnuniyet skoru nasıl hesaplanır?",
     "dashboard.executiveHero.scoreInfo.text":
       "Memnuniyet skoru, pozitif yorumların tüm yorumlara (pozitif + nötr + negatif) oranıdır ve seçili döneme göre hesaplanır. Trend rozeti son 30 günü önceki 30 günle karşılaştırır.",
-    "dashboard.executiveHero.swotCta": "SWOT Analizi",
+    "dashboard.executiveHero.swotCta": "Aksiyon planını gör",
 
     // --- dönem filtresi ---
     "dashboard.window.label": "Dönem",
@@ -246,6 +250,7 @@ export const dashboard: Bundle = {
     "dashboard.npsCard.scoreLabel": "NPS Skoru",
     "dashboard.npsCard.empty":
       "Bu dönemde NPS verisi yok. Yükleme dosyanızda NPS kolonu eşlerseniz dağılım burada görünür.",
+    "dashboard.npsCard.insufficientN": "NPS için yeterli yanıt yok ({count} yanıt)",
     "dashboard.npsCard.coverage": "NPS verisi olan yorum oranı: %{pct}",
 
     // --- kategori bazlı duygu dağılımı ---
@@ -268,14 +273,48 @@ export const dashboard: Bundle = {
     "dashboard.rootCause.close": "Kapat",
     "dashboard.rootCause.empty":
       "Bu alt kategori için henüz analiz oluşturulmadı.",
-    "dashboard.rootCause.meta": "{n} yorum incelendi • {model}",
+    "dashboard.rootCause.meta": "{n} yorum incelendi",
     "dashboard.rootCause.affectedSurface": "Etkilenen temas noktası",
-    "dashboard.rootCause.suggestedAction": "Önerilen aksiyon",
+    "dashboard.rootCause.suggestedAction": "Yapılacak iş",
     "dashboard.rootCause.noCredentials":
       "LLM API anahtarı tanımlanmamış. Ayarlar > Entegrasyonlar üzerinden ekleyin.",
     "dashboard.rootCause.providerUnavailable":
       "LLM sağlayıcısına şu an ulaşılamıyor. Biraz sonra tekrar deneyin.",
     "dashboard.rootCause.generateFailed": "Kök neden analizi oluşturulamadı.",
+
+    // --- kök neden kartları (ana sayfa, A2) ---
+    "dashboard.rootCauseCards.aria": "Kök neden ve önerilen aksiyonlar",
+    "dashboard.rootCauseCards.title": "Neden? Ne yapmalısınız?",
+    "dashboard.rootCauseCards.description":
+      "En çok şikayet edilen kategorilerin kök nedeni ve önerilen aksiyon",
+    "dashboard.rootCauseCards.shareChip": "olumsuzların payı: %{pct} · {count} yorum",
+    "dashboard.rootCauseCards.shareChipCountOnly": "{count} olumsuz yorum",
+    "dashboard.rootCauseCards.actionLabel": "Yapılacak iş",
+    "dashboard.rootCauseCards.otherCauses": "Diğer nedenler ({n})",
+    "dashboard.rootCauseCards.searchQuote": "Yorumlarda ara",
+    "dashboard.rootCauseCards.evidenceLink": "Kanıtı gör ({n} yorum)",
+    "dashboard.rootCauseCards.lastAnalysis": "Son analiz: {time}",
+    "dashboard.rootCauseCards.queued":
+      "Analiz kuyruğa alındı — bir sonraki yüklemeden sonra otomatik hazırlanır.",
+    "dashboard.rootCauseCards.generateNow": "Şimdi oluştur",
+    "dashboard.rootCauseCards.emptyViewer":
+      "Bu kategori için kök neden analizi henüz oluşturulmadı. Bir yönetici veya analist oluşturabilir.",
+    "dashboard.rootCauseCards.notEnoughData": "Kök neden analizi için yeterli veri yok.",
+    "dashboard.rootCauseCards.empty.title": "Kök neden analizleri burada görünecek",
+    "dashboard.rootCauseCards.empty.desc":
+      "Yeterli olumsuz yorum biriktiğinde en çok şikayet edilen kategoriler için otomatik analiz hazırlanır. Veri yüklemeye devam edin.",
+
+    // --- veri kalitesi koçu (ana sayfa, A2 — ClassificationQualityChip'in yerini alır) ---
+    "dashboard.dataQuality.aria": "Veri kalitesi koçu",
+    "dashboard.dataQuality.good":
+      "Veri kaliteniz iyi — kök neden analizleriniz güvenilir temelde.",
+    "dashboard.dataQuality.flaggedShare":
+      "Boş/anlamsız/kopya işaretli yorum oranı: %{pct} ({count} yorum)",
+    "dashboard.dataQuality.hint": "Veri kalitesi arttıkça kök neden isabeti artar.",
+    "dashboard.dataQuality.excluded":
+      "Bu kayıtlar kök neden örneklemine hiç girmiyor; her temiz kayıt analiz isabetini artırır.",
+    "dashboard.dataQuality.cta": "Temsilci dökümünü gör",
+    "dashboard.dataQuality.questionCount": "Ayrıca müşterileriniz {n} soru sordu.",
 
     // --- deneyim dağılımı kartları ---
     "dashboard.experience.title": "Deneyim Dağılımı",
@@ -294,6 +333,10 @@ export const dashboard: Bundle = {
     "dashboard.uploadFirst.title": "Bugün henüz veri yüklemediniz",
     "dashboard.uploadFirst.desc":
       "Son 24 saatte yeni yorum verisi gelmedi. Analizlerin güncel kalması için son müşteri yorumlarınızı yükleyin — sonuçlar dakikalar içinde bu sayfaya yansır.",
+    "dashboard.uploadFirst.titleNew":
+      "Hoş geldiniz — ilk yorum dosyanızı yükleyelim",
+    "dashboard.uploadFirst.descNew":
+      "Henüz hiç yorum yüklemediniz. CSV veya Excel dosyanızı aşağıya bırakın; imga birkaç dakika içinde duygu, kategori ve kök neden analizini çıkarsın.",
 
     // --- öncelikli aksiyon ---
     "dashboard.priorityAction.label": "Bu ayki önceliğiniz",
@@ -350,6 +393,8 @@ export const dashboard: Bundle = {
     "dashboard.uploadDock.hint.linkText": "gelişmiş yükleme",
     "dashboard.uploadDock.drop.title": "CSV / XLSX dosyanızı buraya bırakın",
     "dashboard.uploadDock.drop.subtitle": "veya tıklayarak seçin · en fazla 50 MB",
+    "dashboard.uploadDock.dimensionNudge":
+      "Tarih ve temsilci kolonlarınız da varsa gelişmiş yüklemeden eşleyin — trend ve veri kalitesi kartları daha isabetli çalışır.",
 
     // --- strateji anlık kartları ---
     "dashboard.strategySnapshots.swot.emptyTitle": "SWOT analizinizi oluşturun",
@@ -701,6 +746,10 @@ export const dashboard: Bundle = {
       "Start listening to your customers' voice",
     "dashboard.executiveHero.empty.desc":
       "Upload your first review file — within minutes your satisfaction status, main problems, and executive summary will be ready.",
+    "dashboard.executiveHero.empty.descPointUp":
+      "Drop your first review file in the box above — within minutes your satisfaction status and main problems will be ready.",
+    "dashboard.executiveHero.empty.noWriteAccess":
+      "You don't have upload access — ask your organization admin to upload the first review file.",
     "dashboard.executiveHero.empty.upload": "Upload your first file",
     "dashboard.executiveHero.aria": "Customer satisfaction status",
     "dashboard.executiveHero.overallLabel": "Overall customer satisfaction",
@@ -739,7 +788,7 @@ export const dashboard: Bundle = {
       "How is the satisfaction score calculated?",
     "dashboard.executiveHero.scoreInfo.text":
       "The satisfaction score is the share of positive reviews among all reviews (positive + neutral + negative), calculated for the selected period. The trend badge compares the last 30 days with the previous 30 days.",
-    "dashboard.executiveHero.swotCta": "SWOT Analysis",
+    "dashboard.executiveHero.swotCta": "See the action plan",
 
     // --- period filter ---
     "dashboard.window.label": "Period",
@@ -766,6 +815,7 @@ export const dashboard: Bundle = {
     "dashboard.npsCard.scoreLabel": "NPS Score",
     "dashboard.npsCard.empty":
       "No NPS data in this period. Map an NPS column in your upload file and the distribution will appear here.",
+    "dashboard.npsCard.insufficientN": "Not enough responses for NPS ({count} responses)",
     "dashboard.npsCard.coverage": "Reviews carrying NPS data: {pct}%",
 
     // --- category sentiment breakdown ---
@@ -788,15 +838,49 @@ export const dashboard: Bundle = {
     "dashboard.rootCause.close": "Close",
     "dashboard.rootCause.empty":
       "No analysis has been generated for this sub-category yet.",
-    "dashboard.rootCause.meta": "{n} reviews analysed • {model}",
+    "dashboard.rootCause.meta": "{n} reviews analysed",
     "dashboard.rootCause.affectedSurface": "Affected touchpoint",
-    "dashboard.rootCause.suggestedAction": "Suggested action",
+    "dashboard.rootCause.suggestedAction": "What to do",
     "dashboard.rootCause.noCredentials":
       "No LLM API key configured. Add one under Settings > Integrations.",
     "dashboard.rootCause.providerUnavailable":
       "The LLM provider is unavailable right now. Please try again shortly.",
     "dashboard.rootCause.generateFailed":
       "Could not generate the root cause analysis.",
+
+    // --- root cause cards (home page, A2) ---
+    "dashboard.rootCauseCards.aria": "Root causes and suggested actions",
+    "dashboard.rootCauseCards.title": "Why? What should you do?",
+    "dashboard.rootCauseCards.description":
+      "The root cause and suggested action for your most-complained-about categories",
+    "dashboard.rootCauseCards.shareChip": "share of negatives: {pct}% · {count} reviews",
+    "dashboard.rootCauseCards.shareChipCountOnly": "{count} negative reviews",
+    "dashboard.rootCauseCards.actionLabel": "What to do",
+    "dashboard.rootCauseCards.otherCauses": "Other causes ({n})",
+    "dashboard.rootCauseCards.searchQuote": "Search in reviews",
+    "dashboard.rootCauseCards.evidenceLink": "See the evidence ({n} reviews)",
+    "dashboard.rootCauseCards.lastAnalysis": "Last analysis: {time}",
+    "dashboard.rootCauseCards.queued":
+      "Analysis is queued — it's prepared automatically after the next upload.",
+    "dashboard.rootCauseCards.generateNow": "Generate now",
+    "dashboard.rootCauseCards.emptyViewer":
+      "No root cause analysis has been generated for this category yet. A manager or analyst can generate one.",
+    "dashboard.rootCauseCards.notEnoughData": "Not enough data for a root cause analysis.",
+    "dashboard.rootCauseCards.empty.title": "Root cause analyses will appear here",
+    "dashboard.rootCauseCards.empty.desc":
+      "Once enough negative reviews build up, an automatic analysis is prepared for your most-complained-about categories. Keep uploading data.",
+
+    // --- data quality coach (home page, A2 — replaces ClassificationQualityChip) ---
+    "dashboard.dataQuality.aria": "Data quality coach",
+    "dashboard.dataQuality.good":
+      "Your data quality is good — your root cause analyses rest on a reliable foundation.",
+    "dashboard.dataQuality.flaggedShare":
+      "Share of reviews flagged empty/meaningless/duplicate: {pct}% ({count} reviews)",
+    "dashboard.dataQuality.hint": "Better data quality means sharper root causes.",
+    "dashboard.dataQuality.excluded":
+      "These records never enter the root-cause sample; every clean record sharpens the analysis.",
+    "dashboard.dataQuality.cta": "See the per-agent breakdown",
+    "dashboard.dataQuality.questionCount": "Also, your customers asked {n} questions.",
 
     // --- experience breakdown cards ---
     "dashboard.experience.title": "Experience Breakdown",
@@ -815,6 +899,9 @@ export const dashboard: Bundle = {
     "dashboard.uploadFirst.title": "You haven't uploaded data today",
     "dashboard.uploadFirst.desc":
       "No new review data has arrived in the last 24 hours. Upload your latest customer reviews to keep the analyses fresh — results land on this page within minutes.",
+    "dashboard.uploadFirst.titleNew": "Welcome — let's upload your first review file",
+    "dashboard.uploadFirst.descNew":
+      "You haven't uploaded any reviews yet. Drop your CSV or Excel file below; imga will extract sentiment, category, and root-cause analysis within minutes.",
 
     // --- priority action ---
     "dashboard.priorityAction.label": "This month's priority",
@@ -871,6 +958,8 @@ export const dashboard: Bundle = {
     "dashboard.uploadDock.hint.linkText": "advanced upload",
     "dashboard.uploadDock.drop.title": "Drop your CSV / XLSX file here",
     "dashboard.uploadDock.drop.subtitle": "or click to choose · up to 50 MB",
+    "dashboard.uploadDock.dimensionNudge":
+      "If you also have date and agent columns, map them via advanced upload — trend and data-quality cards work more precisely.",
 
     // --- strategy snapshot cards ---
     "dashboard.strategySnapshots.swot.emptyTitle": "Create your SWOT analysis",

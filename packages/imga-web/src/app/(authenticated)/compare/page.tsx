@@ -44,10 +44,14 @@ import {
 import { useTranslation } from "@/lib/i18n/use-translation";
 
 const SENTIMENT_ORDER = ["NEGATIF", "NÖTR", "POZITIF"] as const;
+// 2026-09-01 — globals.css'teki --sentiment-negative/-neutral/-positive
+// token'larına işaret eder (bkz. insights/page.tsx'teki SENTIMENT_COLOURS
+// ve operations-tab.tsx'teki OPS_SENTIMENT_COLOURS — üçü de artık aynı
+// token'ları kullanıyor, ayrı hex kopyası yok).
 const SENTIMENT_COLOURS: Record<string, string> = {
-  NEGATIF: "#dc2626",
-  NÖTR: "#737373",
-  POZITIF: "#16a34a",
+  NEGATIF: "var(--sentiment-negative)",
+  NÖTR: "var(--sentiment-neutral)",
+  POZITIF: "var(--sentiment-positive)",
 };
 
 const EXPERIENCE_BUCKET_KEYS = ["dijital", "operasyonel", "atanmamis"] as const;

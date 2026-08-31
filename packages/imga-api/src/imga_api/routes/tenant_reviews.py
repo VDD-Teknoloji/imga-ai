@@ -82,6 +82,22 @@ def _split_csv(raw: str | None) -> tuple[str, ...]:
     return tuple(part.strip() for part in raw.split(",") if part.strip())
 
 
+def _cast_source_meta(raw: dict[str, object] | None) -> dict[str, int] | None:
+    """``Review.source_meta`` is declared ``dict[str, object]`` at the
+    column level even though the parser only ever writes ints
+    (file_parser.ParsedRow.source_meta is ``dict[str, int] | None``) —
+    cast defensively rather than trust the column type."""
+    if not raw:
+        return None
+    out: dict[str, int] = {}
+    for key, value in raw.items():
+        if isinstance(value, bool):
+            continue  # bool is an int subclass; not a meaningful counter
+        if isinstance(value, int):
+            out[key] = value
+    return out or None
+
+
 # --- response models -----------------------------------------------
 
 
@@ -260,6 +276,11 @@ class ReviewDetailResponse(BaseModel):
     facts: ReviewFactsBlock | None = None
     source_url: str | None = None
     content_type: str | None = None
+    # Migration 0049 — açık uçlu kaynak-özel sayaçlar (tweet like/retweet
+    # vb.). JSONB kolonu ``dict[str, object]`` deklare eder; parser hep int
+    # yazar ama kolon tipini garanti etmez, bu yüzden ``_cast_source_meta``
+    # savunmacı — bkz. tanımı.
+    source_meta: dict[str, int] | None = None
 
 
 # --- endpoints -----------------------------------------------------
@@ -734,6 +755,7 @@ async def get_review(
             facts=facts_block,
             source_url=review.source_url,
             content_type=review.content_type,
+            source_meta=_cast_source_meta(review.source_meta),
         )
 
 

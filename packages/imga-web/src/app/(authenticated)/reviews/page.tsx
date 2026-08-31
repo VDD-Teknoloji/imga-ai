@@ -537,7 +537,9 @@ function ReviewsPageInner() {
           )}
         </div>
 
-        <div className="mt-6 lg:sticky lg:top-6 lg:mt-0">
+        {/* Panel viewport'tan uzunsa alt blokları (sorular, kalite) kendi
+            scroll'uyla erişilebilir kalır — sayfa scroll'una karışmaz. */}
+        <div className="mt-6 lg:sticky lg:top-6 lg:mt-0 lg:max-h-[calc(100dvh-3rem)] lg:overflow-y-auto lg:overscroll-contain lg:pr-1">
           <SummaryPanel filters={filters} />
         </div>
       </div>

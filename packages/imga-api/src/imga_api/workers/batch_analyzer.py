@@ -139,6 +139,13 @@ class WorkerContext:
         is two dict ops per row and BERT inference dwarfs it).
       * ``redis_publisher`` — Redis client for SSE progress publish.
         ``None`` skips the pub/sub call (test path).
+      * ``arq_pool`` — the arq worker's own Redis job-queue connection
+        (``ctx["redis"]``, wired at process startup — see
+        ``arq_worker._startup_impl``). ``None`` in tests / the
+        in-process fallback path; the post-batch root-cause
+        auto-generation enqueue is a no-op then, matching the same
+        "no dispatch target, don't crash the batch" contract
+        ``scheduler.enqueue_batch_job`` uses for the API side.
     """
 
     pipeline: AnalysisPipeline
@@ -156,6 +163,7 @@ class WorkerContext:
     chunk_pool_semaphore: asyncio.Semaphore | None = None
     dedup_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
     redis_publisher: Any | None = None
+    arq_pool: Any | None = None
 
     def lock_for(self, tenant_id: UUID) -> asyncio.Lock:
         """Per-tenant Lock cache. Returns the same Lock for repeated
@@ -185,6 +193,7 @@ async def build_worker_context(
     pipeline_pool: list[AnalysisPipeline] | None = None,
     chunk_concurrency: int = 1,
     redis_publisher: Any | None = None,
+    arq_pool: Any | None = None,
 ) -> WorkerContext:
     """Build a fresh WorkerContext, including its own engine pair AND
     its own concurrency primitives.
@@ -225,6 +234,7 @@ async def build_worker_context(
         chunk_pool_semaphore=pool_semaphore,
         dedup_lock=asyncio.Lock(),
         redis_publisher=redis_publisher,
+        arq_pool=arq_pool,
     )
 
 
@@ -567,6 +577,7 @@ async def _run_job(
                 "batch worker: snapshot invalidation failed (non-fatal)",
                 extra={"job_id": str(job_id), "tenant_id": str(tenant_id)},
             )
+    await _enqueue_root_cause_auto_gen(tenant_id, context)
     await _publish_terminal(job_id, tenant_id, context)
     # Sprint 9.1 E — per-batch structured summary. Lands once at
     # successful completion (the cancellation + catastrophic-failure
@@ -699,6 +710,40 @@ async def _run_chunks_parallel(
         for r in results:
             if isinstance(r, BaseException):
                 raise r
+
+
+async def _enqueue_root_cause_auto_gen(tenant_id: UUID, context: WorkerContext) -> None:
+    """Sprint 13.x — fire-and-forget kickoff for the post-batch root-
+    cause auto-generation task (``generate_root_causes_task``,
+    workers/arq_worker.py). ``_job_id`` is per-tenant-per-UTC-day so
+    several batches landing for the same tenant on the same day
+    collapse to one arq enqueue — arq's own dedup, the same mechanism
+    ``scheduler.enqueue_batch_job`` relies on; the task then re-applies
+    ``RootCauseService``'s 12h cache on top, this just avoids starting
+    the task N times over.
+
+    Best-effort like ``_publish_terminal``: no arq pool wired (tests,
+    or the in-process-scheduler fallback deploy) is a silent no-op,
+    and an enqueue failure is logged + swallowed — a stalled root-
+    cause refresh must never fail the batch that already succeeded.
+    """
+    if context.arq_pool is None:
+        return
+    from imga_api.services.root_cause_service import day_rounded_window
+
+    _, date_to = day_rounded_window()
+    try:
+        await context.arq_pool.enqueue_job(
+            "generate_root_causes_task",
+            str(tenant_id),
+            _job_id=f"rootcause:{tenant_id}:{date_to.isoformat()}",
+            _queue_name="imga-batch",
+        )
+    except Exception:
+        log.exception(
+            "batch worker: root-cause auto-gen enqueue failed (non-fatal)",
+            extra={"tenant_id": str(tenant_id)},
+        )
 
 
 async def _publish_terminal(job_id: UUID, tenant_id: UUID, context: WorkerContext) -> None:

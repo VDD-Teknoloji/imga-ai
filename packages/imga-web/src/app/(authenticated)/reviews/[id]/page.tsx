@@ -51,6 +51,18 @@ const SENTIMENT_LABEL_KEYS: Record<string, string> = {
   "NÖTR": "reviews.sentiment.notr",
 };
 
+// 2026-09-01 — Twitter bağlantısı: source_meta'daki bilinen sayaç
+// anahtarları, gösterim sırası + etiket eşlemesiyle. source_meta açık
+// bir Record olduğu için burada listelenmeyen anahtarlar (ileride
+// eklenebilir) sessizce yok sayılır — bilinmeyen bir alanın rastgele
+// bir etiketle gösterilmesindense.
+const ENGAGEMENT_FIELDS: ReadonlyArray<{ key: string; labelKey: string }> = [
+  { key: "like_count", labelKey: "reviews.detail.engagement.like" },
+  { key: "retweet_count", labelKey: "reviews.detail.engagement.retweet" },
+  { key: "reply_count", labelKey: "reviews.detail.engagement.reply" },
+  { key: "view_count", labelKey: "reviews.detail.engagement.view" },
+];
+
 /**
  * Sprint 8.3.1 placeholder — full layout (override layer cards,
  * raw vs final score split, linked-ticket section) lands in 8.3.4.
@@ -193,6 +205,7 @@ function ReviewDetailInner() {
                     {t(sourceLinkLabelKey(detail.data.source_url))}
                   </a>
                 )}
+                <EngagementChips sourceMeta={detail.data.source_meta} />
               </div>
 
               <div>
@@ -400,6 +413,27 @@ function ReviewDetailInner() {
       )}
     </main>
   );
+}
+
+// 2026-09-01 — Twitter etkileşim rozetleri. source_meta yoksa (null/
+// undefined) veya ENGAGEMENT_FIELDS'teki 4 anahtardan hiçbiri gelmediyse
+// hiçbir şey render etmiyor — gövde boş "· ·" satırı bırakmasın diye.
+// Gelen değer 0 olsa bile anahtar VARSA gösterilir (yalnız EKSİK anahtar
+// atlanır); "Beğeni 0" görmek "hiç veri yok" demekten farklı bir sinyal.
+function EngagementChips({
+  sourceMeta,
+}: {
+  sourceMeta: Record<string, number> | null | undefined;
+}) {
+  const { t } = useTranslation();
+  if (!sourceMeta) return null;
+  const chips = ENGAGEMENT_FIELDS.filter(
+    ({ key }) => sourceMeta[key] !== undefined,
+  ).map(
+    ({ key, labelKey }) => `${t(labelKey)} ${sourceMeta[key]!.toLocaleString("tr-TR")}`,
+  );
+  if (chips.length === 0) return null;
+  return <p className="text-muted-foreground mt-2 text-xs">{chips.join(" · ")}</p>;
 }
 
 function Stat({

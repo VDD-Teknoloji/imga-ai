@@ -80,7 +80,9 @@ export function NpsBreakdownCard({ data, isLoading }: Props) {
             </p>
           )}
         </div>
-        {data.score !== null && (
+        {/* n < 10: skor tek başına yanıltıcı (3 yanıttan +100 gibi) —
+            o eşiğin altında sayısal skor yerine "yeterli değil" notu. */}
+        {data.score !== null && total >= 10 ? (
           <div className="text-right">
             <span className="text-4xl font-semibold tabular-nums tracking-tight">
               {data.score > 0 ? "+" : ""}
@@ -90,6 +92,12 @@ export function NpsBreakdownCard({ data, isLoading }: Props) {
               {t("dashboard.npsCard.scoreLabel")}
             </p>
           </div>
+        ) : (
+          total > 0 && (
+            <p className="text-muted-foreground max-w-32 text-right text-xs font-medium leading-relaxed">
+              {t("dashboard.npsCard.insufficientN", { count: nf.format(total) })}
+            </p>
+          )
         )}
       </header>
 

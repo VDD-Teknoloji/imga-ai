@@ -41,6 +41,7 @@ async def _insert_review(
     content_type: str | None = None,
     nps_score: int | None = None,
     review_date: datetime | None = None,
+    source_meta: dict[str, int] | None = None,
 ) -> Review:
     when = review_date or datetime.now(UTC)
     review = Review(
@@ -65,6 +66,7 @@ async def _insert_review(
         quality_flag=quality_flag,
         content_type=content_type,
         nps_score=nps_score,
+        source_meta=source_meta,
     )
     session.add(review)
     await session.flush()
@@ -421,3 +423,33 @@ async def test_list_and_detail_expose_content_type(
 
     detail_plain = batch_client.get(f"/tenants/me/reviews/{plain_id}", headers=headers).json()
     assert detail_plain["content_type"] is None
+
+
+@pytest.mark.asyncio
+async def test_detail_exposes_source_meta(
+    batch_client: TestClient,
+    semi_auto_tenant: tuple[User, UUID, str],
+    admin_session: AsyncSession,
+) -> None:
+    """Migration 0049 — tweet import gibi kaynaklardan gelen sayaçlar
+    (like_count vb.) detail'de görünmeli."""
+    user, tid, pw = semi_auto_tenant
+    async with admin_session.begin():
+        await admin_session.execute(
+            text("SELECT set_config('app.current_tenant_id', :t, true)"),
+            {"t": str(tid)},
+        )
+        review = await _insert_review(
+            admin_session,
+            tenant_id=tid,
+            text_value="Bu ürünü çok beğendim",
+            source_meta={"like_count": 5},
+        )
+        review_id = review.id
+
+    token = login_token(batch_client, user.email, pw, tid)
+    detail = batch_client.get(
+        f"/tenants/me/reviews/{review_id}",
+        headers={"Authorization": f"Bearer {token}"},
+    ).json()
+    assert detail["source_meta"] == {"like_count": 5}

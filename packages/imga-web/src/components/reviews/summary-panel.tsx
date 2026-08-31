@@ -11,8 +11,9 @@
 //
 // Tek sorgu (useReviewSummary) tüm blokları besler; repo'nun 3-durum
 // konvansiyonu (loading/error/empty) bu yüzden PANEL seviyesinde bir
-// kez uygulanır (bkz. components/dashboard/sentiment-trend.tsx) —
-// bloklar kendi içinde yalnız "bu blok boşsa gizlen" kararını verir.
+// kez uygulanır — bloklar kendi içinde yalnız "bu blok boşsa gizlen"
+// kararını verir. Duygu renkleri (bg-/text-sentiment-*) merkezi
+// token'lardan gelir (bkz. app/globals.css sentiment token bloğu).
 
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -30,7 +31,7 @@ import {
 } from "@/hooks/use-review-summary";
 import type { ReviewListFiltersExt } from "@/hooks/use-reviews";
 import { useTranslation } from "@/lib/i18n/use-translation";
-import { sentimentScoreBucket } from "@/lib/sentiment-score";
+import { sentimentScoreBucket, type SentimentScoreBucket } from "@/lib/sentiment-score";
 import type { CategoryView } from "@/lib/types";
 
 const CARD_CLASS = "bg-card ring-foreground/5 rounded-2xl p-4 ring-1";
@@ -56,8 +57,41 @@ const QUALITY_FLAG_LABEL_KEYS: Record<string, string> = {
   meaningless: "reviews.qualityFilter.meaningless",
 };
 
+// Hüküm (verdict) rengi yalnız negatif/pozitif kovalarda; nötr ve
+// skor-yok durumu varsayılan (renksiz) metin rengiyle kalır.
+const VERDICT_COLOR_CLASS: Partial<Record<SentimentScoreBucket, string>> = {
+  veryNegative: "text-sentiment-negative",
+  negative: "text-sentiment-negative",
+  positive: "text-sentiment-positive",
+  veryPositive: "text-sentiment-positive",
+};
+
+const LOW_HEADLINE_TOTAL = 5;
+const LOW_NPS_RESPONSES = 10;
+const ENTERED_BY_WARN_MIN_TOTAL = 20;
+const ENTERED_BY_WARN_MIN_RATE = 0.05;
+const DAILY_TREND_MAX_DAYS = 90;
+
 function truncate(text: string, max: number): string {
   return text.length > max ? `${text.slice(0, max - 1)}…` : text;
+}
+
+/** Backend yalnız veri olan günleri döner (Query H); aradaki sessiz
+ *  günler burada count:0/negative:0 ile doldurulur ki seyrek bir aralık
+ *  yanıltıcı biçimde yoğun görünmesin. UTC ile ilerlenir (tarihler zaten
+ *  "YYYY-MM-DD", saat dilimi belirsizliği yok). */
+function fillDailyGaps(daily: ReviewSummaryDaily[]): ReviewSummaryDaily[] {
+  if (daily.length === 0) return daily;
+  const byDate = new Map(daily.map((d) => [d.date, d]));
+  const cursor = new Date(`${daily[0]!.date}T00:00:00Z`);
+  const end = new Date(`${daily[daily.length - 1]!.date}T00:00:00Z`);
+  const filled: ReviewSummaryDaily[] = [];
+  while (cursor.getTime() <= end.getTime()) {
+    const iso = cursor.toISOString().slice(0, 10);
+    filled.push(byDate.get(iso) ?? { date: iso, count: 0, negative: 0 });
+    cursor.setUTCDate(cursor.getUTCDate() + 1);
+  }
+  return filled.slice(-DAILY_TREND_MAX_DAYS);
 }
 
 export function SummaryPanel({ filters }: { filters: ReviewListFiltersExt }) {
@@ -92,7 +126,7 @@ function SummarySkeleton() {
   return (
     <div className="space-y-3">
       <span className="sr-only">{t("reviews.summary.loading")}</span>
-      {[96, 56, 84, 96, 150, 90, 130, 110, 44].map((h, i) => (
+      {[96, 56, 130, 44, 110, 84, 96, 150, 90].map((h, i) => (
         <Skeleton key={i} className="w-full" style={{ height: h }} />
       ))}
     </div>
@@ -110,23 +144,31 @@ function SummaryBlocks({
     <div className="space-y-3">
       <HeadlineBlock data={data} />
       <SentimentBarBlock sentiment={data.sentiment} total={data.total} />
+      <EnteredByBlock rows={data.entered_by} />
+      <QualityLineBlock quality={data.quality} />
+      <TopQuestionsBlock topQuestions={data.top_questions} questionCount={data.question_count} />
       <NpsBlock nps={data.nps} />
       <DailyTrendBlock daily={data.daily} />
       <CategoriesBlock categories={data.categories} categoryLabels={categoryLabels} />
       <SourcesBlock sources={data.sources} />
-      <EnteredByBlock rows={data.entered_by} />
-      <TopQuestionsBlock topQuestions={data.top_questions} questionCount={data.question_count} />
-      <QualityLineBlock quality={data.quality} />
     </div>
   );
 }
 
 /** (a) — toplam kayıt + ortalama skor hükmü (sentimentScoreBucket) +
- *  ticket bağlantı sayısı. */
+ *  ticket bağlantı sayısı. Hüküm ÖNCE, sayı SONRA: verdict birincil
+ *  eleman (renkli, büyük), ham skor ikincil soluk satır. total<5 iken
+ *  hüküm renksiz+italik'e döner ve "az veri" uyarısı eklenir — küçük
+ *  örneklemde kesin bir renkli hüküm yanıltıcı olur. */
 function HeadlineBlock({ data }: { data: ReviewSummaryResponse }) {
   const { t } = useTranslation();
   const bucket =
     data.avg_sentiment_score !== null ? sentimentScoreBucket(data.avg_sentiment_score) : null;
+  const lowData = data.total < LOW_HEADLINE_TOTAL;
+  const verdictText = bucket ? t(`reviews.scoreLabel.${bucket}`) : t("reviews.summary.headline.noScore");
+  const verdictClass = lowData
+    ? "text-muted-foreground text-lg font-semibold italic"
+    : `text-lg font-semibold ${bucket ? (VERDICT_COLOR_CLASS[bucket] ?? "") : ""}`.trim();
   return (
     <div className={CARD_CLASS}>
       <p className="text-2xl font-semibold tracking-tight tabular-nums">
@@ -134,13 +176,15 @@ function HeadlineBlock({ data }: { data: ReviewSummaryResponse }) {
       </p>
       <div className="mt-3 flex items-end justify-between gap-3">
         <div>
-          <p className="text-muted-foreground text-xs">{t("reviews.summary.headline.avgScore")}</p>
-          <p className="text-lg font-semibold tabular-nums">
+          <p className={verdictClass}>{verdictText}</p>
+          <p className="text-muted-foreground text-xs tabular-nums">
             {data.avg_sentiment_score !== null ? data.avg_sentiment_score.toFixed(2) : "—"}
           </p>
-          <p className="text-muted-foreground text-xs">
-            {bucket ? t(`reviews.scoreLabel.${bucket}`) : t("reviews.summary.headline.noScore")}
-          </p>
+          {lowData && (
+            <p className="text-muted-foreground text-xs italic">
+              {t("reviews.summary.headline.lowN", { count: data.total.toLocaleString("tr-TR") })}
+            </p>
+          )}
         </div>
         {data.ticket_linked > 0 && (
           <p className="text-muted-foreground text-right text-xs">
@@ -195,19 +239,25 @@ function SentimentBarBlock({
   );
 }
 
-/** (c) — with_nps===0 iken TAMAMEN gizlenir (görev notu). */
+/** (c) — with_nps===0 iken TAMAMEN gizlenir (görev notu). with_nps<10
+ *  iken sayısal skor GİZLENİR (küçük örneklemde NPS aşırı oynak) —
+ *  başlık jenerik "NPS"e döner, dağılım (promoter/passive/detractor)
+ *  yine de gösterilir. */
 function NpsBlock({ nps }: { nps: ReviewSummaryNps }) {
   const { t } = useTranslation();
   if (nps.with_nps === 0) return null;
+  const insufficient = nps.with_nps < LOW_NPS_RESPONSES;
   return (
     <div className={CARD_CLASS}>
       <h3 className="text-sm font-medium">
-        {nps.score !== null
+        {!insufficient && nps.score !== null
           ? t("reviews.summary.nps.score", { score: nps.score.toFixed(1) })
           : t("reviews.summary.nps.title")}
       </h3>
       <p className="text-muted-foreground text-xs">
-        {t("reviews.summary.nps.responses", { count: nps.with_nps.toLocaleString("tr-TR") })}
+        {insufficient
+          ? t("reviews.summary.nps.insufficientN", { count: nps.with_nps.toLocaleString("tr-TR") })
+          : t("reviews.summary.nps.responses", { count: nps.with_nps.toLocaleString("tr-TR") })}
       </p>
       <dl className="mt-2 grid grid-cols-3 gap-2 text-xs">
         <div>
@@ -234,7 +284,8 @@ function NpsBlock({ nps }: { nps: ReviewSummaryNps }) {
 function DailyTrendBlock({ daily }: { daily: ReviewSummaryDaily[] }) {
   const { t } = useTranslation();
   if (daily.length === 0) return null;
-  const max = Math.max(1, ...daily.map((d) => d.count));
+  const filled = fillDailyGaps(daily);
+  const max = Math.max(1, ...filled.map((d) => d.count));
   return (
     <div className={CARD_CLASS}>
       <h3 className="text-sm font-medium">{t("reviews.summary.daily.title")}</h3>
@@ -243,7 +294,7 @@ function DailyTrendBlock({ daily }: { daily: ReviewSummaryDaily[] }) {
         role="img"
         aria-label={t("reviews.summary.daily.title")}
       >
-        {daily.map((d) => {
+        {filled.map((d) => {
           const heightPct = Math.max((d.count / max) * 100, d.count > 0 ? 6 : 2);
           const negPct = d.count > 0 ? (d.negative / d.count) * 100 : 0;
           return (
@@ -298,7 +349,10 @@ function CategoriesBlock({
                 </span>
               </div>
               <div className="bg-muted mt-1 h-1 overflow-hidden rounded-full">
-                <div className="bg-sentiment-negative h-full" style={{ width: `${negPct}%` }} />
+                <div
+                  className={`bg-sentiment-negative h-full ${c.count < 5 ? "opacity-40" : ""}`}
+                  style={{ width: `${negPct}%` }}
+                />
               </div>
             </li>
           );
@@ -329,7 +383,9 @@ function SourcesBlock({ sources }: { sources: ReviewSummaryValueCount[] }) {
 
 /** (g) — "hangi temsilci kaç boş/anlamsız girmiş" sorusunu yanıtlar.
  *  entered_by boşsa (dimension_value_present hiç eşleşmediyse) blok
- *  TAMAMEN gizlenir. flagged>0 uyarı rengiyle vurgulanır. */
+ *  TAMAMEN gizlenir. Uyarı rengi yalnız total>=20 VE flagged/total>=%5
+ *  iken tetiklenir — küçük örneklemde tek bir geçersiz kayıt bile oranı
+ *  şişirip yanlış alarm verir. */
 function EnteredByBlock({ rows }: { rows: ReviewSummaryEnteredBy[] }) {
   const { t } = useTranslation();
   if (rows.length === 0) return null;
@@ -340,45 +396,52 @@ function EnteredByBlock({ rows }: { rows: ReviewSummaryEnteredBy[] }) {
         <table className="w-full text-xs">
           <thead>
             <tr className="text-muted-foreground text-left">
-              <th className="pb-1 font-normal">{t("reviews.summary.enteredBy.colValue")}</th>
-              <th className="pb-1 text-right font-normal">
+              <th className="pb-1 font-normal whitespace-nowrap">
+                {t("reviews.summary.enteredBy.colValue")}
+              </th>
+              <th className="pb-1 text-right font-normal whitespace-nowrap">
                 {t("reviews.summary.enteredBy.colTotal")}
               </th>
-              <th className="pb-1 text-right font-normal">
+              <th className="pb-1 text-right font-normal whitespace-nowrap">
                 {t("reviews.summary.enteredBy.colFlagged")}
               </th>
-              <th className="pb-1 text-right font-normal">
+              <th className="pb-1 text-right font-normal whitespace-nowrap">
                 {t("reviews.summary.enteredBy.colQuestion")}
               </th>
-              <th className="pb-1 text-right font-normal">
+              <th className="pb-1 text-right font-normal whitespace-nowrap">
                 {t("reviews.summary.enteredBy.colNegative")}
               </th>
             </tr>
           </thead>
           <tbody>
-            {rows.map((r) => (
-              <tr key={r.value} className="border-border/60 border-t">
-                <td className="text-foreground/90 max-w-[7rem] truncate py-1.5">{r.value}</td>
-                <td className="text-muted-foreground py-1.5 text-right tabular-nums">
-                  {r.total.toLocaleString("tr-TR")}
-                </td>
-                <td
-                  className={`py-1.5 text-right tabular-nums ${
-                    r.flagged > 0
-                      ? "font-medium text-amber-700 dark:text-amber-400"
-                      : "text-muted-foreground"
-                  }`}
-                >
-                  {r.flagged.toLocaleString("tr-TR")}
-                </td>
-                <td className="text-muted-foreground py-1.5 text-right tabular-nums">
-                  {r.question.toLocaleString("tr-TR")}
-                </td>
-                <td className="text-muted-foreground py-1.5 text-right tabular-nums">
-                  {r.negative.toLocaleString("tr-TR")}
-                </td>
-              </tr>
-            ))}
+            {rows.map((r) => {
+              const rate = r.total > 0 ? Math.round((r.flagged / r.total) * 1000) / 10 : null;
+              const warn =
+                r.total >= ENTERED_BY_WARN_MIN_TOTAL &&
+                r.flagged / r.total >= ENTERED_BY_WARN_MIN_RATE;
+              return (
+                <tr key={r.value} className="border-border/60 border-t">
+                  <td className="text-foreground/90 max-w-[7rem] truncate py-1.5">{r.value}</td>
+                  <td className="text-muted-foreground py-1.5 text-right tabular-nums">
+                    {r.total.toLocaleString("tr-TR")}
+                  </td>
+                  <td
+                    className={`py-1.5 text-right tabular-nums ${
+                      warn ? "font-medium text-amber-700 dark:text-amber-400" : "text-muted-foreground"
+                    }`}
+                  >
+                    {r.flagged.toLocaleString("tr-TR")}
+                    {rate !== null ? ` · %${rate}` : ""}
+                  </td>
+                  <td className="text-muted-foreground py-1.5 text-right tabular-nums">
+                    {r.question.toLocaleString("tr-TR")}
+                  </td>
+                  <td className="text-muted-foreground py-1.5 text-right tabular-nums">
+                    {r.negative.toLocaleString("tr-TR")}
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>
@@ -409,7 +472,9 @@ function TopQuestionsBlock({
       <ul className="mt-2 space-y-1.5">
         {topQuestions.map((q) => (
           <li key={`${q.text}-${q.count}`} className="flex items-start justify-between gap-2 text-xs">
-            <span className="text-foreground/90">{truncate(q.text, 80)}</span>
+            <span className="text-foreground/90 min-w-0 [overflow-wrap:anywhere]">
+              {truncate(q.text, 80)}
+            </span>
             <Badge variant="secondary" className="shrink-0 tabular-nums">
               {q.count}×
             </Badge>

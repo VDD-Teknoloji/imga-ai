@@ -6,15 +6,28 @@
 // basit haliyle, çok net değerler. Aydınlık, korkutmayan, Apple
 // gibi. Bir aptal bile anlasın; işten anlayan detaya inebilsin."
 //
-// Akış — yukarıdan aşağı, giderek derinleşir:
+// Akış — yukarıdan aşağı, giderek derinleşir. Sprint 13.2 (A2) "kök
+// neden önce" yeniden sıralaması: yönetici eskiden önce sayıları
+// (grafikler), sonra nedeni görüyordu — ürün sahibi isteği tersini
+// ister: önce "neden?" ve "ne yapmalıyım?", sayılar altta kalsın.
+//
+// Sprint 13.3 (2026-09-01) — ürün sahibi doğrudan talimatı: "önce
+// kök neden" ExecutiveHero'nun bile önüne geçti. RootCauseCards artık
+// UploadFirst'ün hemen altında, dönem filtresinden ve memnuniyet
+// hero'sundan önce render edilir.
 //
 //   (VERİ YOK)  UploadFirst        24 saattir veri gelmediyse önce yükleme
+//   NEDEN       RootCauseCards     "Neden? Ne yapmalısınız?" — en çok
+//                                  şikayet edilen ≤3 kategori + kök
+//                                  neden + önerilen aksiyon
 //   DURUM       ExecutiveHero      "Müşterileriniz memnun mu?" (cevap)
 //   FİLTRE      DashboardFilterBar dönem presetleri + özel aralık +
 //                                  yükleme (URL: ?window / ?date_from /
 //                                  ?date_to / ?batch_job_id)
-//   GRAFİKLER   NPS + Kategori     yönetim görünümü dağılımları
 //   AKSİYON     PriorityAction     "Bu ay ne yapmalıyım?" (tek adım)
+//   KOÇ         DataQualityCoach   veri kalitesi sinyali (eski
+//                                  ClassificationQualityChip'in yerine)
+//   GRAFİKLER   NPS + Kategori     yönetim görünümü dağılımları
 //   SORUNLAR    TopProblems        "Neyden şikayetçiler?"
 //   KANIT       VoiceOfCustomer    "Kendi cümleleriyle"
 //   DERİNLİK    Özet + SWOT + OKR  işten anlayan buraya iner
@@ -28,13 +41,14 @@ import { Suspense, useEffect, useState } from "react";
 
 import { AiInsightStrip } from "@/components/dashboard/ai-insight-strip";
 import { CategorySentimentBreakdown } from "@/components/dashboard/category-sentiment-breakdown";
-import { ClassificationQualityChip } from "@/components/dashboard/classification-quality-chip";
 import { DashboardFilterBar } from "@/components/dashboard/dashboard-filter-bar";
+import { DataQualityCoach } from "@/components/dashboard/data-quality-coach";
 import { ExecutiveHero } from "@/components/dashboard/executive-hero";
 import { ExperienceBreakdownCards } from "@/components/dashboard/experience-breakdown-cards";
 import { NpsBreakdownCard } from "@/components/dashboard/nps-breakdown-card";
 import { PriorityAction } from "@/components/dashboard/priority-action";
 import { QuickLinks } from "@/components/dashboard/quick-links";
+import { RootCauseCards } from "@/components/dashboard/root-cause-cards";
 import {
   OkrSnapshotCard,
   SwotSnapshotCard,
@@ -236,6 +250,9 @@ function DashboardInner() {
     overview.data !== undefined &&
     (lastDataAt === null ||
       Date.now() - new Date(lastDataAt).getTime() > UPLOAD_FIRST_THRESHOLD_MS);
+  // Hiç veri yüklenmemiş kurum, 24 saattir sessiz kalmış kurumdan ayrı
+  // bir karşılama metni alır (uploadFirst.title yerine titleNew).
+  const neverUploaded = lastDataAt === null;
 
   const dateFormatter = new Intl.DateTimeFormat(
     locale === "en" ? "en-US" : "tr-TR",
@@ -277,15 +294,24 @@ function DashboardInner() {
         <section className="rise-in ring-primary/25 bg-primary/5 rounded-3xl p-5 ring-2 md:p-6">
           <div className="mb-4">
             <h2 className="text-lg font-semibold tracking-tight">
-              {t("dashboard.uploadFirst.title")}
+              {neverUploaded
+                ? t("dashboard.uploadFirst.titleNew")
+                : t("dashboard.uploadFirst.title")}
             </h2>
             <p className="text-muted-foreground mt-1 max-w-2xl text-sm leading-relaxed">
-              {t("dashboard.uploadFirst.desc")}
+              {neverUploaded
+                ? t("dashboard.uploadFirst.descNew")
+                : t("dashboard.uploadFirst.desc")}
             </p>
           </div>
           <UploadDock />
         </section>
       )}
+
+      {/* NEDEN — en çok şikayet edilen ≤3 kategori + kök neden + aksiyon.
+          Ürün sahibi talimatı (2026-09-01): hero'dan önce gelir.
+          Sayfanın aktif dönemi taşınır; yeni bir filtre eklenmiyor. */}
+      <RootCauseCards filters={filters} categories={byCategory.data} />
 
       {/* DURUM — tek cümle cevap (seçili döneme göre). */}
       <ExecutiveHero
@@ -297,6 +323,8 @@ function DashboardInner() {
         batchFilterActive={batchJobId !== ""}
         dateFrom={filters.date_from}
         dateTo={filters.date_to}
+        canWrite={canWrite}
+        hideOwnUpload={uploadFirst}
       />
 
       {/* FİLTRE — hero'nun hemen altında dönem + özel aralık + yükleme. */}
@@ -314,7 +342,15 @@ function DashboardInner() {
         onClear={handleClearFilters}
       />
 
-      {/* GRAFİKLER — yönetim görünümü: NPS + deneyim + kategori×duygu. */}
+      {/* AKSİYON — bu ayki tek öncelik (varsa). */}
+      <PriorityAction swot={data?.latest_swot} />
+
+      {/* KOÇ — veri kalitesi sinyali (eski ClassificationQualityChip'in
+          yerine; bkz. data-quality-coach.tsx). */}
+      <DataQualityCoach dateFrom={filters.date_from} dateTo={filters.date_to} />
+
+      {/* GRAFİKLER — yönetim görünümü: NPS + deneyim + kategori×duygu.
+          "Kök neden önce" sıralamasında (A2) sayılar aşağı indi. */}
       <div className="rise-in space-y-6" style={{ animationDelay: "60ms" }}>
         <NpsBreakdownCard data={nps.data} isLoading={nps.isLoading} />
         <ExperienceBreakdownCards
@@ -327,9 +363,6 @@ function DashboardInner() {
           filters={queryFilters}
         />
       </div>
-
-      {/* AKSİYON — bu ayki tek öncelik (varsa). */}
-      <PriorityAction swot={data?.latest_swot} />
 
       {/* Rapor (sol) + işlem rayı (sağ). */}
       <div className="grid grid-cols-1 gap-8 lg:grid-cols-[minmax(0,1fr)_320px]">
@@ -345,17 +378,24 @@ function DashboardInner() {
             />
           </div>
 
-          <div className="rise-in" style={{ animationDelay: "240ms" }}>
-            <AiInsightStrip
-              briefing={data?.latest_briefing}
-              isLoading={isLoading}
-            />
-          </div>
+          {/* Sıfır veride SWOT/OKR/özet üretim daveti anlamsız — bu
+              bloklar yalnız yükleme bekleniyorken (iskelet) veya
+              gerçek veri varken render edilir. */}
+          {(isLoading || hasAnyData) && (
+            <div className="rise-in" style={{ animationDelay: "240ms" }}>
+              <AiInsightStrip
+                briefing={data?.latest_briefing}
+                isLoading={isLoading}
+              />
+            </div>
+          )}
 
-          <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-            <SwotSnapshotCard swot={data?.latest_swot} isLoading={isLoading} />
-            <OkrSnapshotCard okr={data?.latest_okr} isLoading={isLoading} />
-          </div>
+          {(isLoading || hasAnyData) && (
+            <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+              <SwotSnapshotCard swot={data?.latest_swot} isLoading={isLoading} />
+              <OkrSnapshotCard okr={data?.latest_okr} isLoading={isLoading} />
+            </div>
+          )}
         </div>
 
         <aside className="space-y-4 lg:sticky lg:top-6 lg:self-start">
@@ -365,8 +405,6 @@ function DashboardInner() {
           <QuickLinks />
         </aside>
       </div>
-
-      <ClassificationQualityChip />
     </main>
   );
 }

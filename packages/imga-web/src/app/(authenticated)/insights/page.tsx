@@ -95,10 +95,13 @@ const WordCloudTab = dynamic(
   { loading: () => <TabLoading />, ssr: false },
 );
 
+// 2026-09-01 — globals.css'teki --sentiment-negative/-neutral/-positive
+// token'larına işaret eder (bkz. o dosyadaki "Duygu üçlüsü" yorumu);
+// recharts fill/stroke CSS var string'i kabul eder, ayrı hex kopyası yok.
 const SENTIMENT_COLOURS: Record<string, string> = {
-  NEGATIF: "#dc2626",
-  NÖTR: "#737373",
-  POZITIF: "#16a34a",
+  NEGATIF: "var(--sentiment-negative)",
+  NÖTR: "var(--sentiment-neutral)",
+  POZITIF: "var(--sentiment-positive)",
 };
 
 type TabKey =
@@ -769,9 +772,9 @@ function SentimentTab({ filters }: { filters: AnalyticsFilters }) {
                   <XAxis dataKey="date" fontSize={10} />
                   <YAxis fontSize={10} />
                   <Tooltip />
-                  <Line type="monotone" dataKey="negatif" stroke="#dc2626" />
-                  <Line type="monotone" dataKey="nötr" stroke="#737373" />
-                  <Line type="monotone" dataKey="pozitif" stroke="#16a34a" />
+                  <Line type="monotone" dataKey="negatif" stroke="var(--sentiment-negative)" />
+                  <Line type="monotone" dataKey="nötr" stroke="var(--sentiment-neutral)" />
+                  <Line type="monotone" dataKey="pozitif" stroke="var(--sentiment-positive)" />
                 </LineChart>
               </ResponsiveContainer>
             )}

@@ -250,15 +250,20 @@ export function UploadDock() {
         )}
 
         {state.phase === "idle" && (
-          <p className="text-muted-foreground mt-3 text-[11px] leading-relaxed">
-            {t("dashboard.uploadDock.hint.prefix")}
-            <strong>yorum</strong>
-            {t("dashboard.uploadDock.hint.mid")}
-            <Link href="/analyze/upload" className="text-primary font-semibold hover:underline">
-              {t("dashboard.uploadDock.hint.linkText")}
-            </Link>
-            .
-          </p>
+          <>
+            <p className="text-muted-foreground mt-3 text-[11px] leading-relaxed">
+              {t("dashboard.uploadDock.hint.prefix")}
+              <strong>yorum</strong>
+              {t("dashboard.uploadDock.hint.mid")}
+              <Link href="/analyze/upload" className="text-primary font-semibold hover:underline">
+                {t("dashboard.uploadDock.hint.linkText")}
+              </Link>
+              .
+            </p>
+            <p className="text-muted-foreground mt-1.5 text-[11px] leading-relaxed">
+              {t("dashboard.uploadDock.dimensionNudge")}
+            </p>
+          </>
         )}
       </div>
     </section>

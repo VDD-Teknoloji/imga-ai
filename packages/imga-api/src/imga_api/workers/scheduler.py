@@ -108,9 +108,7 @@ def schedule_cleanup(
     upload_root: Any,
     retention_hours: int,
     job_id: str | None = None,
-    keep_paths_provider: (
-        Callable[[], Awaitable[set[str]]] | None
-    ) = None,
+    keep_paths_provider: (Callable[[], Awaitable[set[str]]] | None) = None,
 ) -> None:
     """Daily file-reaper for ``upload_root``. Runs at startup once (so a
     fresh container cleans whatever the previous run left behind) plus
@@ -187,9 +185,7 @@ def schedule_provider_healthcheck(
     log.info("scheduler: provider healthcheck every %ss", interval_seconds)
 
 
-def schedule_data_retention(
-    scheduler: AsyncIOScheduler, *, interval_hours: int = 24
-) -> None:
+def schedule_data_retention(scheduler: AsyncIOScheduler, *, interval_hours: int = 24) -> None:
     """§3.8 — 30-gün KVKK retention purge, günlük + boot'ta bir kez.
 
     Her koşuda kısa-ömürlü admin (BYPASSRLS) engine kurar/kapatır — kalıcı bir
@@ -330,8 +326,7 @@ async def enqueue_reanalysis_job(
             )
         except Exception:
             log.exception(
-                "scheduler: arq reanalysis enqueue failed; falling back "
-                "to in-process",
+                "scheduler: arq reanalysis enqueue failed; falling back to in-process",
                 extra={"job_id": str(job_id)},
             )
         else:
@@ -339,15 +334,13 @@ async def enqueue_reanalysis_job(
                 queued_at = datetime.now(UTC)
                 worker_job_id = getattr(job, "job_id", None)
                 log.info(
-                    "scheduler: enqueued reanalysis job %s on arq "
-                    "(worker_job_id=%s)",
+                    "scheduler: enqueued reanalysis job %s on arq (worker_job_id=%s)",
                     job_id,
                     worker_job_id,
                 )
                 return worker_job_id, queued_at
             log.warning(
-                "scheduler: arq dedup hit for reanalysis %s (attempt %d); "
-                "not re-enqueueing",
+                "scheduler: arq dedup hit for reanalysis %s (attempt %d); not re-enqueueing",
                 job_id,
                 attempt,
             )

@@ -500,6 +500,11 @@ export interface ReviewDetail {
   // "dijital" | "operasyonel"; revizyon öncesi analiz edilmiş satırlarda
   // null. Okurken lib/experience.ts#effectiveExperience kullanın.
   experience_type?: string | null;
+  // 2026-09-01 — Twitter bağlantısı: kaynağın etkileşim sayaçları
+  // (like_count/retweet_count/reply_count/view_count), her biri opsiyonel
+  // — kaynağa göre alt küme gelir (bkz. reviews/[id]/page.tsx engagement
+  // chip satırı). null/absent = kart hiç gösterilmez.
+  source_meta?: Record<string, number> | null;
 }
 
 export type NpsCategory = "detractor" | "passive" | "promoter";

@@ -140,6 +140,12 @@ interface Props {
    *  segment tıklamasında /reviews URL'ine taşınır (WS5). */
   dateFrom?: string;
   dateTo?: string;
+  /** Sayfanın rol mantığıyla aynı kaynak (useRoleFlags) — boş durumda
+   *  yükleme butonu yalnız yazma yetkisi olan role gösterilir. */
+  canWrite: boolean;
+  /** Sayfanın UploadFirst bloğu zaten gösteriliyorsa true — hero kendi
+   *  yükleme butonunu tekrarlamaz, "yukarıdaki kutuya bırakın" der. */
+  hideOwnUpload: boolean;
 }
 
 export function ExecutiveHero({
@@ -151,6 +157,8 @@ export function ExecutiveHero({
   batchFilterActive = false,
   dateFrom,
   dateTo,
+  canWrite,
+  hideOwnUpload,
 }: Props) {
   const { t } = useTranslation();
   const router = useRouter();
@@ -161,21 +169,31 @@ export function ExecutiveHero({
   const { POZITIF, NEGATIF, total } = sentiment;
 
   if (total === 0 && !hasAnyData) {
+    // Üç durum: yazma yetkisi yoksa yükleme daveti anlamsız (403'e
+    // giderdi); UploadFirst kutusu zaten üstte açıksa hero kendi
+    // butonunu tekrarlamaz — yukarıyı işaret eder.
+    const emptyDesc = !canWrite
+      ? t("dashboard.executiveHero.empty.noWriteAccess")
+      : hideOwnUpload
+        ? t("dashboard.executiveHero.empty.descPointUp")
+        : t("dashboard.executiveHero.empty.desc");
     return (
       <section className="rise-in shadow-soft bg-card ring-foreground/5 rounded-3xl p-8 text-center ring-1 md:p-12">
         <h2 className="text-2xl font-semibold tracking-tight md:text-3xl">
           {t("dashboard.executiveHero.empty.title")}
         </h2>
         <p className="text-muted-foreground mx-auto mt-3 max-w-xl text-base leading-relaxed">
-          {t("dashboard.executiveHero.empty.desc")}
+          {emptyDesc}
         </p>
-        <Link
-          href="/analyze/upload"
-          className="bg-primary text-primary-foreground hover:bg-primary/90 mt-7 inline-flex items-center gap-2 rounded-2xl px-6 py-3 text-sm font-semibold transition-colors"
-        >
-          <Upload className="size-4" aria-hidden />{" "}
-          {t("dashboard.executiveHero.empty.upload")}
-        </Link>
+        {canWrite && !hideOwnUpload && (
+          <Link
+            href="/analyze/upload"
+            className="bg-primary text-primary-foreground hover:bg-primary/90 mt-7 inline-flex items-center gap-2 rounded-2xl px-6 py-3 text-sm font-semibold transition-colors"
+          >
+            <Upload className="size-4" aria-hidden />{" "}
+            {t("dashboard.executiveHero.empty.upload")}
+          </Link>
+        )}
       </section>
     );
   }
@@ -296,7 +314,7 @@ export function ExecutiveHero({
         </Link>
         <Link
           href="/strategy?tab=swot"
-          className="inline-flex items-center gap-2 rounded-2xl bg-gradient-to-r from-violet-600 to-indigo-600 px-5 py-3 text-sm font-semibold text-white shadow-md transition-all hover:from-violet-500 hover:to-indigo-500 hover:shadow-lg"
+          className="bg-primary text-primary-foreground hover:bg-primary/90 inline-flex items-center gap-2 rounded-2xl px-5 py-3 text-sm font-semibold transition-colors"
         >
           <Compass className="size-4" aria-hidden />
           {t("dashboard.executiveHero.swotCta")}

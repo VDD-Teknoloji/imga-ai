@@ -34,7 +34,7 @@ import json
 import logging
 import time
 from dataclasses import dataclass
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from typing import Any
 from uuid import UUID
 
@@ -84,9 +84,7 @@ MIN_REVIEWS = 10
 #: Tek yorumun prompt'a giren en fazla karakteri (uzun kuyruğu kırp).
 _MAX_REVIEW_CHARS = 600
 
-_CATEGORY_LABELS: dict[str, str] = {
-    c.code: c.name for c in DEFAULT_GLOBAL_CATEGORIES
-}
+_CATEGORY_LABELS: dict[str, str] = {c.code: c.name for c in DEFAULT_GLOBAL_CATEGORIES}
 
 
 class RootCauseServiceError(Exception):
@@ -110,6 +108,184 @@ class _BucketSample:
     total: int
     negative: int
     reviews: list[dict[str, str]]
+
+
+# ---------------------------------------------------------------------------
+# Overview picker — shared by GET /root-cause/overview (tenant_insights.py)
+# and the post-batch auto-generation task (workers/arq_worker.py). One
+# query set, two callers with different windows (rolling "now" vs.
+# day-rounded), so a fix to the SQL lands in both places at once.
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True, slots=True)
+class CategoryPerspectivePick:
+    """One drill-down candidate: the category's negative count in the
+    window, its worst perspective (None if every negative row in the
+    category is perspective-NULL), and whether that (category,
+    perspective) bucket clears ``MIN_REVIEWS`` — the same gate
+    ``RootCauseService.generate`` enforces, so ``can_generate`` never
+    promises a generation the service would then reject."""
+
+    primary_category_code: str
+    negative_count: int
+    perspective_code: str | None
+    bucket_total: int
+    can_generate: bool
+
+
+async def pick_top_categories(
+    session: AsyncSession,
+    tenant_id: UUID,
+    *,
+    date_from: datetime | None,
+    date_to: datetime | None,
+    limit: int,
+) -> list[CategoryPerspectivePick]:
+    """Top-``limit`` negative categories in the window, each paired
+    with its worst company-perspective bucket.
+
+    'belirsiz' is excluded from the candidates for the same reason
+    ``tenant_executive._top_problems`` excludes it: a card titled "En
+    büyük sorun: Belirsiz" is a trust-losing narrative, not a root
+    cause to drill into.
+    """
+
+    def _scoped(stmt: Any) -> Any:
+        stmt = (
+            stmt.where(Review.tenant_id == tenant_id)
+            .where(Review.deleted_at.is_(None))
+            .where(Review.quality_flag.is_(None))
+        )
+        if date_from is not None:
+            stmt = stmt.where(Review.review_date >= date_from)
+        if date_to is not None:
+            stmt = stmt.where(Review.review_date <= date_to)
+        return stmt
+
+    top_rows = (
+        await session.execute(
+            _scoped(select(Review.primary_category, func.count().label("cnt")).select_from(Review))
+            .where(Review.sentiment_label == LABEL_NEGATIVE)
+            .where(Review.primary_category != "belirsiz")
+            .group_by(Review.primary_category)
+            .order_by(func.count().desc())
+            .limit(limit)
+        )
+    ).all()
+
+    picks: list[CategoryPerspectivePick] = []
+    for category_code, negative_count in top_rows:
+        persp_row = (
+            await session.execute(
+                _scoped(
+                    select(
+                        Review.company_perspective_code,
+                        func.count().label("neg_cnt"),
+                    ).select_from(Review)
+                )
+                .where(Review.primary_category == category_code)
+                .where(Review.company_perspective_code.is_not(None))
+                .where(Review.sentiment_label == LABEL_NEGATIVE)
+                .group_by(Review.company_perspective_code)
+                .order_by(func.count().desc())
+                .limit(1)
+            )
+        ).first()
+        if persp_row is None:
+            picks.append(
+                CategoryPerspectivePick(
+                    primary_category_code=str(category_code),
+                    negative_count=int(negative_count),
+                    perspective_code=None,
+                    bucket_total=0,
+                    can_generate=False,
+                )
+            )
+            continue
+        perspective_code = str(persp_row[0])
+        bucket_total = (
+            await session.execute(
+                _scoped(select(func.count()).select_from(Review))
+                .where(Review.primary_category == category_code)
+                .where(Review.company_perspective_code == perspective_code)
+            )
+        ).scalar_one()
+        picks.append(
+            CategoryPerspectivePick(
+                primary_category_code=str(category_code),
+                negative_count=int(negative_count),
+                perspective_code=perspective_code,
+                bucket_total=int(bucket_total),
+                can_generate=int(bucket_total) >= MIN_REVIEWS,
+            )
+        )
+    return picks
+
+
+async def total_negative_count(
+    session: AsyncSession,
+    tenant_id: UUID,
+    *,
+    date_from: datetime | None,
+    date_to: datetime | None,
+) -> int:
+    """Denominator for card ``share_pct`` — ALL negatives in the
+    window, 'belirsiz' included (mirrors ``_top_problems``: the
+    numerator narrative excludes it, the honest denominator doesn't)."""
+    stmt = (
+        select(func.count())
+        .select_from(Review)
+        .where(Review.tenant_id == tenant_id)
+        .where(Review.deleted_at.is_(None))
+        .where(Review.quality_flag.is_(None))
+        .where(Review.sentiment_label == LABEL_NEGATIVE)
+    )
+    if date_from is not None:
+        stmt = stmt.where(Review.review_date >= date_from)
+    if date_to is not None:
+        stmt = stmt.where(Review.review_date <= date_to)
+    return int((await session.execute(stmt)).scalar_one() or 0)
+
+
+async def latest_analysis_any_window(
+    session: AsyncSession,
+    tenant_id: UUID,
+    *,
+    primary_category_code: str,
+    perspective_code: str,
+) -> RootCauseAnalysis | None:
+    """Newest analysis for (tenant, category, perspective) regardless
+    of the analysis's OWN date_from/date_to — the overview shows the
+    freshest thinking; its window rides along in the response block
+    rather than gating the lookup (a ranking window that shrank since
+    the analysis was generated shouldn't hide it)."""
+    stmt = (
+        select(RootCauseAnalysis)
+        .where(RootCauseAnalysis.tenant_id == tenant_id)
+        .where(RootCauseAnalysis.primary_category_code == primary_category_code)
+        .where(RootCauseAnalysis.perspective_code == perspective_code)
+        .order_by(RootCauseAnalysis.created_at.desc())
+        .limit(1)
+    )
+    return (await session.execute(stmt)).scalar_one_or_none()
+
+
+def day_rounded_window(now: datetime | None = None) -> tuple[date, date]:
+    """90-day window, rounded to whole UTC days: ``date_to`` = today,
+    ``date_from`` = today - 90.
+
+    Used ONLY by the post-batch auto-generation task. Day-rounding is
+    the whole point: several batches can land for the same tenant on
+    the same day, and each would otherwise compute a (date_from,
+    date_to) pair a few seconds apart — different cache keys, so the
+    12h ``RootCauseService`` cache would never dedup them and every
+    batch would re-spend an LLM call. Rounding to the day means every
+    call site on the same UTC day produces the identical tuple.
+    """
+    reference = (now or datetime.now(UTC)).astimezone(UTC)
+    today = reference.date()
+    return today - timedelta(days=90), today
 
 
 class RootCauseService:
@@ -146,9 +322,7 @@ class RootCauseService:
     ) -> dict[str, Any] | None:
         """Cache → DB sırasıyla en son üretilmiş analizi döndür.
         Hiç üretilmemişse None (route 404'e çevirir)."""
-        cache_key = self._cache_key(
-            primary_category, perspective_code, date_from, date_to
-        )
+        cache_key = self._cache_key(primary_category, perspective_code, date_from, date_to)
         cached = await self._cache_get(cache_key)
         if cached is not None:
             return cached
@@ -200,15 +374,14 @@ class RootCauseService:
                 f"yok: {', '.join(sorted(valid_codes))}"
             )
 
-        cache_key = self._cache_key(
-            primary_category, perspective_code, date_from, date_to
-        )
+        cache_key = self._cache_key(primary_category, perspective_code, date_from, date_to)
         if not force_refresh:
             cached = await self._cache_get(cache_key)
             if cached is not None:
                 _logger.info(
                     "root-cause cache hit tenant=%s key=%s",
-                    self._tenant_id, cache_key,
+                    self._tenant_id,
+                    cache_key,
                 )
                 return cached
 
@@ -224,13 +397,9 @@ class RootCauseService:
                 f"(en az {MIN_REVIEWS} gerekiyor, bulunan {sample.total})."
             )
 
-        key_selection = await load_active_llm_keys(
-            self._session, self._tenant_id
-        )
+        key_selection = await load_active_llm_keys(self._session, self._tenant_id)
         if key_selection is None:
-            raise NoCredentialsError(
-                "Tenant has no active LLM API keys configured"
-            )
+            raise NoCredentialsError("Tenant has no active LLM API keys configured")
         keys = key_selection.keys
         rotator = GeminiKeyRotator(keys)
         provider_name = key_selection.provider
@@ -248,9 +417,7 @@ class RootCauseService:
         from imga_api.services.prompt_override import select_prompt
 
         _ctx: dict[str, Any] = {
-            "primary_category_label": _CATEGORY_LABELS.get(
-                primary_category, primary_category
-            ),
+            "primary_category_label": _CATEGORY_LABELS.get(primary_category, primary_category),
             "perspective_label": perspective_label,
             "date_from": date_from,
             "date_to": date_to,
@@ -316,9 +483,7 @@ class RootCauseService:
         try:
             async with auditor:
                 try:
-                    (response, token_usage), key_used = (
-                        await rotator.call_with_rotation(_call)
-                    )
+                    (response, token_usage), key_used = await rotator.call_with_rotation(_call)
                 except AllKeysExhaustedError as exc:
                     auditor.record_failure(
                         error_type="all_keys_exhausted",
@@ -338,12 +503,8 @@ class RootCauseService:
                     )
                     raise
                 auditor.record_success(
-                    input_tokens=(
-                        token_usage.get("input") if token_usage else None
-                    ),
-                    output_tokens=(
-                        token_usage.get("output") if token_usage else None
-                    ),
+                    input_tokens=(token_usage.get("input") if token_usage else None),
+                    output_tokens=(token_usage.get("output") if token_usage else None),
                 )
         except AllKeysExhaustedError:
             await mark_keys_failed(self._session, failed_invalid_key_ids)
@@ -378,10 +539,13 @@ class RootCauseService:
         await self._cache_set(cache_key, result)
 
         _logger.info(
-            "root-cause generated tenant=%s main=%s sub=%s reviews=%d "
-            "key_id=%s duration_ms=%d",
-            self._tenant_id, primary_category, perspective_code,
-            sample.total, key_used.id, duration_ms,
+            "root-cause generated tenant=%s main=%s sub=%s reviews=%d key_id=%s duration_ms=%d",
+            self._tenant_id,
+            primary_category,
+            perspective_code,
+            sample.total,
+            key_used.id,
+            duration_ms,
         )
         return result
 
@@ -409,9 +573,7 @@ class RootCauseService:
             if perspective_code == UNMATCHED_PERSPECTIVE_SENTINEL:
                 stmt = stmt.where(Review.company_perspective_code.is_(None))
             else:
-                stmt = stmt.where(
-                    Review.company_perspective_code == perspective_code
-                )
+                stmt = stmt.where(Review.company_perspective_code == perspective_code)
             # Drill-down endpoint'iyle aynı pencere kuralı: kapsayıcı
             # UTC gün sınırları, üst sınır gün SONU (2026-03-31 o günün
             # 23:59:59'unu da kapsar).
@@ -422,8 +584,7 @@ class RootCauseService:
                 )
             if date_to is not None:
                 stmt = stmt.where(
-                    Review.review_date
-                    <= datetime.combine(date_to, datetime.max.time(), tzinfo=UTC)
+                    Review.review_date <= datetime.combine(date_to, datetime.max.time(), tzinfo=UTC)
                 )
             return stmt
 
@@ -432,9 +593,7 @@ class RootCauseService:
                 _scoped(
                     select(
                         func.count().label("cnt"),
-                        func.count()
-                        .filter(Review.sentiment_label == LABEL_NEGATIVE)
-                        .label("neg"),
+                        func.count().filter(Review.sentiment_label == LABEL_NEGATIVE).label("neg"),
                     ).select_from(Review)
                 )
             )
@@ -453,9 +612,7 @@ class RootCauseService:
                     ).select_from(Review)
                 )
                 .order_by(
-                    case(
-                        (Review.sentiment_label == LABEL_NEGATIVE, 0), else_=1
-                    ),
+                    case((Review.sentiment_label == LABEL_NEGATIVE, 0), else_=1),
                     Review.review_date.desc(),
                 )
                 .limit(MAX_SAMPLE_REVIEWS)
@@ -485,9 +642,7 @@ class RootCauseService:
 
     async def _tenant_language(self) -> str:
         language = (
-            await self._session.execute(
-                select(Tenant.language).where(Tenant.id == self._tenant_id)
-            )
+            await self._session.execute(select(Tenant.language).where(Tenant.id == self._tenant_id))
         ).scalar_one_or_none()
         return language or "tr"
 
@@ -508,8 +663,7 @@ class RootCauseService:
         df = date_from.isoformat() if date_from else "all"
         dt = date_to.isoformat() if date_to else "all"
         return (
-            f"{CACHE_KEY_PREFIX}:{self._tenant_id}:{primary_category}:"
-            f"{perspective_code}:{df}:{dt}"
+            f"{CACHE_KEY_PREFIX}:{self._tenant_id}:{primary_category}:{perspective_code}:{df}:{dt}"
         )
 
     async def _cache_get(self, key: str) -> dict[str, Any] | None:
@@ -517,9 +671,7 @@ class RootCauseService:
             client = get_redis_client()
             raw = await client.get(key)
         except Exception as exc:
-            _logger.warning(
-                "root-cause cache get failed (%s); falling through", exc
-            )
+            _logger.warning("root-cause cache get failed (%s); falling through", exc)
             return None
         if raw is None:
             return None
@@ -527,9 +679,9 @@ class RootCauseService:
             data = json.loads(raw.decode("utf-8"))
         except (ValueError, TypeError, AttributeError) as exc:
             _logger.warning(
-                "root-cause cache holds malformed payload at %s (%s); "
-                "treating as miss",
-                key, exc,
+                "root-cause cache holds malformed payload at %s (%s); treating as miss",
+                key,
+                exc,
             )
             return None
         if not isinstance(data, dict):
@@ -569,13 +721,9 @@ def _validate_and_normalise(payload: dict[str, Any]) -> dict[str, Any]:
         )
     raw_causes = payload.get("root_causes")
     if not isinstance(raw_causes, list) or not raw_causes:
-        raise RootCauseResponseInvalidError(
-            "root cause response has no root_causes items"
-        )
+        raise RootCauseResponseInvalidError("root cause response has no root_causes items")
     if len(raw_causes) > 5:
-        _logger.warning(
-            "root cause response has %d items, trimming to 5", len(raw_causes)
-        )
+        _logger.warning("root cause response has %d items, trimming to 5", len(raw_causes))
         raw_causes = raw_causes[:5]
 
     causes: list[dict[str, Any]] = []
@@ -600,9 +748,7 @@ def _validate_and_normalise(payload: dict[str, Any]) -> dict[str, Any]:
             }
         )
     if not causes:
-        raise RootCauseResponseInvalidError(
-            "root cause response items were all unusable"
-        )
+        raise RootCauseResponseInvalidError("root cause response items were all unusable")
     return {"summary": str(payload.get("summary", "")), "root_causes": causes}
 
 
@@ -626,10 +772,15 @@ __all__ = [
     "CACHE_TTL_SECONDS",
     "MAX_SAMPLE_REVIEWS",
     "MIN_REVIEWS",
+    "CategoryPerspectivePick",
     "InvalidCategoryError",
     "NoCredentialsError",
     "NotEnoughReviewsError",
     "RootCauseResponseInvalidError",
     "RootCauseService",
     "RootCauseServiceError",
+    "day_rounded_window",
+    "latest_analysis_any_window",
+    "pick_top_categories",
+    "total_negative_count",
 ]

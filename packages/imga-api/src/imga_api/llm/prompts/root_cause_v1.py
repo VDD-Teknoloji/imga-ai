@@ -80,7 +80,10 @@ Yorumları oku ve 1-5 adet kök neden çıkar. Her kök neden için:
 - affected_surface: sorunun yaşandığı temas noktası \
   (örn. "mobil uygulama", "e-posta bilgilendirmesi", "kargo takip \
   ekranı", "çağrı merkezi")
-- suggested_action: sahibi belli, somut tek bir düzeltme önerisi
+- suggested_action: sahibi belli, somut tek bir düzeltme önerisi. Yeni bir \
+  ekran ya da özellik inşa etmeyi önerme; var olan bir kanaldan (SMS, \
+  e-posta, çağrı merkezi scripti, iç süreç talimatı) BU HAFTA \
+  başlatılabilecek, sahibi belli somut bir adım öner.
 - share_estimate_pct: bu kök nedenin kovadaki yorumların yüzde kaçını \
   açıkladığına dair tahmin (0-100). Tahmin edemiyorsan bu alanı HİÇ \
   YAZMA.

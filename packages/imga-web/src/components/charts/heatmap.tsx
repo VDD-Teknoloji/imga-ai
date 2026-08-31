@@ -37,6 +37,16 @@ const SCALES: Record<string, [string, string]> = {
   diverging: ["#fee2e2", "#141c32"],
 };
 
+// 2026-09-01 — hücre içi değer metninin rengi SCALES'in KENDİ (sabit,
+// tema-bağımsız) ramp'ine göre seçilir — sayfanın foreground/background
+// token'larına DEĞİL. Ramp'in koyu ucu (ör. #141c32) her iki temada da
+// aynı hex kaldığı için (SCALES tema-agnostik veri rengi, bkz. dosya
+// başı yorum), üstündeki metin de tema-bağımsız beyaz/koyu kalmalı;
+// var(--foreground) gibi tema-göre-dönen bir token kullanmak koyu
+// temada kontrastı tersine çevirir (foreground orada zaten açık renk).
+const CELL_TEXT_ON_DARK = "#ffffff";
+const CELL_TEXT_ON_LIGHT = "#0f172a";
+
 const CELL_W = 64;
 const CELL_H = 36;
 const ROW_LABEL_W = 140;
@@ -113,7 +123,7 @@ export function Heatmap({
             textAnchor="middle"
             fontSize="11"
             fontWeight="500"
-            fill="#374151"
+            fill="var(--muted-foreground)"
           >
             {c}
           </text>
@@ -127,7 +137,7 @@ export function Heatmap({
               y={COL_LABEL_H + i * CELL_H + CELL_H / 2 + 4}
               textAnchor="end"
               fontSize="11"
-              fill="#374151"
+              fill="var(--muted-foreground)"
             >
               {rLabel.length > 18 ? `${rLabel.slice(0, 17)}…` : rLabel}
             </text>
@@ -148,7 +158,7 @@ export function Heatmap({
                     width={CELL_W}
                     height={CELL_H}
                     fill={fill}
-                    stroke={isHover ? "#0f172a" : "#ffffff"}
+                    stroke={isHover ? "var(--foreground)" : "var(--card)"}
                     strokeWidth={isHover ? 2 : 1}
                     style={{ cursor: onCellClick ? "pointer" : "default" }}
                     onMouseEnter={() => setHover({ r: i, c: j })}
@@ -165,7 +175,7 @@ export function Heatmap({
                     textAnchor="middle"
                     fontSize="11"
                     fontWeight="500"
-                    fill={t > 0.5 ? "#ffffff" : "#0f172a"}
+                    fill={t > 0.5 ? CELL_TEXT_ON_DARK : CELL_TEXT_ON_LIGHT}
                     pointerEvents="none"
                   >
                     {labelText}
@@ -185,7 +195,7 @@ export function Heatmap({
             textAnchor="middle"
             fontSize="11"
             fontWeight="600"
-            fill="#1f2937"
+            fill="var(--foreground)"
           >
             {total}
           </text>
@@ -200,7 +210,7 @@ export function Heatmap({
             textAnchor="middle"
             fontSize="11"
             fontWeight="600"
-            fill="#1f2937"
+            fill="var(--foreground)"
           >
             {total}
           </text>

@@ -22,13 +22,14 @@ baseline note.
 from __future__ import annotations
 
 import logging
-from datetime import date
+from datetime import UTC, date, datetime, timedelta
+from datetime import time as dt_time
 from typing import Annotated, Any
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from imga_core.llm import AllKeysExhaustedError, LLMError
-from imga_db.models import UserTenantRole
+from imga_db.models import RootCauseAnalysis, UserTenantRole
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -51,6 +52,9 @@ from imga_api.services.root_cause_service import (
     NotEnoughReviewsError,
     RootCauseResponseInvalidError,
     RootCauseService,
+    latest_analysis_any_window,
+    pick_top_categories,
+    total_negative_count,
 )
 from imga_api.services.word_cloud import WordCloudGenerator
 from imga_api.services.word_cloud.generator import ALLOWED_SENTIMENTS
@@ -59,17 +63,21 @@ _logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/tenants/me/insights", tags=["Insights"])
 
-_AnyMember = Depends(require_role(
-    UserTenantRole.TENANT_ADMIN,
-    UserTenantRole.ANALYST,
-    UserTenantRole.VIEWER,
-))
+_AnyMember = Depends(
+    require_role(
+        UserTenantRole.TENANT_ADMIN,
+        UserTenantRole.ANALYST,
+        UserTenantRole.VIEWER,
+    )
+)
 # Kök neden ÜRETİMİ para harcayan bir LLM çağrısı — okuma her üyeye
 # açık, tetikleme yönetici + analiste.
-_AdminOrAnalyst = Depends(require_role(
-    UserTenantRole.TENANT_ADMIN,
-    UserTenantRole.ANALYST,
-))
+_AdminOrAnalyst = Depends(
+    require_role(
+        UserTenantRole.TENANT_ADMIN,
+        UserTenantRole.ANALYST,
+    )
+)
 
 
 def _require_active_tenant(current: CurrentUser) -> UUID:
@@ -148,6 +156,37 @@ class RootCauseGenerateRequest(BaseModel):
     date_from: date | None = None
     date_to: date | None = None
     force_refresh: bool = False
+
+
+class RootCauseOverviewCause(BaseModel):
+    title: str
+    description: str
+    evidence_quotes: list[str]
+    affected_surface: str | None
+    suggested_action: str | None
+    share_estimate_pct: float | None
+
+
+class RootCauseAnalysisBlock(BaseModel):
+    generated_at: datetime
+    review_count: int
+    date_from: date | None
+    date_to: date | None
+    summary: str
+    causes: list[RootCauseOverviewCause]
+
+
+class RootCauseCard(BaseModel):
+    primary_category_code: str
+    negative_count: int
+    share_pct: float
+    perspective_code: str | None
+    can_generate: bool
+    analysis: RootCauseAnalysisBlock | None
+
+
+class RootCauseOverviewResponse(BaseModel):
+    cards: list[RootCauseCard]
 
 
 class HeatmapResponse(BaseModel):
@@ -309,12 +348,7 @@ async def get_heatmap(
     batch_id: UUID | None = None,
     include_flagged: Annotated[
         bool,
-        Query(
-            description=(
-                "Düşük kaliteli (bayraklı) yorumları da dahil et. "
-                "Varsayılan: hariç."
-            )
-        ),
+        Query(description=("Düşük kaliteli (bayraklı) yorumları da dahil et. Varsayılan: hariç.")),
     ] = False,
 ) -> HeatmapResponse:
     if x_axis not in ALLOWED_X_AXES:
@@ -379,8 +413,7 @@ async def get_root_cause(
         str,
         Query(
             description=(
-                "Alt kategori kodu. '__unmatched__' alt kategorisi "
-                "atanmamış yorumların kovası."
+                "Alt kategori kodu. '__unmatched__' alt kategorisi atanmamış yorumların kovası."
             )
         ),
     ],
@@ -393,9 +426,7 @@ async def get_root_cause(
     try:
         async with app_session.begin():
             await bind_tenant(app_session, current)
-            result = await RootCauseService(
-                app_session, tenant_id, current.user_id
-            ).get_latest(
+            result = await RootCauseService(app_session, tenant_id, current.user_id).get_latest(
                 primary_category=primary_category,
                 perspective_code=perspective_code,
                 date_from=date_from,
@@ -404,9 +435,7 @@ async def get_root_cause(
     except HTTPException:
         raise
     except Exception:
-        _logger.exception(
-            "root-cause read failed", extra={"tenant_id": str(tenant_id)}
-        )
+        _logger.exception("root-cause read failed", extra={"tenant_id": str(tenant_id)})
         raise
     if result is None:
         raise HTTPException(
@@ -484,14 +513,138 @@ async def generate_root_cause(
     except HTTPException:
         raise
     except Exception:
-        _logger.exception(
-            "root-cause generate failed", extra={"tenant_id": str(tenant_id)}
-        )
+        _logger.exception("root-cause generate failed", extra={"tenant_id": str(tenant_id)})
         raise
     if deferred is not None:
         raise deferred
     assert result is not None  # deferred is None => generate() returned
     return RootCauseResponse(**result)
+
+
+@router.get(
+    "/root-cause/overview",
+    response_model=RootCauseOverviewResponse,
+    summary="En sık şikayet edilen kategoriler + en kötü perspektif + varsa kök neden.",
+)
+async def get_root_cause_overview(
+    current: Annotated[CurrentUser, _AnyMember],
+    app_session: Annotated[AsyncSession, Depends(get_app_session)],
+    date_from: datetime | None = None,
+    date_to: datetime | None = None,
+    limit: Annotated[int, Query(ge=1, le=5)] = 3,
+) -> RootCauseOverviewResponse:
+    """Drill-down'a hiç girmeden en sık negatif kategoriler + o
+    kategorinin en kötü perspektifi + (üretilmişse) en taze kök neden
+    analizi. Perspektifi bulunamayan veya kovası eşiğin altında kalan
+    kategoriler ``can_generate=False`` ile döner — ASLA 400/500, boş
+    tenant'ta ``cards: []``."""
+    tenant_id = _require_active_tenant(current)
+    window_to = date_to or datetime.now(UTC)
+    if date_to is not None and date_to.time() == dt_time():
+        # FE YYYY-MM-DD gönderir, FastAPI geceyarısına çözer — bitiş
+        # gününü tam kapsa (tenant_executive._make_scoped ile aynı
+        # düzeltme, aynı gerekçe).
+        window_to = date_to + timedelta(days=1) - timedelta(microseconds=1)
+    window_from = date_from or (window_to - timedelta(days=90))
+    try:
+        async with app_session.begin():
+            await bind_tenant(app_session, current)
+            picks = await pick_top_categories(
+                app_session,
+                tenant_id,
+                date_from=window_from,
+                date_to=window_to,
+                limit=limit,
+            )
+            negative_total = await total_negative_count(
+                app_session, tenant_id, date_from=window_from, date_to=window_to
+            )
+            cards: list[RootCauseCard] = []
+            for pick in picks:
+                share = (
+                    round((pick.negative_count / negative_total) * 100, 1)
+                    if negative_total > 0
+                    else 0.0
+                )
+                analysis_block: RootCauseAnalysisBlock | None = None
+                if pick.perspective_code is not None:
+                    row = await latest_analysis_any_window(
+                        app_session,
+                        tenant_id,
+                        primary_category_code=pick.primary_category_code,
+                        perspective_code=pick.perspective_code,
+                    )
+                    if row is not None:
+                        analysis_block = _parse_analysis_row(row)
+                cards.append(
+                    RootCauseCard(
+                        primary_category_code=pick.primary_category_code,
+                        negative_count=pick.negative_count,
+                        share_pct=share,
+                        perspective_code=pick.perspective_code,
+                        can_generate=pick.can_generate,
+                        analysis=analysis_block,
+                    )
+                )
+    except HTTPException:
+        raise
+    except Exception:
+        _logger.exception("root-cause overview failed", extra={"tenant_id": str(tenant_id)})
+        raise
+    return RootCauseOverviewResponse(cards=cards)
+
+
+def _parse_analysis_row(row: RootCauseAnalysis) -> RootCauseAnalysisBlock:
+    """Defensively shape a persisted ``root_cause_analyses.payload``
+    into the overview's response block. The payload is strict:false
+    LLM output (same precedent as ``strategic_payload.py``'s SWOT/OKR
+    normalizers) — a malformed cause entry is skipped, never 500; a
+    payload that isn't even the expected shape degrades to an empty
+    ``causes`` list rather than losing the whole card (``summary`` /
+    ``review_count`` / dates are plain DB columns and always survive)."""
+    payload = row.payload if isinstance(row.payload, dict) else {}
+    summary = payload.get("summary")
+    causes: list[RootCauseOverviewCause] = []
+    raw_causes = payload.get("root_causes")
+    if isinstance(raw_causes, list):
+        for item in raw_causes:
+            if not isinstance(item, dict):
+                continue
+            title = item.get("title")
+            description = item.get("description")
+            if not isinstance(title, str) or not isinstance(description, str):
+                continue
+            quotes_raw = item.get("evidence_quotes")
+            quotes = (
+                [q for q in quotes_raw if isinstance(q, str)]
+                if isinstance(quotes_raw, list)
+                else []
+            )
+            surface = item.get("affected_surface")
+            action = item.get("suggested_action")
+            share_raw = item.get("share_estimate_pct")
+            try:
+                share_estimate = float(share_raw) if share_raw is not None else None
+            except (TypeError, ValueError):
+                share_estimate = None
+            causes.append(
+                RootCauseOverviewCause(
+                    title=title,
+                    description=description,
+                    evidence_quotes=quotes,
+                    affected_surface=surface if isinstance(surface, str) else None,
+                    suggested_action=action if isinstance(action, str) else None,
+                    share_estimate_pct=share_estimate,
+                )
+            )
+    return RootCauseAnalysisBlock(
+        generated_at=row.created_at,
+        review_count=row.review_count,
+        date_from=row.date_from,
+        date_to=row.date_to,
+        summary=summary if isinstance(summary, str) else "",
+        causes=causes,
+    )
 
 
 def _strip_for_response(payload: dict[str, Any]) -> dict[str, Any]:

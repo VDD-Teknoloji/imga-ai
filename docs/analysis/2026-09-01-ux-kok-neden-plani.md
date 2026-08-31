@@ -42,8 +42,8 @@ Hedef sıralama — her blok bir SORUYU yanıtlar, sayı değil hüküm konuşur
 
 | # | Blok | Soru | İçerik |
 |---|------|------|--------|
-| 1 | **Bugünkü hüküm** (hero) | Durum ne? | Tek cümle hüküm (mevcut ExecutiveHero kalır, sadeleşir) |
-| 2 | **Kök neden kartları** (YENİ, sayfanın kalbi) | Neden? Ne yapmalıyım? | En kötü 3 kategorinin son kök neden analizi: başlık + pay % + **önerilen aksiyon cümlesi** ("Gümrük belgelerini müşterilerinize daha net iletmelisiniz") + "Kanıtı gör" → filtreli /reviews | 
+| 1 | **Kök neden kartları** (YENİ, sayfanın kalbi — ürün sahibi kararı 2026-09-01: en üstte) | Neden? Ne yapmalıyım? | En kötü 3 kategorinin son kök neden analizi: başlık + pay % + **yapılacak iş cümlesi** (bu hafta, var olan kanaldan başlatılabilir) + "Kanıtı gör (n yorum)" → filtreli /reviews |
+| 2 | **Bugünkü hüküm** (hero) | Durum ne? | Tek cümle hüküm (mevcut ExecutiveHero, kartların altına iner) | 
 | 3 | **Kanıt şeridi** | İnanayım mı? | Kök nedenin evidence_quotes'ları, tıklanınca yorum detayı |
 | 4 | **Veri kalitesi koçu** (YENİ) | Analiz ne kadar güvenilir? | "Yorumlarınızın %12'si boş/anlamsız girilmiş — temsilci bazında dökümü gör; veri kalitesi arttıkça kök neden isabeti artar" + en çok sorulan sorular |
 | 5 | Sayısal özet | Detay isteyene | NPS/kategori/duygu sayıları (mevcut bileşenler, AŞAĞI iner) |
@@ -111,19 +111,27 @@ eklenebilir.
   (JSONB; yazar kimliği KVKK gereği bilinçli olarak ALINMIYOR)
 - `GET /reviews/summary` + reviews split-view sağ paneli
 
-**Sonraki oturum (Dalga 4 — ana sayfa "kök neden önce"):**
-1. Batch-sonrası otomatik kök neden üretimi (top-3 negatif kategori köprüsüyle)
-2. Ana sayfa yeniden sıralaması + kök neden kartları + kanıt şeridi
-3. Veri kalitesi koçu bloğu (ClassificationQualityChip'in terfisi)
-4. Kök neden hedefinin URL-adreslenebilir olması (paylaşılabilir link)
-5. Duygu token'larının tüm eski grafiklerde merkezileştirilmesi; heatmap koyu-mod
-6. Ölü dashboard bileşenlerinin (sentiment-donut, attention-list…) temizliği
+**Dalga 4-5 (2026-09-01, "her şeyi tamamla" talimatıyla uygulandı):**
+1. Batch-sonrası otomatik kök neden üretimi: arq görevi, gün-yuvarlanmış
+   90 günlük pencere (12s cache gerçek dedup olsun diye), kurum başına
+   günde bir, <50 yorumlu kurum atlanır, force_refresh asla kullanılmaz
+2. `GET /insights/root-cause/overview` + ana sayfa kök neden kartları —
+   ürün sahibi kararıyla duygu barının ÜSTÜNDE; kanıt alıntıları
+   `/reviews?search=` linkli, pay çipi payda+n ile dürüst
+3. Veri kalitesi koçu (summary ucundan beslenir; %5 altında sessiz onay)
+4. Duygu token geçişi (insights/operations/compare) + heatmap koyu-mod
+   + 9 ölü dashboard bileşeni silindi + detayda tweet etkileşim rozetleri
+5. 5-persona uzman paneli (CX danışmanı, C-level, UX yazarı, veri
+   analisti, onboarding) — ~25 S/M düzeltme uygulandı: hüküm>skor
+   hiyerarşisi, temsilci matrisinde oran+n eşiği (adalet), NPS min-10
+   yanıt eşiği, "Bayraklı"→"Geçersiz", model adı ekrandan kalktı,
+   sıfır-veri kurum hoş-geldin akışı, viewer rol kopyaları
+6. `content_type` backfill'i: 70.387 satır tarandı, 10.093 soru işaretlendi
 
-**Ürün sahibinin kararını bekleyen noktalar:**
-- Otomatik kök neden üretim tetiği: her batch sonrası mı, günlük mü? (maliyet
-  ~3 çağrı/üretim; 12 saat cache zaten mükerrer üretimi engelliyor)
-- Kök neden kartındaki aksiyon cümlesi ticket/aksiyon maddesine dönüşsün mü
-  ("Aksiyona çevir" butonu → action_items)?
-- `content_type` için sıradaki türler (öneri, teşekkür, tehdit/şikâyet-dışı?)
-- Twitter'da yüksek etkileşimli (viral) şikâyet uyarısı (source_meta artık
-  veriyi taşıyor; eşik/uyarı kanalı kararı gerek)
+**Verilen kararlar (2026-09-01):** üretim temposu = batch-sonrası + günlük
+dedup; kanıt doğrulama = alıntıdan aramaya link. **Bilinçli ertelenenler:**
+"Aksiyona çevir" (sahiplik/atama UX'i ürün kararı ister), `content_type`
+tür genişlemesi (öneri/teşekkür — ürün girdisi), viral şikâyet uyarısı
+(eşik + kanal kararı; veri artık toplanıyor), kök neden URL-adreslenebilirliği
+(kartlar inline gösterince aciliyeti düştü), üç "ne yapmalıyım" yüzeyinin
+(kök neden / SWOT / brifing) tekilleştirilmesi (kaynak-of-truth kararı).

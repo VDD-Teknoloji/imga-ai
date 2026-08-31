@@ -42,17 +42,16 @@ import {
 import { formatDurationMinutes } from "@/lib/number-format";
 import { useTranslation } from "@/lib/i18n/use-translation";
 
-// Sentiment renkleri: insights/page.tsx'teki SENTIMENT_COLOURS ile aynı
-// hex değerleri — kasıtlı yerel kopya (page.tsx bir Next.js Page dosyası,
-// oradan named export App Router'ın izin verdiği export alanları
-// listesini bozar; compare/page.tsx ve sentiment-donut.tsx da aynı
-// nedenle kendi kopyalarını tutuyor). Anahtarlar operasyon uçlarının
+// 2026-09-01 — globals.css'teki --sentiment-negative/-neutral/-positive
+// token'larına işaret eder (bkz. insights/page.tsx'teki SENTIMENT_COLOURS
+// ve compare/page.tsx'teki kendi kopyası — üçü de artık aynı token'ları
+// kullanıyor, ayrı hex kopyası yok). Anahtarlar operasyon uçlarının
 // sözleşmesine göre ASCII "NOTR" (Ö'süz) — insights'in kendi iç
 // state'indeki "NÖTR" ile KARIŞTIRMAYIN, bu iki ayrı sözlük.
 const OPS_SENTIMENT_COLOURS: Record<"NEGATIF" | "NOTR" | "POZITIF", string> = {
-  NEGATIF: "#dc2626",
-  NOTR: "#737373",
-  POZITIF: "#16a34a",
+  NEGATIF: "var(--sentiment-negative)",
+  NOTR: "var(--sentiment-neutral)",
+  POZITIF: "var(--sentiment-positive)",
 };
 
 const DIMENSION_ORDER: readonly BreakdownDimensionKey[] = [
