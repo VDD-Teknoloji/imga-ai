@@ -562,7 +562,11 @@ def test_validate_and_normalise_keeps_and_trims_showcase_fields() -> None:
                 "headline": " " + "H" * 70 + " ",
                 "action_short": "Evrak isteğini aynı gün SMS ile bildirin.",
             },
-            {"title": "eski", "description": "d", "headline": 42},
+            {
+                "title": "Eski bir kök neden başlığı",
+                "description": "Yeni alanlardan önce üretilmiş madde.",
+                "headline": 42,
+            },
         ],
     }
     out = _validate_and_normalise(payload)
