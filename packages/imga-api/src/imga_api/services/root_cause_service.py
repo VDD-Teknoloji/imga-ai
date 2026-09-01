@@ -83,6 +83,8 @@ MAX_SAMPLE_REVIEWS = 300
 MIN_REVIEWS = 10
 #: Tek yorumun prompt'a giren en fazla karakteri (uzun kuyruğu kırp).
 _MAX_REVIEW_CHARS = 600
+# 2026-09-01 — yer tutucu ('...') iskelet yanıt için yeniden deneme sayısı.
+_PLACEHOLDER_RETRIES = 2
 
 _CATEGORY_LABELS: dict[str, str] = {c.code: c.name for c in DEFAULT_GLOBAL_CATEGORIES}
 
@@ -97,6 +99,11 @@ class NotEnoughReviewsError(RootCauseServiceError):
 
 class RootCauseResponseInvalidError(RootCauseServiceError):
     """LLM 200 döndü ama şemanın zorunlu alanları eksik."""
+
+
+class RootCausePlaceholderError(RootCauseResponseInvalidError):
+    """Model muhakemesiz bir şema iskeleti döndürdü (tüm metin alanları
+    "..." / boş). Kaydedilmez; ``generate`` sınırlı sayıda yeniden dener."""
 
 
 class InvalidCategoryError(RootCauseServiceError):
@@ -477,46 +484,71 @@ class RootCauseService:
             actor_user_id=self._user_id,
             related_entity_type="root_cause_analysis",
         )
-        auditor = LLMCallAuditor(self._session, audit_ctx, prompt=user_prompt)
         start = time.monotonic()
         token_usage: dict[str, int] | None = None
-        try:
-            async with auditor:
-                try:
-                    (response, token_usage), key_used = await rotator.call_with_rotation(_call)
-                except AllKeysExhaustedError as exc:
-                    auditor.record_failure(
-                        error_type="all_keys_exhausted",
-                        error_message=str(exc.__cause__ or exc)[:1024],
+
+        async def _attempt() -> tuple[dict[str, Any], Any]:
+            nonlocal token_usage
+            auditor = LLMCallAuditor(self._session, audit_ctx, prompt=user_prompt)
+            try:
+                async with auditor:
+                    try:
+                        (response, usage), key_used = await rotator.call_with_rotation(_call)
+                    except AllKeysExhaustedError as exc:
+                        auditor.record_failure(
+                            error_type="all_keys_exhausted",
+                            error_message=str(exc.__cause__ or exc)[:1024],
+                        )
+                        raise
+                    except LLMError as exc:
+                        auditor.record_failure(
+                            error_type="api_error",
+                            error_message=str(exc)[:1024],
+                        )
+                        raise
+                    except Exception as exc:
+                        auditor.record_failure(
+                            error_type="other",
+                            error_message=f"{type(exc).__name__}: {exc}"[:1024],
+                        )
+                        raise
+                    token_usage = usage
+                    auditor.record_success(
+                        input_tokens=(usage.get("input") if usage else None),
+                        output_tokens=(usage.get("output") if usage else None),
                     )
+            except AllKeysExhaustedError:
+                await mark_keys_failed(self._session, failed_invalid_key_ids)
+                raise
+            except LLMError:
+                raise
+            return response, key_used
+
+        # 2026-09-01 — GLM ara sıra muhakemesiz bir şema iskeleti döndürüyor
+        # (63 çıktı token'ı, 0 muhakeme; tüm alanlar "..."). Kaydedilirse
+        # kart ekranda "..." gösterir. Yer tutucu yanıt doğrulamada
+        # reddedilir ve sınırlı sayıda yeniden denenir; her deneme kendi
+        # denetim satırını yazar.
+        for attempt in range(_PLACEHOLDER_RETRIES + 1):
+            response, key_used = await _attempt()
+            try:
+                payload = _validate_and_normalise(response)
+                break
+            except RootCausePlaceholderError as exc:
+                if attempt >= _PLACEHOLDER_RETRIES:
                     raise
-                except LLMError as exc:
-                    auditor.record_failure(
-                        error_type="api_error",
-                        error_message=str(exc)[:1024],
-                    )
-                    raise
-                except Exception as exc:
-                    auditor.record_failure(
-                        error_type="other",
-                        error_message=f"{type(exc).__name__}: {exc}"[:1024],
-                    )
-                    raise
-                auditor.record_success(
-                    input_tokens=(token_usage.get("input") if token_usage else None),
-                    output_tokens=(token_usage.get("output") if token_usage else None),
+                _logger.warning(
+                    "root-cause placeholder response tenant=%s main=%s sub=%s attempt=%d (%s); retrying",
+                    self._tenant_id,
+                    primary_category,
+                    perspective_code,
+                    attempt + 1,
+                    exc,
                 )
-        except AllKeysExhaustedError:
-            await mark_keys_failed(self._session, failed_invalid_key_ids)
-            raise
-        except LLMError:
-            raise
 
         duration_ms = int((time.monotonic() - start) * 1000)
         if failed_invalid_key_ids:
             await mark_keys_failed(self._session, failed_invalid_key_ids)
-
-        payload = _validate_and_normalise(response)
 
         row = RootCauseAnalysis(
             tenant_id=self._tenant_id,
@@ -727,8 +759,12 @@ def _validate_and_normalise(payload: dict[str, Any]) -> dict[str, Any]:
         raw_causes = raw_causes[:5]
 
     causes: list[dict[str, Any]] = []
+    placeholder_items = 0
     for item in raw_causes:
         if not isinstance(item, dict):
+            continue
+        if _is_placeholder(item.get("title")) or _is_placeholder(item.get("description")):
+            placeholder_items += 1
             continue
         quotes = item.get("evidence_quotes")
         quotes = [str(q) for q in quotes][:3] if isinstance(quotes, list) else []
@@ -756,8 +792,21 @@ def _validate_and_normalise(payload: dict[str, Any]) -> dict[str, Any]:
             }
         )
     if not causes:
+        if placeholder_items:
+            raise RootCausePlaceholderError(
+                f"root cause response is a placeholder skeleton ({placeholder_items} items)"
+            )
         raise RootCauseResponseInvalidError("root cause response items were all unusable")
-    return {"summary": str(payload.get("summary", "")), "root_causes": causes}
+    summary = payload.get("summary", "")
+    return {"summary": "" if _is_placeholder(summary) else str(summary), "root_causes": causes}
+
+
+def _is_placeholder(value: object) -> bool:
+    """ "..."/"…"/boş ya da <8 karakterlik metin: model içeriği yazmamış."""
+    if not isinstance(value, str):
+        return True
+    stripped = value.strip().strip(".…").strip()
+    return len(stripped) < 8
 
 
 def _serialise(row: RootCauseAnalysis) -> dict[str, Any]:

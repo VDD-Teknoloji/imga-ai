@@ -570,3 +570,44 @@ def test_validate_and_normalise_keeps_and_trims_showcase_fields() -> None:
     assert first["headline"] == "H" * 60
     assert first["action_short"] == "Evrak isteğini aynı gün SMS ile bildirin."
     assert second["headline"] is None and second["action_short"] is None
+
+
+def test_validate_and_normalise_rejects_placeholder_skeleton() -> None:
+    """2026-09-01 — GLM ara sıra muhakemesiz "..." iskeleti döndürüyor;
+    böyle bir yanıt RootCausePlaceholderError ile reddedilmeli (generate
+    yeniden dener), asla kaydedilmemeli."""
+    from imga_api.services.root_cause_service import (
+        RootCausePlaceholderError,
+        _validate_and_normalise,
+    )
+
+    skeleton = {
+        "summary": "...",
+        "root_causes": [
+            {
+                "title": "...",
+                "description": "...",
+                "evidence_quotes": ["...", "..."],
+                "affected_surface": "...",
+                "suggested_action": "...",
+                "share_estimate_pct": 40,
+                "headline": "...",
+                "action_short": "...",
+            }
+        ],
+    }
+    with pytest.raises(RootCausePlaceholderError):
+        _validate_and_normalise(skeleton)
+
+    # Karışık yanıt: bir gerçek + bir iskelet madde → gerçek olan kalır,
+    # özet yer tutucuysa boşa çevrilir.
+    mixed = {
+        "summary": "…",
+        "root_causes": [
+            skeleton["root_causes"][0],
+            {"title": "Gerçek bir kök neden başlığı", "description": "Yeterince uzun açıklama."},
+        ],
+    }
+    out = _validate_and_normalise(mixed)
+    assert len(out["root_causes"]) == 1
+    assert out["summary"] == ""
