@@ -47,6 +47,20 @@ def fake_redis_client() -> Any:
     set_redis_client(None)
 
 
+class _StubRedis:
+    """Event-loop'a bağlı olmayan minik Redis ikizi: yalnız ``get``
+    gerekiyor (bayrak okuma yolu). fakeredis'in aksine hangi loop'tan
+    çağrıldığı önemsizdir — TestClient'ın kendi loop'u ile testin loop'u
+    farklı olduğu için bu şart."""
+
+    def __init__(self, value: bytes | None) -> None:
+        self._value = value
+
+    async def get(self, key: str) -> bytes | None:
+        del key
+        return self._value
+
+
 def _auth(token: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {token}"}
 
@@ -437,6 +451,7 @@ async def test_overview_generating_false_when_no_flag_set(
     fake_redis_client: Any,
 ) -> None:
     del fake_redis_client  # installed only so the read hits a real (empty) client
+    set_redis_client(_StubRedis(None))
     user, tid, pw = semi_auto_tenant
     token = login_token(batch_client, user.email, pw, tid)
     r = batch_client.get(_OVERVIEW_ENDPOINT, headers=_auth(token))
@@ -450,8 +465,13 @@ async def test_overview_generating_true_when_flag_set(
     semi_auto_tenant: tuple[User, UUID, str],
     fake_redis_client: Any,
 ) -> None:
+    del fake_redis_client
     user, tid, pw = semi_auto_tenant
-    await fake_redis_client.set(f"root_cause_autogen:{tid}", "1", ex=1200)
+    # TestClient uygulamayı KENDİ event loop'unda koşturur; fakeredis
+    # örneği testin loop'una bağlı olduğundan cross-loop okuma savunmacı
+    # except'e düşüp False dönüyordu. Döngüden bağımsız stub, uçtaki
+    # "anahtar var mı" mantığını gerçekten sınar.
+    set_redis_client(_StubRedis(b"1"))
 
     token = login_token(batch_client, user.email, pw, tid)
     r = batch_client.get(_OVERVIEW_ENDPOINT, headers=_auth(token))
