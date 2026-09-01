@@ -400,12 +400,13 @@ async def test_overview_parses_headline_and_action_short(
     causes = r.json()["cards"][0]["analysis"]["causes"]
 
     with_fields, without_fields = causes
-    assert with_fields["headline"] == long_headline[:60]
-    assert len(with_fields["headline"]) == 60
+    # Kelime sınırı yok (tek uzun kelime) -> 60 karakter + "…"
+    assert with_fields["headline"] == long_headline[:60] + "…"
     assert with_fields["action_short"] == "Statü senkronizasyonunu webhook'a çevirin"
 
-    assert without_fields["headline"] is None
-    assert without_fields["action_short"] is None
+    # Eski analiz: vitrin alanları title / suggested_action'dan türetilir
+    assert without_fields["headline"] == "İkinci neden — vitrin alanları yok"
+    assert without_fields["action_short"] == "Eski önerinin aynısı"
 
 
 # ---------------------------------------------------------------------------
@@ -571,9 +572,11 @@ def test_validate_and_normalise_keeps_and_trims_showcase_fields() -> None:
     }
     out = _validate_and_normalise(payload)
     first, second = out["root_causes"]
-    assert first["headline"] == "H" * 60
+    assert first["headline"] == "H" * 60 + "…"
     assert first["action_short"] == "Evrak isteğini aynı gün SMS ile bildirin."
-    assert second["headline"] is None and second["action_short"] is None
+    # headline sayı -> title'dan türetilir; suggested_action yok -> action None
+    assert second["headline"] == "Eski bir kök neden başlığı"
+    assert second["action_short"] is None
 
 
 def test_validate_and_normalise_rejects_placeholder_skeleton() -> None:
@@ -615,3 +618,24 @@ def test_validate_and_normalise_rejects_placeholder_skeleton() -> None:
     out = _validate_and_normalise(mixed)
     assert len(out["root_causes"]) == 1
     assert out["summary"] == ""
+
+
+def test_showcase_helpers_word_boundary_and_first_sentence() -> None:
+    from imga_api.services.root_cause_service import showcase_action, showcase_headline
+
+    long_title = "Gümrük ek belge talebi bildirimlerinin göndericiye zamanında ulaşmaması sorunu"
+    h = showcase_headline(None, long_title)
+    assert h is not None and h.endswith("…") and len(h) <= 61 and " " in h
+    assert not h[:-1].endswith(" ")
+    assert showcase_headline("...", long_title) == h  # yer tutucu -> title'a düşer
+    action = (
+        "Gümrük ek belge talebi gelen gönderilerde müşteriye aynı gün SMS gönderin. "
+        "Çağrı merkezi scriptine hazır cevap ekleyin."
+    )
+    assert showcase_action(None, action) == (
+        "Gümrük ek belge talebi gelen gönderilerde müşteriye aynı gün SMS gönderin."
+    )
+    assert showcase_action("Evrak isteğini aynı gün SMS ile bildirin", action) == (
+        "Evrak isteğini aynı gün SMS ile bildirin"
+    )
+    assert showcase_action(None, None) is None

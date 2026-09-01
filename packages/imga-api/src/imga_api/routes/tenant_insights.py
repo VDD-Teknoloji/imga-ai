@@ -54,6 +54,8 @@ from imga_api.services.root_cause_service import (
     RootCauseService,
     latest_analysis_any_window,
     pick_top_categories,
+    showcase_action,
+    showcase_headline,
     total_negative_count,
 )
 from imga_api.services.word_cloud import WordCloudGenerator
@@ -650,11 +652,11 @@ def _parse_analysis_row(row: RootCauseAnalysis) -> RootCauseAnalysisBlock:
                     affected_surface=surface if isinstance(surface, str) else None,
                     suggested_action=action if isinstance(action, str) else None,
                     share_estimate_pct=share_estimate,
-                    # Trim defensively — the prompt caps these at
-                    # 60/90 chars but a strict:false provider is under
-                    # no obligation to honour that.
-                    headline=headline[:60] if isinstance(headline, str) else None,
-                    action_short=action_short[:90] if isinstance(action_short, str) else None,
+                    # Vitrin alanları: eski analizlerde de dolu gelsin diye
+                    # title / suggested_action'dan türetilir (servisle aynı
+                    # yardımcılar; kelime sınırında kısaltma).
+                    headline=showcase_headline(headline, title),
+                    action_short=showcase_action(action_short, action),
                 )
             )
     return RootCauseAnalysisBlock(

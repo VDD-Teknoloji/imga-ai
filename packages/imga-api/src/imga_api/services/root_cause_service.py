@@ -32,6 +32,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import time
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
@@ -773,10 +774,6 @@ def _validate_and_normalise(payload: dict[str, Any]) -> dict[str, Any]:
             share_value = float(share) if share is not None else None
         except (TypeError, ValueError):
             share_value = None
-        # 2026-09-01 — vitrin alanları (kapalı kart): opsiyonel, str değilse
-        # yok sayılır; uzunluk prompt'ta istenir, burada da kırpılır.
-        headline = item.get("headline")
-        action_short = item.get("action_short")
         causes.append(
             {
                 "title": str(item.get("title", "")),
@@ -785,9 +782,12 @@ def _validate_and_normalise(payload: dict[str, Any]) -> dict[str, Any]:
                 "affected_surface": str(item.get("affected_surface", "")),
                 "suggested_action": str(item.get("suggested_action", "")),
                 "share_estimate_pct": share_value,
-                "headline": headline.strip()[:60] if isinstance(headline, str) else None,
-                "action_short": (
-                    action_short.strip()[:90] if isinstance(action_short, str) else None
+                # Vitrin alanları (kapalı kart): model yazmadıysa title /
+                # suggested_action'dan türetilir — kart asla uzun paragrafa
+                # düşmesin.
+                "headline": showcase_headline(item.get("headline"), item.get("title")),
+                "action_short": showcase_action(
+                    item.get("action_short"), item.get("suggested_action")
                 ),
             }
         )
@@ -799,6 +799,42 @@ def _validate_and_normalise(payload: dict[str, Any]) -> dict[str, Any]:
         raise RootCauseResponseInvalidError("root cause response items were all unusable")
     summary = payload.get("summary", "")
     return {"summary": "" if _is_placeholder(summary) else str(summary), "root_causes": causes}
+
+
+_SHOWCASE_HEADLINE_MAX = 60
+_SHOWCASE_ACTION_MAX = 90
+_SENTENCE_SPLIT_RE = re.compile(r"(?<=[.;!?])\s+")
+
+
+def _shorten(text: str, limit: int) -> str:
+    """Kelime sınırında kırp; kırpıldıysa "…" ekle (kart tek satır)."""
+    compact = " ".join(text.split())
+    if len(compact) <= limit:
+        return compact
+    cut = compact[:limit]
+    space = cut.rfind(" ")
+    if space > limit // 2:
+        cut = cut[:space]
+    return cut.rstrip(" ,;:-") + "…"
+
+
+def showcase_headline(headline: object, title: object) -> str | None:
+    """Kapalı kartın başlığı: modelin headline'ı, yoksa title'ın kısaltılmışı."""
+    for candidate in (headline, title):
+        if isinstance(candidate, str) and not _is_placeholder(candidate):
+            return _shorten(candidate, _SHOWCASE_HEADLINE_MAX)
+    return None
+
+
+def showcase_action(action_short: object, suggested_action: object) -> str | None:
+    """Kapalı kartın tek satır aksiyonu: modelin action_short'u, yoksa
+    suggested_action'ın İLK cümlesi (GLM bu alanı çoğu zaman boş bırakıyor)."""
+    if isinstance(action_short, str) and not _is_placeholder(action_short):
+        return _shorten(action_short, _SHOWCASE_ACTION_MAX)
+    if isinstance(suggested_action, str) and not _is_placeholder(suggested_action):
+        first = _SENTENCE_SPLIT_RE.split(" ".join(suggested_action.split()), maxsplit=1)[0]
+        return _shorten(first, _SHOWCASE_ACTION_MAX)
+    return None
 
 
 def _is_placeholder(value: object) -> bool:
