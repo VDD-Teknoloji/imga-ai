@@ -11,13 +11,24 @@
 // URL-state filtre mantığı (Suspense + Path B mirror) AYNEN korundu —
 // docs/agent-rules/url-state-patterns.md gereği değiştirilmedi.
 
-import { ChevronDown, ChevronRight, ExternalLink, Loader2 } from "lucide-react";
+import { ChevronDown, ChevronRight, ExternalLink, Loader2, RefreshCw } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useState } from "react";
+import { toast } from "sonner";
 
 import { BatchFilterDropdown } from "@/components/reviews/batch-filter-dropdown";
 import { SummaryPanel } from "@/components/reviews/summary-panel";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogHeader,
+  AlertDialogFooter,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { DateField } from "@/components/ui/date-field";
 import {
@@ -32,12 +43,15 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { useCategories } from "@/hooks/use-categories";
 import { type DimensionValueField, useDimensionValues } from "@/hooks/use-dimension-values";
+import { useReanalyzeBatchJob } from "@/hooks/use-reanalyze";
+import { useRoleFlags } from "@/hooks/use-role-flags";
 import {
   useInfiniteReviews,
   type ReviewDimensionFilterFields,
   type ReviewListFiltersExt,
 } from "@/hooks/use-reviews";
 import { useCompanyTaxonomies } from "@/hooks/use-taxonomies";
+import { ApiError } from "@/lib/api-client";
 import { useTranslation } from "@/lib/i18n/use-translation";
 import { sourceLinkLabelKey } from "@/lib/source-link";
 import {
@@ -422,6 +436,35 @@ function ReviewsPageInner() {
   const items = reviews.data?.pages.flatMap((p) => p.items) ?? [];
   const total = reviews.data?.pages[0]?.total ?? 0;
 
+  // F2 (2026-09-01) — aktif yükleme filtresini yeniden analiz eder.
+  // Aynı hook + i18n anahtarları Geçmiş Yüklemeler sayfasıyla (bkz.
+  // analyze/upload/history/page.tsx) paylaşılır — "aynı onay + toast
+  // deseni" görev notu. confirmDesc'teki {count} bu listenin GÜNCEL
+  // FİLTRELİ toplamı — batch job'ın tüm succeeded_rows'u değil (diğer
+  // filtreler de aktifse tam sayı olmayabilir); yine de kullanıcıya
+  // kabaca ölçek fikri verir.
+  const { isAdmin } = useRoleFlags();
+  const reanalyzeBatch = useReanalyzeBatchJob();
+  const [reanalyzeBatchOpen, setReanalyzeBatchOpen] = useState(false);
+
+  function handleReanalyzeBatchConfirm() {
+    if (!filters.batch_job_id) return;
+    reanalyzeBatch.mutate(filters.batch_job_id, {
+      onSuccess: () => {
+        toast.success(t("analyze.history.reanalyze.queued"));
+        setReanalyzeBatchOpen(false);
+        void reviews.refetch();
+      },
+      onError: (err) => {
+        if (err instanceof ApiError && err.status === 403) {
+          toast.error(t("analyze.history.reanalyze.noPermission"));
+          return;
+        }
+        toast.error(t("analyze.history.reanalyze.failed"));
+      },
+    });
+  }
+
   return (
     <main className="mx-auto w-full max-w-7xl space-y-6 px-4 py-6 md:px-8 md:py-10">
       <header className="space-y-1.5">
@@ -519,6 +562,21 @@ function ReviewsPageInner() {
               }
               inline
             />
+            {/* Yeniden analiz uçları _TenantAdmin — düğmeyi analiste
+                gösterip 403 yedirmemek için isAdmin. */}
+            {filters.batch_job_id && isAdmin && (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="gap-1.5"
+                onClick={() => setReanalyzeBatchOpen(true)}
+                disabled={reanalyzeBatch.isPending}
+              >
+                <RefreshCw className="size-3.5" aria-hidden />
+                {t("reviews.list.reanalyzeBatch")}
+              </Button>
+            )}
             <FilterPills filters={filters} onApply={applyFilters} />
           </div>
 
@@ -564,6 +622,32 @@ function ReviewsPageInner() {
           <SummaryPanel filters={filters} />
         </div>
       </div>
+
+      <AlertDialog open={reanalyzeBatchOpen} onOpenChange={setReanalyzeBatchOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {t("analyze.history.reanalyze.confirmTitle")}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {t("analyze.history.reanalyze.confirmDesc", { count: total })}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={reanalyzeBatch.isPending}>
+              {t("analyze.history.reanalyze.cancel")}
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleReanalyzeBatchConfirm}
+              disabled={reanalyzeBatch.isPending}
+            >
+              {reanalyzeBatch.isPending
+                ? t("analyze.history.reanalyze.submitting")
+                : t("analyze.history.reanalyze.confirm")}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </main>
   );
 }

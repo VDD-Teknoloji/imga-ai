@@ -1,17 +1,29 @@
 "use client";
 
-import { ArrowRight, ChevronLeft, ExternalLink, Loader2 } from "lucide-react";
+import { ArrowRight, ChevronLeft, ExternalLink, Loader2, RefreshCw } from "lucide-react";
 import Link from "next/link";
 import { useParams, useSearchParams } from "next/navigation";
-import { Suspense } from "react";
+import { Suspense, useState } from "react";
 import { toast } from "sonner";
 
 import { CorrectReviewDialog } from "@/components/reviews/correct-review-dialog";
 import { OverrideStack } from "@/components/reviews/override-display";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogHeader,
+  AlertDialogFooter,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useCategories } from "@/hooks/use-categories";
+import { useReanalyzeReview } from "@/hooks/use-reanalyze";
+import { useRoleFlags } from "@/hooks/use-role-flags";
 import { useManualPromoteReview, useReviewDetail, type ReviewFacts } from "@/hooks/use-reviews";
 import { ApiError } from "@/lib/api-client";
 import { effectiveExperience, type ExperienceType } from "@/lib/experience";
@@ -100,6 +112,9 @@ function ReviewDetailInner() {
   const reviewId = params?.id ?? null;
   const detail = useReviewDetail(reviewId);
   const promote = useManualPromoteReview();
+  const reanalyze = useReanalyzeReview();
+  const [reanalyzeOpen, setReanalyzeOpen] = useState(false);
+  const { isAdmin } = useRoleFlags();
   const categories = useCategories();
   const categoryLabelFor = (code: string): string =>
     categories.data?.find((c) => c.code === code)?.label_tr ?? code;
@@ -136,6 +151,29 @@ function ReviewDetailInner() {
           return;
         }
         toast.error(t("reviews.detail.promoteError"));
+      },
+    });
+  }
+
+  function handleReanalyzeConfirm() {
+    if (!detail.data) return;
+    reanalyze.mutate(detail.data.id, {
+      onSuccess: () => {
+        toast.success(t("reviews.detail.reanalyzeQueued"));
+        setReanalyzeOpen(false);
+        detail.refetch();
+      },
+      onError: (err) => {
+        if (err instanceof ApiError && err.status === 409) {
+          // 409 — insan düzeltmesi var ya da metin boş (aday değil).
+          toast.error(t("reviews.detail.reanalyzeNotCandidate"));
+          return;
+        }
+        if (err instanceof ApiError && err.status === 403) {
+          toast.error(t("reviews.detail.reanalyzeNoPermission"));
+          return;
+        }
+        toast.error(t("reviews.detail.reanalyzeFailed"));
       },
     });
   }
@@ -222,17 +260,41 @@ function ReviewDetailInner() {
               <CardTitle className="text-base">
                 {t("reviews.detail.analysis")}
               </CardTitle>
-              {/* Sprint 11.0 — düzeltme-geri-besleme girişi. Yanlış
-                  karar buradan düzeltilir; sistem benzer yorumlarda
-                  düzeltmeyi örnek alır. */}
-              <CorrectReviewDialog
-                reviewId={detail.data.id}
-                currentSentiment={detail.data.sentiment.label}
-                currentCategory={detail.data.categorization.primary}
-                currentScore={detail.data.sentiment.final_score}
-                currentExperienceType={detail.data.experience_type ?? null}
-                currentPerspectiveCode={detail.data.company_perspective.code}
-              />
+              <div className="flex items-center gap-2">
+                {/* F2 (2026-09-01) — satır bazlı yeniden analiz. Uç
+                    _TenantAdmin'e kapalı (maliyetli iş), bu yüzden düğme
+                    de yalnız yöneticide görünür — analist görüp 403
+                    yememeli. Backend 409 = aday değil (insan düzeltmesi
+                    var ya da metin boş). */}
+                {isAdmin && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="gap-2"
+                    onClick={() => setReanalyzeOpen(true)}
+                    disabled={reanalyze.isPending}
+                  >
+                    {reanalyze.isPending ? (
+                      <Loader2 className="size-4 animate-spin" aria-hidden />
+                    ) : (
+                      <RefreshCw className="size-4" aria-hidden />
+                    )}
+                    {t("reviews.detail.reanalyze")}
+                  </Button>
+                )}
+                {/* Sprint 11.0 — düzeltme-geri-besleme girişi. Yanlış
+                    karar buradan düzeltilir; sistem benzer yorumlarda
+                    düzeltmeyi örnek alır. */}
+                <CorrectReviewDialog
+                  reviewId={detail.data.id}
+                  currentSentiment={detail.data.sentiment.label}
+                  currentCategory={detail.data.categorization.primary}
+                  currentScore={detail.data.sentiment.final_score}
+                  currentExperienceType={detail.data.experience_type ?? null}
+                  currentPerspectiveCode={detail.data.company_perspective.code}
+                />
+              </div>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
@@ -409,6 +471,28 @@ function ReviewDetailInner() {
               ) : null}
             </CardContent>
           </Card>
+
+          <AlertDialog open={reanalyzeOpen} onOpenChange={setReanalyzeOpen}>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>{t("reviews.detail.reanalyze")}</AlertDialogTitle>
+                <AlertDialogDescription>
+                  {t("reviews.detail.reanalyzeConfirm")}
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel disabled={reanalyze.isPending}>
+                  {t("common.cancel")}
+                </AlertDialogCancel>
+                <AlertDialogAction
+                  onClick={handleReanalyzeConfirm}
+                  disabled={reanalyze.isPending}
+                >
+                  {t("reviews.detail.reanalyze")}
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
         </div>
       )}
     </main>

@@ -41,6 +41,7 @@ from __future__ import annotations
 
 import logging
 import time
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
@@ -82,9 +83,16 @@ log = logging.getLogger("imga-api.workers.reanalysis")
 
 # Yeniden analiz işini normal yüklemeden ayıran işaret. ``file_path``
 # NOT NULL olduğu için sahte bir yol yerine anlamlı bir işaretçi
-# konur: ``reanalysis:all`` ya da ``reanalysis:<kaynak job uuid>``.
+# konur: ``reanalysis:all`` (tüm kurum), ``reanalysis:<kaynak job
+# uuid>`` (tek yükleme) ya da ``reanalysis:review:<review uuid>``
+# (tek yorum — 2026-09-01).
 REANALYSIS_PATH_PREFIX = "reanalysis:"
 REANALYSIS_SCOPE_ALL = "all"
+# review-scoped işaretin batch-uuid formundan AYRIŞTIĞI önek. Sıra
+# önemli: parse_reanalysis_scope bunu UUID() denemeden ÖNCE kontrol
+# eder — aksi halde "review:<uuid>" bütünüyle UUID()'e verilip
+# ValueError ile tüm-kuruma düşerdi (bkz. CRITICAL SAFETY notu).
+REANALYSIS_REVIEW_SCOPE_PREFIX = "review:"
 
 # Parça boyutu yükleme işçisinden bağımsız sabit: burada dosya
 # akışı yok, aday listesi baştan biliniyor ve tek maliyet LLM
@@ -105,7 +113,34 @@ _CORRECTION_LAYERS = (
 # ---------------------------------------------------------------------------
 
 
-def reanalysis_file_path(source_batch_job_id: UUID | None) -> str:
+@dataclass(frozen=True)
+class ReanalysisScope:
+    """``file_path`` işaretinin çözülmüş hali.
+
+    En fazla biri set olur: ``batch_job_id`` (tek yüklemenin
+    satırları) ya da ``review_id`` (tek yorum). İkisi de ``None`` =
+    tüm kurum. Ayrı bir dataclass olmasının nedeni CRITICAL SAFETY:
+    eski ``reanalysis_scope`` fonksiyonu tek bir ``UUID | None``
+    döndürüyordu ve ``None`` hem "tüm kurum" hem "çözülemedi"
+    anlamına geliyordu — review kapsamı bu ikisinden ayrışmalı, yoksa
+    tek-yorumluk bir iş kazayla tüm kurumu tarardı."""
+
+    batch_job_id: UUID | None = None
+    review_id: UUID | None = None
+
+
+def reanalysis_file_path(
+    *,
+    source_batch_job_id: UUID | None = None,
+    review_id: UUID | None = None,
+) -> str:
+    """Kapsamı ``file_path`` işaretine kodlar.
+
+    ``review_id`` verilmişse ``source_batch_job_id`` yok sayılır —
+    ``create_reanalysis_job`` ikisini asla aynı anda geçmez, burası
+    yalnız savunma amaçlı review'ı önceliklendirir."""
+    if review_id is not None:
+        return f"{REANALYSIS_PATH_PREFIX}{REANALYSIS_REVIEW_SCOPE_PREFIX}{review_id}"
     scope = str(source_batch_job_id) if source_batch_job_id else REANALYSIS_SCOPE_ALL
     return f"{REANALYSIS_PATH_PREFIX}{scope}"
 
@@ -114,17 +149,27 @@ def is_reanalysis_job(file_path: str | None) -> bool:
     return bool(file_path) and str(file_path).startswith(REANALYSIS_PATH_PREFIX)
 
 
-def reanalysis_scope(file_path: str) -> UUID | None:
-    """``file_path`` işaretinden kaynak yükleme işini çözer. ``None``
-    = tüm kurum. Bozuk/eski bir değer de ``None``'a düşer — kapsamı
-    daraltamamak, işi patlatmaktan iyidir."""
+def parse_reanalysis_scope(file_path: str) -> ReanalysisScope:
+    """``file_path`` işaretinden kapsamı çözer.
+
+    ``review:`` öneki DİĞER her şeyden önce kontrol edilir — bir
+    review işaretini ham UUID() denemesine sokmak (eski
+    ``reanalysis_scope``'un yaptığı gibi) ``review:<uuid>``'yi
+    ValueError'a düşürüp sessizce tüm-kurum kapsamına genişletirdi.
+    Bozuk bir review işareti bu yüzden ValueError YÜKSELTİR (worker'ın
+    genel except'i işi FAILED yapar) — tüm-kuruma ASLA düşmez. Batch/
+    "all" kolundaki eski None-fallback (bozuk/eski değer = tüm kurum)
+    kasıtlı olarak korunur; bu davranış review kapsamına taşınmaz."""
     raw = str(file_path)[len(REANALYSIS_PATH_PREFIX) :]
+    if raw.startswith(REANALYSIS_REVIEW_SCOPE_PREFIX):
+        review_raw = raw[len(REANALYSIS_REVIEW_SCOPE_PREFIX) :]
+        return ReanalysisScope(review_id=UUID(review_raw))
     if raw == REANALYSIS_SCOPE_ALL:
-        return None
+        return ReanalysisScope()
     try:
-        return UUID(raw)
+        return ReanalysisScope(batch_job_id=UUID(raw))
     except ValueError:
-        return None
+        return ReanalysisScope()
 
 
 # ---------------------------------------------------------------------------
@@ -168,13 +213,20 @@ def candidate_stmt(
     *,
     tenant_id: UUID,
     source_batch_job_id: UUID | None,
+    review_id: UUID | None = None,
 ) -> Select[tuple[UUID]]:
     """Yeniden analiz adaylarının id'leri, id sırasına göre.
 
     Sıralama sabit olmalı: ilerleme checkpoint'i satır KİMLİĞİ değil
     bu listedeki İNDEKS sayısıdır (yükleme işçisinde row_number ne
     ise burada o), retry aynı sırayı yeniden üretip baştaki N adayı
-    atlar."""
+    atlar.
+
+    ``review_id`` verilmişse tek bir satıra daraltır ve
+    ``source_batch_job_id`` YOK SAYILIR — iki filtre birlikte
+    anlamsız (bir review en fazla bir batch'e ait olabilir zaten,
+    ama çağıran taraf yanlışlıkla ikisini birden geçerse review
+    kapsamı kazanır)."""
     stmt = (
         select(Review.id)
         .where(Review.tenant_id == tenant_id)
@@ -183,7 +235,9 @@ def candidate_stmt(
         .where(_not_empty_quality())
         .order_by(Review.id)
     )
-    if source_batch_job_id is not None:
+    if review_id is not None:
+        stmt = stmt.where(Review.id == review_id)
+    elif source_batch_job_id is not None:
         stmt = stmt.where(Review.batch_job_id == source_batch_job_id)
     return stmt
 
@@ -193,13 +247,16 @@ async def count_candidates(
     *,
     tenant_id: UUID,
     source_batch_job_id: UUID | None,
+    review_id: UUID | None = None,
 ) -> int:
     """İş satırının ``total_rows``'u. Route bunu kullanır; işçi aynı
     yüklemle listeyi çeker — ikisi ayrışırsa ilerleme çubuğu asla
     %100'e varmaz."""
-    stmt = candidate_stmt(tenant_id=tenant_id, source_batch_job_id=source_batch_job_id).order_by(
-        None
-    )
+    stmt = candidate_stmt(
+        tenant_id=tenant_id,
+        source_batch_job_id=source_batch_job_id,
+        review_id=review_id,
+    ).order_by(None)
     count_stmt = select(func.count()).select_from(stmt.subquery())
     return int((await session.execute(count_stmt)).scalar_one() or 0)
 
@@ -217,15 +274,21 @@ async def create_reanalysis_job(
     tenant_id: UUID,
     triggered_by_user_id: UUID,
     source_batch_job_id: UUID | None,
+    review_id: UUID | None = None,
     ip_address: str | None = None,
 ) -> Any:
     """Yeniden analiz işini ``analyze_batch_jobs``'a yazar.
 
     Yeni kolon yok: iş türü ``file_path`` işaretinden, kapsamı da
     aynı işaretten okunur. ``total_rows`` aday sayısıdır — ilerleme
-    yüzdesi bu yüzden işçi tarafındaki aynı yüklemle tutarlı."""
+    yüzdesi bu yüzden işçi tarafındaki aynı yüklemle tutarlı.
+    ``review_id`` verilmişse tek-yorum kapsamı: ``total`` 0 ya da 1
+    olur (satır adayysa 1) ve ``source_batch_job_id`` yok sayılır."""
     total = await count_candidates(
-        session, tenant_id=tenant_id, source_batch_job_id=source_batch_job_id
+        session,
+        tenant_id=tenant_id,
+        source_batch_job_id=source_batch_job_id,
+        review_id=review_id,
     )
     if total <= 0:
         raise NoReanalysisCandidatesError(
@@ -233,13 +296,18 @@ async def create_reanalysis_job(
             "düzeltmesi yapılmış yorumlar bilinçli olarak dışarıda "
             "bırakılır.)"
         )
-    label = str(source_batch_job_id) if source_batch_job_id else REANALYSIS_SCOPE_ALL
+    if review_id is not None:
+        label = f"review:{review_id}"
+    else:
+        label = str(source_batch_job_id) if source_batch_job_id else REANALYSIS_SCOPE_ALL
     return await BatchAnalyzeService(session, audit).create_job(
         tenant_id=tenant_id,
         triggered_by_user_id=triggered_by_user_id,
         file_name=f"yeniden-analiz: {label}"[:256],
         file_size_bytes=0,
-        file_path=reanalysis_file_path(source_batch_job_id),
+        file_path=reanalysis_file_path(
+            source_batch_job_id=source_batch_job_id, review_id=review_id
+        ),
         text_column="yorum",
         source_column=None,
         auto_create_tickets=False,
@@ -288,7 +356,7 @@ async def _run_reanalysis(job_id: UUID, tenant_id: UUID, context: WorkerContext)
                 job.status,
             )
             return
-        source_batch_job_id = reanalysis_scope(job.file_path)
+        scope = parse_reanalysis_scope(job.file_path)
         resume_from_index = int(job.last_checkpoint_row or 0)
 
     # Birleşik motor + düzeltme deposu + kategori tanımları. Yeniden
@@ -317,7 +385,8 @@ async def _run_reanalysis(job_id: UUID, tenant_id: UUID, context: WorkerContext)
                 await admin_session.execute(
                     candidate_stmt(
                         tenant_id=tenant_id,
-                        source_batch_job_id=source_batch_job_id,
+                        source_batch_job_id=scope.batch_job_id,
+                        review_id=scope.review_id,
                     )
                 )
             )
@@ -626,13 +695,15 @@ async def _bust_redis_caches(tenant_id: UUID) -> None:
 __all__ = [
     "REANALYSIS_CHUNK_SIZE",
     "REANALYSIS_PATH_PREFIX",
+    "REANALYSIS_REVIEW_SCOPE_PREFIX",
     "REANALYSIS_SCOPE_ALL",
     "NoReanalysisCandidatesError",
+    "ReanalysisScope",
     "candidate_stmt",
     "count_candidates",
     "create_reanalysis_job",
     "is_reanalysis_job",
+    "parse_reanalysis_scope",
     "process_reanalysis_job",
     "reanalysis_file_path",
-    "reanalysis_scope",
 ]

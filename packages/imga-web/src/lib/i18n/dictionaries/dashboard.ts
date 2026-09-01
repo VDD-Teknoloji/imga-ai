@@ -295,6 +295,11 @@ export const dashboard: Bundle = {
     "dashboard.categorySimple.reviews": "{n} yorum",
     "dashboard.categorySimple.showAll": "Tümünü gör",
     "dashboard.categorySimple.empty": "Bu dönemde kategori verisi yok.",
+    // F3 — alt kategori genişletme (kategori kartı).
+    "dashboard.categorySimple.expand": "Alt kategoriler",
+    "dashboard.categorySimple.collapse": "Gizle",
+    "dashboard.categorySimple.subEmpty": "Alt kategori verisi yok.",
+    "dashboard.categorySimple.unmatched": "Alt kategori atanmamış",
 
     // --- kök neden kartları (ana sayfa, A2) ---
     "dashboard.rootCauseCards.aria": "Kök neden ve önerilen aksiyonlar",
@@ -352,6 +357,13 @@ export const dashboard: Bundle = {
     "dashboard.experience.unassignedNote":
       "{count} yorum deneyim ataması bekliyor (yeniden analizle atanır)",
     "dashboard.experience.viewReviews": "Yorumları gör",
+    // F2 (2026-09-01) — atanmamış deneyim notunun eylem butonu.
+    "dashboard.experience.reanalyzeCta": "Yeniden analiz et",
+    "dashboard.experience.reanalyzeConfirm":
+      "Tüm yorumlar güncel modelle yeniden analiz edilsin mi? İnsan düzeltmeleri korunur.",
+    "dashboard.experience.reanalyzeQueued": "Yeniden analiz kuyruğa alındı.",
+    "dashboard.experience.reanalyzeFailed": "Yeniden analiz başlatılamadı.",
+    "dashboard.experience.reanalyzeHistoryLink": "Geçmiş Yüklemeler",
 
     // --- önce yükleme (24 saat kuralı) ---
     "dashboard.uploadFirst.title": "Bugün henüz veri yüklemediniz",
@@ -883,6 +895,11 @@ export const dashboard: Bundle = {
     "dashboard.categorySimple.reviews": "{n} reviews",
     "dashboard.categorySimple.showAll": "See all",
     "dashboard.categorySimple.empty": "No category data in this period.",
+    // F3 — sub-category expand (category card).
+    "dashboard.categorySimple.expand": "Sub-categories",
+    "dashboard.categorySimple.collapse": "Hide",
+    "dashboard.categorySimple.subEmpty": "No sub-category data.",
+    "dashboard.categorySimple.unmatched": "No sub-category assigned",
 
     // --- root cause cards (home page, A2) ---
     "dashboard.rootCauseCards.aria": "Root causes and suggested actions",
@@ -940,6 +957,13 @@ export const dashboard: Bundle = {
     "dashboard.experience.unassignedNote":
       "{count} reviews are awaiting an experience assignment (a re-analysis assigns them)",
     "dashboard.experience.viewReviews": "View reviews",
+    // F2 (2026-09-01) — action button on the unassigned-experience note.
+    "dashboard.experience.reanalyzeCta": "Re-analyse",
+    "dashboard.experience.reanalyzeConfirm":
+      "Re-analyse all reviews with the current model? Human corrections are preserved.",
+    "dashboard.experience.reanalyzeQueued": "Re-analysis queued.",
+    "dashboard.experience.reanalyzeFailed": "Couldn't start the re-analysis.",
+    "dashboard.experience.reanalyzeHistoryLink": "Past uploads",
 
     // --- upload first (24-hour rule) ---
     "dashboard.uploadFirst.title": "You haven't uploaded data today",

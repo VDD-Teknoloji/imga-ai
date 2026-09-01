@@ -216,6 +216,9 @@ export const insights: Bundle = {
     "reviews.list.emptyTitle": "Bu filtrelerle eşleşen analiz yok",
     "reviews.list.emptyHint": "Filtreleri temizleyin ya da yeni bir dosya yükleyin.",
     "reviews.list.loadMore": "Daha fazla göster",
+    // F2 (2026-09-01) — aktif yükleme filtresini yeniden analiz eden
+    // araç çubuğu butonu.
+    "reviews.list.reanalyzeBatch": "Bu yüklemeyi yeniden analiz et",
 
     // --- /reviews: analiz satırı ---
     "reviews.review.removed": "kaldırılmış",
@@ -368,6 +371,16 @@ export const insights: Bundle = {
     "reviews.detail.promoteButton": "Bu Analizi Ticket'a Dönüştür",
     "reviews.detail.promoteHint":
       "Elle açıldı — sistem bu karar için Ticket açmamıştı.",
+
+    // --- /reviews/[id]: satır bazlı yeniden analiz (2026-09-01) ---
+    "reviews.detail.reanalyze": "Yeniden analiz et",
+    "reviews.detail.reanalyzeConfirm":
+      "Bu yorum güncel modelle yeniden analiz edilsin mi? Mevcut sonuç güncellenir, insan düzeltmeleri korunur.",
+    "reviews.detail.reanalyzeQueued": "Yeniden analiz kuyruğa alındı.",
+    "reviews.detail.reanalyzeNotCandidate":
+      "Bu yorum yeniden analiz edilemez (insan düzeltmesi var ya da içeriği boş).",
+    "reviews.detail.reanalyzeNoPermission": "Yeniden analiz için yetkiniz yok.",
+    "reviews.detail.reanalyzeFailed": "Yeniden analiz başlatılamadı.",
 
     // --- /reviews/[id]: Operasyonel Bilgiler kartı (2026-08-21) ---
     "reviews.detail.operationalInfo": "Operasyonel Bilgiler",
@@ -695,6 +708,9 @@ export const insights: Bundle = {
     "reviews.list.emptyTitle": "No analyses match these filters",
     "reviews.list.emptyHint": "Clear the filters or upload a new file.",
     "reviews.list.loadMore": "Show more",
+    // F2 (2026-09-01) — toolbar button that re-analyses the active
+    // upload filter.
+    "reviews.list.reanalyzeBatch": "Re-analyse this upload",
 
     // --- /reviews: review row ---
     "reviews.review.removed": "removed",
@@ -849,6 +865,17 @@ export const insights: Bundle = {
     "reviews.detail.promoteButton": "Convert This Analysis to a Ticket",
     "reviews.detail.promoteHint":
       "Opened manually — the system hadn't opened a Ticket for this decision.",
+
+    // --- /reviews/[id]: per-review re-analysis (2026-09-01) ---
+    "reviews.detail.reanalyze": "Re-analyse",
+    "reviews.detail.reanalyzeConfirm":
+      "Re-analyse this review with the current model? The existing result will be updated; human corrections are preserved.",
+    "reviews.detail.reanalyzeQueued": "Re-analysis queued.",
+    "reviews.detail.reanalyzeNotCandidate":
+      "This review can't be re-analysed (it has a human correction or empty content).",
+    "reviews.detail.reanalyzeNoPermission":
+      "You don't have permission to re-analyse.",
+    "reviews.detail.reanalyzeFailed": "Couldn't start the re-analysis.",
 
     // --- /reviews/[id]: Operational Info card (2026-08-21) ---
     "reviews.detail.operationalInfo": "Operational Information",

@@ -1031,6 +1031,103 @@ async def reanalyze_all_reviews(
     )
 
 
+# --- 2026-09-01 — tek bir yorumun yeniden analizi --------------------
+
+
+@router.post(
+    "/{review_id}/reanalyze",
+    response_model=BatchJobResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="TEK BİR yorumu güncel modelden yeniden geçir.",
+    description=(
+        "``reanalyze-all`` / batch-scoped ``.../reanalyze`` ile aynı "
+        "makineyi (``analyze_batch_jobs`` satırı, aynı ilerleme/iptal/ "
+        "yeniden-dene arayüzü) tek bir yoruma daraltır. Yorum YERİNDE "
+        "güncellenir: duygu, kategori, alt kategori ve deneyim tipi "
+        "tazelenir; ``review_date``, NPS, ticket bağlantısı ve "
+        "otomasyon kararı korunur. Yalnız kurum yöneticisi çalıştırabilir."
+    ),
+    responses={
+        403: {"description": "Kurum yöneticisi olmayan rol."},
+        404: {"description": "Yorum bulunamadı / RLS gizledi."},
+        409: {"description": "Yorum yeniden analiz adayı değil."},
+    },
+)
+async def reanalyze_review(
+    review_id: UUID,
+    request: Request,
+    current: Annotated[CurrentUser, _TenantAdmin],
+    app_session: Annotated[AsyncSession, Depends(get_app_session)],
+) -> BatchJobResponse:
+    tenant_id = _require_active_tenant(current)
+    async with app_session.begin():
+        await bind_tenant(app_session, current)
+        exists = (
+            await app_session.execute(
+                select(Review.id)
+                .where(Review.id == review_id)
+                .where(Review.tenant_id == tenant_id)
+                .where(Review.deleted_at.is_(None))
+            )
+        ).scalar_one_or_none()
+        if exists is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="review not found")
+
+        audit = AuditService(app_session)
+        try:
+            job = await create_reanalysis_job(
+                app_session,
+                audit,
+                tenant_id=tenant_id,
+                triggered_by_user_id=current.user_id,
+                source_batch_job_id=None,
+                review_id=review_id,
+                ip_address=(request.client.host if request.client is not None else None),
+            )
+        except NoReanalysisCandidatesError as exc:
+            # Bu kapsamda (tek satır) aday YOK == satırın kendisi aday
+            # değil: insan düzeltmeli ya da quality_flag='empty'. Genel
+            # 400 mesajı yerine burada nedeni açıklayan bir 409 döner.
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    "Bu yorum yeniden analiz edilemez: insan düzeltmesi "
+                    "olan ya da boş içerikli yorumlar yeniden analiz "
+                    "edilmez."
+                ),
+            ) from exc
+        job_id = job.id
+        # ORM attribute'ları transaction KAPANMADAN okunur — flush
+        # sonrası expire olabilirler (reanalyze_all_reviews ile aynı
+        # gerekçe, yukarıda).
+        candidate_row_count = job.total_rows
+
+        # B3b ile aynı desen — Karar Geçmişi'ne 'reanalysis started'
+        # eylemi, kapsam bu kez tek bir review.
+        from imga_api.services.decision_audit_service import (
+            DECISION_REANALYSIS_STARTED,
+            DecisionAuditService,
+        )
+
+        await DecisionAuditService(app_session).record_decision(
+            tenant_id=tenant_id,
+            decision_type=DECISION_REANALYSIS_STARTED,
+            related_entity_type="batch_job",
+            related_entity_id=job_id,
+            actor_user_id=current.user_id,
+            payload={
+                "scope": "review",
+                "review_id": str(review_id),
+                "row_count": candidate_row_count,
+            },
+            request_id=getattr(request.state, "request_id", None),
+        )
+
+    return await dispatch_reanalysis(
+        request, current, app_session, job_id=job_id, tenant_id=tenant_id
+    )
+
+
 def _to_item_response(item: ReviewListItem) -> ReviewItemResponse:
     return ReviewItemResponse(
         id=item.id,

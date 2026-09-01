@@ -114,9 +114,7 @@ async def _seed_review(
     return review_id
 
 
-async def _fetch_review(
-    admin_session: AsyncSession, review_id: UUID
-) -> Review:
+async def _fetch_review(admin_session: AsyncSession, review_id: UUID) -> Review:
     async with admin_session.begin():
         row = await admin_session.get(Review, review_id)
         assert row is not None
@@ -137,21 +135,15 @@ async def _add_member(
     plain = "Member-Password-123!"
     email = f"role-{uuid4().hex[:8]}@example.com"
     async with admin_session.begin():
-        member = await usvc.create(
-            email=email, password=plain, full_name=f"Test {role}"
-        )
-        await usvc.attach_to_tenant(
-            user_id=member.id, tenant_id=tenant_id, role=role
-        )
+        member = await usvc.create(email=email, password=plain, full_name=f"Test {role}")
+        await usvc.attach_to_tenant(user_id=member.id, tenant_id=tenant_id, role=role)
         member_id = member.id
     return email, plain, member_id
 
 
 async def _drop_user(admin_session: AsyncSession, user_id: UUID) -> None:
     async with admin_session.begin():
-        await admin_session.execute(
-            text("DELETE FROM users WHERE id = :id"), {"id": str(user_id)}
-        )
+        await admin_session.execute(text("DELETE FROM users WHERE id = :id"), {"id": str(user_id)})
 
 
 def _fake_unified(
@@ -197,9 +189,7 @@ def _fake_unified(
                 sentiment_label=sentiment_label,
                 sentiment_score=sentiment_score,
                 overrides_applied=list(overrides or []),
-                categorization=CategoryClassification(
-                    primary=category, primary_confidence=0.9
-                ),
+                categorization=CategoryClassification(primary=category, primary_confidence=0.9),
             )
             for t in texts
         ]
@@ -270,8 +260,7 @@ async def test_migration_adds_check_constraint_and_partial_index(
         check = (
             await admin_session.execute(
                 text(
-                    "SELECT conname FROM pg_constraint "
-                    "WHERE conname = 'ck_reviews_experience_type'"
+                    "SELECT conname FROM pg_constraint WHERE conname = 'ck_reviews_experience_type'"
                 )
             )
         ).scalar_one_or_none()
@@ -331,9 +320,7 @@ async def test_global_category_descriptions_backfilled(
             )
         ).all()
     by_code = {r.code: r.description for r in rows}
-    assert set(CATEGORY_DESCRIPTIONS_TR) <= set(by_code), (
-        "global kategori satirlari eksik"
-    )
+    assert set(CATEGORY_DESCRIPTIONS_TR) <= set(by_code), "global kategori satirlari eksik"
     for code, expected in CATEGORY_DESCRIPTIONS_TR.items():
         assert by_code[code] is not None, f"{code} tanimi backfill edilmemis"
         assert by_code[code] == expected, f"{code} tanimi kod ile ayrismis"
@@ -481,8 +468,9 @@ async def test_experience_type_persisted_from_unified_prediction(
     async with admin_session.begin():
         rows = (
             await admin_session.execute(
-                select(Review.experience_type, Review.primary_category)
-                .where(Review.tenant_id == tid)
+                select(Review.experience_type, Review.primary_category).where(
+                    Review.tenant_id == tid
+                )
             )
         ).all()
     assert len(rows) == 2
@@ -545,6 +533,107 @@ def test_normalize_experience_type_contract() -> None:
 
 
 # ---------------------------------------------------------------------
+# 2b. Yeniden analiz kapsam kodlamasi -- tek yorum (2026-09-01)
+# ---------------------------------------------------------------------
+
+
+def test_reanalysis_scope_roundtrip_all_three_forms() -> None:
+    from imga_api.workers.reanalyzer import (
+        ReanalysisScope,
+        is_reanalysis_job,
+        parse_reanalysis_scope,
+        reanalysis_file_path,
+    )
+
+    all_path = reanalysis_file_path()
+    assert all_path == "reanalysis:all"
+    assert parse_reanalysis_scope(all_path) == ReanalysisScope()
+    assert is_reanalysis_job(all_path)
+
+    batch_id = uuid4()
+    batch_path = reanalysis_file_path(source_batch_job_id=batch_id)
+    assert batch_path == f"reanalysis:{batch_id}"
+    batch_scope = parse_reanalysis_scope(batch_path)
+    assert batch_scope.batch_job_id == batch_id
+    assert batch_scope.review_id is None
+    assert is_reanalysis_job(batch_path)
+
+    review_id = uuid4()
+    review_path = reanalysis_file_path(review_id=review_id)
+    assert review_path == f"reanalysis:review:{review_id}"
+    review_scope = parse_reanalysis_scope(review_path)
+    assert review_scope.review_id == review_id
+    # KRITIK guvenlik regresyonu: review kapsami ASLA tum-kuruma
+    # (batch_job_id de review_id de None) cozulmemeli -- eski
+    # reanalysis_scope() bunu yapardi (UUID() ValueError -> None).
+    assert review_scope.batch_job_id is None
+    assert review_scope != ReanalysisScope()
+    assert is_reanalysis_job(review_path)
+
+
+def test_reanalysis_scope_corrupted_review_marker_never_widens_to_tenant() -> None:
+    """Bozuk bir review isareti (gecersiz UUID) sessizce tum-kurum
+    kapsamina DUSMEMELI -- ValueError yukselir (process_reanalysis_job'in
+    genel except'i isi FAILED yapar). Eski (batch/all kolundaki) None-
+    fallback davranisi review kapsamina TASINMAZ -- bkz. modul basindaki
+    CRITICAL SAFETY notu."""
+    from imga_api.workers.reanalyzer import parse_reanalysis_scope
+
+    with pytest.raises(ValueError):
+        parse_reanalysis_scope("reanalysis:review:not-a-uuid")
+
+
+def test_reanalysis_scope_legacy_batch_garbage_still_falls_back_to_tenant() -> None:
+    """Eski/bozuk BATCH isareti (review: oneki tasimayan) eskisi gibi
+    tum-kuruma duser -- bu davranis 2026-08-10'dan beri kasitli, burada
+    degistirilmedi (yalniz review kolu icin sikilastirildi)."""
+    from imga_api.workers.reanalyzer import ReanalysisScope, parse_reanalysis_scope
+
+    assert parse_reanalysis_scope("reanalysis:not-a-uuid-either") == ReanalysisScope()
+
+
+@pytest.mark.asyncio
+async def test_candidate_stmt_with_review_id_returns_exactly_that_row(
+    admin_session: AsyncSession,
+    semi_auto_tenant: tuple[User, UUID, str],
+) -> None:
+    """review_id verilince batch filtresi YOK SAYILIR, sonuc tam olarak
+    o tek satira daralir (diger aday satir sonuca girmez)."""
+    from imga_api.workers.reanalyzer import candidate_stmt, count_candidates
+
+    _user, tid, _pw = semi_auto_tenant
+    target_id = await _seed_review(admin_session, tenant_id=tid, text_value="hedef yorum")
+    await _seed_review(admin_session, tenant_id=tid, text_value="diger aday yorum")
+
+    async with admin_session.begin():
+        await admin_session.execute(
+            text("SELECT set_config('app.current_tenant_id', :t, true)"),
+            {"t": str(tid)},
+        )
+        ids = (
+            (
+                await admin_session.execute(
+                    candidate_stmt(
+                        tenant_id=tid,
+                        source_batch_job_id=None,
+                        review_id=target_id,
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        total = await count_candidates(
+            admin_session,
+            tenant_id=tid,
+            source_batch_job_id=None,
+            review_id=target_id,
+        )
+    assert ids == [target_id]
+    assert total == 1
+
+
+# ---------------------------------------------------------------------
 # 3. Yeniden analiz — yetki
 # ---------------------------------------------------------------------
 
@@ -557,9 +646,7 @@ async def test_reanalyze_all_requires_authentication(
     assert r.status_code == 401, r.text
 
 
-@pytest.mark.parametrize(
-    "role", [UserTenantRole.VIEWER, UserTenantRole.ANALYST]
-)
+@pytest.mark.parametrize("role", [UserTenantRole.VIEWER, UserTenantRole.ANALYST])
 @pytest.mark.asyncio
 async def test_reanalyze_all_forbidden_for_non_admin(
     batch_client: TestClient,
@@ -587,9 +674,7 @@ async def test_reanalyze_all_creates_job_for_tenant_admin(
     admin_session: AsyncSession,
 ) -> None:
     user, tid, pw = semi_auto_tenant
-    await _seed_review(
-        admin_session, tenant_id=tid, text_value="Kargom hala gelmedi"
-    )
+    await _seed_review(admin_session, tenant_id=tid, text_value="Kargom hala gelmedi")
     token = login_token(batch_client, user.email, pw, tid)
     r = batch_client.post(
         "/tenants/me/reviews/reanalyze-all",
@@ -626,9 +711,7 @@ async def test_batch_scoped_reanalyze_authz_and_scope(
 ) -> None:
     user, tid, pw = semi_auto_tenant
     token = login_token(batch_client, user.email, pw, tid)
-    path = write_csv(
-        tmp_path / "scope.csv", ["yorum"], [["Kargo cok gec geldi"]]
-    )
+    path = write_csv(tmp_path / "scope.csv", ["yorum"], [["Kargo cok gec geldi"]])
     up = upload_csv(batch_client, token=token, path=path, text_column="yorum")
     assert up.status_code == 201, up.text
     source_job_id = UUID(up.json()["job_id"])
@@ -638,9 +721,7 @@ async def test_batch_scoped_reanalyze_authz_and_scope(
     await run_worker(batch_client, source_job_id)
 
     # analyst reddedilir
-    email, plain, member_id = await _add_member(
-        admin_session, tid, UserTenantRole.ANALYST
-    )
+    email, plain, member_id = await _add_member(admin_session, tid, UserTenantRole.ANALYST)
     try:
         analyst_token = login_token(batch_client, email, plain, tid)
         forbidden = batch_client.post(
@@ -672,6 +753,179 @@ async def test_batch_scoped_reanalyze_authz_and_scope(
         headers={"Authorization": f"Bearer {token}"},
     )
     assert missing.status_code == 404, missing.text
+
+
+# ---------------------------------------------------------------------
+# 3b. Yeniden analiz -- tek yorum ucu (2026-09-01)
+# ---------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_reanalyze_review_creates_job_with_review_scope(
+    batch_client: TestClient,
+    semi_auto_tenant: tuple[User, UUID, str],
+    admin_session: AsyncSession,
+) -> None:
+    user, tid, pw = semi_auto_tenant
+    review_id = await _seed_review(
+        admin_session,
+        tenant_id=tid,
+        text_value="tek yorum yeniden analiz denemesi",
+    )
+    token = login_token(batch_client, user.email, pw, tid)
+    r = batch_client.post(
+        f"/tenants/me/reviews/{review_id}/reanalyze",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert r.status_code == 201, r.text
+    body = r.json()
+    assert body["status"] == "queued"
+    assert body["total_rows"] == 1
+    job_id = UUID(body["job_id"])
+
+    async with admin_session.begin():
+        job = await admin_session.get(AnalyzeBatchJob, job_id)
+        assert job is not None
+        assert job.file_path == f"reanalysis:review:{review_id}"
+
+
+@pytest.mark.asyncio
+async def test_reanalyze_review_404_for_other_tenant_review(
+    batch_client: TestClient,
+    semi_auto_tenant: tuple[User, UUID, str],
+    manual_tenant: tuple[User, UUID, str],
+    admin_session: AsyncSession,
+) -> None:
+    user_a, tid_a, pw_a = semi_auto_tenant
+    _user_b, tid_b, _pw_b = manual_tenant
+    other_review_id = await _seed_review(
+        admin_session, tenant_id=tid_b, text_value="B kurumunun yorumu"
+    )
+    token = login_token(batch_client, user_a.email, pw_a, tid_a)
+    r = batch_client.post(
+        f"/tenants/me/reviews/{other_review_id}/reanalyze",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert r.status_code == 404, r.text
+
+
+@pytest.mark.asyncio
+async def test_reanalyze_review_409_for_human_corrected_review(
+    batch_client: TestClient,
+    semi_auto_tenant: tuple[User, UUID, str],
+    admin_session: AsyncSession,
+) -> None:
+    user, tid, pw = semi_auto_tenant
+    review_id = await _seed_review(
+        admin_session,
+        tenant_id=tid,
+        text_value="insan tarafindan elle duzeltilmis yorum",
+        overrides_applied=[{"layer": "user_correction", "detail": "elle"}],
+    )
+    token = login_token(batch_client, user.email, pw, tid)
+    r = batch_client.post(
+        f"/tenants/me/reviews/{review_id}/reanalyze",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert r.status_code == 409, r.text
+
+
+@pytest.mark.parametrize("role", [UserTenantRole.VIEWER, UserTenantRole.ANALYST])
+@pytest.mark.asyncio
+async def test_reanalyze_review_forbidden_for_non_admin(
+    batch_client: TestClient,
+    semi_auto_tenant: tuple[User, UUID, str],
+    admin_session: AsyncSession,
+    role: UserTenantRole,
+) -> None:
+    _user, tid, _pw = semi_auto_tenant
+    review_id = await _seed_review(admin_session, tenant_id=tid, text_value="yetki testi yorumu")
+    email, plain, member_id = await _add_member(admin_session, tid, role)
+    try:
+        token = login_token(batch_client, email, plain, tid)
+        r = batch_client.post(
+            f"/tenants/me/reviews/{review_id}/reanalyze",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert r.status_code == 403, r.text
+    finally:
+        await _drop_user(admin_session, member_id)
+
+
+@pytest.mark.asyncio
+async def test_reanalyze_review_worker_touches_only_target_row(
+    batch_client: TestClient,
+    semi_auto_tenant: tuple[User, UUID, str],
+    admin_session: AsyncSession,
+    mock_gemini_credential: Any,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """CRITICAL SAFETY duz kaniti: iki aday yorum varken tek birine
+    yeniden analiz istenirse DIGER satira hicbir sekilde dokunulmamis
+    kalmali (skor/etiket/kategori/override izi). Aksi halde review
+    kapsami yanlislikla tum-kuruma genislemis olurdu -- tam olarak bu
+    dosyanin basindaki CRITICAL SAFETY notunun kanitladigi sey."""
+    user, tid, pw = semi_auto_tenant
+    await mock_gemini_credential(tid, "fake-key-for-unified-path-123")
+    _no_embeddings(monkeypatch)
+
+    target_id = await _seed_review(
+        admin_session,
+        tenant_id=tid,
+        text_value="hedef yorum, yeniden analiz edilecek",
+        sentiment_label="NÖTR",
+        sentiment_score=0.0,
+        primary_category="belirsiz",
+    )
+    other_id = await _seed_review(
+        admin_session,
+        tenant_id=tid,
+        text_value="diger yorum, DOKUNULMAMALI",
+        sentiment_label="NÖTR",
+        sentiment_score=0.0,
+        primary_category="belirsiz",
+    )
+
+    from imga_core.pipeline import AnalysisPipeline
+
+    monkeypatch.setattr(
+        AnalysisPipeline,
+        "analyze_batch_unified_async",
+        _fake_unified(
+            sentiment_label="NEGATIF",
+            sentiment_score=-0.8,
+            category="kargo",
+            experience="dijital",
+        ),
+    )
+
+    token = login_token(batch_client, user.email, pw, tid)
+    r = batch_client.post(
+        f"/tenants/me/reviews/{target_id}/reanalyze",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert r.status_code == 201, r.text
+    assert r.json()["total_rows"] == 1
+    job_id = UUID(r.json()["job_id"])
+
+    await run_reanalysis_worker(batch_client, job_id)
+
+    target = await _fetch_review(admin_session, target_id)
+    assert target.sentiment_label == "NEGATIF"
+    assert target.primary_category == "kargo"
+    assert target.experience_type == "dijital"
+
+    other = await _fetch_review(admin_session, other_id)
+    assert other.sentiment_label == "NÖTR"
+    assert other.sentiment_score == 0.0
+    assert other.primary_category == "belirsiz"
+    assert other.overrides_applied is None
+
+    async with admin_session.begin():
+        job = await admin_session.get(AnalyzeBatchJob, job_id)
+        assert job is not None
+        assert job.status == "completed"
+        assert job.processed_rows == 1
 
 
 # ---------------------------------------------------------------------
@@ -746,9 +1000,7 @@ async def test_reanalysis_updates_rows_but_skips_human_corrections(
     assert corrected.sentiment_score == 0.9
     assert corrected.primary_category == "musteri_hizmetleri"
     assert corrected.experience_type is None
-    corrected_layers = [
-        o.get("layer") for o in (corrected.overrides_applied or [])
-    ]
+    corrected_layers = [o.get("layer") for o in (corrected.overrides_applied or [])]
     assert "reanalysis" not in corrected_layers
 
     async with admin_session.begin():
@@ -792,9 +1044,7 @@ async def test_reanalysis_preserves_review_date_and_nps(
 
     from imga_core.pipeline import AnalysisPipeline
 
-    monkeypatch.setattr(
-        AnalysisPipeline, "analyze_batch_unified_async", _fake_unified()
-    )
+    monkeypatch.setattr(AnalysisPipeline, "analyze_batch_unified_async", _fake_unified())
 
     token = login_token(batch_client, user.email, pw, tid)
     r = batch_client.post(
@@ -825,9 +1075,7 @@ async def test_reanalysis_busts_executive_snapshots(
     await mock_gemini_credential(tid, "fake-key-for-unified-path-123")
     _no_embeddings(monkeypatch)
 
-    await _seed_review(
-        admin_session, tenant_id=tid, text_value="Snapshot bust denemesi"
-    )
+    await _seed_review(admin_session, tenant_id=tid, text_value="Snapshot bust denemesi")
     async with admin_session.begin():
         await admin_session.execute(
             text("SELECT set_config('app.current_tenant_id', :t, true)"),
@@ -845,9 +1093,7 @@ async def test_reanalysis_busts_executive_snapshots(
 
     from imga_core.pipeline import AnalysisPipeline
 
-    monkeypatch.setattr(
-        AnalysisPipeline, "analyze_batch_unified_async", _fake_unified()
-    )
+    monkeypatch.setattr(AnalysisPipeline, "analyze_batch_unified_async", _fake_unified())
 
     token = login_token(batch_client, user.email, pw, tid)
     r = batch_client.post(
@@ -861,9 +1107,7 @@ async def test_reanalysis_busts_executive_snapshots(
         remaining = (
             (
                 await admin_session.execute(
-                    select(ExecutiveSnapshot.id).where(
-                        ExecutiveSnapshot.tenant_id == tid
-                    )
+                    select(ExecutiveSnapshot.id).where(ExecutiveSnapshot.tenant_id == tid)
                 )
             )
             .scalars()
@@ -882,9 +1126,7 @@ async def test_reanalysis_fails_cleanly_without_llm_credentials(
     """BERT yedegi ACIK olsa bile yeniden analiz ona DUSMEZ."""
     user, tid, pw = semi_auto_tenant
     monkeypatch.setenv("IMGA_BATCH_BERT_FALLBACK", "true")
-    await _seed_review(
-        admin_session, tenant_id=tid, text_value="Anahtarsiz kurum yorumu"
-    )
+    await _seed_review(admin_session, tenant_id=tid, text_value="Anahtarsiz kurum yorumu")
 
     token = login_token(batch_client, user.email, pw, tid)
     r = batch_client.post(
@@ -947,17 +1189,11 @@ async def test_candidate_predicate_keeps_null_overrides_rows(
             {"t": str(tid)},
         )
         ids = (
-            (
-                await admin_session.execute(
-                    candidate_stmt(tenant_id=tid, source_batch_job_id=None)
-                )
-            )
+            (await admin_session.execute(candidate_stmt(tenant_id=tid, source_batch_job_id=None)))
             .scalars()
             .all()
         )
-        total = await count_candidates(
-            admin_session, tenant_id=tid, source_batch_job_id=None
-        )
+        total = await count_candidates(admin_session, tenant_id=tid, source_batch_job_id=None)
     assert set(ids) == {legacy_id, empty_id}
     # Route'un sayimi ile iscinin listesi AYNI yuklemi kullanmali.
     assert total == len(ids) == 2
@@ -984,9 +1220,7 @@ def test_rewritten_overrides_contract() -> None:
         sentiment_label="NEGATIF",
         sentiment_score=-0.8,
         overrides_applied=[
-            OverrideHit(
-                layer="knowledge_base", score=-0.6, matched_keywords=["kargo"]
-            ),
+            OverrideHit(layer="knowledge_base", score=-0.6, matched_keywords=["kargo"]),
             OverrideHit(layer="user_correction_kb", score=-0.4),
         ],
     )
@@ -1007,12 +1241,8 @@ def test_rewritten_overrides_contract() -> None:
     assert result[2]["matched_keywords"] == ["kargo"]
 
     # NULL iz (0014 oncesi satir) — yalniz yeni isaret yazilir.
-    bare = AnalysisResult(
-        text="t", sentiment_label="NÖTR", sentiment_score=0.0
-    )
-    assert _rewritten_overrides(None, bare, "m") == [
-        {"layer": "reanalysis", "detail": "m"}
-    ]
+    bare = AnalysisResult(text="t", sentiment_label="NÖTR", sentiment_score=0.0)
+    assert _rewritten_overrides(None, bare, "m") == [{"layer": "reanalysis", "detail": "m"}]
 
 
 @pytest.mark.asyncio
@@ -1047,11 +1277,7 @@ async def test_reanalysis_rewrites_override_trace(
         AnalysisPipeline,
         "analyze_batch_unified_async",
         _fake_unified(
-            overrides=[
-                OverrideHit(
-                    layer="knowledge_base", score=-0.6, matched_keywords=["kargo"]
-                )
-            ]
+            overrides=[OverrideHit(layer="knowledge_base", score=-0.6, matched_keywords=["kargo"])]
         ),
     )
 
@@ -1089,9 +1315,7 @@ async def test_reanalysis_busts_caches_on_cancel(
     user, tid, pw = semi_auto_tenant
     await mock_gemini_credential(tid, "fake-key-for-unified-path-123")
     _no_embeddings(monkeypatch)
-    await _seed_review(
-        admin_session, tenant_id=tid, text_value="iptal senaryosu satiri"
-    )
+    await _seed_review(admin_session, tenant_id=tid, text_value="iptal senaryosu satiri")
 
     from imga_api.workers import reanalyzer
 
@@ -1134,9 +1358,7 @@ async def test_reanalysis_busts_caches_on_permanent_chunk_failure(
     user, tid, pw = semi_auto_tenant
     await mock_gemini_credential(tid, "fake-key-for-unified-path-123")
     _no_embeddings(monkeypatch)
-    await _seed_review(
-        admin_session, tenant_id=tid, text_value="kalici hata senaryosu"
-    )
+    await _seed_review(admin_session, tenant_id=tid, text_value="kalici hata senaryosu")
 
     from imga_core.pipeline import AnalysisPipeline
 
@@ -1204,9 +1426,7 @@ async def test_reanalysis_writes_informational_quality_flag(
 
     from imga_core.pipeline import AnalysisPipeline
 
-    monkeypatch.setattr(
-        AnalysisPipeline, "analyze_batch_unified_async", _fake_unified()
-    )
+    monkeypatch.setattr(AnalysisPipeline, "analyze_batch_unified_async", _fake_unified())
 
     token = login_token(batch_client, user.email, pw, tid)
     r = batch_client.post(
@@ -1244,9 +1464,7 @@ async def test_reanalysis_preserves_duplicate_quality_flag(
 
     from imga_core.pipeline import AnalysisPipeline
 
-    monkeypatch.setattr(
-        AnalysisPipeline, "analyze_batch_unified_async", _fake_unified()
-    )
+    monkeypatch.setattr(AnalysisPipeline, "analyze_batch_unified_async", _fake_unified())
 
     token = login_token(batch_client, user.email, pw, tid)
     r = batch_client.post(
@@ -1282,9 +1500,7 @@ async def test_reanalysis_excludes_empty_quality_flag_from_candidates(
         decision=ReviewDecision.SKIPPED_QUALITY,
         quality_flag="empty",
     )
-    await _seed_review(
-        admin_session, tenant_id=tid, text_value="Gercek bir yorum metni burada"
-    )
+    await _seed_review(admin_session, tenant_id=tid, text_value="Gercek bir yorum metni burada")
 
     from imga_api.workers.reanalyzer import candidate_stmt, count_candidates
 
@@ -1294,17 +1510,11 @@ async def test_reanalysis_excludes_empty_quality_flag_from_candidates(
             {"t": str(tid)},
         )
         ids = (
-            (
-                await admin_session.execute(
-                    candidate_stmt(tenant_id=tid, source_batch_job_id=None)
-                )
-            )
+            (await admin_session.execute(candidate_stmt(tenant_id=tid, source_batch_job_id=None)))
             .scalars()
             .all()
         )
-        total = await count_candidates(
-            admin_session, tenant_id=tid, source_batch_job_id=None
-        )
+        total = await count_candidates(admin_session, tenant_id=tid, source_batch_job_id=None)
     assert empty_id not in ids
     assert total == len(ids) == 1
 
@@ -1336,9 +1546,7 @@ async def test_reanalysis_applies_correction_experience_and_perspective(
     _no_embeddings(monkeypatch)
 
     review_text = "Tamam"
-    review_id = await _seed_review(
-        admin_session, tenant_id=tid, text_value=review_text
-    )
+    review_id = await _seed_review(admin_session, tenant_id=tid, text_value=review_text)
 
     async with admin_session.begin():
         await admin_session.execute(
@@ -1405,43 +1613,71 @@ async def test_experience_distribution_math_and_null_fallback(
     # Kolonu DOLU satirlar — model karari her zaman kazanir. Kategorisi
     # 'kargo' olmasina ragmen dijital sayilmali.
     await _seed_review(
-        admin_session, tenant_id=tid, text_value="model dijital der 1",
-        primary_category="kargo", experience_type="dijital",
-        sentiment_label="NEGATIF", sentiment_score=-0.9,
+        admin_session,
+        tenant_id=tid,
+        text_value="model dijital der 1",
+        primary_category="kargo",
+        experience_type="dijital",
+        sentiment_label="NEGATIF",
+        sentiment_score=-0.9,
     )
     await _seed_review(
-        admin_session, tenant_id=tid, text_value="model dijital der 2",
-        primary_category="kargo", experience_type="dijital",
-        sentiment_label="POZITIF", sentiment_score=0.9,
+        admin_session,
+        tenant_id=tid,
+        text_value="model dijital der 2",
+        primary_category="kargo",
+        experience_type="dijital",
+        sentiment_label="POZITIF",
+        sentiment_score=0.9,
     )
     # Kolonu DOLU + operasyonel, kategorisi teknik_destek (yedek yol
     # dijital derdi) — model karari yine kazanmali.
     await _seed_review(
-        admin_session, tenant_id=tid, text_value="model operasyonel der",
-        primary_category="teknik_destek", experience_type="operasyonel",
-        sentiment_label="NEGATIF", sentiment_score=-0.7,
+        admin_session,
+        tenant_id=tid,
+        text_value="model operasyonel der",
+        primary_category="teknik_destek",
+        experience_type="operasyonel",
+        sentiment_label="NEGATIF",
+        sentiment_score=-0.7,
     )
     # NULL satirlar — kategori eslemesine duser.
     await _seed_review(
-        admin_session, tenant_id=tid, text_value="eski satir teknik",
-        primary_category="teknik_destek", experience_type=None,
-        sentiment_label="NEGATIF", sentiment_score=-0.5,
+        admin_session,
+        tenant_id=tid,
+        text_value="eski satir teknik",
+        primary_category="teknik_destek",
+        experience_type=None,
+        sentiment_label="NEGATIF",
+        sentiment_score=-0.5,
     )
     await _seed_review(
-        admin_session, tenant_id=tid, text_value="eski satir fatura",
-        primary_category="faturalama", experience_type=None,
-        sentiment_label="NÖTR", sentiment_score=0.0,
+        admin_session,
+        tenant_id=tid,
+        text_value="eski satir fatura",
+        primary_category="faturalama",
+        experience_type=None,
+        sentiment_label="NÖTR",
+        sentiment_score=0.0,
     )
     await _seed_review(
-        admin_session, tenant_id=tid, text_value="eski satir iade",
-        primary_category="iade", experience_type=None,
-        sentiment_label="POZITIF", sentiment_score=0.6,
+        admin_session,
+        tenant_id=tid,
+        text_value="eski satir iade",
+        primary_category="iade",
+        experience_type=None,
+        sentiment_label="POZITIF",
+        sentiment_score=0.6,
     )
     # belirsiz hicbir kovaya girmez -> atanmamis
     await _seed_review(
-        admin_session, tenant_id=tid, text_value="eski satir belirsiz",
-        primary_category="belirsiz", experience_type=None,
-        sentiment_label="NEGATIF", sentiment_score=-0.4,
+        admin_session,
+        tenant_id=tid,
+        text_value="eski satir belirsiz",
+        primary_category="belirsiz",
+        experience_type=None,
+        sentiment_label="NEGATIF",
+        sentiment_score=-0.4,
     )
 
     token = login_token(batch_client, user.email, pw, tid)
@@ -1472,12 +1708,16 @@ async def test_experience_distribution_accepts_iso_datetime_window(
     """Frontend ISO datetime yollar — ``date`` tipi 422 uretirdi."""
     user, tid, pw = semi_auto_tenant
     await _seed_review(
-        admin_session, tenant_id=tid, text_value="ocak yorumu",
+        admin_session,
+        tenant_id=tid,
+        text_value="ocak yorumu",
         primary_category="teknik_destek",
         review_date=datetime(2026, 1, 10, 9, 30, tzinfo=UTC),
     )
     await _seed_review(
-        admin_session, tenant_id=tid, text_value="mart yorumu",
+        admin_session,
+        tenant_id=tid,
+        text_value="mart yorumu",
         primary_category="iade",
         review_date=datetime(2026, 3, 10, 9, 30, tzinfo=UTC),
     )
@@ -1519,7 +1759,9 @@ async def test_experience_distribution_accepts_batch_job_id(
 
     # Batch disinda ekstra bir satir
     await _seed_review(
-        admin_session, tenant_id=tid, text_value="manuel satir",
+        admin_session,
+        tenant_id=tid,
+        text_value="manuel satir",
         primary_category="teknik_destek",
     )
 
@@ -1529,10 +1771,7 @@ async def test_experience_distribution_accepts_batch_job_id(
         headers={"Authorization": f"Bearer {token}"},
     )
     assert scoped.status_code == 200, scoped.text
-    scoped_total = sum(
-        scoped.json()[k]["total"]
-        for k in ("dijital", "operasyonel", "atanmamis")
-    )
+    scoped_total = sum(scoped.json()[k]["total"] for k in ("dijital", "operasyonel", "atanmamis"))
     assert scoped_total == 1
 
     unscoped = batch_client.get(
@@ -1540,8 +1779,7 @@ async def test_experience_distribution_accepts_batch_job_id(
         headers={"Authorization": f"Bearer {token}"},
     )
     unscoped_total = sum(
-        unscoped.json()[k]["total"]
-        for k in ("dijital", "operasyonel", "atanmamis")
+        unscoped.json()[k]["total"] for k in ("dijital", "operasyonel", "atanmamis")
     )
     assert unscoped_total == 2
 
@@ -1557,12 +1795,16 @@ async def test_experience_distribution_is_rls_isolated(
     _user_b, tid_b, _pw_b = manual_tenant
 
     await _seed_review(
-        admin_session, tenant_id=tid_a, text_value="A kurumunun yorumu",
+        admin_session,
+        tenant_id=tid_a,
+        text_value="A kurumunun yorumu",
         primary_category="teknik_destek",
     )
     for i in range(3):
         await _seed_review(
-            admin_session, tenant_id=tid_b, text_value=f"B kurumu yorumu {i}",
+            admin_session,
+            tenant_id=tid_b,
+            text_value=f"B kurumu yorumu {i}",
             primary_category="teknik_destek",
         )
 
@@ -1574,9 +1816,7 @@ async def test_experience_distribution_is_rls_isolated(
     assert r.status_code == 200, r.text
     body = r.json()
     assert body["dijital"]["total"] == 1
-    total = sum(
-        body[k]["total"] for k in ("dijital", "operasyonel", "atanmamis")
-    )
+    total = sum(body[k]["total"] for k in ("dijital", "operasyonel", "atanmamis"))
     assert total == 1, "baska kurumun satirlari sizdi"
 
 
@@ -1587,9 +1827,7 @@ async def test_experience_distribution_open_to_viewer(
     admin_session: AsyncSession,
 ) -> None:
     _user, tid, _pw = semi_auto_tenant
-    email, plain, member_id = await _add_member(
-        admin_session, tid, UserTenantRole.VIEWER
-    )
+    email, plain, member_id = await _add_member(admin_session, tid, UserTenantRole.VIEWER)
     try:
         token = login_token(batch_client, email, plain, tid)
         r = batch_client.get(
@@ -1614,11 +1852,15 @@ async def test_review_list_and_detail_expose_experience_type(
 ) -> None:
     user, tid, pw = semi_auto_tenant
     filled_id = await _seed_review(
-        admin_session, tenant_id=tid, text_value="deneyim tipi dolu satir",
+        admin_session,
+        tenant_id=tid,
+        text_value="deneyim tipi dolu satir",
         experience_type="dijital",
     )
     legacy_id = await _seed_review(
-        admin_session, tenant_id=tid, text_value="deneyim tipi bos satir",
+        admin_session,
+        tenant_id=tid,
+        text_value="deneyim tipi bos satir",
     )
 
     token = login_token(batch_client, user.email, pw, tid)

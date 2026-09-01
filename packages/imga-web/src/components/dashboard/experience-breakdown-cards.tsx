@@ -15,7 +15,20 @@
 
 import { ArrowRight, Info, Monitor, Package } from "lucide-react";
 import Link from "next/link";
+import { useState } from "react";
+import { toast } from "sonner";
 
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogHeader,
+  AlertDialogFooter,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Tooltip,
@@ -25,6 +38,8 @@ import {
 } from "@/components/ui/tooltip";
 import { useCategories } from "@/hooks/use-categories";
 import type { ExperienceDistribution } from "@/hooks/use-experience";
+import { useReanalyzeAllReviews } from "@/hooks/use-reanalyze";
+import { useRoleFlags } from "@/hooks/use-role-flags";
 import { experienceOf, type ExperienceType } from "@/lib/experience";
 import { useTranslation } from "@/lib/i18n/use-translation";
 
@@ -99,13 +114,86 @@ export function ExperienceBreakdownCards({ data, isLoading }: Props) {
         />
       </div>
       {data.atanmamis.total > 0 && (
-        <p className="text-muted-foreground mt-2.5 text-xs">
-          {t("dashboard.experience.unassignedNote", {
+        <UnassignedNote
+          noteText={t("dashboard.experience.unassignedNote", {
             count: nf.format(data.atanmamis.total),
           })}
-        </p>
+        />
       )}
     </section>
+  );
+}
+
+/** F2 (2026-09-01) — atanmamış deneyim notunu eyleme dönüştürür: write
+ *  rolü tüm yorumları yeniden analiz edebilir (onay + toast ile),
+ *  viewer yalnız Geçmiş Yüklemeler'e düz bir bağlantı görür. Kart
+ *  sakin kalsın diye buton "link" varyantı — büyük bir CTA değil. */
+function UnassignedNote({ noteText }: { noteText: string }) {
+  const { t } = useTranslation();
+  const { isAdmin } = useRoleFlags();
+  const reanalyzeAll = useReanalyzeAllReviews();
+  const [confirmOpen, setConfirmOpen] = useState(false);
+
+  function handleConfirm() {
+    reanalyzeAll.mutate(undefined, {
+      onSuccess: () => {
+        toast.success(t("dashboard.experience.reanalyzeQueued"));
+        setConfirmOpen(false);
+      },
+      onError: () => toast.error(t("dashboard.experience.reanalyzeFailed")),
+    });
+  }
+
+  return (
+    <p className="text-muted-foreground mt-2.5 flex flex-wrap items-center gap-x-1.5 gap-y-1 text-xs">
+      <span>{noteText}</span>
+      {/* /reviews/reanalyze-all _TenantAdmin; diğer roller Geçmiş
+          Yüklemeler bağlantısını görür. */}
+      {isAdmin ? (
+        <>
+          <Button
+            type="button"
+            variant="link"
+            className="h-auto p-0 text-xs"
+            onClick={() => setConfirmOpen(true)}
+            disabled={reanalyzeAll.isPending}
+          >
+            {t("dashboard.experience.reanalyzeCta")}
+          </Button>
+          <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>
+                  {t("dashboard.experience.reanalyzeCta")}
+                </AlertDialogTitle>
+                <AlertDialogDescription>
+                  {t("dashboard.experience.reanalyzeConfirm")}
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel disabled={reanalyzeAll.isPending}>
+                  {t("common.cancel")}
+                </AlertDialogCancel>
+                <AlertDialogAction
+                  onClick={handleConfirm}
+                  disabled={reanalyzeAll.isPending}
+                >
+                  {t("dashboard.experience.reanalyzeCta")}
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+        </>
+      ) : (
+        <Button
+          variant="link"
+          className="h-auto p-0 text-xs"
+          render={<Link href="/analyze/upload/history" />}
+        >
+          {t("dashboard.experience.reanalyzeHistoryLink")}
+        </Button>
+      )}
+    </p>
   );
 }
 
