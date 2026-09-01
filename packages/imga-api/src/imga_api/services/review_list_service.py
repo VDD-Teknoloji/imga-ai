@@ -83,8 +83,9 @@ class ReviewListFilters:
     # (bayraklı satırlar dahil). ``quality_flags`` doluysa bu alan
     # devre dışı kalır — kullanıcı zaten belirli bayrakları istemiştir.
     include_flagged: bool = True
-    # W2-A — CSV of Review.content_type values (currently just
-    # "question"). Empty tuple disables the filter.
+    # W2-A — CSV of Review.content_type values. 2026-09-01 (migration
+    # 0050) widened from just "question" to five: question, suggestion,
+    # thanks, request, escalation. Empty tuple disables the filter.
     content_types: tuple[str, ...] = ()
     order_by: OrderField = "created_at"
     order: OrderDir = "desc"
@@ -128,7 +129,9 @@ class ReviewListItem:
     # 2026-08-26 (migration 0047) — kaynaktaki kalıcı bağlantı (tweet
     # URL'si vb.); kart "Tweeti aç / Kaynağı aç" düğmesi bunu kullanır.
     source_url: str | None = None
-    # W2-A — içerik türü ("question" | None). NULL = normal yorum.
+    # W2-A — içerik türü ("question" | "suggestion" | "thanks" |
+    # "request" | "escalation" | None, migration 0050). NULL = normal
+    # yorum.
     content_type: str | None = None
 
 
@@ -221,6 +224,11 @@ class ReviewSummary:
     categories: list[CategoryCount]
     quality: QualitySummary
     question_count: int
+    # 2026-09-01 (migration 0050) — all five Review.content_type values,
+    # 0-defaulted (question/suggestion/thanks/request/escalation).
+    # ``question_count`` above is kept for backward compatibility and is
+    # always equal to ``content_types["question"]``.
+    content_types: dict[str, int]
     top_questions: list[TopQuestion]
     entered_by: list[EnteredByCount]
     daily: list[DailyCount]
@@ -421,12 +429,14 @@ class ReviewListService:
         where_clause = and_(*conditions)
 
         # Query A — headline scalars in one round trip: total, average
-        # score, NPS bucket counts, ticket-linked and question counts.
+        # score, NPS bucket counts and ticket-linked count. content_type
+        # counts (incl. question_count) come from Query I below — one
+        # GROUP BY covers all five values instead of a per-value CASE
+        # column here.
         headline_stmt = select(
             func.count().label("total"),
             func.avg(Review.sentiment_score).label("avg_score"),
             func.sum(case((Review.ticket_id.is_not(None), 1), else_=0)).label("ticket_linked"),
-            func.sum(case((Review.content_type == "question", 1), else_=0)).label("question_count"),
             func.sum(case((Review.nps_score.is_not(None), 1), else_=0)).label("with_nps"),
             func.sum(case((Review.nps_category == "promoter", 1), else_=0)).label("promoter"),
             func.sum(case((Review.nps_category == "passive", 1), else_=0)).label("passive"),
@@ -581,6 +591,26 @@ class ReviewListService:
             for r in (await self._session.execute(daily_stmt)).all()
         ]
 
+        # Query I — content_type buckets. All five keys default to 0;
+        # NULL (dominant, "plain review") rows are excluded via the
+        # WHERE clause rather than left to fall through group_by, same
+        # convention Query F uses for the question-only aggregate.
+        content_type_counts: dict[str, int] = {
+            "question": 0,
+            "suggestion": 0,
+            "thanks": 0,
+            "request": 0,
+            "escalation": 0,
+        }
+        content_type_stmt = (
+            select(Review.content_type, func.count())
+            .where(and_(*conditions, Review.content_type.is_not(None)))
+            .group_by(Review.content_type)
+        )
+        for ctype, cnt in (await self._session.execute(content_type_stmt)).all():
+            if ctype is not None:
+                content_type_counts[ctype] = int(cnt)
+
         return ReviewSummary(
             total=total,
             sentiment=sentiment_counts,
@@ -589,7 +619,8 @@ class ReviewListService:
             sources=sources,
             categories=categories,
             quality=quality,
-            question_count=int(headline.question_count or 0),
+            question_count=content_type_counts["question"],
+            content_types=content_type_counts,
             top_questions=top_questions,
             entered_by=entered_by,
             daily=daily,

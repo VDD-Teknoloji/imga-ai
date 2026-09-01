@@ -260,6 +260,15 @@ async def test_summary_full_shape(
     assert body["avg_sentiment_score"] == pytest.approx(-0.03, abs=1e-6)
     assert body["ticket_linked"] == 1
     assert body["question_count"] == 3
+    # 2026-09-01 (migration 0050) — content_types carries all five keys;
+    # the fixture only seeds 'question' rows, the other four 0-default.
+    assert body["content_types"] == {
+        "question": 3,
+        "suggestion": 0,
+        "thanks": 0,
+        "request": 0,
+        "escalation": 0,
+    }
 
     assert body["quality"] == {
         "clean": 6,
@@ -388,6 +397,59 @@ async def test_list_content_types_filter_narrows_to_questions(
     assert len(items) == 1
     assert items[0]["content_type"] == "question"
     assert items[0]["text"] == "Kargom ne zaman gelir?"
+
+
+@pytest.mark.asyncio
+async def test_summary_content_types_and_escalation_filter(
+    batch_client: TestClient,
+    semi_auto_tenant: tuple[User, UUID, str],
+    admin_session: AsyncSession,
+) -> None:
+    """2026-09-01 (migration 0050) — one row per content_type value plus
+    one plain row: /summary's content_types dict counts each bucket
+    (question_count stays in sync as the 'question' alias), and the
+    list's content_types=escalation filter narrows to just that row."""
+    user, tid, pw = semi_auto_tenant
+    async with admin_session.begin():
+        await admin_session.execute(
+            text("SELECT set_config('app.current_tenant_id', :t, true)"),
+            {"t": str(tid)},
+        )
+        for ctype, text_value in (
+            ("question", "Kargom ne zaman gelir?"),
+            ("suggestion", "Keşke daha hızlı kargo olsa."),
+            ("thanks", "Teşekkürler, çok memnun kaldım."),
+            ("request", "İade istiyorum."),
+            ("escalation", "Tüketici hakem heyetine başvuracağım."),
+        ):
+            await _insert_review(
+                admin_session, tenant_id=tid, text_value=text_value, content_type=ctype
+            )
+        await _insert_review(admin_session, tenant_id=tid, text_value="normal yorum")
+
+    token = login_token(batch_client, user.email, pw, tid)
+    headers = {"Authorization": f"Bearer {token}"}
+
+    summary = batch_client.get("/tenants/me/reviews/summary", headers=headers).json()
+    assert summary["content_types"] == {
+        "question": 1,
+        "suggestion": 1,
+        "thanks": 1,
+        "request": 1,
+        "escalation": 1,
+    }
+    assert summary["question_count"] == summary["content_types"]["question"]
+
+    r = batch_client.get(
+        "/tenants/me/reviews",
+        params={"content_types": "escalation"},
+        headers=headers,
+    )
+    assert r.status_code == 200, r.text
+    items = r.json()["items"]
+    assert len(items) == 1
+    assert items[0]["content_type"] == "escalation"
+    assert items[0]["text"] == "Tüketici hakem heyetine başvuracağım."
 
 
 @pytest.mark.asyncio

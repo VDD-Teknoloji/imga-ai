@@ -219,16 +219,19 @@ class Review(Base, TimestampMixin, SoftDeleteMixin):
     # başkasını kabul etmez.
     quality_flag: Mapped[str | None] = mapped_column(String(16), nullable=True)
 
-    # 2026-09-01 (migration 0049) — metnin YAPISAL biçimi ('question' |
-    # NULL). Deterministik Türkçe heuristik
-    # (``imga_api.services.data_quality.detect_content_type``) yazar,
-    # LLM'e hiç dokunmaz. ``quality_flag`` DEĞİLDİR — ORTOGONAL bir
-    # boyut: bir NEGATİF şikayetin soru biçiminde yazılması ("Kargom
-    # nerede, ilgilenir misiniz?") hâlâ 'question' sayılır VE analitikte
-    # kalır; content_type'ı quality_flag'e katmak böyle bir satırı
-    # include_flagged=False filtresiyle sessizce gömerdi. Bilinçli olarak
-    # genişletilebilir enum (experience_type/0041 deseniyle aynı desen);
-    # CHECK ck_reviews_content_type bugün tek değeri kabul eder.
+    # 2026-09-01 (migration 0049 + 0050) — metnin YAPISAL biçimi: 'question'
+    # | 'suggestion' | 'thanks' | 'request' | 'escalation' | NULL.
+    # Deterministik Türkçe heuristik (``imga_api.services.data_quality.
+    # detect_content_type``) yazar, LLM'e hiç dokunmaz. ``quality_flag``
+    # DEĞİLDİR — ORTOGONAL bir boyut: bir NEGATİF şikayetin soru biçiminde
+    # yazılması ("Kargom nerede, ilgilenir misiniz?") hâlâ 'question'
+    # sayılır VE analitikte kalır; content_type'ı quality_flag'e katmak
+    # böyle bir satırı include_flagged=False filtresiyle sessizce gömerdi.
+    # Birden çok kalıp eşleşirse RİSK-ÖNCELİKLİ sıra uygulanır: escalation
+    # (resmi eskalasyon tehdidi — hakem heyeti/dava/avukat/CİMER/BTK vb.)
+    # > request (somut eylem talebi — iade/iptal/geri ödeme/geri arama) >
+    # question > suggestion > thanks (bkz. detect_content_type docstring).
+    # CHECK ck_reviews_content_type bu beş değerden başkasını kabul etmez.
     content_type: Mapped[str | None] = mapped_column(Text(), nullable=True)
 
     # 2026-09-01 (migration 0049) — açık uçlu kaynak-özel metadata.

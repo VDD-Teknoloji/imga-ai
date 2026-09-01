@@ -30,6 +30,13 @@ export interface RootCauseOverviewCauseItem {
   affected_surface: string | null;
   suggested_action: string | null;
   share_estimate_pct: number | null;
+  /** Sprint — çift katmanlı kart tasarımı (PO geri bildirimi): kısa,
+   *  jargonsuz başlık. Eski kalıcı analizlerde yok — yoksa `title`e
+   *  düşülür (root-cause-cards.tsx'teki `?? title`). */
+  headline?: string | null;
+  /** Aynı sprint: tek satırlık emir kipi aksiyon. Yoksa `suggested_action`e
+   *  düşülür. */
+  action_short?: string | null;
 }
 
 export interface RootCauseOverviewAnalysis {

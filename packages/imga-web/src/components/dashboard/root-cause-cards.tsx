@@ -65,10 +65,7 @@ export function RootCauseCards({ filters, categories }: Props) {
   if (overview.isError) {
     return (
       <section aria-label={t("dashboard.rootCauseCards.aria")}>
-        <SectionHeading
-          title={t("dashboard.rootCauseCards.title")}
-          description={t("dashboard.rootCauseCards.description")}
-        />
+        <SectionHeading title={t("dashboard.rootCauseCards.title")} />
         <p className="text-destructive mt-5 text-sm">{t("dashboard.common.loadFailed")}</p>
       </section>
     );
@@ -78,10 +75,7 @@ export function RootCauseCards({ filters, categories }: Props) {
 
   return (
     <section aria-label={t("dashboard.rootCauseCards.aria")}>
-      <SectionHeading
-        title={t("dashboard.rootCauseCards.title")}
-        description={t("dashboard.rootCauseCards.description")}
-      />
+      <SectionHeading title={t("dashboard.rootCauseCards.title")} />
 
       {cards.length === 0 ? (
         <div className="rise-in shadow-soft bg-card ring-foreground/5 mt-5 rounded-3xl p-6 ring-1 md:p-7">
@@ -91,7 +85,7 @@ export function RootCauseCards({ filters, categories }: Props) {
           </p>
         </div>
       ) : (
-        <div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-3">
+        <div className="mt-5 grid grid-cols-1 items-start gap-4 md:grid-cols-3">
           {cards.map((card, idx) => (
             <RootCauseCardTile
               key={card.primary_category_code}
@@ -155,11 +149,12 @@ function RootCauseCardTile({
   const { t } = useTranslation();
   const { canWrite } = useRoleFlags();
   const qc = useQueryClient();
-  // Akordeon durumu URL'de DEĞİL — url-state-patterns.md geçici (kalıcı
+  // Detay akordeonu URL'de DEĞİL — url-state-patterns.md geçici (kalıcı
   // olmayan) UI durumunu açıkça muaf tutuyor; filtre/sıralama değil
   // (category-sentiment-breakdown.tsx'teki `expanded` state'iyle aynı
-  // gerekçe).
-  const [showOthers, setShowOthers] = useState(false);
+  // gerekçe). PO geri bildirimi: kart varsayılan KAPALI açılır — başlık +
+  // tek satır aksiyon dışındaki her şey bu state'in arkasında.
+  const [showDetails, setShowDetails] = useState(false);
   const generate = useGenerateRootCause();
 
   const analysis = card.analysis;
@@ -204,6 +199,22 @@ function RootCauseCardTile({
     );
   }
 
+  // İki kullanım yeri var: nedenli kartta detay-satırı içinde (kendi
+  // üst boşluğu yok, satır zaten mt-4 taşıyor), diğer dallarda tek
+  // başına (kendi mt-4'ünü sarmalayıcıdan alır) — bkz. aşağıdaki iki
+  // render noktası.
+  const evidenceLink = (
+    <Link
+      href={evidenceHref(card.primary_category_code, filters)}
+      className="text-foreground/70 hover:text-foreground inline-flex items-center gap-1.5 text-sm font-semibold transition-colors"
+    >
+      {t("dashboard.rootCauseCards.evidenceLink", {
+        n: card.negative_count.toLocaleString("tr-TR"),
+      })}
+      <ArrowRight className="size-4" aria-hidden />
+    </Link>
+  );
+
   return (
     <div
       className="rise-in shadow-soft bg-card ring-foreground/5 flex flex-col rounded-3xl p-5 ring-1 md:p-6"
@@ -227,87 +238,106 @@ function RootCauseCardTile({
 
       {analysis && firstCause ? (
         <>
-          <p className="mt-3 text-base font-semibold leading-snug tracking-tight">
-            {firstCause.title}
+          {/* PO geri bildirimi: kapalı kart tek başlık + tek aksiyon
+              satırıyla dikkat çeker, gerisi "Detayları gör" arkasında. */}
+          <p className="mt-3 line-clamp-2 text-lg font-semibold tracking-tight text-balance">
+            {firstCause.headline ?? firstCause.title}
           </p>
-          {firstCause.suggested_action && (
+          {(firstCause.action_short ?? firstCause.suggested_action) && (
             <div className="bg-primary/5 mt-3 rounded-2xl p-3">
-              <p className="text-primary text-xs font-semibold">
+              <p className="text-primary text-[11px] font-semibold tracking-wide uppercase">
                 {t("dashboard.rootCauseCards.actionLabel")}
               </p>
-              <p className="text-foreground/90 mt-0.5 text-sm leading-relaxed">
-                {firstCause.suggested_action}
+              <p className="text-foreground/90 mt-0.5 line-clamp-1 text-sm leading-relaxed">
+                {firstCause.action_short ?? firstCause.suggested_action}
               </p>
             </div>
           )}
-          {firstCause.evidence_quotes.length > 0 && (
-            <ul className="mt-3 space-y-2">
-              {firstCause.evidence_quotes.slice(0, 2).map((quote, i) => (
-                <li
-                  key={`${quote.slice(0, 24)}-${i}`}
-                  className="border-foreground/15 border-l-2 pl-3 text-xs"
-                >
-                  <p className="text-muted-foreground italic">&ldquo;{quote}&rdquo;</p>
-                  <Link
-                    href={quoteSearchHref(quote)}
-                    className="text-primary mt-1 inline-flex items-center gap-1 font-medium not-italic hover:underline"
-                  >
-                    {t("dashboard.rootCauseCards.searchQuote")}
-                    <ArrowRight className="size-3" aria-hidden />
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          )}
-          {firstCause.affected_surface && (
-            <p className="text-muted-foreground mt-3 text-xs">
-              {t("dashboard.rootCause.affectedSurface")}: {firstCause.affected_surface}
-            </p>
-          )}
-          <p
-            className="text-muted-foreground mt-3 text-xs"
-            title={formatDateTr(analysis.generated_at)}
-          >
-            {t("dashboard.rootCauseCards.lastAnalysis", {
-              time: relativeTimeTr(analysis.generated_at),
-            })}
-          </p>
 
-          {restCauses.length > 0 && (
-            <div className="mt-2">
-              <button
-                type="button"
-                onClick={() => setShowOthers((v) => !v)}
-                aria-expanded={showOthers}
-                className="text-muted-foreground hover:text-foreground inline-flex items-center gap-1 text-xs font-medium transition-colors"
-              >
-                {showOthers ? (
-                  <ChevronDown className="size-3.5" aria-hidden />
-                ) : (
-                  <ChevronRight className="size-3.5" aria-hidden />
-                )}
-                {t("dashboard.rootCauseCards.otherCauses", { n: restCauses.length })}
-              </button>
-              {showOthers && (
-                <ul className="mt-2 space-y-2">
-                  {restCauses.map((cause, i) => (
-                    <li key={`${cause.title}-${i}`} className="bg-muted/40 rounded-2xl p-3">
-                      <p className="text-sm font-medium">{cause.title}</p>
-                      <p className="text-muted-foreground mt-1 text-xs leading-relaxed">
-                        {cause.description}
-                      </p>
-                      {cause.suggested_action && (
-                        <p className="mt-1.5 text-xs">
-                          <span className="text-muted-foreground">
-                            {t("dashboard.rootCauseCards.actionLabel")}:{" "}
-                          </span>
-                          {cause.suggested_action}
-                        </p>
-                      )}
+          <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2">
+            <button
+              type="button"
+              onClick={() => setShowDetails((v) => !v)}
+              aria-expanded={showDetails}
+              className="text-muted-foreground hover:text-foreground inline-flex items-center gap-1 text-xs font-medium transition-colors"
+            >
+              {showDetails ? (
+                <ChevronDown className="size-3.5" aria-hidden />
+              ) : (
+                <ChevronRight className="size-3.5" aria-hidden />
+              )}
+              {showDetails
+                ? t("dashboard.rootCauseCards.hideDetails")
+                : t("dashboard.rootCauseCards.showDetails")}
+            </button>
+            {evidenceLink}
+          </div>
+
+          {showDetails && (
+            <div className="border-foreground/10 mt-4 space-y-3 border-t pt-4">
+              <p className="text-muted-foreground text-sm leading-relaxed">
+                {firstCause.description}
+              </p>
+              {/* action_short varken suggested_action zaten aksiyon
+                  satırında değil — burada tam metni gösterilir. Yoksa
+                  aksiyon satırı zaten suggested_action'ın kendisiydi,
+                  tekrar basmak yinelenir. */}
+              {firstCause.action_short && firstCause.suggested_action && (
+                <div>
+                  <p className="text-primary text-xs font-semibold">
+                    {t("dashboard.rootCauseCards.actionLabel")}
+                  </p>
+                  <p className="text-foreground/90 mt-0.5 text-sm leading-relaxed">
+                    {firstCause.suggested_action}
+                  </p>
+                </div>
+              )}
+              {firstCause.evidence_quotes.length > 0 && (
+                <ul className="space-y-2">
+                  {firstCause.evidence_quotes.slice(0, 2).map((quote, i) => (
+                    <li
+                      key={`${quote.slice(0, 24)}-${i}`}
+                      className="border-foreground/15 border-l-2 pl-3 text-xs"
+                    >
+                      <p className="text-muted-foreground italic">&ldquo;{quote}&rdquo;</p>
+                      <Link
+                        href={quoteSearchHref(quote)}
+                        className="text-primary mt-1 inline-flex items-center gap-1 font-medium not-italic hover:underline"
+                      >
+                        {t("dashboard.rootCauseCards.searchQuote")}
+                        <ArrowRight className="size-3" aria-hidden />
+                      </Link>
                     </li>
                   ))}
                 </ul>
               )}
+              {firstCause.affected_surface && (
+                <p className="text-muted-foreground text-xs">
+                  {t("dashboard.rootCause.affectedSurface")}: {firstCause.affected_surface}
+                </p>
+              )}
+              {restCauses.length > 0 && (
+                <div>
+                  <p className="text-muted-foreground text-xs font-semibold">
+                    {t("dashboard.rootCauseCards.otherCauses", { n: restCauses.length })}
+                  </p>
+                  <ul className="mt-1.5 space-y-1">
+                    {restCauses.map((cause, i) => (
+                      <li key={`${cause.title}-${i}`} className="text-foreground/80 text-sm">
+                        {cause.headline ?? cause.title}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              <p
+                className="text-muted-foreground text-xs"
+                title={formatDateTr(analysis.generated_at)}
+              >
+                {t("dashboard.rootCauseCards.lastAnalysis", {
+                  time: relativeTimeTr(analysis.generated_at),
+                })}
+              </p>
             </div>
           )}
         </>
@@ -360,15 +390,9 @@ function RootCauseCardTile({
         </p>
       )}
 
-      <Link
-        href={evidenceHref(card.primary_category_code, filters)}
-        className="text-foreground/70 hover:text-foreground mt-4 inline-flex items-center gap-1.5 text-sm font-semibold transition-colors"
-      >
-        {t("dashboard.rootCauseCards.evidenceLink", {
-          n: card.negative_count.toLocaleString("tr-TR"),
-        })}
-        <ArrowRight className="size-4" aria-hidden />
-      </Link>
+      {/* Nedenli daldaki footer satırı kendi evidenceLink'ini zaten
+          gösterdi — burada yalnız diğer dallar için basılır. */}
+      {!(analysis && firstCause) && <div className="mt-4">{evidenceLink}</div>}
     </div>
   );
 }

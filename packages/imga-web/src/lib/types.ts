@@ -385,6 +385,19 @@ export interface BatchJobListResponse {
 
 export type ReviewSourceType = "manual" | "batch" | "api";
 
+// reviews.content_type — single value per review, backend precedence
+// escalation > request > question > suggestion > thanks. Order below
+// is the canonical DISPLAY order (risk first) — shared by the /reviews
+// filter dropdown, the summary panel's chip row, and the list badge.
+export const CONTENT_TYPES = [
+  "escalation",
+  "request",
+  "question",
+  "suggestion",
+  "thanks",
+] as const;
+export type ContentType = (typeof CONTENT_TYPES)[number];
+
 // Sprint 8.3.4 — rule layer codes, plus the Sprint 11 correction
 // traces and the reanalysis provenance marker. Server may emit any of
 // these in `overrides_applied[].layer`; unknown codes fall back to the
@@ -450,9 +463,9 @@ export interface ReviewListItem {
   // Kaynaktaki kalıcı bağlantı (tweet URL'si, pazar yeri yorum linki);
   // null = kaynakta bağlantı yok. Kart "Tweeti aç / Kaynağı aç" düğmesi.
   source_url?: string | null;
-  // W2-A — içerik türü ("question" | null). NULL = normal yorum. Liste
-  // kartında "Soru" rozeti, /reviews/summary panelinde ayrı sayaç.
-  content_type?: string | null;
+  // İçerik türü — tek değer, NULL = normal yorum (bkz. CONTENT_TYPES
+  // yukarıda). Liste kartında rozet, /reviews/summary panelinde chip.
+  content_type?: ContentType | null;
 }
 
 export interface ReviewListResponse {
@@ -471,8 +484,8 @@ export interface ReviewDetail {
   source_type: ReviewSourceType;
   batch_job_id: string | null;
   source_url?: string | null;
-  // W2-A — bkz. ReviewListItem.content_type.
-  content_type?: string | null;
+  // bkz. ReviewListItem.content_type.
+  content_type?: ContentType | null;
   sentiment: {
     label: string;
     score: number;
@@ -551,9 +564,9 @@ export interface ReviewListFilters {
    *  farklı) — yalnız açıkça false gönderildiğinde "yalnız geçerli"
    *  filtresi devreye girer. */
   include_flagged?: boolean;
-  /** W2-A — CSV: yalnız "question" bugün geçerli. reviews.content_type
-   *  ile filtreler; kalite bayrağı DEĞİL — kalite ile birlikte de
-   *  seçilebilir (soru aynı zamanda negatif olabilir). */
+  /** CSV of CONTENT_TYPES values (any subset) — filters on
+   *  reviews.content_type. NOT a quality flag — combinable with
+   *  quality_flags (a review can be both a question and negative). */
   content_types?: string[];
   limit?: number;
   offset?: number;

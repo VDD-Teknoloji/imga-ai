@@ -130,6 +130,12 @@ class RootCauseItemResponse(BaseModel):
     affected_surface: str
     suggested_action: str
     share_estimate_pct: float | None
+    # Optional — pre-existing DB rows and 12h-cached payloads predate
+    # these two fields, so both need a default or GET /root-cause 500s
+    # on every row generated before this change (_serialise() passes
+    # payload through untouched; this model re-validates it).
+    headline: str | None = None
+    action_short: str | None = None
 
 
 class RootCausePayloadResponse(BaseModel):
@@ -165,6 +171,13 @@ class RootCauseOverviewCause(BaseModel):
     affected_surface: str | None
     suggested_action: str | None
     share_estimate_pct: float | None
+    # Collapsed-card redesign (product-owner screenshot feedback):
+    # headline/action_short are the ONLY text the collapsed card shows;
+    # title/description/suggested_action move behind "Detayları gör".
+    # Optional — older persisted analyses lack them, frontend falls
+    # back to title/suggested_action visually clamped.
+    headline: str | None
+    action_short: str | None
 
 
 class RootCauseAnalysisBlock(BaseModel):
@@ -627,6 +640,8 @@ def _parse_analysis_row(row: RootCauseAnalysis) -> RootCauseAnalysisBlock:
                 share_estimate = float(share_raw) if share_raw is not None else None
             except (TypeError, ValueError):
                 share_estimate = None
+            headline = item.get("headline")
+            action_short = item.get("action_short")
             causes.append(
                 RootCauseOverviewCause(
                     title=title,
@@ -635,6 +650,11 @@ def _parse_analysis_row(row: RootCauseAnalysis) -> RootCauseAnalysisBlock:
                     affected_surface=surface if isinstance(surface, str) else None,
                     suggested_action=action if isinstance(action, str) else None,
                     share_estimate_pct=share_estimate,
+                    # Trim defensively — the prompt caps these at
+                    # 60/90 chars but a strict:false provider is under
+                    # no obligation to honour that.
+                    headline=headline[:60] if isinstance(headline, str) else None,
+                    action_short=action_short[:90] if isinstance(action_short, str) else None,
                 )
             )
     return RootCauseAnalysisBlock(

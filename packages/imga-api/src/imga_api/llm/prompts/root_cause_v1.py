@@ -54,6 +54,8 @@ ROOT_CAUSE_RESPONSE_SCHEMA: dict[str, Any] = {
                     "affected_surface": {"type": "string"},
                     "suggested_action": {"type": "string"},
                     "share_estimate_pct": {"type": "number"},
+                    "headline": {"type": "string"},
+                    "action_short": {"type": "string"},
                 },
             },
         },
@@ -87,6 +89,15 @@ Yorumları oku ve 1-5 adet kök neden çıkar. Her kök neden için:
 - share_estimate_pct: bu kök nedenin kovadaki yorumların yüzde kaçını \
   açıkladığına dair tahmin (0-100). Tahmin edemiyorsan bu alanı HİÇ \
   YAZMA.
+- headline: bu kök nedeni TEK çarpıcı cümlede özetle — en fazla 60 \
+  karakter, jargon yok, sorunu müşterinin gözünden anlat (örn. \
+  "Gümrük evrakı isteği müşteriye geç ulaşıyor"). title/description \
+  hâlâ ayrıntı katmanı olarak AYNEN kalıyor; headline onların yerine \
+  geçmez, kısa bir vitrin cümlesidir.
+- action_short: "yapılacak iş"in TEK satırlık özeti — en fazla 90 \
+  karakter, EMİR KİPİYLE ve bir FİİLLE başla (örn. "Evrak isteğini \
+  aynı gün SMS ile bildirin"). suggested_action hâlâ ayrıntılı öneri \
+  olarak AYNEN kalıyor; action_short onun kısa, tek satırlık özeti.
 
 KURALLAR:
 1. Yorumlarda olmayan bir olgu UYDURMA. Elinde kanıt yoksa o kök nedeni verme.
@@ -104,6 +115,10 @@ KURALLAR:
    parçalı gönderi"yi "çok kaplı" yapma) — evidence_quotes zaten \
    birebir alıntı ister, bu kural title/description/suggested_action \
    gibi serbest metin alanlarını da aynı disipline sokar.
+10. headline ve action_short KISA vitrin alanlarıdır; title, \
+    description, suggested_action alanlarını KISALTMA ya da onların \
+    yerine geçecek şekilde boş bırakma — ikisi birbirini tamamlar, \
+    biri diğerinin yerini almaz.
 """
 
 # ---------------------------------------------------------------------------

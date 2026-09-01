@@ -44,6 +44,24 @@ export function DataQualityCoach({ dateFrom, dateTo }: Props) {
   const flaggedCount = quality.duplicate + quality.empty + quality.meaningless;
   const flaggedPct = Math.round((flaggedCount / total) * 100);
 
+  // Şikâyet tehdidi (hakem heyeti/dava/CİMER) veri kalitesinden bağımsız
+  // bir risk sinyali: kalite iyi olsa da gösterilir, önce bunlara bakılsın.
+  const escalationCount = summary.data.content_types?.escalation ?? 0;
+  const escalationLine =
+    escalationCount > 0 ? (
+      <p className="text-sentiment-negative mt-2 text-sm font-medium leading-relaxed">
+        {t("dashboard.dataQuality.escalation", {
+          n: escalationCount.toLocaleString(numberLocale),
+        })}{" "}
+        <Link
+          href={ctaHref(dateFrom, dateTo, "escalation")}
+          className="underline underline-offset-2 hover:opacity-80"
+        >
+          {t("dashboard.dataQuality.escalationCta")}
+        </Link>
+      </p>
+    ) : null;
+
   // Sessizlik kuralı: kalite zaten iyiyse (< %5 bayraklı) uyarı tonunda
   // bir kart yerine tek sakin cümle — tablo yok, kırmızı yok.
   if (flaggedPct < 5) {
@@ -55,6 +73,7 @@ export function DataQualityCoach({ dateFrom, dateTo }: Props) {
         <p className="text-muted-foreground text-sm font-medium">
           {t("dashboard.dataQuality.good")}
         </p>
+        {escalationLine}
       </section>
     );
   }
@@ -83,6 +102,7 @@ export function DataQualityCoach({ dateFrom, dateTo }: Props) {
           })}
         </p>
       )}
+      {escalationLine}
       <Link
         href={ctaHref(dateFrom, dateTo)}
         className="text-primary hover:text-primary/80 mt-3 inline-flex items-center gap-1.5 text-sm font-semibold transition-colors"
@@ -96,10 +116,15 @@ export function DataQualityCoach({ dateFrom, dateTo }: Props) {
 
 /** RootCauseCards'ın evidenceHref'iyle aynı desen: sayfanın aktif dönemi
  *  varsa (date_from/date_to) /reviews'e taşınır. */
-function ctaHref(dateFrom: string | undefined, dateTo: string | undefined): string {
+function ctaHref(
+  dateFrom: string | undefined,
+  dateTo: string | undefined,
+  contentType?: string,
+): string {
   const params = new URLSearchParams();
   if (dateFrom) params.set("date_from", dateFrom);
   if (dateTo) params.set("date_to", dateTo);
+  if (contentType) params.set("content_types", contentType);
   const qs = params.toString();
   return qs ? `/reviews?${qs}` : "/reviews";
 }

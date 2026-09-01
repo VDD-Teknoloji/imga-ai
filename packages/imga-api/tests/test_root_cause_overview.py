@@ -334,6 +334,80 @@ async def test_overview_parses_malformed_payload_without_500(
     assert only_cause["evidence_quotes"] == ["alıntı 1"]
 
 
+@pytest.mark.asyncio
+async def test_overview_parses_headline_and_action_short(
+    batch_client: TestClient,
+    semi_auto_tenant: tuple[User, UUID, str],
+    admin_session: AsyncSession,
+) -> None:
+    """Collapsed-card redesign fields (product-owner screenshot
+    feedback): a cause carrying headline/action_short round-trips; a
+    cause without them yields null for both (older persisted analyses
+    predate the fields, frontend falls back to title/suggested_action);
+    an over-long headline is trimmed to 60 chars defensively — the
+    prompt caps it but a strict:false provider isn't bound by that."""
+    user, tid, pw = semi_auto_tenant
+    long_headline = "Ç" * 80  # > 60 karakter sınırı
+    async with admin_session.begin():
+        await _bind_tenant(admin_session, tid)
+        await _seed_reviews(
+            admin_session,
+            tenant_id=tid,
+            category="kargo",
+            perspective_code="order_status_wrong",
+            count=12,
+        )
+        admin_session.add(
+            RootCauseAnalysis(
+                tenant_id=tid,
+                primary_category_code="kargo",
+                perspective_code="order_status_wrong",
+                date_from=None,
+                date_to=None,
+                review_count=12,
+                model_provider="gemini",
+                model_name="gemini-3-flash-preview",
+                payload={
+                    "summary": "Kargo statüsü yanlış gösteriliyor.",
+                    "root_causes": [
+                        {
+                            "title": "Uygulama statüyü yanlış gösteriyor",
+                            "description": "Kargo entegrasyonu erken 'teslim edildi' yazıyor.",
+                            "evidence_quotes": ["Teslim edildi yazıyor ama elimde yok"],
+                            "affected_surface": "mobil uygulama",
+                            "suggested_action": "Statü senkronizasyonunu webhook'a çevir",
+                            "share_estimate_pct": 62,
+                            "headline": long_headline,
+                            "action_short": "Statü senkronizasyonunu webhook'a çevirin",
+                        },
+                        {
+                            "title": "İkinci neden — vitrin alanları yok",
+                            "description": "Eski analiz, headline/action_short'tan önce üretildi.",
+                            "evidence_quotes": ["alıntı"],
+                            "affected_surface": "web",
+                            "suggested_action": "Eski önerinin aynısı",
+                        },
+                    ],
+                },
+                generated_by_user_id=None,
+            )
+        )
+        await admin_session.flush()
+
+    token = login_token(batch_client, user.email, pw, tid)
+    r = batch_client.get(_OVERVIEW_ENDPOINT, headers=_auth(token))
+    assert r.status_code == 200, r.text
+    causes = r.json()["cards"][0]["analysis"]["causes"]
+
+    with_fields, without_fields = causes
+    assert with_fields["headline"] == long_headline[:60]
+    assert len(with_fields["headline"]) == 60
+    assert with_fields["action_short"] == "Statü senkronizasyonunu webhook'a çevirin"
+
+    assert without_fields["headline"] is None
+    assert without_fields["action_short"] is None
+
+
 # ---------------------------------------------------------------------------
 # day_rounded_window + post-batch auto-generation task
 # ---------------------------------------------------------------------------
@@ -468,3 +542,31 @@ async def test_auto_gen_task_skips_tenant_below_review_floor(
         mock_generate.assert_not_awaited()
     finally:
         await context.dispose()
+
+
+def test_validate_and_normalise_keeps_and_trims_showcase_fields() -> None:
+    """2026-09-01 — kapalı kart alanları (headline/action_short) persist
+    yolunda düşürülmemeli; str değilse None, uzunsa kırpılır."""
+    from imga_api.services.root_cause_service import _validate_and_normalise
+
+    payload = {
+        "summary": "özet",
+        "root_causes": [
+            {
+                "title": "uzun başlık",
+                "description": "açıklama",
+                "evidence_quotes": ["a"],
+                "affected_surface": "x",
+                "suggested_action": "uzun aksiyon",
+                "share_estimate_pct": 10,
+                "headline": " " + "H" * 70 + " ",
+                "action_short": "Evrak isteğini aynı gün SMS ile bildirin.",
+            },
+            {"title": "eski", "description": "d", "headline": 42},
+        ],
+    }
+    out = _validate_and_normalise(payload)
+    first, second = out["root_causes"]
+    assert first["headline"] == "H" * 60
+    assert first["action_short"] == "Evrak isteğini aynı gün SMS ile bildirin."
+    assert second["headline"] is None and second["action_short"] is None

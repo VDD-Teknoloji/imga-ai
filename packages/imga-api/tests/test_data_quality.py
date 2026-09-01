@@ -328,3 +328,107 @@ def test_detect_content_type_is_orthogonal_to_quality_flag() -> None:
     text = "Kargom nerede, ilgilenir misiniz?"
     assert detect_content_type(text) == "question"
     assert classify_data_quality(text) is None
+
+
+# ---------------------------------------------------------------------------
+# detect_content_type — migration 0050. Four new values ('suggestion',
+# 'thanks', 'request', 'escalation') beside 'question'. PRECEDENCE when
+# several kalıp match on the same row: escalation > request > question >
+# suggestion > thanks (bkz. data_quality.py'nin "ÖNCELİK" bölüm başlığı
+# yorumu için tam gerekçe).
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Bu konuyu avukatıma anlatacağım.",
+        "CİMER'e şikayet edeceğim.",
+        "Tüketici hakem heyetine başvuracağım.",
+        "Gerekirse dava açacağım.",
+        "BTK'ya bildireceğim bu durumu.",
+        "Bu işi yasal yollara taşıyacağım.",
+    ],
+)
+def test_detect_content_type_escalation(text: str) -> None:
+    assert detect_content_type(text) == "escalation"
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "İade istiyorum.",
+        "Lütfen bir an önce dönüş yapın.",
+        "Paramın iadesini talep ediyorum.",
+        "Geri arar mısınız?",
+        "Sipariş takibim için bilgi verin.",
+    ],
+)
+def test_detect_content_type_request(text: str) -> None:
+    assert detect_content_type(text) == "request"
+
+
+def test_bare_istiyorum_is_never_request() -> None:
+    """A concrete action stem ('iade', 'iptal', 'geri ödeme', 'paramı')
+    must precede 'istiyorum' — a bare 'istiyorum' after an unrelated verb
+    phrase is never a request on its own."""
+    assert detect_content_type("Memnun kalmak istiyorum") is None
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Keşke daha hızlı kargo olsa.",
+        "Bence fiyatlar düşürülmeli.",
+        "Uygulamaya karanlık mod eklenmeli.",
+        "Bu ürünü herkese öneririm ama kutusu zarar görmüş.",
+    ],
+)
+def test_detect_content_type_suggestion(text: str) -> None:
+    assert detect_content_type(text) == "suggestion"
+
+
+def test_suggestion_excludes_tavsiye_ederim() -> None:
+    """'tavsiye ederim' / 'herkese tavsiye ederim' is praise, not a
+    suggestion — must never trigger 'suggestion' (nor any other
+    content_type)."""
+    assert detect_content_type("Herkese tavsiye ederim") is None
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Teşekkürler, çok memnun kaldım.",
+        "Sağ olun, hızlı çözdünüz.",
+        "Ellerinize sağlık, harika olmuş.",
+        "Çok teşekkür ederim, ilginiz için.",
+        "Minnettarım, gerçekten yardımcı oldunuz.",
+    ],
+)
+def test_detect_content_type_thanks(text: str) -> None:
+    assert detect_content_type(text) == "thanks"
+
+
+def test_thanks_excludes_generic_positive_sentiment() -> None:
+    """Positive sentiment words ('harika', 'mükemmel') alone must never
+    trigger 'thanks' — only genuine gratitude phrases do."""
+    assert detect_content_type("Ürün harika, mükemmel bir alışverişti.") is None
+
+
+@pytest.mark.parametrize(
+    "text, expected",
+    [
+        # escalation beats request — both kalıp match, escalation wins.
+        ("İade istiyorum, yoksa tüketici hakem heyetine gideceğim", "escalation"),
+        # suggestion beats thanks — both kalıp match, suggestion wins.
+        ("Teşekkürler ama keşke daha hızlı olsaydı", "suggestion"),
+        # request beats question — 'geri arar mısınız' is a request kalıbı
+        # even though the sentence also ends with '?'.
+        ("Geri arar mısınız acaba?", "request"),
+        # 'iade' present but no request kalıbı matches ('edebilir miyim'
+        # is not 'iade istiyorum'/'iade edin') — stays question.
+        ("Fiyatı ne kadar, iade edebilir miyim?", "question"),
+    ],
+)
+def test_detect_content_type_precedence(text: str, expected: str) -> None:
+    assert detect_content_type(text) == expected

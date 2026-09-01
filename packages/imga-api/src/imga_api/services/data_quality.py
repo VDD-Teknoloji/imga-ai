@@ -270,24 +270,55 @@ def classify_data_quality(text: str) -> str | None:
 
 
 # ---------------------------------------------------------------------------
-# content_type ('question') — migration 0049. classify_data_quality'nin
-# YANINDA, ama ondan BAĞIMSIZ bir sezgisel: dönüşü ``reviews.quality_flag``
-# DEĞİL ``reviews.content_type``'a yazılır (bkz. modül ve model
-# docstring'leri) — bir NEGATİF şikayetin soru biçiminde yazılması
-# ("Kargom nerede, ilgilenir misiniz?") hâlâ 'question'dur VE analitikte
-# KALMALIDIR; quality_flag'in aksine bu bir "düşük kalite" işareti değil,
-# metnin YAPISAL biçimidir. classify_data_quality'nin ilk tasarımındaki
-# LLM "q" alanı denemesi ölçülüp reddedildiği (2026-08-18, gold4 kapı
-# regresyonu) için burada da aynı ilke geçerli: SAF yapısal Türkçe
-# heuristik, LLM'e hiç dokunmadan.
+# content_type ('question' | 'suggestion' | 'thanks' | 'request' |
+# 'escalation') — migration 0049 (question) + 0050 (diğer dördü).
+# classify_data_quality'nin YANINDA, ama ondan BAĞIMSIZ bir sezgisel:
+# dönüşü ``reviews.quality_flag`` DEĞİL ``reviews.content_type``'a
+# yazılır (bkz. modül ve model docstring'leri) — bir NEGATİF şikayetin
+# soru biçiminde yazılması ("Kargom nerede, ilgilenir misiniz?") hâlâ
+# 'question'dur VE analitikte KALMALIDIR; quality_flag'in aksine bu bir
+# "düşük kalite" işareti değil, metnin YAPISAL biçimidir.
+# classify_data_quality'nin ilk tasarımındaki LLM "q" alanı denemesi
+# ölçülüp reddedildiği (2026-08-18, gold4 kapı regresyonu) için burada
+# da aynı ilke geçerli: SAF yapısal Türkçe heuristik, LLM'e hiç
+# dokunmadan.
 #
-# YÜKSEK-GÜVENİLİRLİK hedefi: kural (a) '?' VARSA VE bir soru işareti
-# taşıyorsa (soru zamiri/zarfı YA DA soru eki 'mi/mı/mu/mü' herhangi bir
-# token'da) YA DA metin '?' ile bitiyorsa; (b) '?' YOKSA ama SON token
-# çıplak soru eki ise ('mi'...'mısınız' gibi ekli biçimler dahil).
-# '?' cümle içinde gelişigüzel geçip hiçbir soru işareti taşımıyorsa
-# (ör. "Fiyat/performans? bence harika") KESİNLİKLE işaretlenmez —
-# aşağıdaki fonksiyon docstring'i bu kararı örnekle açıklar.
+# ÖNCELİK (2026-09-01, migration 0050) — bir satır birden çok kalıba
+# birden uyabilir (ör. "İade istiyorum, yoksa tüketici hakem heyetine
+# gideceğim" hem request hem escalation kalıbına uyar); RİSK-ÖNCELİKLİ
+# sıra ilk eşleşeni kazandırır, detect_content_type bu sırayla dener:
+#
+#     escalation > request > question > suggestion > thanks
+#
+# Gerekçe (risk azalan sırada): escalation (resmi/hukuki eskalasyon
+# tehdidi) kaçırılırsa kurum hazırlıksız yakalanıp resmi bir başvuruyla
+# karşılaşabilir — en yüksek risk. request (somut eylem talebi — iade/
+# iptal/geri ödeme/geri arama) SLA'ya bağlıdır, cevapsız kalırsa
+# müşteri kaybı riski taşır. question nötr bir bilgi talebidir — ne
+# request kadar aksiyoner ne escalation kadar riskli. suggestion ürün
+# geri bildirimidir, aksiyon gerektirmez. thanks en düşük risk —
+# kaçırılsa bile operasyonel sonucu yoktur, yalnız memnuniyet sinyali.
+#
+# question kuralı (YÜKSEK-GÜVENİLİRLİK, değişmedi): (a) '?' VARSA VE bir
+# soru işareti taşıyorsa (soru zamiri/zarfı YA DA soru eki 'mi/mı/mu/mü'
+# herhangi bir token'da) YA DA metin '?' ile bitiyorsa; (b) '?' YOKSA
+# ama SON token çıplak soru eki ise ('mi'...'mısınız' gibi ekli
+# biçimler dahil). '?' cümle içinde gelişigüzel geçip hiçbir soru
+# işareti taşımıyorsa (ör. "Fiyat/performans? bence harika") KESİNLİKLE
+# question işaretlenmez — ama alt sıradaki suggestion/thanks kalıpları
+# hâlâ denenir (bkz. ``_is_question``).
+#
+# escalation/request/suggestion/thanks ortak eşleştirme deseni: her
+# kalıp bir kelime tuple'ı (bkz. ``_phrase_matches``), ARDIŞIK token'lar
+# üzerinde her token'ın karşılık gelen kalıp kelimesiyle BAŞLAMASI
+# (prefix-tolerant) şartıyla aranır — ``_has_first_person_complaint``'
+# teki ``token.startswith(stem)`` deyiminin çok-kelimeli genellemesi.
+# Bu hem çekim toleransı sağlar ("dava aç" kalıbı "dava açacağım"ı da
+# yakalar) hem de eşleşmeyi HER ZAMAN bir token BAŞINA çapalar — ham
+# metin üzerinde `phrase in normalized` aramak yapmazdı bunu: "mi"
+# token tuzağıyla (yukarıdaki ``_QUESTION_PARTICLE_RE.fullmatch``
+# gerekçesiyle aynı hata sınıfı) çok-kelimeli kalıplara bulaşmasın diye
+# token bazlı arandı.
 # ---------------------------------------------------------------------------
 
 _INTERROGATIVE_PRONOUNS: Final[frozenset[str]] = frozenset(
@@ -333,37 +364,231 @@ def _has_interrogative_signal(tokens: list[str]) -> bool:
     )
 
 
+def _is_question(normalized: str, tokens: list[str]) -> bool:
+    """question kuralı (a)+(b), ``detect_content_type``'ın docstring'inde
+    açıklanır. Ayrı bir predicate olarak tutulur (eskiden fonksiyonun
+    kendisiydi) çünkü artık soru-DEĞİL sonucu pipeline'ı durdurmuyor —
+    alt sıradaki suggestion/thanks kalıpları hâlâ denenmeli (ör.
+    "Fiyat/performans? bence harika" — soru değil ama suggestion/thanks
+    kontrolüne düşmeye devam etmeli, sırf bu örnekte ikisi de
+    eşleşmediği için None kalıyor)."""
+    if "?" in normalized:
+        return normalized.endswith("?") or _has_interrogative_signal(tokens)
+    return bool(tokens) and _QUESTION_PARTICLE_RE.fullmatch(tokens[-1]) is not None
+
+
+def _phrase_matches(tokens: list[str], phrase: tuple[str, ...]) -> bool:
+    """``phrase``'in ARDIŞIK token'lar üzerinde, her token'ın karşılık
+    gelen kalıp kelimesiyle BAŞLAMASI şartıyla eşleşip eşleşmediği
+    (prefix-tolerant contiguous match) — bkz. yukarıdaki bölüm başlığı
+    yorumu."""
+    span = len(phrase)
+    return any(
+        all(tokens[i + j].startswith(phrase[j]) for j in range(span))
+        for i in range(len(tokens) - span + 1)
+    )
+
+
+def _matches_any_phrase(tokens: list[str], phrases: tuple[tuple[str, ...], ...]) -> bool:
+    return any(_phrase_matches(tokens, phrase) for phrase in phrases)
+
+
+# --- escalation — resmi/hukuki eskalasyon TEHDİDİ/duyurusu ----------------
+
+_ESCALATION_PHRASES: Final[tuple[tuple[str, ...], ...]] = (
+    ("tüketici", "hakem"),
+    ("hakem", "heyeti"),
+    ("tüketici", "mahkemesi"),
+    ("tüketici", "hakları"),
+    ("dava", "aç"),
+    ("dava", "edeceğim"),
+    ("mahkeme",),
+    ("savcılığa",),
+    ("savcılık",),
+    ("avukat",),
+    ("cimer",),
+    ("şikayetvar",),
+    ("sikayetvar",),
+    ("btk",),
+    ("ticaret", "bakanlığı"),
+    ("yasal", "yollara"),
+    ("yasal", "işlem"),
+    ("hukuki", "işlem"),
+    ("ihtar",),
+)
+
+# --- request — somut bir eylem talebi (iade/iptal/geri ödeme/geri arama/
+# bilgi-dönüş) --------------------------------------------------------------
+
+_REQUEST_PHRASES: Final[tuple[tuple[str, ...], ...]] = (
+    ("talep", "ediyorum"),
+    ("talep", "ederim"),
+    ("rica", "ediyorum"),
+    ("rica", "ederim"),
+    ("rica", "olunur"),
+    ("geri", "arayın"),
+    ("geri", "arar", "mısınız"),
+    ("dönüş", "yapın"),
+    ("dönüş", "bekliyorum"),
+    ("bilgi", "verin"),
+    ("iade", "istiyorum"),
+    ("iadesini", "istiyorum"),
+    ("iptal", "istiyorum"),
+    ("iptalini", "istiyorum"),
+    ("geri", "ödeme", "istiyorum"),
+    ("paramı", "istiyorum"),
+    ("paramın", "iadesini"),
+    ("çözüm", "bekliyorum"),
+    ("acilen", "ilgilenin"),
+)
+
+# Bare "istiyorum" HİÇBİR ZAMAN tek başına request tetiklemez ("memnun
+# kalmak istiyorum" bir talep değil) — yukarıdaki liste yalnız SOMUT bir
+# eylem kökünden ("iade", "iptal", "geri ödeme", "paramı"...) SONRA
+# gelen "istiyorum"u tanır; bare "istiyorum" bu yüzden listede YOK.
+#
+# "lütfen" + aşağıdaki eylemlerden biri de aynı somut-eylem-talebi
+# şartını karşılar (nazik istek biçimi — "lütfen" tek başına yeterli
+# değil, bir eylem fiiliyle BİRLİKTE gerekir).
+_REQUEST_LUTFEN_TRIGGERS: Final[tuple[tuple[str, ...], ...]] = (
+    ("arayın",),
+    ("dönüş", "yapın"),
+    ("düzeltin",),
+    ("iletişime", "geçin"),
+    ("çözün",),
+    ("gönderin",),
+    ("iade", "edin"),
+    ("iptal", "edin"),
+    ("bilgilendirin",),
+    ("ilgilenin",),
+)
+
+# --- suggestion — ürün/hizmet önerisi ---------------------------------------
+
+_SUGGESTION_PHRASES: Final[tuple[tuple[str, ...], ...]] = (
+    ("keşke",),
+    ("olsa", "iyi", "olur"),
+    ("olsa", "güzel", "olur"),
+    ("olsa", "daha", "iyi"),
+    ("olursa", "iyi", "olur"),
+    ("öneririm",),
+    ("önerim",),
+    ("tavsiyem",),
+    ("eklenmeli",),
+    ("geliştirilmeli",),
+    ("iyileştirilmeli",),
+    ("düzeltilmeli",),
+    ("yapılmalı",),
+    ("olmalı",),
+    ("ekleseniz",),
+    ("yapsanız",),
+    ("getirseniz",),
+    ("eklenirse",),
+    ("eklerseniz",),
+)
+
+# "tavsiye ederim" / "herkese tavsiye ederim" BİLİNÇLİ OLARAK yukarıdaki
+# listede YOK: bu bir ÖVGÜ cümlesidir, öneri değil. "tavsiyem" (iyelik
+# ekli isim biçimi, "önerim" anlamında) farklı bir kelime — çıplak kök
+# "tavsiye" hiçbir kalıba PREFIX olarak uymadığı için (bkz.
+# ``_phrase_matches``'in token.startswith yönü: aranan token, kalıp
+# kelimesinden KISA olamaz) "tavsiye ederim" hiçbir suggestion kalıbını
+# tetiklemez.
+_SUGGESTION_MODAL_SUFFIXES: Final[tuple[str, ...]] = (
+    "malı",
+    "meli",
+    "malısınız",
+    "melisiniz",
+)
+
+
+def _has_bence_suggestion(tokens: list[str]) -> bool:
+    """ "bence ... olmalı" kalıbı — "bence" token'ı VE cümlede -malı/
+    -meli ekiyle biten herhangi bir token bir arada. Sabit listedeki
+    fiillerin (eklenmeli, düzeltilmeli...) DIŞINDA kalan, önceden tahmin
+    edilemeyen fiiller için genel bir yakalayıcı (ör. "Bence teslimat
+    süresi azaltılmalı") — "bence" şartı olmadan -malı/-meli eki TEK
+    BAŞINA aşırı geniş olurdu (Türkçede gereklilik kipi genel amaçlı
+    kullanılır, öneriyle sınırlı değildir)."""
+    if "bence" not in tokens:
+        return False
+    return any(token.endswith(suffix) for token in tokens for suffix in _SUGGESTION_MODAL_SUFFIXES)
+
+
+# --- thanks — yalnız minnettarlık ifadesi (genel pozitif duygu DEĞİL) ------
+
+_THANKS_PHRASES: Final[tuple[tuple[str, ...], ...]] = (
+    ("teşekkür",),
+    ("teşekkürler",),
+    ("teşekkür", "ederim"),
+    ("teşekkürler", "ederim"),
+    ("tesekkur",),
+    ("tesekkurler",),
+    ("sağ", "olun"),
+    ("sağolun",),
+    ("sagolun",),
+    ("sağ", "ol"),
+    ("ellerinize", "sağlık"),
+    ("minnettarım",),
+    ("çok", "teşekkür"),
+)
+
+# "harika"/"mükemmel" gibi genel pozitif duygu kelimeleri BİLİNÇLİ
+# OLARAK yukarıdaki listede YOK — bunlar memnuniyet ifade eder,
+# minnettarlık değil; sentiment zaten ayrı bir kolonda (sentiment_label)
+# tutuluyor, thanks onunla karıştırılmaz.
+
+
 def detect_content_type(text: str) -> str | None:
     """Tek satırlık yorum metninin YAPISAL biçimini tespit eder.
 
-    Dönüş:
-      * ``"question"`` — metin bir soru olarak yazılmış (bkz. aşağıdaki
-        iki kural).
-      * ``None`` — soru işareti yok (şüphede varsayılan; boş metin de
-        buraya düşer).
+    Dönüş — RİSK-ÖNCELİKLİ sırayla denenir, ilk eşleşen kazanır (bkz.
+    yukarıdaki bölüm başlığı yorumu "ÖNCELİK" için tam gerekçe):
 
-    Kurallar (YÜKSEK-GÜVENİLİRLİK — belirsizlikte None):
+      1. ``"escalation"`` — resmi/hukuki eskalasyon TEHDİDİ/duyurusu
+         (tüketici hakem heyeti, mahkeme/dava, avukat, savcılık, CİMER,
+         şikayetvar, BTK, Ticaret Bakanlığı, "yasal yollara" vb. — bkz.
+         ``_ESCALATION_PHRASES``). EN YÜKSEK risk: kaçırılırsa kurum
+         hazırlıksız yakalanır.
+      2. ``"request"`` — somut bir eylem talebi (iade/iptal/geri ödeme/
+         geri arama/bilgi-dönüş — bkz. ``_REQUEST_PHRASES`` +
+         "lütfen" + eylem fiili kombinasyonu). Bare "istiyorum" TEK
+         BAŞINA asla tetiklemez ("memnun kalmak istiyorum" request
+         DEĞİL) — yalnız somut bir eylem kökünden sonra gelen
+         "istiyorum" sayılır.
+      3. ``"question"`` — metin bir soru olarak yazılmış (bkz.
+         ``_is_question`` — aşağıdaki iki kural, DEĞİŞMEDİ):
 
-      (a) Metinde '?' VARSA VE (bir soru zamiri/zarfı — ``ne``,
-          ``nasıl``, ``neden``, ``niye``, ``nerede``, ``nereden``,
-          ``kaç``, ``hangi``, ``kim`` — ya da soru eki 'mi/mı/mu/mü'
-          herhangi bir token'da geçiyorsa YA DA metin '?' ile
-          BİTİYORSA) -> 'question'. '?' cümle içinde gelişigüzel geçip
-          hiçbir soru işareti taşımıyorsa VE metin '?' ile bitmiyorsa
-          işaretlenmez — ör. "Fiyat/performans? bence harika" burada
-          '?' salt vurgu/duraklama işareti, cümle bir soru DEĞİL;
-          soru zamiri/eki yok ve '?' son karakter değil, dolayısıyla
-          None döner (bilinçli karar — kuralın gerekçesi tam da bu
-          örneği None'da tutmak).
-      (b) Metinde '?' YOKSA ama SON token çıplak soru eki ('mi'...
-          'mısınız' gibi ekli biçimler dahil, bkz. ``_QUESTION_PARTICLE_
-          RE``) ise -> 'question' ("İade edebilir miyim" gibi soru
-          işaretsiz yazılmış gerçek sorular).
+         (a) Metinde '?' VARSA VE (bir soru zamiri/zarfı — ``ne``,
+             ``nasıl``, ``neden``, ``niye``, ``nerede``, ``nereden``,
+             ``kaç``, ``hangi``, ``kim`` — ya da soru eki 'mi/mı/mu/mü'
+             herhangi bir token'da geçiyorsa YA DA metin '?' ile
+             BİTİYORSA) -> 'question'. '?' cümle içinde gelişigüzel
+             geçip hiçbir soru işareti taşımıyorsa VE metin '?' ile
+             bitmiyorsa question İŞARETLENMEZ (ama alt sıradaki
+             suggestion/thanks kalıpları hâlâ denenir) — ör.
+             "Fiyat/performans? bence harika" burada '?' salt vurgu/
+             duraklama işareti, cümle bir soru DEĞİL.
+         (b) Metinde '?' YOKSA ama SON token çıplak soru eki ('mi'...
+             'mısınız' gibi ekli biçimler dahil) ise -> 'question'
+             ("İade edebilir miyim" gibi soru işaretsiz yazılmış
+             gerçek sorular).
+      4. ``"suggestion"`` — bir öneri/iyileştirme talebi (keşke,
+         öneririm, X eklenmeli/olmalı, "bence X azaltılmalı" gibi —
+         bkz. ``_SUGGESTION_PHRASES`` + ``_has_bence_suggestion``).
+         "tavsiye ederim" BİLİNÇLİ OLARAK bu kapsamda DEĞİL (övgü,
+         öneri değil — bkz. ``_SUGGESTION_PHRASES`` üstündeki not).
+      5. ``"thanks"`` — yalnız minnettarlık ifadesi (teşekkür/sağ olun/
+         ellerinize sağlık vb. — bkz. ``_THANKS_PHRASES``). Genel
+         pozitif duygu kelimeleri ("harika") bu kapsamda DEĞİL.
+      * ``None`` — hiçbir kalıp eşleşmedi (şüphede varsayılan; boş
+        metin de buraya düşer).
 
     ORTOGONAL not: bu fonksiyon ``classify_data_quality``'den TAMAMEN
     bağımsızdır ve onun sonucunu hiçbir şekilde etkilemez/etkilenmez —
     bir şikayetin soru biçiminde yazılması onu 'question' yapar ama
-    'informational'/'meaningless' YAPMAZ.
+    'informational'/'meaningless' YAPMAZ; aynı ortogonallik dört yeni
+    değer için de geçerli.
     """
     if not text:
         return None
@@ -372,13 +597,23 @@ def detect_content_type(text: str) -> str | None:
         return None
 
     tokens = _WORD_RE.findall(normalized)
-    if "?" in normalized:
-        if normalized.endswith("?") or _has_interrogative_signal(tokens):
-            return "question"
-        return None
 
-    if tokens and _QUESTION_PARTICLE_RE.fullmatch(tokens[-1]):
+    if _matches_any_phrase(tokens, _ESCALATION_PHRASES):
+        return "escalation"
+
+    if _matches_any_phrase(tokens, _REQUEST_PHRASES) or (
+        "lütfen" in tokens and _matches_any_phrase(tokens, _REQUEST_LUTFEN_TRIGGERS)
+    ):
+        return "request"
+
+    if _is_question(normalized, tokens):
         return "question"
+
+    if _matches_any_phrase(tokens, _SUGGESTION_PHRASES) or _has_bence_suggestion(tokens):
+        return "suggestion"
+
+    if _matches_any_phrase(tokens, _THANKS_PHRASES):
+        return "thanks"
 
     return None
 

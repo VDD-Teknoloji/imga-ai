@@ -128,7 +128,9 @@ class ReviewItemResponse(BaseModel):
     # 2026-08-26 (migration 0047) — kaynaktaki kalıcı bağlantı (tweet
     # URL'si vb.). NULL = kaynakta bağlantı yok.
     source_url: str | None = None
-    # W2-A — içerik türü ("question" | None). NULL = normal yorum.
+    # W2-A — içerik türü ("question" | "suggestion" | "thanks" |
+    # "request" | "escalation" | None, migration 0050). NULL = normal
+    # yorum.
     content_type: str | None = None
 
 
@@ -201,6 +203,10 @@ class ReviewSummaryResponse(BaseModel):
     categories: list[CategoryCountItem]
     quality: QualitySummaryBlock
     question_count: int
+    # 2026-09-01 (migration 0050) — all five Review.content_type values,
+    # 0-defaulted. question_count above is kept for backward
+    # compatibility and always equals content_types["question"].
+    content_types: dict[str, int]
     top_questions: list[TopQuestionItem]
     entered_by: list[EnteredByCountItem]
     daily: list[DailyCountItem]
@@ -275,6 +281,8 @@ class ReviewDetailResponse(BaseModel):
     experience_type: str | None = None
     facts: ReviewFactsBlock | None = None
     source_url: str | None = None
+    # "question" | "suggestion" | "thanks" | "request" | "escalation" |
+    # None (migration 0050).
     content_type: str | None = None
     # Migration 0049 — açık uçlu kaynak-özel sayaçlar (tweet like/retweet
     # vb.). JSONB kolonu ``dict[str, object]`` deklare eder; parser hep int
@@ -399,7 +407,10 @@ async def list_reviews(
             "alan devre dışı kalır."
         ),
     ),
-    content_types: str | None = Query(default=None, description="CSV: question"),
+    content_types: str | None = Query(
+        default=None,
+        description="CSV: question,suggestion,thanks,request,escalation",
+    ),
     limit: int = Query(default=100, ge=1, le=500),
     offset: int = Query(default=0, ge=0),
     order_by: Literal["created_at", "sentiment_score"] = "created_at",
@@ -627,7 +638,10 @@ async def review_summary(
             "alan devre dışı kalır."
         ),
     ),
-    content_types: str | None = Query(default=None, description="CSV: question"),
+    content_types: str | None = Query(
+        default=None,
+        description="CSV: question,suggestion,thanks,request,escalation",
+    ),
 ) -> ReviewSummaryResponse:
     # NOTE: this route MUST stay registered before GET /{review_id} —
     # Starlette matches path patterns in registration order and
@@ -1067,6 +1081,7 @@ def _to_summary_response(summary: ReviewSummary) -> ReviewSummaryResponse:
             meaningless=summary.quality.meaningless,
         ),
         question_count=summary.question_count,
+        content_types=summary.content_types,
         top_questions=[TopQuestionItem(text=q.text, count=q.count) for q in summary.top_questions],
         entered_by=[
             EnteredByCountItem(

@@ -223,9 +223,6 @@ export const insights: Bundle = {
     "reviews.review.corrected": "düzeltildi",
     "reviews.review.openTweet": "Tweeti aç",
     "reviews.review.openSource": "Kaynağı aç",
-    // W3 — içerik türü rozeti (content_type='question'). Kalite bayrağı
-    // DEĞİL; satır aynı zamanda negatif de olabilir.
-    "reviews.review.questionBadge": "Soru",
 
     // --- /reviews: gün / ay etiketleri (heatmap drilldown pill'leri) ---
     "reviews.dow.0": "Pazar",
@@ -289,10 +286,17 @@ export const insights: Bundle = {
     "reviews.qualityFilter.informational": "Bilgilendirme",
     "reviews.qualityFilter.meaningless": "Anlamsız",
 
-    // --- /reviews: içerik türü filtresi (W3) — tek-tuşlu toggle,
-    // kalite dropdown'ından bağımsız (content_type kalite bayrağı DEĞİL).
-    "reviews.filter.questionsToggle": "Sorular",
-    "reviews.pill.questionsOnly": "Yalnız sorular",
+    // --- /reviews: içerik türü çoklu-seçim filtresi — kalite
+    // dropdown'ından bağımsız (content_type kalite bayrağı DEĞİL).
+    "reviews.filter.contentTypes": "İçerik türü",
+    "reviews.filter.contentTypesSelected": "İçerik türü: {count} seçili",
+    // Risk ilk sırada — bkz. lib/types.ts CONTENT_TYPES. Filtre
+    // dropdown'ı, liste rozeti ve özet panel chip'leri PAYLAŞIR.
+    "reviews.contentType.escalation": "Şikâyet tehdidi",
+    "reviews.contentType.request": "Talep",
+    "reviews.contentType.question": "Soru",
+    "reviews.contentType.suggestion": "Öneri",
+    "reviews.contentType.thanks": "Teşekkür",
 
     // --- /reviews: tarih aralığı filtresi (WS5) ---
     "reviews.dateFilter.groupAria": "Tarih aralığı filtresi",
@@ -400,6 +404,9 @@ export const insights: Bundle = {
     "reviews.summary.headline.lowN": "Az veri — {count} yorum",
     "reviews.summary.headline.ticketLinked": "{count} Ticket'a bağlı",
     "reviews.summary.sentiment.title": "Duygu dağılımı",
+    "reviews.summary.contentTypes.title": "İçerik türleri",
+    "reviews.summary.contentTypes.escalationHint":
+      "Önce şikâyet tehdidi içeren yorumlara bakın.",
     "reviews.summary.nps.title": "NPS",
     "reviews.summary.nps.promoter": "Destekçi",
     "reviews.summary.nps.passive": "Pasif",
@@ -695,9 +702,6 @@ export const insights: Bundle = {
     "reviews.review.corrected": "corrected",
     "reviews.review.openTweet": "Open tweet",
     "reviews.review.openSource": "Open source",
-    // W3 — content-type badge (content_type='question'). NOT a quality
-    // flag; the row can also be negative at the same time.
-    "reviews.review.questionBadge": "Question",
 
     // --- /reviews: day / month labels (heatmap drilldown pills) ---
     "reviews.dow.0": "Sunday",
@@ -761,11 +765,17 @@ export const insights: Bundle = {
     "reviews.qualityFilter.informational": "Informational",
     "reviews.qualityFilter.meaningless": "Meaningless",
 
-    // --- /reviews: content-type filter (W3) — single-press toggle,
-    // independent of the quality dropdown (content_type is NOT a
-    // quality flag).
-    "reviews.filter.questionsToggle": "Questions",
-    "reviews.pill.questionsOnly": "Questions only",
+    // --- /reviews: content-type multi-select filter — independent of
+    // the quality dropdown (content_type is NOT a quality flag).
+    "reviews.filter.contentTypes": "Content type",
+    "reviews.filter.contentTypesSelected": "Content type: {count} selected",
+    // Risk first — see lib/types.ts CONTENT_TYPES. Shared by the filter
+    // dropdown, the list badge, and the summary panel chips.
+    "reviews.contentType.escalation": "Escalation threat",
+    "reviews.contentType.request": "Request",
+    "reviews.contentType.question": "Question",
+    "reviews.contentType.suggestion": "Suggestion",
+    "reviews.contentType.thanks": "Thanks",
 
     // --- /reviews: date range filter (WS5) ---
     "reviews.dateFilter.groupAria": "Date range filter",
@@ -875,6 +885,9 @@ export const insights: Bundle = {
     "reviews.summary.headline.lowN": "Low data — {count} reviews",
     "reviews.summary.headline.ticketLinked": "{count} linked to a Ticket",
     "reviews.summary.sentiment.title": "Sentiment distribution",
+    "reviews.summary.contentTypes.title": "Content types",
+    "reviews.summary.contentTypes.escalationHint":
+      "Start with the reviews that threaten escalation.",
     "reviews.summary.nps.title": "NPS",
     "reviews.summary.nps.promoter": "Promoter",
     "reviews.summary.nps.passive": "Passive",

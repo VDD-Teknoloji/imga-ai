@@ -737,6 +737,10 @@ def _validate_and_normalise(payload: dict[str, Any]) -> dict[str, Any]:
             share_value = float(share) if share is not None else None
         except (TypeError, ValueError):
             share_value = None
+        # 2026-09-01 — vitrin alanları (kapalı kart): opsiyonel, str değilse
+        # yok sayılır; uzunluk prompt'ta istenir, burada da kırpılır.
+        headline = item.get("headline")
+        action_short = item.get("action_short")
         causes.append(
             {
                 "title": str(item.get("title", "")),
@@ -745,6 +749,10 @@ def _validate_and_normalise(payload: dict[str, Any]) -> dict[str, Any]:
                 "affected_surface": str(item.get("affected_surface", "")),
                 "suggested_action": str(item.get("suggested_action", "")),
                 "share_estimate_pct": share_value,
+                "headline": headline.strip()[:60] if isinstance(headline, str) else None,
+                "action_short": (
+                    action_short.strip()[:90] if isinstance(action_short, str) else None
+                ),
             }
         )
     if not causes:

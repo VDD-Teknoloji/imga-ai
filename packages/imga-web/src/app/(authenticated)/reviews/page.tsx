@@ -40,10 +40,12 @@ import {
 import { useCompanyTaxonomies } from "@/hooks/use-taxonomies";
 import { useTranslation } from "@/lib/i18n/use-translation";
 import { sourceLinkLabelKey } from "@/lib/source-link";
-import type {
-  ReviewDecision,
-  ReviewListItem,
-  ReviewSourceType,
+import {
+  CONTENT_TYPES,
+  type ContentType,
+  type ReviewDecision,
+  type ReviewListItem,
+  type ReviewSourceType,
 } from "@/lib/types";
 
 const SOURCE_LABEL_KEYS: Record<ReviewSourceType, string> = {
@@ -100,6 +102,25 @@ const DECISION_LABEL_KEYS: Record<ReviewDecision, string> = {
 const DECISION_VALUES: readonly ReviewDecision[] = Object.keys(
   DECISION_LABEL_KEYS,
 ) as ReviewDecision[];
+
+// Content-type filter/badge/pill label map — shared i18n keys with the
+// summary panel's chip row (reviews.contentType.*). Kept Record<string,
+// string> (not Record<ContentType,string>) so lookups from filters.
+// content_types (a generic string[] wire value) stay safe without a
+// cast; unknown codes fall back to the raw string (same convention as
+// SENTIMENT_LABEL_KEYS below).
+const CONTENT_TYPE_LABEL_KEYS: Record<string, string> = {
+  escalation: "reviews.contentType.escalation",
+  request: "reviews.contentType.request",
+  question: "reviews.contentType.question",
+  suggestion: "reviews.contentType.suggestion",
+  thanks: "reviews.contentType.thanks",
+};
+
+// Escalation gets a warning treatment everywhere it appears (filter
+// checkbox row order, list badge, summary chip) so risk pops.
+const ESCALATION_BADGE_CLASS = "bg-sentiment-negative/10 text-sentiment-negative font-semibold";
+const DEFAULT_BADGE_CLASS = "bg-muted text-muted-foreground";
 
 // WS5 — "Veri kalitesi" filtresi tek-seçimli: Tümü / Yalnız geçerli /
 // tekil bayrak. URL'de doğrudan backend'in iki parametresine
@@ -242,8 +263,8 @@ function readFiltersFromParams(params: URLSearchParams): ReviewListFiltersExt {
     // applyFilters yalnız açık false yazar (bkz. aşağı); herhangi
     // başka bir değer varsayılana (undefined = true) düşer.
     include_flagged: params.get("include_flagged") === "false" ? false : undefined,
-    // W3 — "Soru" toggle'ı. Bugün tek değer ("question") ama backend
-    // CSV kabul ediyor; dizi olarak tutuluyor (diğer filtrelerle aynı desen).
+    // İçerik türü çoklu-seçim filtresi (bkz. CONTENT_TYPE_LABEL_KEYS) —
+    // diğer CSV filtrelerle aynı desen.
     content_types: contentTypesRaw?.split(",").filter(Boolean),
     ...dims,
   };
@@ -460,10 +481,10 @@ function ReviewsPageInner() {
               selected={qualitySelectionFor(filters)}
               onApply={applyQualitySelection}
             />
-            <QuestionsToggle
-              active={(filters.content_types ?? []).includes("question")}
-              onToggle={(next) =>
-                applyFilters({ ...filters, content_types: next ? ["question"] : undefined })
+            <ContentTypeFilterDropdown
+              selected={filters.content_types ?? []}
+              onApply={(next) =>
+                applyFilters({ ...filters, content_types: next.length > 0 ? next : undefined })
               }
             />
             {DIMENSION_FILTER_CONFIGS.map((cfg) => (
@@ -585,9 +606,15 @@ function ReviewRow({
               ? t(SENTIMENT_LABEL_KEYS[r.sentiment_label]!)
               : r.sentiment_label}
           </span>
-          {r.content_type === "question" && (
-            <span className="bg-muted text-muted-foreground inline-flex items-center rounded-full px-2 py-0.5 font-medium">
-              {t("reviews.review.questionBadge")}
+          {r.content_type && (
+            <span
+              className={`inline-flex items-center rounded-full px-2 py-0.5 font-medium ${
+                r.content_type === "escalation" ? ESCALATION_BADGE_CLASS : DEFAULT_BADGE_CLASS
+              }`}
+            >
+              {CONTENT_TYPE_LABEL_KEYS[r.content_type]
+                ? t(CONTENT_TYPE_LABEL_KEYS[r.content_type]!)
+                : r.content_type}
             </span>
           )}
           <span className="font-medium">{categoryLabel}</span>
@@ -727,10 +754,15 @@ function FilterPills({
       remove: () => onApply({ ...filters, include_flagged: undefined }),
     });
   }
-  if (filters.content_types?.includes("question")) {
+  // Her seçili içerik türü kendi rozetini alır (tek toplu pill değil):
+  // "×" yalnız o türü listeden çıkarır, kalan seçimler URL'de durur.
+  for (const ct of filters.content_types ?? []) {
     pills.push({
-      label: t("reviews.pill.questionsOnly"),
-      remove: () => onApply({ ...filters, content_types: undefined }),
+      label: CONTENT_TYPE_LABEL_KEYS[ct] ? t(CONTENT_TYPE_LABEL_KEYS[ct]!) : ct,
+      remove: () => {
+        const remaining = (filters.content_types ?? []).filter((c) => c !== ct);
+        onApply({ ...filters, content_types: remaining.length > 0 ? remaining : undefined });
+      },
     });
   }
   if (filters.date_from || filters.date_to) {
@@ -1064,28 +1096,69 @@ function QualityFilterDropdown({
   );
 }
 
-/** W3 — "Soru" içerik-türü filtresi. Dropdown DEĞİL, tek-tuşlu toggle:
- *  değer kümesi bugün tek seçenek ("question"), bir dropdown açmak
- *  gereksiz tıklama ekler. QualityFilterDropdown'dan KASITLI olarak
- *  ayrı — content_type kalite bayrağı değil (bkz. ReviewListFilters.
- *  content_types yorumu), iki filtre birlikte de seçilebilir. */
-function QuestionsToggle({
-  active,
-  onToggle,
+/** İçerik türü çoklu-seçim filtresi. SentimentFilterDropdown /
+ *  DecisionsFilterDropdown ile AYNI controlled desen. QualityFilter
+ *  Dropdown'dan KASITLI olarak ayrı bileşen — content_type kalite
+ *  bayrağı değil (bkz. ReviewListFilters.content_types yorumu), iki
+ *  filtre birlikte de seçilebilir. Sıralama CONTENT_TYPES'tan gelir
+ *  (risk — escalation — ilk sırada). */
+function ContentTypeFilterDropdown({
+  selected,
+  onApply,
 }: {
-  active: boolean;
-  onToggle: (next: boolean) => void;
+  selected: string[];
+  onApply: (next: string[]) => void;
 }) {
   const { t } = useTranslation();
+
+  const toggle = useCallback(
+    (value: ContentType) => {
+      const next = selected.includes(value)
+        ? selected.filter((v) => v !== value)
+        : [...selected, value];
+      onApply(next);
+    },
+    [selected, onApply],
+  );
+
+  const triggerLabel =
+    selected.length === 0
+      ? t("reviews.filter.contentTypes")
+      : t("reviews.filter.contentTypesSelected", { count: selected.length });
+
   return (
-    <Button
-      variant={active ? "secondary" : "outline"}
-      size="sm"
-      aria-pressed={active}
-      onClick={() => onToggle(!active)}
-    >
-      {t("reviews.filter.questionsToggle")}
-    </Button>
+    <DropdownMenu>
+      <DropdownMenuTrigger
+        render={
+          <Button variant="outline" size="sm" className="gap-1">
+            {triggerLabel}
+            <ChevronDown className="size-4" aria-hidden />
+          </Button>
+        }
+      />
+      <DropdownMenuContent align="start" className="w-56">
+        {CONTENT_TYPES.map((value) => (
+          <DropdownMenuCheckboxItem
+            key={value}
+            checked={selected.includes(value)}
+            onCheckedChange={() => toggle(value)}
+          >
+            {t(CONTENT_TYPE_LABEL_KEYS[value]!)}
+          </DropdownMenuCheckboxItem>
+        ))}
+        {selected.length > 0 ? (
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              onClick={() => onApply([])}
+              className="text-muted-foreground text-xs"
+            >
+              {t("reviews.perspFilter.clearAll")}
+            </DropdownMenuItem>
+          </>
+        ) : null}
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 

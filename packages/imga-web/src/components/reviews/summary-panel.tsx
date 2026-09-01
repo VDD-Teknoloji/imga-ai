@@ -32,7 +32,7 @@ import {
 import type { ReviewListFiltersExt } from "@/hooks/use-reviews";
 import { useTranslation } from "@/lib/i18n/use-translation";
 import { sentimentScoreBucket, type SentimentScoreBucket } from "@/lib/sentiment-score";
-import type { CategoryView } from "@/lib/types";
+import { CONTENT_TYPES, type CategoryView, type ContentType } from "@/lib/types";
 
 const CARD_CLASS = "bg-card ring-foreground/5 rounded-2xl p-4 ring-1";
 
@@ -55,6 +55,23 @@ const QUALITY_FLAG_LABEL_KEYS: Record<string, string> = {
   empty: "reviews.qualityFilter.empty",
   informational: "reviews.qualityFilter.informational",
   meaningless: "reviews.qualityFilter.meaningless",
+};
+
+// Content-type chip labels — same i18n keys + escalation warning
+// treatment as the list badge in reviews/page.tsx (ReviewRow).
+const CONTENT_TYPE_LABEL_KEYS: Record<ContentType, string> = {
+  escalation: "reviews.contentType.escalation",
+  request: "reviews.contentType.request",
+  question: "reviews.contentType.question",
+  suggestion: "reviews.contentType.suggestion",
+  thanks: "reviews.contentType.thanks",
+};
+const CONTENT_TYPE_CHIP_CLASS: Record<ContentType, string> = {
+  escalation: "bg-sentiment-negative/10 text-sentiment-negative font-semibold",
+  request: "bg-muted text-muted-foreground",
+  question: "bg-muted text-muted-foreground",
+  suggestion: "bg-muted text-muted-foreground",
+  thanks: "bg-muted text-muted-foreground",
 };
 
 // Hüküm (verdict) rengi yalnız negatif/pozitif kovalarda; nötr ve
@@ -126,7 +143,7 @@ function SummarySkeleton() {
   return (
     <div className="space-y-3">
       <span className="sr-only">{t("reviews.summary.loading")}</span>
-      {[96, 56, 130, 44, 110, 84, 96, 150, 90].map((h, i) => (
+      {[96, 56, 64, 130, 44, 110, 84, 96, 150, 90].map((h, i) => (
         <Skeleton key={i} className="w-full" style={{ height: h }} />
       ))}
     </div>
@@ -144,6 +161,7 @@ function SummaryBlocks({
     <div className="space-y-3">
       <HeadlineBlock data={data} />
       <SentimentBarBlock sentiment={data.sentiment} total={data.total} />
+      <ContentTypesBlock contentTypes={data.content_types} />
       <EnteredByBlock rows={data.entered_by} />
       <QualityLineBlock quality={data.quality} />
       <TopQuestionsBlock topQuestions={data.top_questions} questionCount={data.question_count} />
@@ -235,6 +253,49 @@ function SentimentBarBlock({
           </li>
         ))}
       </ul>
+    </div>
+  );
+}
+
+/** (b.5) — CONTENT_TYPES sırasında (risk önce) sıfır olmayan kovalar
+ *  kompakt chip satırı. Tümü sıfırsa blok TAMAMEN gizlenir — diğer
+ *  bloklarla aynı "boşsa gizlen" konvansiyonu. Escalation>0 iken chip
+ *  satırının altına tek satırlık bir yönlendirme eklenir; chip'e
+ *  tıklama YOK — filtreleme sayfa üstü ContentTypeFilterDropdown'ın
+ *  işi, panel salt-okunur bir özet. */
+function ContentTypesBlock({
+  contentTypes,
+}: {
+  contentTypes: Record<string, number> | undefined;
+}) {
+  const { t } = useTranslation();
+  // Backend rollout window (bkz. use-review-summary.ts alan yorumu) —
+  // eski bir api yanıtı bu alanı hiç taşımayabilir; boş harita gibi davran.
+  const counts = contentTypes ?? {};
+  const entries = CONTENT_TYPES.map((type) => ({ type, count: counts[type] ?? 0 })).filter(
+    (e) => e.count > 0,
+  );
+  if (entries.length === 0) return null;
+  const escalationCount = counts.escalation ?? 0;
+  return (
+    <div className={CARD_CLASS}>
+      <h3 className="text-sm font-medium">{t("reviews.summary.contentTypes.title")}</h3>
+      <ul className="mt-3 flex flex-wrap gap-1.5">
+        {entries.map(({ type, count }) => (
+          <li
+            key={type}
+            className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs ${CONTENT_TYPE_CHIP_CLASS[type]}`}
+          >
+            {t(CONTENT_TYPE_LABEL_KEYS[type])}
+            <span className="tabular-nums">{count.toLocaleString("tr-TR")}</span>
+          </li>
+        ))}
+      </ul>
+      {escalationCount > 0 && (
+        <p className="text-sentiment-negative mt-2 text-xs font-medium">
+          {t("reviews.summary.contentTypes.escalationHint")}
+        </p>
+      )}
     </div>
   );
 }

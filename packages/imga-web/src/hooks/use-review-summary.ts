@@ -74,6 +74,13 @@ export interface ReviewSummaryResponse {
   categories: ReviewSummaryCategoryCount[];
   quality: ReviewSummaryQuality;
   question_count: number;
+  /** All five ContentType keys present once live (0 for absent types) —
+   *  see lib/types.ts CONTENT_TYPES. Optional per the "parallel backend
+   *  agent" caution atop this file: web and api images deploy
+   *  independently, and this field ships in the same rollout as this
+   *  UI change, so it can briefly be absent from an old api response.
+   *  question_count above stays for backward compat. */
+  content_types?: Record<string, number>;
   top_questions: ReviewSummaryTopQuestion[];
   entered_by: ReviewSummaryEnteredBy[];
   daily: ReviewSummaryDaily[];

@@ -285,8 +285,6 @@ export const dashboard: Bundle = {
     // --- kök neden kartları (ana sayfa, A2) ---
     "dashboard.rootCauseCards.aria": "Kök neden ve önerilen aksiyonlar",
     "dashboard.rootCauseCards.title": "Neden? Ne yapmalısınız?",
-    "dashboard.rootCauseCards.description":
-      "En çok şikayet edilen kategorilerin kök nedeni ve önerilen aksiyon",
     "dashboard.rootCauseCards.shareChip": "olumsuzların payı: %{pct} · {count} yorum",
     "dashboard.rootCauseCards.shareChipCountOnly": "{count} olumsuz yorum",
     "dashboard.rootCauseCards.actionLabel": "Yapılacak iş",
@@ -294,15 +292,17 @@ export const dashboard: Bundle = {
     "dashboard.rootCauseCards.searchQuote": "Yorumlarda ara",
     "dashboard.rootCauseCards.evidenceLink": "Kanıtı gör ({n} yorum)",
     "dashboard.rootCauseCards.lastAnalysis": "Son analiz: {time}",
+    "dashboard.rootCauseCards.showDetails": "Detayları gör",
+    "dashboard.rootCauseCards.hideDetails": "Detayları gizle",
     "dashboard.rootCauseCards.queued":
-      "Analiz kuyruğa alındı — bir sonraki yüklemeden sonra otomatik hazırlanır.",
+      "Analiz kuyruğa alındı — sıradaki yüklemeden sonra hazır olur.",
     "dashboard.rootCauseCards.generateNow": "Şimdi oluştur",
     "dashboard.rootCauseCards.emptyViewer":
-      "Bu kategori için kök neden analizi henüz oluşturulmadı. Bir yönetici veya analist oluşturabilir.",
+      "Kök neden analizi henüz yok — bir yönetici oluşturabilir.",
     "dashboard.rootCauseCards.notEnoughData": "Kök neden analizi için yeterli veri yok.",
     "dashboard.rootCauseCards.empty.title": "Kök neden analizleri burada görünecek",
     "dashboard.rootCauseCards.empty.desc":
-      "Yeterli olumsuz yorum biriktiğinde en çok şikayet edilen kategoriler için otomatik analiz hazırlanır. Veri yüklemeye devam edin.",
+      "Yeterli olumsuz yorum birikince kategori bazlı analiz otomatik hazırlanır.",
 
     // --- veri kalitesi koçu (ana sayfa, A2 — ClassificationQualityChip'in yerini alır) ---
     "dashboard.dataQuality.aria": "Veri kalitesi koçu",
@@ -315,6 +315,9 @@ export const dashboard: Bundle = {
       "Bu kayıtlar kök neden örneklemine hiç girmiyor; her temiz kayıt analiz isabetini artırır.",
     "dashboard.dataQuality.cta": "Temsilci dökümünü gör",
     "dashboard.dataQuality.questionCount": "Ayrıca müşterileriniz {n} soru sordu.",
+    "dashboard.dataQuality.escalation":
+      "{n} yorumda resmî şikâyet veya dava tehdidi var — önce bunlara bakın.",
+    "dashboard.dataQuality.escalationCta": "Tehdit içeren yorumları gör",
 
     // --- deneyim dağılımı kartları ---
     "dashboard.experience.title": "Deneyim Dağılımı",
@@ -851,8 +854,6 @@ export const dashboard: Bundle = {
     // --- root cause cards (home page, A2) ---
     "dashboard.rootCauseCards.aria": "Root causes and suggested actions",
     "dashboard.rootCauseCards.title": "Why? What should you do?",
-    "dashboard.rootCauseCards.description":
-      "The root cause and suggested action for your most-complained-about categories",
     "dashboard.rootCauseCards.shareChip": "share of negatives: {pct}% · {count} reviews",
     "dashboard.rootCauseCards.shareChipCountOnly": "{count} negative reviews",
     "dashboard.rootCauseCards.actionLabel": "What to do",
@@ -860,15 +861,17 @@ export const dashboard: Bundle = {
     "dashboard.rootCauseCards.searchQuote": "Search in reviews",
     "dashboard.rootCauseCards.evidenceLink": "See the evidence ({n} reviews)",
     "dashboard.rootCauseCards.lastAnalysis": "Last analysis: {time}",
+    "dashboard.rootCauseCards.showDetails": "Show details",
+    "dashboard.rootCauseCards.hideDetails": "Hide details",
     "dashboard.rootCauseCards.queued":
-      "Analysis is queued — it's prepared automatically after the next upload.",
+      "Analysis is queued — ready after the next upload.",
     "dashboard.rootCauseCards.generateNow": "Generate now",
     "dashboard.rootCauseCards.emptyViewer":
-      "No root cause analysis has been generated for this category yet. A manager or analyst can generate one.",
+      "No root cause analysis yet — a manager can generate one.",
     "dashboard.rootCauseCards.notEnoughData": "Not enough data for a root cause analysis.",
     "dashboard.rootCauseCards.empty.title": "Root cause analyses will appear here",
     "dashboard.rootCauseCards.empty.desc":
-      "Once enough negative reviews build up, an automatic analysis is prepared for your most-complained-about categories. Keep uploading data.",
+      "Once enough negative reviews build up, analysis is prepared automatically.",
 
     // --- data quality coach (home page, A2 — replaces ClassificationQualityChip) ---
     "dashboard.dataQuality.aria": "Data quality coach",
@@ -881,6 +884,9 @@ export const dashboard: Bundle = {
       "These records never enter the root-cause sample; every clean record sharpens the analysis.",
     "dashboard.dataQuality.cta": "See the per-agent breakdown",
     "dashboard.dataQuality.questionCount": "Also, your customers asked {n} questions.",
+    "dashboard.dataQuality.escalation":
+      "{n} reviews threaten a formal complaint or legal action — start with these.",
+    "dashboard.dataQuality.escalationCta": "See the reviews with threats",
 
     // --- experience breakdown cards ---
     "dashboard.experience.title": "Experience Breakdown",
