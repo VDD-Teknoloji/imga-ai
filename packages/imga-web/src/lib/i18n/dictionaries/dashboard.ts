@@ -17,6 +17,15 @@ export const dashboard: Bundle = {
     "dashboard.home.greeting": "Merhaba",
     "dashboard.home.greetingNamed": "Merhaba, {name}",
 
+    // --- veri kaynak şeridi (ana sayfa, Sprint 13.3) ---
+    "dashboard.dataStrip.aria": "Veri özeti",
+    "dashboard.dataStrip.total": "{n} yorum analiz edildi",
+    "dashboard.dataStrip.sinceDate": "{date} tarihinden bu yana",
+    "dashboard.dataStrip.range": "{from} – {to}",
+    "dashboard.dataStrip.allTime": "Tüm dönem",
+    "dashboard.dataStrip.unspecified": "Belirtilmemiş {n}",
+    "dashboard.dataStrip.empty": "Henüz analiz edilmiş veri yok.",
+
     // --- strateji ---
     "dashboard.strategy.tab.swot": "SWOT Üret",
     "dashboard.strategy.tab.okr": "OKR Üret",
@@ -140,6 +149,14 @@ export const dashboard: Bundle = {
     "dashboard.actionItems.create.cancel": "İptal",
     "dashboard.actionItems.create.submit": "Ekle",
 
+    // --- stratejik öncelik (ana sayfa sağ ray, Sprint 13.3) ---
+    // Not: anahtar kasıtlı olarak "dashboard." önekini taşımıyor —
+    // brifte belirtilen ad aynen kullanıldı.
+    "actionItems.priority.title": "Stratejik öncelik",
+    "actionItems.priority.desc":
+      "SWOT analizinden gelen, bu dönem için en öncelikli konu.",
+    "actionItems.priority.cta": "Stratejiyi aç",
+
     // --- trend uyarıları ---
     "dashboard.trendAlerts.title": "Trend Uyarıları",
     "dashboard.trendAlerts.subtitle":
@@ -254,18 +271,7 @@ export const dashboard: Bundle = {
     "dashboard.npsCard.coverage": "NPS verisi olan yorum oranı: %{pct}",
 
     // --- kategori bazlı duygu dağılımı ---
-    "dashboard.categoryBreakdown.title": "Kategori Bazlı Duygu Dağılımı",
-    "dashboard.categoryBreakdown.subtitle":
-      "En sorunlu kategori en üstte — her kategorideki olumsuz / nötr / olumlu payı. Bir dilime tıklayınca ilgili yorumlar açılır.",
-    "dashboard.categoryBreakdown.empty": "Bu dönemde kategori verisi yok.",
-    "dashboard.categoryBreakdown.rowTotal": "Toplam {n} yorum",
     // --- alt kategori kırılımı + kök neden (Sprint 13.1) ---
-    "dashboard.categoryBreakdown.expand": "{category} alt kategorilerini aç",
-    "dashboard.categoryBreakdown.drilldownTitle": "{category} — alt kategoriler",
-    "dashboard.categoryBreakdown.drilldownEmpty":
-      "Bu ana kategoride alt kategori kırılımı yok.",
-    "dashboard.categoryBreakdown.unmatched": "Alt kategori atanmamış",
-    "dashboard.categoryBreakdown.negativeShare": "Olumsuz payı %{pct}",
     "dashboard.rootCause.action": "Kök Neden Analizi",
     "dashboard.rootCause.title": "Kök Neden Analizi",
     "dashboard.rootCause.generate": "Analiz Oluştur",
@@ -282,12 +288,27 @@ export const dashboard: Bundle = {
       "LLM sağlayıcısına şu an ulaşılamıyor. Biraz sonra tekrar deneyin.",
     "dashboard.rootCause.generateFailed": "Kök neden analizi oluşturulamadı.",
 
+    // --- sade kategori kartı (ana sayfa, Sprint 13.3) ---
+    "dashboard.categorySimple.title": "Kategorilere göre memnuniyet",
+    "dashboard.categorySimple.subtitle": "En çok olumsuz yorum alan konular üstte",
+    "dashboard.categorySimple.negShare": "%{pct} olumsuz",
+    "dashboard.categorySimple.reviews": "{n} yorum",
+    "dashboard.categorySimple.showAll": "Tümünü gör",
+    "dashboard.categorySimple.empty": "Bu dönemde kategori verisi yok.",
+
     // --- kök neden kartları (ana sayfa, A2) ---
     "dashboard.rootCauseCards.aria": "Kök neden ve önerilen aksiyonlar",
-    "dashboard.rootCauseCards.title": "Neden? Ne yapmalısınız?",
+    // Sprint 13.3 (2026-09-01) — ürün sahibi talimatıyla üzerine yazıldı:
+    // eski değer "Neden? Ne yapmalısınız?" idi.
+    "dashboard.rootCauseCards.title": "En yoğun 3 kategori",
+    "dashboard.rootCauseCards.inference": "Çıkarım",
+    "dashboard.rootCauseCards.suggestion": "Öneri",
+    "dashboard.rootCauseCards.otherCausesTitle": "Diğer başlıca nedenler",
+    "dashboard.rootCauseCards.generating": "Kök neden analizi hazırlanıyor…",
+    "dashboard.rootCauseCards.generatingHint":
+      "Yeni yüklenen veriler işleniyor; sonuç birkaç dakika içinde burada görünecek.",
     "dashboard.rootCauseCards.shareChip": "olumsuzların payı: %{pct} · {count} yorum",
     "dashboard.rootCauseCards.shareChipCountOnly": "{count} olumsuz yorum",
-    "dashboard.rootCauseCards.actionLabel": "Yapılacak iş",
     "dashboard.rootCauseCards.otherCauses": "Diğer nedenler ({n})",
     "dashboard.rootCauseCards.searchQuote": "Yorumlarda ara",
     "dashboard.rootCauseCards.evidenceLink": "Kanıtı gör ({n} yorum)",
@@ -342,8 +363,6 @@ export const dashboard: Bundle = {
       "Henüz hiç yorum yüklemediniz. CSV veya Excel dosyanızı aşağıya bırakın; imga birkaç dakika içinde duygu, kategori ve kök neden analizini çıkarsın.",
 
     // --- öncelikli aksiyon ---
-    "dashboard.priorityAction.label": "Bu ayki önceliğiniz",
-    "dashboard.priorityAction.seeFull": "Aksiyon planının tamamını gör",
 
     // --- en çok şikayet edilen konular ---
     "dashboard.topProblems.title": "En çok şikayet edilen konular",
@@ -578,6 +597,15 @@ export const dashboard: Bundle = {
     "dashboard.home.greeting": "Hello",
     "dashboard.home.greetingNamed": "Hello, {name}",
 
+    // --- data source strip (home page, Sprint 13.3) ---
+    "dashboard.dataStrip.aria": "Data summary",
+    "dashboard.dataStrip.total": "{n} reviews analysed",
+    "dashboard.dataStrip.sinceDate": "since {date}",
+    "dashboard.dataStrip.range": "{from} – {to}",
+    "dashboard.dataStrip.allTime": "All time",
+    "dashboard.dataStrip.unspecified": "Unspecified {n}",
+    "dashboard.dataStrip.empty": "No analysed data yet.",
+
     // --- strategy ---
     "dashboard.strategy.tab.swot": "Generate SWOT",
     "dashboard.strategy.tab.okr": "Generate OKR",
@@ -704,6 +732,14 @@ export const dashboard: Bundle = {
     "dashboard.actionItems.create.cancel": "Cancel",
     "dashboard.actionItems.create.submit": "Add",
 
+    // --- strategic priority (home page right rail, Sprint 13.3) ---
+    // Note: key intentionally has no "dashboard." prefix — kept as
+    // named in the shared brief.
+    "actionItems.priority.title": "Strategic priority",
+    "actionItems.priority.desc":
+      "The highest-priority topic for this period, from your SWOT analysis.",
+    "actionItems.priority.cta": "Open strategy",
+
     // --- trend alerts ---
     "dashboard.trendAlerts.title": "Trend Alerts",
     "dashboard.trendAlerts.subtitle":
@@ -822,18 +858,7 @@ export const dashboard: Bundle = {
     "dashboard.npsCard.coverage": "Reviews carrying NPS data: {pct}%",
 
     // --- category sentiment breakdown ---
-    "dashboard.categoryBreakdown.title": "Sentiment by Category",
-    "dashboard.categoryBreakdown.subtitle":
-      "Most problematic category first — negative / neutral / positive share per category. Click a slice to open the matching reviews.",
-    "dashboard.categoryBreakdown.empty": "No category data in this period.",
-    "dashboard.categoryBreakdown.rowTotal": "{n} reviews in total",
     // --- sub-category drill-down + root cause (Sprint 13.1) ---
-    "dashboard.categoryBreakdown.expand": "Expand {category} sub-categories",
-    "dashboard.categoryBreakdown.drilldownTitle": "{category} — sub-categories",
-    "dashboard.categoryBreakdown.drilldownEmpty":
-      "No sub-category breakdown for this main category.",
-    "dashboard.categoryBreakdown.unmatched": "No sub-category assigned",
-    "dashboard.categoryBreakdown.negativeShare": "Negative share {pct}%",
     "dashboard.rootCause.action": "Root Cause Analysis",
     "dashboard.rootCause.title": "Root Cause Analysis",
     "dashboard.rootCause.generate": "Generate analysis",
@@ -851,12 +876,27 @@ export const dashboard: Bundle = {
     "dashboard.rootCause.generateFailed":
       "Could not generate the root cause analysis.",
 
+    // --- simple category card (home page, Sprint 13.3) ---
+    "dashboard.categorySimple.title": "Satisfaction by category",
+    "dashboard.categorySimple.subtitle": "Topics with the most negative reviews first",
+    "dashboard.categorySimple.negShare": "{pct}% negative",
+    "dashboard.categorySimple.reviews": "{n} reviews",
+    "dashboard.categorySimple.showAll": "See all",
+    "dashboard.categorySimple.empty": "No category data in this period.",
+
     // --- root cause cards (home page, A2) ---
     "dashboard.rootCauseCards.aria": "Root causes and suggested actions",
-    "dashboard.rootCauseCards.title": "Why? What should you do?",
+    // Sprint 13.3 (2026-09-01) — overwritten per product-owner
+    // instruction: old value was "Why? What should you do?".
+    "dashboard.rootCauseCards.title": "Top 3 categories",
+    "dashboard.rootCauseCards.inference": "Insight",
+    "dashboard.rootCauseCards.suggestion": "Suggestion",
+    "dashboard.rootCauseCards.otherCausesTitle": "Other main causes",
+    "dashboard.rootCauseCards.generating": "Preparing the root-cause analysis…",
+    "dashboard.rootCauseCards.generatingHint":
+      "The newly uploaded data is being processed; the result will appear here in a few minutes.",
     "dashboard.rootCauseCards.shareChip": "share of negatives: {pct}% · {count} reviews",
     "dashboard.rootCauseCards.shareChipCountOnly": "{count} negative reviews",
-    "dashboard.rootCauseCards.actionLabel": "What to do",
     "dashboard.rootCauseCards.otherCauses": "Other causes ({n})",
     "dashboard.rootCauseCards.searchQuote": "Search in reviews",
     "dashboard.rootCauseCards.evidenceLink": "See the evidence ({n} reviews)",
@@ -910,8 +950,6 @@ export const dashboard: Bundle = {
       "You haven't uploaded any reviews yet. Drop your CSV or Excel file below; imga will extract sentiment, category, and root-cause analysis within minutes.",
 
     // --- priority action ---
-    "dashboard.priorityAction.label": "This month's priority",
-    "dashboard.priorityAction.seeFull": "See the full action plan",
 
     // --- top problems ---
     "dashboard.topProblems.title": "Most-complained-about topics",

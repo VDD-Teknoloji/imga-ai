@@ -11,6 +11,9 @@
 // sayfanın dönem filtresiyle (yalnız date_from/date_to — W3 hook'unun
 // beklediği tam filtre yüzeyinin geri kalanı bilerek boş bırakılır)
 // tekrar çağrılır.
+//
+// Sprint 13.3 (2026-09-01) - 320px sag raya tasindi; break-words dar
+// sutunda tasmayi onler (kurallar/esikler dokunulmadan kalir).
 
 import Link from "next/link";
 import { ArrowRight } from "lucide-react";
@@ -67,7 +70,7 @@ export function DataQualityCoach({ dateFrom, dateTo }: Props) {
   if (flaggedPct < 5) {
     return (
       <section
-        className="rise-in shadow-soft bg-card ring-foreground/5 rounded-3xl p-5 ring-1"
+        className="rise-in shadow-soft bg-card ring-foreground/5 break-words rounded-3xl p-5 ring-1"
         aria-label={t("dashboard.dataQuality.aria")}
       >
         <p className="text-muted-foreground text-sm font-medium">
@@ -80,7 +83,7 @@ export function DataQualityCoach({ dateFrom, dateTo }: Props) {
 
   return (
     <section
-      className="rise-in shadow-soft bg-card ring-foreground/5 rounded-3xl p-5 ring-1"
+      className="rise-in shadow-soft bg-card ring-foreground/5 break-words rounded-3xl p-5 ring-1"
       aria-label={t("dashboard.dataQuality.aria")}
     >
       <p className="text-sm font-semibold">

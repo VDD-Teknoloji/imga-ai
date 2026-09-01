@@ -34,6 +34,7 @@ from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from imga_api.auth_deps import CurrentUser, bind_tenant, require_role
+from imga_api.cache.redis_client import get_redis_client
 from imga_api.db_deps import get_app_session
 from imga_api.services.cohort_analyzer import (
     ALLOWED_DIMENSIONS,
@@ -202,6 +203,17 @@ class RootCauseCard(BaseModel):
 
 class RootCauseOverviewResponse(BaseModel):
     cards: list[RootCauseCard]
+    # 2026-09 — batch_analyzer._enqueue_root_cause_auto_gen, her batch
+    # tamamlandığında ("workers/batch_analyzer.py") arq'a bir üretim
+    # işi kuyruklarken bu Redis anahtarını 20 dk TTL ile set eder;
+    # generate_root_causes_task (workers/arq_worker.py) kendi sonunda
+    # (başarı/başarısızlık fark etmeksizin) siler. True → arka planda
+    # bu tenant için kartlar dolduruluyor olabilir, FE boş görünen bir
+    # liste yerine "hazırlanıyor" durumu gösterebilir. Herhangi bir
+    # Redis hatası (bağlantı yok, timeout, ...) savunmacı biçimde
+    # False'a düşer — bu salt görsel bir ipucu, asla okuma yolunu
+    # bloklamamalı.
+    generating: bool
 
 
 class HeatmapResponse(BaseModel):
@@ -554,6 +566,7 @@ async def get_root_cause_overview(
     kategoriler ``can_generate=False`` ile döner — ASLA 400/500, boş
     tenant'ta ``cards: []``."""
     tenant_id = _require_active_tenant(current)
+    generating = await _root_cause_generating(tenant_id)
     window_to = date_to or datetime.now(UTC)
     if date_to is not None and date_to.time() == dt_time():
         # FE YYYY-MM-DD gönderir, FastAPI geceyarısına çözer — bitiş
@@ -606,7 +619,26 @@ async def get_root_cause_overview(
     except Exception:
         _logger.exception("root-cause overview failed", extra={"tenant_id": str(tenant_id)})
         raise
-    return RootCauseOverviewResponse(cards=cards)
+    return RootCauseOverviewResponse(cards=cards, generating=generating)
+
+
+async def _root_cause_generating(tenant_id: UUID) -> bool:
+    """ "Hazırlanıyor" bayrağı okuma — anahtar formatı
+    ``batch_analyzer._enqueue_root_cause_auto_gen`` (set) ve
+    ``arq_worker.generate_root_causes_task`` (finally'de sil) ile
+    AYNEN eşleşmeli. Herhangi bir Redis hatası (bağlantı yok, timeout,
+    bozuk değer) savunmacı biçimde False'a düşer — bu salt görsel bir
+    ipucu, asla endpoint'i 500'e götürmemeli."""
+    try:
+        client = get_redis_client()
+        raw = await client.get(f"root_cause_autogen:{tenant_id}")
+    except Exception:
+        _logger.warning(
+            "root-cause generating flag read failed; defaulting to False",
+            extra={"tenant_id": str(tenant_id)},
+        )
+        return False
+    return raw is not None
 
 
 def _parse_analysis_row(row: RootCauseAnalysis) -> RootCauseAnalysisBlock:

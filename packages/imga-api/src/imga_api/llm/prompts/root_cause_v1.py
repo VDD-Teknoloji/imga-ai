@@ -82,10 +82,13 @@ Yorumları oku ve 1-5 adet kök neden çıkar. Her kök neden için:
 - affected_surface: sorunun yaşandığı temas noktası \
   (örn. "mobil uygulama", "e-posta bilgilendirmesi", "kargo takip \
   ekranı", "çağrı merkezi")
-- suggested_action: sahibi belli, somut tek bir düzeltme önerisi. Yeni bir \
-  ekran ya da özellik inşa etmeyi önerme; var olan bir kanaldan (SMS, \
-  e-posta, çağrı merkezi scripti, iç süreç talimatı) BU HAFTA \
-  başlatılabilecek, sahibi belli somut bir adım öner.
+- suggested_action: bu kök nedene dair TEK cümlelik, uygulanabilir ama \
+  iddiasız bir öneri. Kesin talimat verme; "şunu yapın", "bu hafta \
+  güncellensin" gibi buyurgan kalıplardan KAÇIN — bunun yerine "…gözden \
+  geçirmek faydalı olabilir", "…müşteriye erken bildirmek bu şikayetleri \
+  azaltabilir" gibi mütevazı bir dille yaz. Her firmanın iş akışı \
+  farklıdır; hangi kanaldan, ne zaman, kim tarafından uygulanacağını \
+  dayatma — süreç tasarımı senin işin değil, kararı okuyana bırak.
 - share_estimate_pct: bu kök nedenin kovadaki yorumların yüzde kaçını \
   açıkladığına dair tahmin (0-100). Tahmin edemiyorsan bu alanı HİÇ \
   YAZMA.
@@ -94,8 +97,9 @@ Yorumları oku ve 1-5 adet kök neden çıkar. Her kök neden için:
   description'ı da her zamanki gibi TAM içerikle doldur; headline \
   onlara EK olarak yazılan kısa vitrin cümlesidir.
 - action_short: suggested_action'ın TEK satırlık özeti — en fazla 90 \
-  karakter, EMİR KİPİYLE ve bir FİİLLE başla. suggested_action'ı da \
-  her zamanki gibi ayrıntılı yaz; action_short ona EK olarak yazılır.
+  karakter, aynı mütevazı ve iddiasız tonda (buyurgan emir kipiyle \
+  BAŞLAMA). suggested_action'ı da her zamanki gibi tam cümleyle yaz; \
+  action_short ona EK olarak yazılan kısa özettir.
 
 KURALLAR:
 1. Yorumlarda olmayan bir olgu UYDURMA. Elinde kanıt yoksa o kök nedeni verme.
@@ -115,8 +119,9 @@ KURALLAR:
    gibi serbest metin alanlarını da aynı disipline sokar.
 10. HER alan gerçek içerikle dolu olmalı: hiçbir alana "..." gibi yer \
     tutucu, boş metin ya da "aynı" gibi gönderme YAZMA. headline ve \
-    action_short kısa vitrin alanlarıdır; title, description ve \
-    suggested_action tam uzunlukta yazılır — biri diğerinin yerini almaz.
+    action_short kısa vitrin alanlarıdır; title ve description tam \
+    uzunlukta yazılır, suggested_action ise kısa ama gerçek içerikli TEK \
+    bir cümledir — biri diğerinin yerini almaz.
 """
 
 # ---------------------------------------------------------------------------

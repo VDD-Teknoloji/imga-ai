@@ -25,6 +25,7 @@ import { useGenerateRootCause } from "@/hooks/use-root-cause";
 import {
   useRootCauseOverview,
   type RootCauseOverviewCard,
+  type RootCauseOverviewCauseItem,
   type RootCauseOverviewFilters,
 } from "@/hooks/use-root-cause-overview";
 import { ApiError } from "@/lib/api-client";
@@ -53,7 +54,7 @@ export function RootCauseCards({ filters, categories }: Props) {
     return (
       <section aria-label={t("dashboard.rootCauseCards.aria")}>
         <Skeleton className="h-7 w-72" />
-        <div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-3">
+        <div className="mt-5 space-y-4">
           <Skeleton className="h-64 w-full rounded-3xl" />
           <Skeleton className="h-64 w-full rounded-3xl" />
           <Skeleton className="h-64 w-full rounded-3xl" />
@@ -77,6 +78,12 @@ export function RootCauseCards({ filters, categories }: Props) {
     <section aria-label={t("dashboard.rootCauseCards.aria")}>
       <SectionHeading title={t("dashboard.rootCauseCards.title")} />
 
+      {/* generating: arka planda kuyruklanmış üretim sürüyor — kartlar
+          varsa gizlenmez, üstlerinde sakin bir ilerleme şeridi belirir
+          (PO isteği). Hook 5sn'de bir yoklayıp bu bayrak false olunca
+          durur. */}
+      {overview.data?.generating && <RootCauseGeneratingStrip />}
+
       {cards.length === 0 ? (
         <div className="rise-in shadow-soft bg-card ring-foreground/5 mt-5 rounded-3xl p-6 ring-1 md:p-7">
           <p className="text-sm font-semibold">{t("dashboard.rootCauseCards.empty.title")}</p>
@@ -85,7 +92,7 @@ export function RootCauseCards({ filters, categories }: Props) {
           </p>
         </div>
       ) : (
-        <div className="mt-5 grid grid-cols-1 items-start gap-4 md:grid-cols-3">
+        <div className="mt-5 space-y-4">
           {cards.map((card, idx) => (
             <RootCauseCardTile
               key={card.primary_category_code}
@@ -98,6 +105,27 @@ export function RootCauseCards({ filters, categories }: Props) {
         </div>
       )}
     </section>
+  );
+}
+
+/** Kayan-şerit indeterminate progress bar — BatchProgressStream.tsx'teki
+ *  "ısınma" şeridiyle aynı `progress-slide` keyframe'i (globals.css),
+ *  yeni bir kütüphane yok. */
+function RootCauseGeneratingStrip() {
+  const { t } = useTranslation();
+  return (
+    <div
+      role="status"
+      className="rise-in shadow-soft bg-card ring-foreground/5 mt-5 rounded-3xl p-5 ring-1"
+    >
+      <p className="text-sm font-semibold">{t("dashboard.rootCauseCards.generating")}</p>
+      <div className="relative mt-3 h-1.5 w-full overflow-hidden rounded-full bg-zinc-200 dark:bg-zinc-800">
+        <div className="absolute inset-y-0 w-1/3 animate-[progress-slide_1.2s_ease-in-out_infinite] rounded-full bg-gradient-to-r from-primary/30 via-primary to-primary/30" />
+      </div>
+      <p className="text-muted-foreground mt-2 text-xs leading-relaxed">
+        {t("dashboard.rootCauseCards.generatingHint")}
+      </p>
+    </div>
   );
 }
 
@@ -133,6 +161,71 @@ function quoteSearchHref(quote: string): string {
   const truncated = quote.split(/\.{3}|…/)[0] ?? quote;
   const words = truncated.trim().split(/\s+/).filter(Boolean).slice(0, 7).join(" ");
   return `/reviews?search=${encodeURIComponent(words)}`;
+}
+
+/** action_short varsa o (zaten tek satır); yoksa suggested_action'ın
+ *  İLK cümlesi — prompt artık suggested_action'ı tek cümlelik, mütevazı
+ *  bir öneri olarak üretiyor (root_cause_v1.py), ama eski kalıcı
+ *  analizlerde çok cümlelik metin olabilir; ilk cümleyi almak satırı
+ *  tek satırda (line-clamp) okunur tutar. */
+function suggestionText(cause: RootCauseOverviewCauseItem): string | null {
+  if (cause.action_short) return cause.action_short;
+  if (!cause.suggested_action) return null;
+  const firstSentence = cause.suggested_action.match(/^[^.!?]*[.!?]/)?.[0];
+  return (firstSentence ?? cause.suggested_action).trim();
+}
+
+/** Bir nedenin kanıt alıntıları — hem ilk neden hem de "diğer nedenler"
+ *  bölümündeki her satır aynı biçimi kullanır (PO isteği: diğer
+ *  nedenler de kendi yorum alıntılarını taşısın). */
+function EvidenceQuoteList({ quotes }: { quotes: string[] }) {
+  const { t } = useTranslation();
+  if (quotes.length === 0) return null;
+  return (
+    <ul className="space-y-2">
+      {quotes.slice(0, 2).map((quote, i) => (
+        <li
+          key={`${quote.slice(0, 24)}-${i}`}
+          className="border-foreground/15 border-l-2 pl-3 text-xs"
+        >
+          <p className="text-muted-foreground italic">&ldquo;{quote}&rdquo;</p>
+          <Link
+            href={quoteSearchHref(quote)}
+            className="text-primary mt-1 inline-flex items-center gap-1 font-medium not-italic hover:underline"
+          >
+            {t("dashboard.rootCauseCards.searchQuote")}
+            <ArrowRight className="size-3" aria-hidden />
+          </Link>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+/** "Diğer nedenler" bölümündeki her satır — ilk nedenle aynı iskelet:
+ *  kendi Çıkarım etiketi + başlık, kendi açıklaması, kendi alıntıları,
+ *  kendi mütevazı öneri satırı (PO isteği: diğer nedenler için de
+ *  çıkarım ve yorumlar olsun). */
+function OtherCauseBlock({ cause }: { cause: RootCauseOverviewCauseItem }) {
+  const { t } = useTranslation();
+  const suggestion = suggestionText(cause);
+  return (
+    <div className="space-y-2">
+      <p className="text-primary text-[11px] font-semibold tracking-wide uppercase">
+        {t("dashboard.rootCauseCards.inference")}
+      </p>
+      <p className="text-sm font-semibold text-balance">{cause.headline ?? cause.title}</p>
+      <p className="text-muted-foreground line-clamp-3 text-sm leading-relaxed">
+        {cause.description}
+      </p>
+      <EvidenceQuoteList quotes={cause.evidence_quotes} />
+      {suggestion && (
+        <p className="text-muted-foreground line-clamp-2 text-sm leading-relaxed">
+          {t("dashboard.rootCauseCards.suggestion")}: {suggestion}
+        </p>
+      )}
+    </div>
+  );
 }
 
 function RootCauseCardTile({
@@ -238,20 +331,21 @@ function RootCauseCardTile({
 
       {analysis && firstCause ? (
         <>
-          {/* PO geri bildirimi: kapalı kart tek başlık + tek aksiyon
-              satırıyla dikkat çeker, gerisi "Detayları gör" arkasında. */}
-          <p className="mt-3 line-clamp-2 text-lg font-semibold tracking-tight text-balance">
+          {/* PO geri bildirimi: kapalı kart tek çıkarım başlığı + tek
+              mütevazı öneri satırıyla dikkat çeker (renkli kutu yok —
+              "Yapılacak iş" emri kalktı), gerisi "Detayları gör"
+              arkasında. "Çıkarım" etiketi bunun ham bir alıntı değil,
+              veriden çıkarılmış bir bulgu olduğunu açık eder. */}
+          <p className="text-primary mt-3 text-[11px] font-semibold tracking-wide uppercase">
+            {t("dashboard.rootCauseCards.inference")}
+          </p>
+          <p className="mt-0.5 line-clamp-2 text-lg font-semibold tracking-tight text-balance">
             {firstCause.headline ?? firstCause.title}
           </p>
-          {(firstCause.action_short ?? firstCause.suggested_action) && (
-            <div className="bg-primary/5 mt-3 rounded-2xl p-3">
-              <p className="text-primary text-[11px] font-semibold tracking-wide uppercase">
-                {t("dashboard.rootCauseCards.actionLabel")}
-              </p>
-              <p className="text-foreground/90 mt-0.5 line-clamp-1 text-sm leading-relaxed">
-                {firstCause.action_short ?? firstCause.suggested_action}
-              </p>
-            </div>
+          {suggestionText(firstCause) && (
+            <p className="text-muted-foreground mt-3 line-clamp-2 text-sm leading-relaxed">
+              {t("dashboard.rootCauseCards.suggestion")}: {suggestionText(firstCause)}
+            </p>
           )}
 
           <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2">
@@ -274,61 +368,15 @@ function RootCauseCardTile({
           </div>
 
           {showDetails && (
-            <div className="border-foreground/10 mt-4 space-y-3 border-t pt-4">
+            <div className="border-foreground/10 mt-4 space-y-4 border-t pt-4">
               <p className="text-muted-foreground text-sm leading-relaxed">
                 {firstCause.description}
               </p>
-              {/* action_short varken suggested_action zaten aksiyon
-                  satırında değil — burada tam metni gösterilir. Yoksa
-                  aksiyon satırı zaten suggested_action'ın kendisiydi,
-                  tekrar basmak yinelenir. */}
-              {firstCause.action_short && firstCause.suggested_action && (
-                <div>
-                  <p className="text-primary text-xs font-semibold">
-                    {t("dashboard.rootCauseCards.actionLabel")}
-                  </p>
-                  <p className="text-foreground/90 mt-0.5 text-sm leading-relaxed">
-                    {firstCause.suggested_action}
-                  </p>
-                </div>
-              )}
-              {firstCause.evidence_quotes.length > 0 && (
-                <ul className="space-y-2">
-                  {firstCause.evidence_quotes.slice(0, 2).map((quote, i) => (
-                    <li
-                      key={`${quote.slice(0, 24)}-${i}`}
-                      className="border-foreground/15 border-l-2 pl-3 text-xs"
-                    >
-                      <p className="text-muted-foreground italic">&ldquo;{quote}&rdquo;</p>
-                      <Link
-                        href={quoteSearchHref(quote)}
-                        className="text-primary mt-1 inline-flex items-center gap-1 font-medium not-italic hover:underline"
-                      >
-                        {t("dashboard.rootCauseCards.searchQuote")}
-                        <ArrowRight className="size-3" aria-hidden />
-                      </Link>
-                    </li>
-                  ))}
-                </ul>
-              )}
+              <EvidenceQuoteList quotes={firstCause.evidence_quotes} />
               {firstCause.affected_surface && (
                 <p className="text-muted-foreground text-xs">
                   {t("dashboard.rootCause.affectedSurface")}: {firstCause.affected_surface}
                 </p>
-              )}
-              {restCauses.length > 0 && (
-                <div>
-                  <p className="text-muted-foreground text-xs font-semibold">
-                    {t("dashboard.rootCauseCards.otherCauses", { n: restCauses.length })}
-                  </p>
-                  <ul className="mt-1.5 space-y-1">
-                    {restCauses.map((cause, i) => (
-                      <li key={`${cause.title}-${i}`} className="text-foreground/80 text-sm">
-                        {cause.headline ?? cause.title}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
               )}
               <p
                 className="text-muted-foreground text-xs"
@@ -338,6 +386,21 @@ function RootCauseCardTile({
                   time: relativeTimeTr(analysis.generated_at),
                 })}
               </p>
+              {/* PO isteği: diğer nedenler artık başlık listesi değil —
+                  her biri ilk nedenle aynı iskelette (çıkarım + açıklama
+                  + alıntı + öneri) tam anlatılır. */}
+              {restCauses.length > 0 && (
+                <div className="border-foreground/10 space-y-4 border-t pt-4">
+                  <p className="text-muted-foreground text-xs font-semibold tracking-wide uppercase">
+                    {t("dashboard.rootCauseCards.otherCausesTitle")}
+                  </p>
+                  <div className="space-y-4">
+                    {restCauses.map((cause, i) => (
+                      <OtherCauseBlock key={`${cause.title}-${i}`} cause={cause} />
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </>

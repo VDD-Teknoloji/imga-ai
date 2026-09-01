@@ -68,6 +68,11 @@ from imga_api.workers.scheduled_briefings import scheduled_briefing_tick
 _AUTO_GEN_MIN_TENANT_REVIEWS = 50
 #: Bir turda en fazla kaç (kategori, perspektif) çifti üretilir.
 _AUTO_GEN_TOP_N = 3
+#: Tetikleyen batch'in başarılı satır sayısı bu eşiğin altındaysa
+#: force_refresh HİÇBİR ZAMAN True geçilmez — küçük tekrar-yüklemeler
+#: 12h cache'e çarpıp ücretsiz kalsın diye (bkz. generate_root_causes_task
+#: docstring'i, "maliyet kuralı").
+_AUTO_GEN_FORCE_REFRESH_MIN_ROWS = 200
 
 _logger = logging.getLogger("imga-api.workers.arq")
 
@@ -133,8 +138,10 @@ async def process_reanalysis_task(
         raise
 
 
-async def generate_root_causes_task(ctx: dict[str, Any], tenant_id: str) -> None:
-    """Sprint 13.x — post-batch otomatik kök neden üretimi.
+async def generate_root_causes_task(
+    ctx: dict[str, Any], tenant_id: str, rows_succeeded: int = 0
+) -> None:
+    """Sprint 13.x+ — post-batch otomatik kök neden üretimi.
 
     ``process_batch_task`` ile aynı ``WorkerContext``'i paylaşır (arq
     startup'ta bir kez kurulur). Akış:
@@ -151,14 +158,37 @@ async def generate_root_causes_task(ctx: dict[str, Any], tenant_id: str) -> None
          overview'in kullandığı AYNI sorgu). ``can_generate=False``
          (perspektif yok ya da kova eşiğin altında) olan çiftler
          atlanır.
-      4. Her çift KENDİ transaction'ında, ``force_refresh=False``
-         SABİT (cache asla bypass edilmez) — bir kategori başarısız
-         olursa diğerlerini etkilemez, hata loglanır + yutulur (batch
-         zaten başarıyla tamamlandı, bu arka plan zenginleştirmesi onu
-         asla geriye alamaz).
+      4. Her çift KENDİ transaction'ında; bir kategori başarısız olursa
+         diğerlerini etkilemez, hata loglanır + yutulur (batch zaten
+         başarıyla tamamlandı, bu arka plan zenginleştirmesi onu asla
+         geriye alamaz).
+
+    Maliyet kuralı (2026-09) — ``force_refresh`` artık SABİT False
+    DEĞİL: ``rows_succeeded`` ``_AUTO_GEN_FORCE_REFRESH_MIN_ROWS``
+    (200) ve üzerindeyse True geçilir, altındaysa False kalır.
+    Gerekçe: ``batch_analyzer._enqueue_root_cause_auto_gen`` artık her
+    yükleme için AYRI bir arq job id kullanıyor (eskiden
+    tenant+gün'e göre dedup ediliyordu), yani aynı gün içindeki küçük
+    tekrar-yüklemeler bile ayrı ayrı tetiklenir. ``force_refresh`` hep
+    True olsaydı bu küçük yüklemeler her seferinde LLM'e gidip
+    kontrolsüz bir faturaya dönüşürdü. ``RootCauseService``'in 12s
+    cache'i bu durumda güvence: force_refresh=False iken cache hit'e
+    düşer, LLM hiç çağrılmaz — sonuç yine doğru kalır, sadece "taze"
+    değildir. Yalnızca gerçekten anlamlı miktarda yeni veri geldiğinde
+    (200+ başarılı satır) cache bilerek bypass edilir.
+    ``rows_succeeded`` opsiyonel + varsayılan 0 — kuyrukta 2026-09
+    öncesi enqueue edilmiş (yalnız tenant_id taşıyan) eski job'lar hâlâ
+    çalışabilsin diye; 0 her zaman eşiğin altında kalır, yani eski
+    job'lar eskisi gibi cache-first (force_refresh=False) davranır.
 
     ``generated_by_user_id=None`` — kolon nullable (root_cause_analysis
     modeli), tetikleyen bir kullanıcı değil bu arka plan görevi.
+
+    "Hazırlanıyor" bayrağı — ``batch_analyzer._enqueue_root_cause_auto_gen``
+    enqueue anında set eder; burada, sonuç ne olursa olsun (başarı,
+    kısmi başarı, tam başarısızlık) ``finally`` bloğunda silinir ki bir
+    hata bayrağı sonsuza dek asılı bırakmasın (TTL zaten bir emniyet
+    ağı, ama finally daha hızlı temizler).
     """
     worker_context: WorkerContext = ctx["worker_context"]
     tid = UUID(tenant_id)
@@ -167,67 +197,78 @@ async def generate_root_causes_task(ctx: dict[str, Any], tenant_id: str) -> None
     # aynı: kapsayıcı UTC gün sınırları, üst sınır gün SONU.
     window_from = datetime.combine(date_from, dt_time.min, tzinfo=UTC)
     window_to = datetime.combine(date_to, dt_time.max, tzinfo=UTC)
+    force_refresh = rows_succeeded >= _AUTO_GEN_FORCE_REFRESH_MIN_ROWS
 
     try:
-        async with worker_context.app_session_factory() as session, session.begin():
-            await set_current_tenant(session, tid)
-            total = (
-                await session.execute(
-                    select(func.count())
-                    .select_from(Review)
-                    .where(Review.tenant_id == tid)
-                    .where(Review.deleted_at.is_(None))
-                )
-            ).scalar_one()
-            if int(total or 0) < _AUTO_GEN_MIN_TENANT_REVIEWS:
-                return
-            picks = await pick_top_categories(
-                session,
-                tid,
-                date_from=window_from,
-                date_to=window_to,
-                limit=_AUTO_GEN_TOP_N,
-            )
-    except Exception:
-        _logger.exception(
-            "root-cause auto-gen: candidate selection failed for tenant %s (non-fatal)",
-            tenant_id,
-        )
-        return
-
-    for pick in picks:
-        if not pick.can_generate or pick.perspective_code is None:
-            continue
         try:
             async with worker_context.app_session_factory() as session, session.begin():
                 await set_current_tenant(session, tid)
-                service = RootCauseService(session, tid, None)
-                try:
-                    await service.generate(
-                        primary_category=pick.primary_category_code,
-                        perspective_code=pick.perspective_code,
-                        date_from=date_from,
-                        date_to=date_to,
-                        force_refresh=False,
+                total = (
+                    await session.execute(
+                        select(func.count())
+                        .select_from(Review)
+                        .where(Review.tenant_id == tid)
+                        .where(Review.deleted_at.is_(None))
                     )
-                except Exception:
-                    # İçeride: LLMCallAuditor'ın kendi savepoint'inde
-                    # zaten flush ettiği hata denetim satırı, sarmalayan
-                    # transaction NORMAL kapandığında COMMIT olsun diye
-                    # (route katmanındaki deferred-raise deseniyle aynı
-                    # gerekçe — dıştan yakalamak bu satırı rollback'e
-                    # götürürdü).
-                    _logger.exception(
-                        "root-cause auto-gen: %s/%s failed for tenant %s (non-fatal)",
-                        pick.primary_category_code,
-                        pick.perspective_code,
-                        tenant_id,
-                    )
+                ).scalar_one()
+                if int(total or 0) < _AUTO_GEN_MIN_TENANT_REVIEWS:
+                    return
+                picks = await pick_top_categories(
+                    session,
+                    tid,
+                    date_from=window_from,
+                    date_to=window_to,
+                    limit=_AUTO_GEN_TOP_N,
+                )
         except Exception:
             _logger.exception(
-                "root-cause auto-gen: session-level failure for %s/%s, tenant %s (non-fatal)",
-                pick.primary_category_code,
-                pick.perspective_code,
+                "root-cause auto-gen: candidate selection failed for tenant %s (non-fatal)",
+                tenant_id,
+            )
+            return
+
+        for pick in picks:
+            if not pick.can_generate or pick.perspective_code is None:
+                continue
+            try:
+                async with worker_context.app_session_factory() as session, session.begin():
+                    await set_current_tenant(session, tid)
+                    service = RootCauseService(session, tid, None)
+                    try:
+                        await service.generate(
+                            primary_category=pick.primary_category_code,
+                            perspective_code=pick.perspective_code,
+                            date_from=date_from,
+                            date_to=date_to,
+                            force_refresh=force_refresh,
+                        )
+                    except Exception:
+                        # İçeride: LLMCallAuditor'ın kendi savepoint'inde
+                        # zaten flush ettiği hata denetim satırı, sarmalayan
+                        # transaction NORMAL kapandığında COMMIT olsun diye
+                        # (route katmanındaki deferred-raise deseniyle aynı
+                        # gerekçe — dıştan yakalamak bu satırı rollback'e
+                        # götürürdü).
+                        _logger.exception(
+                            "root-cause auto-gen: %s/%s failed for tenant %s (non-fatal)",
+                            pick.primary_category_code,
+                            pick.perspective_code,
+                            tenant_id,
+                        )
+            except Exception:
+                _logger.exception(
+                    "root-cause auto-gen: session-level failure for %s/%s, tenant %s (non-fatal)",
+                    pick.primary_category_code,
+                    pick.perspective_code,
+                    tenant_id,
+                )
+    finally:
+        try:
+            redis_client = get_redis_client()
+            await redis_client.delete(f"root_cause_autogen:{tid}")
+        except Exception:
+            _logger.exception(
+                "root-cause auto-gen: 'hazirlaniyor' flag clear failed for tenant %s (non-fatal)",
                 tenant_id,
             )
 

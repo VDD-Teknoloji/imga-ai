@@ -74,6 +74,7 @@ from sqlalchemy import and_, or_, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
+from imga_api.cache.redis_client import get_redis_client
 from imga_api.services.audit_service import AuditService
 from imga_api.services.batch_service import (
     BatchAnalyzeService,
@@ -99,6 +100,15 @@ if TYPE_CHECKING:
     from imga_api.services.correction_store import CorrectedDecision
 
 log = logging.getLogger("imga-api.workers.batch")
+
+# Sprint 13.x+ — "hazırlanıyor" bayrağının TTL'i. generate_root_causes_task
+# bundan daha uzun sürerse (arq kuyruk gecikmesi dahil), FE bayrağın
+# süresi dolunca sessizce "hazır değil" durumuna döner — üretim gerçekten
+# bitince kart zaten dolu gelir, en kötü ihtimalde spinner biraz erken
+# kaybolur. Anahtar formatı ("root_cause_autogen:{tenant_id}") burada,
+# arq_worker.generate_root_causes_task'ta ve tenant_insights.py'de AYNEN
+# tekrarlanır — üçü de aynı sözleşmeyi paylaşan ayrı dosyalar.
+_ROOT_CAUSE_AUTOGEN_TTL_SECONDS = 20 * 60
 
 
 # ---------------------------------------------------------------------------
@@ -577,7 +587,12 @@ async def _run_job(
                 "batch worker: snapshot invalidation failed (non-fatal)",
                 extra={"job_id": str(job_id), "tenant_id": str(tenant_id)},
             )
-    await _enqueue_root_cause_auto_gen(tenant_id, context)
+    await _enqueue_root_cause_auto_gen(
+        tenant_id,
+        context,
+        batch_job_id=job_id,
+        rows_succeeded=(completed_job.succeeded_rows or 0) if completed_job is not None else 0,
+    )
     await _publish_terminal(job_id, tenant_id, context)
     # Sprint 9.1 E — per-batch structured summary. Lands once at
     # successful completion (the cancellation + catastrophic-failure
@@ -712,36 +727,69 @@ async def _run_chunks_parallel(
                 raise r
 
 
-async def _enqueue_root_cause_auto_gen(tenant_id: UUID, context: WorkerContext) -> None:
-    """Sprint 13.x — fire-and-forget kickoff for the post-batch root-
+async def _enqueue_root_cause_auto_gen(
+    tenant_id: UUID,
+    context: WorkerContext,
+    *,
+    batch_job_id: UUID,
+    rows_succeeded: int,
+) -> None:
+    """Sprint 13.x+ — fire-and-forget kickoff for the post-batch root-
     cause auto-generation task (``generate_root_causes_task``,
-    workers/arq_worker.py). ``_job_id`` is per-tenant-per-UTC-day so
-    several batches landing for the same tenant on the same day
-    collapse to one arq enqueue — arq's own dedup, the same mechanism
-    ``scheduler.enqueue_batch_job`` relies on; the task then re-applies
-    ``RootCauseService``'s 12h cache on top, this just avoids starting
-    the task N times over.
+    workers/arq_worker.py).
+
+    2026-09 — ``_job_id`` artık ``batch_job_id`` içerir, yani her
+    tamamlanan batch KENDİ arq işini tetikler. Eski format
+    (``rootcause:{tenant_id}:{date}``) aynı gün içindeki ikinci bir
+    yüklemeyi arq'ın kendi job-id dedup'ına düşürüyordu — o gün ikinci
+    kez yükleyen kullanıcı hiçbir güncelleme görmüyordu. Maliyet
+    kontrolü artık burada DEĞİL: ``rows_succeeded`` task'a taşınır,
+    task orada ``force_refresh``'i karara bağlar (bkz.
+    ``generate_root_causes_task`` docstring'i) ve ``RootCauseService``'in
+    12h cache'i küçük tekrar-yüklemeleri ücretsiz karşılar.
+
+    "Hazırlanıyor" bayrağı — enqueue BAŞARILI olduktan hemen sonra,
+    burada set edilir (task'ın kendi içinde DEĞİL): batch dakikalar
+    sürebiliyor, bayrağı task başlangıcında set etmek kullanıcının tam
+    beklediği süre boyunca ekranı boş bırakırdı. TTL kuyruk gecikmesi +
+    üretim süresini rahatça kapsar; ``generate_root_causes_task`` kendi
+    ``finally`` bloğunda (başarı/başarısızlık fark etmeksizin) bu
+    anahtarı siler.
 
     Best-effort like ``_publish_terminal``: no arq pool wired (tests,
     or the in-process-scheduler fallback deploy) is a silent no-op,
     and an enqueue failure is logged + swallowed — a stalled root-
     cause refresh must never fail the batch that already succeeded.
+    The flag-set below is equally best-effort: a Redis failure there
+    is logged + swallowed, never allowed to fail the batch.
     """
     if context.arq_pool is None:
         return
-    from imga_api.services.root_cause_service import day_rounded_window
-
-    _, date_to = day_rounded_window()
     try:
         await context.arq_pool.enqueue_job(
             "generate_root_causes_task",
             str(tenant_id),
-            _job_id=f"rootcause:{tenant_id}:{date_to.isoformat()}",
+            rows_succeeded,
+            _job_id=f"rootcause:{tenant_id}:{batch_job_id}",
             _queue_name="imga-batch",
         )
     except Exception:
         log.exception(
             "batch worker: root-cause auto-gen enqueue failed (non-fatal)",
+            extra={"tenant_id": str(tenant_id), "batch_job_id": str(batch_job_id)},
+        )
+        return
+
+    try:
+        redis_client = get_redis_client()
+        await redis_client.set(
+            f"root_cause_autogen:{tenant_id}",
+            "1",
+            ex=_ROOT_CAUSE_AUTOGEN_TTL_SECONDS,
+        )
+    except Exception:
+        log.exception(
+            "batch worker: root-cause 'hazirlaniyor' flag set failed (non-fatal)",
             extra={"tenant_id": str(tenant_id)},
         )
 

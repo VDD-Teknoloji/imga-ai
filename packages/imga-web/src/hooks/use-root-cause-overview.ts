@@ -61,6 +61,10 @@ export interface RootCauseOverviewCard {
 
 export interface RootCauseOverviewResponse {
   cards: RootCauseOverviewCard[];
+  /** Arka planda kuyruklanmış üretim sürerken true — backend tarafı bu
+   *  sprintte ayrı bir ajan tarafından ekleniyor, o yüzden opsiyonel:
+   *  alan henüz gelmeyen eski/yeni sunucu karışımında da derlenir. */
+  generating?: boolean;
 }
 
 export interface RootCauseOverviewFilters {
@@ -84,5 +88,9 @@ export function useRootCauseOverview(filters: RootCauseOverviewFilters = {}, lim
       ),
     staleTime: 60_000,
     placeholderData: keepPreviousData,
+    // generating true iken 5sn'de bir yoklar — arka plan üretimi bitince
+    // (generating false) durur (use-reports.ts'teki useReportJob ile aynı
+    // idiom: query.state.data üzerinden karar, ayrı bir state yok).
+    refetchInterval: (query) => (query.state.data?.generating ? 5000 : false),
   });
 }

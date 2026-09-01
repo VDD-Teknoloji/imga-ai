@@ -7,6 +7,11 @@
 // özel tarih girilince ?window silinir, preset seçilince
 // ?date_from/?date_to silinir; ?batch_job_id ikisiyle de birleşir.
 // State URL'de yaşar — bu bileşen saf controlled, push'lar sayfada.
+//
+// Sprint 13.3 (2026-09-01) — sağ raya (320px) taşındı; `vertical` prop
+// yalnız dış wrapper'ı satır yerine sütuna çevirir, alt grupların
+// (özel aralık, yükleme chip'i) kendi flex-wrap düzeni ve URL-state
+// mantığı dokunulmadan kalır.
 
 import { X } from "lucide-react";
 
@@ -32,6 +37,8 @@ interface Props {
   includeFlagged: boolean;
   onIncludeFlaggedChange: (next: boolean) => void;
   onClear: () => void;
+  /** 320px sağ rayda dar dikey düzen — yalnız dış wrapper'ı etkiler. */
+  vertical?: boolean;
 }
 
 export function DashboardFilterBar({
@@ -46,6 +53,7 @@ export function DashboardFilterBar({
   includeFlagged,
   onIncludeFlaggedChange,
   onClear,
+  vertical = false,
 }: Props) {
   const { t } = useTranslation();
   // BatchFilterDropdown ile aynı query key — chip etiketi için ek
@@ -63,7 +71,13 @@ export function DashboardFilterBar({
     includeFlagged;
 
   return (
-    <div className="rise-in flex flex-wrap items-center gap-x-5 gap-y-3">
+    <div
+      className={
+        vertical
+          ? "rise-in flex flex-col items-start gap-3"
+          : "rise-in flex flex-wrap items-center gap-x-5 gap-y-3"
+      }
+    >
       <TimeWindowFilter value={windowKey} onChange={onWindowChange} />
 
       <div

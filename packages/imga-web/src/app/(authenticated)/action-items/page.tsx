@@ -10,6 +10,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useState } from "react";
 import { toast } from "sonner";
 
+import { PriorityAction } from "@/components/dashboard/priority-action";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -24,6 +25,7 @@ import {
   useRestoreActionItem,
   useUpdateActionItem,
 } from "@/hooks/use-action-items";
+import { useExecutiveOverview } from "@/hooks/use-executive-overview";
 import { ApiError, formatApiErrorMessage } from "@/lib/api-client";
 import { useTranslation } from "@/lib/i18n/use-translation";
 import {
@@ -130,6 +132,13 @@ function Content() {
   const focus = useActionItems({ status: "open", priority: "high" });
   const focusItems = (focus.data ?? []).slice(0, 3);
 
+  // Strategic priority — moved here from the home page: the SWOT
+  // top recommendation belongs next to the actions the user is
+  // about to triage, not on the executive overview. No filters: this
+  // is always the latest snapshot, independent of the page's own
+  // status/priority filters below.
+  const overview = useExecutiveOverview();
+
   return (
     <main className="mx-auto w-full max-w-5xl space-y-6 px-4 py-6 md:px-8 md:py-10">
       <header className="flex flex-wrap items-start justify-between gap-3">
@@ -145,6 +154,8 @@ function Content() {
           <Plus className="size-4" aria-hidden /> {t("dashboard.actionItems.new")}
         </Button>
       </header>
+
+      <PriorityAction swot={overview.data?.latest_swot} />
 
       {/* Sprint 9.6 redesign — focus callout. Top-3 high-priority
           open items pinned at the top so the C-level user lands on

@@ -22,6 +22,7 @@ from imga_db.models import Review, ReviewDecision, RootCauseAnalysis, User
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from imga_api.cache.redis_client import set_redis_client
 from tests.batch_helpers import login_token
 
 _OVERVIEW_ENDPOINT = "/tenants/me/insights/root-cause/overview"
@@ -30,6 +31,20 @@ _OVERVIEW_ENDPOINT = "/tenants/me/insights/root-cause/overview"
 # ---------------------------------------------------------------------------
 # Fixtures + helpers
 # ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def fake_redis_client() -> Any:
+    """In-process Redis double, installed as the module singleton. Same
+    pattern as ``test_root_cause.py``'s fixture of the same name (own
+    copy per this file's file-ownership-split convention — no cross-
+    import between the two test modules)."""
+    import fakeredis.aioredis as fakeredis_async
+
+    fake = fakeredis_async.FakeRedis(decode_responses=False)
+    set_redis_client(fake)
+    yield fake
+    set_redis_client(None)
 
 
 def _auth(token: str) -> dict[str, str]:
@@ -410,6 +425,41 @@ async def test_overview_parses_headline_and_action_short(
 
 
 # ---------------------------------------------------------------------------
+# "generating" flag — set by batch_analyzer._enqueue_root_cause_auto_gen
+# at enqueue time, cleared by generate_root_causes_task's finally block.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_overview_generating_false_when_no_flag_set(
+    batch_client: TestClient,
+    semi_auto_tenant: tuple[User, UUID, str],
+    fake_redis_client: Any,
+) -> None:
+    del fake_redis_client  # installed only so the read hits a real (empty) client
+    user, tid, pw = semi_auto_tenant
+    token = login_token(batch_client, user.email, pw, tid)
+    r = batch_client.get(_OVERVIEW_ENDPOINT, headers=_auth(token))
+    assert r.status_code == 200, r.text
+    assert r.json()["generating"] is False
+
+
+@pytest.mark.asyncio
+async def test_overview_generating_true_when_flag_set(
+    batch_client: TestClient,
+    semi_auto_tenant: tuple[User, UUID, str],
+    fake_redis_client: Any,
+) -> None:
+    user, tid, pw = semi_auto_tenant
+    await fake_redis_client.set(f"root_cause_autogen:{tid}", "1", ex=1200)
+
+    token = login_token(batch_client, user.email, pw, tid)
+    r = batch_client.get(_OVERVIEW_ENDPOINT, headers=_auth(token))
+    assert r.status_code == 200, r.text
+    assert r.json()["generating"] is True
+
+
+# ---------------------------------------------------------------------------
 # day_rounded_window + post-batch auto-generation task
 # ---------------------------------------------------------------------------
 
@@ -541,6 +591,105 @@ async def test_auto_gen_task_skips_tenant_below_review_floor(
     try:
         await arq_worker.generate_root_causes_task({"worker_context": context}, str(tid))
         mock_generate.assert_not_awaited()
+    finally:
+        await context.dispose()
+
+
+@pytest.mark.asyncio
+async def test_auto_gen_task_force_refresh_follows_rows_succeeded_threshold(
+    batch_client: TestClient,
+    semi_auto_tenant: tuple[User, UUID, str],
+    admin_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+    fake_redis_client: Any,
+) -> None:
+    """2026-09 maliyet kuralı: ``force_refresh`` yalnızca tetikleyen
+    batch'in ``rows_succeeded``'ı ``_AUTO_GEN_FORCE_REFRESH_MIN_ROWS``
+    (200) ve üzerindeyse True geçilir; altında (199) hep False kalır."""
+    del fake_redis_client  # finally'deki flag-clear çağrısını gerçek ağdan uzak tutar
+    _user, tid, _pw = semi_auto_tenant
+    async with admin_session.begin():
+        await _bind_tenant(admin_session, tid)
+        await _seed_reviews(
+            admin_session,
+            tenant_id=tid,
+            category="kargo",
+            perspective_code="order_status_wrong",
+            count=40,
+        )
+        await _seed_reviews(
+            admin_session,
+            tenant_id=tid,
+            category="iade",
+            perspective_code="refund_delay",
+            count=20,
+        )
+
+    from imga_api.services import root_cause_service
+    from imga_api.workers import arq_worker, batch_analyzer
+
+    mock_generate = AsyncMock(return_value={"id": str(uuid4())})
+    monkeypatch.setattr(root_cause_service.RootCauseService, "generate", mock_generate)
+
+    test_app = batch_client.app  # type: ignore[attr-defined]
+    context = await batch_analyzer.build_worker_context(
+        pipeline=test_app.state.pipeline,
+        tenant_config_cache=test_app.state.tenant_config_cache,
+        settings=test_app.state.settings.batch,
+    )
+    try:
+        await arq_worker.generate_root_causes_task(
+            {"worker_context": context}, str(tid), rows_succeeded=199
+        )
+        assert mock_generate.await_count >= 1
+        for call in mock_generate.await_args_list:
+            assert call.kwargs["force_refresh"] is False
+        mock_generate.reset_mock()
+
+        await arq_worker.generate_root_causes_task(
+            {"worker_context": context}, str(tid), rows_succeeded=200
+        )
+        assert mock_generate.await_count >= 1
+        for call in mock_generate.await_args_list:
+            assert call.kwargs["force_refresh"] is True
+    finally:
+        await context.dispose()
+
+
+@pytest.mark.asyncio
+async def test_enqueue_root_cause_auto_gen_job_id_differs_per_batch(
+    batch_client: TestClient,
+    fake_redis_client: Any,
+) -> None:
+    """``batch_analyzer._enqueue_root_cause_auto_gen``: aynı tenant için
+    iki farklı ``batch_job_id`` FARKLI arq ``_job_id`` üretmeli — eski
+    tenant+gün formatı aynı gün içindeki ikinci yüklemeyi arq'ın kendi
+    job-id dedup'ına düşürüyordu (bkz. fonksiyon docstring'i)."""
+    del fake_redis_client  # flag-set çağrısını gerçek ağdan uzak tutar
+    from imga_api.workers import batch_analyzer
+
+    test_app = batch_client.app  # type: ignore[attr-defined]
+    context = await batch_analyzer.build_worker_context(
+        pipeline=test_app.state.pipeline,
+        tenant_config_cache=test_app.state.tenant_config_cache,
+        settings=test_app.state.settings.batch,
+    )
+    context.arq_pool = AsyncMock()
+    tid = uuid4()
+    batch_a = uuid4()
+    batch_b = uuid4()
+    try:
+        await batch_analyzer._enqueue_root_cause_auto_gen(
+            tid, context, batch_job_id=batch_a, rows_succeeded=5
+        )
+        await batch_analyzer._enqueue_root_cause_auto_gen(
+            tid, context, batch_job_id=batch_b, rows_succeeded=5
+        )
+        job_ids = [call.kwargs["_job_id"] for call in context.arq_pool.enqueue_job.await_args_list]
+        assert len(job_ids) == 2
+        assert job_ids[0] != job_ids[1]
+        assert str(batch_a) in job_ids[0]
+        assert str(batch_b) in job_ids[1]
     finally:
         await context.dispose()
 
