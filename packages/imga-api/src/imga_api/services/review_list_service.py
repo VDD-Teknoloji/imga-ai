@@ -13,7 +13,7 @@ from typing import Any, Literal
 from uuid import UUID
 
 from imga_db.models import CategoryTaxonomy, Review
-from sqlalchemy import and_, case, desc, func, or_, select
+from sqlalchemy import Integer, and_, case, cast, desc, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import InstrumentedAttribute
 from sqlalchemy.sql.elements import ColumnElement
@@ -25,8 +25,17 @@ from imga_api.services.dimension_service import (
     fold_dimension_key,
 )
 
-OrderField = Literal["created_at", "sentiment_score"]
+OrderField = Literal["created_at", "sentiment_score", "engagement"]
 OrderDir = Literal["asc", "desc"]
+
+# B3 — bir NEGATİF şikayetin "viral" sayılması için gereken minimum
+# etkileşim (like+retweet+reply toplamı, bkz. ``_engagement_expr``):
+# 100+ etkileşim, şikayetin yazarın kendi takipçi kitlesinin ötesine
+# yayıldığının kaba bir işareti. ``view_count`` bilerek hem bu eşiğin
+# hem de ``_engagement_expr``'in dışında tutulur — platform tarafından
+# şişirilir (otomatik oynatma/scroll-through sayımı), gerçek bir
+# etkileşim sinyali değildir.
+VIRAL_ENGAGEMENT_THRESHOLD = 100
 
 
 @dataclass(frozen=True, slots=True)
@@ -233,6 +242,10 @@ class ReviewSummary:
     entered_by: list[EnteredByCount]
     daily: list[DailyCount]
     ticket_linked: int
+    # B3 — NEGATİF + engagement >= VIRAL_ENGAGEMENT_THRESHOLD count.
+    # Defaults to 0 so callers built before this field existed still
+    # construct without it.
+    viral_negative_count: int = 0
 
 
 def _folded_in(
@@ -244,6 +257,27 @@ def _folded_in(
     spelling folded into the same bucket."""
     lowered = tuple(v.strip().lower() for v in values)
     return fold_dimension_key(column).in_(lowered)
+
+
+def _source_meta_int(key: str) -> ColumnElement[int]:
+    """One integer counter out of ``Review.source_meta`` (JSONB,
+    migration 0049), 0 when the column is NULL or the key is absent.
+    ``->>`` extracts the raw JSON value as text (NULL either way, never
+    an error) and ``::int`` casts it; COALESCE supplies the 0 floor."""
+    return func.coalesce(cast(Review.source_meta.op("->>")(key), Integer), 0)
+
+
+def _engagement_expr() -> ColumnElement[int]:
+    """Engagement = like + retweet + reply counts from ``source_meta``.
+    Twitter-only today (0 for every other source, not NULL) — shared by
+    the ``order_by=engagement`` list ordering and ``summarize()``'s
+    ``viral_negative_count`` so the two can't drift apart. Deliberately
+    excludes ``view_count``: see ``VIRAL_ENGAGEMENT_THRESHOLD``."""
+    return (
+        _source_meta_int("like_count")
+        + _source_meta_int("retweet_count")
+        + _source_meta_int("reply_count")
+    )
 
 
 class ReviewListService:
@@ -358,10 +392,24 @@ class ReviewListService:
         # yorumun kendi tarihini gösteriyor, ingest anına göre sıralamak
         # kullanıcıya sırasız görünürdü. Query-string adı geriye dönük
         # uyumluluk için korundu.
-        order_col = (
-            Review.review_date if filters.order_by == "created_at" else Review.sentiment_score
-        )
-        ordering = order_col.asc() if filters.order == "asc" else order_col.desc()
+        order_col: ColumnElement[Any] | InstrumentedAttribute[Any]
+        if filters.order_by == "created_at":
+            order_col = Review.review_date
+        elif filters.order_by == "sentiment_score":
+            order_col = Review.sentiment_score
+        else:  # "engagement"
+            order_col = _engagement_expr()
+        if filters.order_by == "engagement":
+            # nulls_last is a no-op today (_engagement_expr always
+            # COALESCEs to 0) but keeps "most engaged first" true even
+            # if a future engagement key ever produced a real NULL.
+            ordering = (
+                order_col.desc().nulls_last()
+                if filters.order == "desc"
+                else order_col.asc().nulls_last()
+            )
+        else:
+            ordering = order_col.asc() if filters.order == "asc" else order_col.desc()
 
         # Outer join CategoryTaxonomy on (tenant_id, code) for the label.
         # OUTER so a pruned taxonomy entry surfaces with label_tr=None
@@ -429,10 +477,10 @@ class ReviewListService:
         where_clause = and_(*conditions)
 
         # Query A — headline scalars in one round trip: total, average
-        # score, NPS bucket counts and ticket-linked count. content_type
-        # counts (incl. question_count) come from Query I below — one
-        # GROUP BY covers all five values instead of a per-value CASE
-        # column here.
+        # score, NPS bucket counts, ticket-linked count and (B3)
+        # viral_negative_count. content_type counts (incl.
+        # question_count) come from Query I below — one GROUP BY covers
+        # all five values instead of a per-value CASE column here.
         headline_stmt = select(
             func.count().label("total"),
             func.avg(Review.sentiment_score).label("avg_score"),
@@ -441,6 +489,18 @@ class ReviewListService:
             func.sum(case((Review.nps_category == "promoter", 1), else_=0)).label("promoter"),
             func.sum(case((Review.nps_category == "passive", 1), else_=0)).label("passive"),
             func.sum(case((Review.nps_category == "detractor", 1), else_=0)).label("detractor"),
+            func.sum(
+                case(
+                    (
+                        and_(
+                            Review.sentiment_label == "NEGATIF",
+                            _engagement_expr() >= VIRAL_ENGAGEMENT_THRESHOLD,
+                        ),
+                        1,
+                    ),
+                    else_=0,
+                )
+            ).label("viral_negative"),
         ).where(where_clause)
         headline = (await self._session.execute(headline_stmt)).one()
         total = int(headline.total or 0)
@@ -625,6 +685,7 @@ class ReviewListService:
             entered_by=entered_by,
             daily=daily,
             ticket_linked=int(headline.ticket_linked or 0),
+            viral_negative_count=int(headline.viral_negative or 0),
         )
 
     async def dimension_values(
@@ -698,8 +759,6 @@ class ReviewListService:
             return None
         return row.Review, row.label_tr
 
-
-_ = Any  # keep mypy quiet about the imported name when callers don't use it.
 
 __all__ = [
     "CategoryCount",

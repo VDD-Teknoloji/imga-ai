@@ -10,6 +10,17 @@ YAZARIN ADINDA da eşler: "karaca" sorgusu Karaca soyadlı herkesin
 gönderisini getirdi (250'de ~15 marka yorumu). Kural: terim(lerden
 biri) gönderinin HAM metninde geçmeli ya da gönderi resmi hesaba
 yazılmış olmalı; aksi halde elenir (``filtered_out`` sayılır).
+
+2026-09-02 — KVKK: source_url anonimleştirme. Prodüksiyonda mevcut 677
+Twitter satırının TAMAMI ``reviews.source_url`` alanında yazar hesap
+adını taşıyor bulundu (``https://x.com/<handle>/status/<id>``) — "yazar
+kimliği hiçbir yerde kalıcı yazılmaz" kuralı ihlal ediliyordu; URL
+içindeki hesap adı da kimliktir. ``tweet_url_from_item`` bu yüzden ARTIK
+HER ZAMAN hesap adı içermeyen kanonik biçimi
+(``https://x.com/i/web/status/{id}``) üretir — ``item["url"]`` alanı
+doğrudan döndürülmez, yalnız id çıkarımı için okunur. Geçmiş satırlar
+``scripts/sql/2026-09-02-twitter-source-url-anonymize.sql`` ile tek
+seferlik geri dönüştürülür.
 """
 
 from __future__ import annotations
@@ -34,6 +45,9 @@ MIN_TERM_LENGTH = 2
 _URL_RE = re.compile(r"https?://\S+")
 _LEADING_MENTIONS_RE = re.compile(r"^(?:@\w+\s+)+")
 _WS_RE = re.compile(r"\s+")
+# item["url"]'den id çıkarımı — KVKK: yalnız sayısal id alınır, hesap
+# adı (<anything> parçası) hiçbir zaman okunmaz/taşınmaz.
+_STATUS_ID_RE = re.compile(r"(?:x|twitter)\.com/[^/]+/status/(\d+)")
 
 # twitterapi.io tweet'in atılma anını Twitter'ın klasik biçiminde
 # döner ("Tue Dec 10 07:00:30 +0000 2024"). ISO da görülebiliyor, o
@@ -51,8 +65,10 @@ class TwitterTweet:
 
     ``created_at`` None ise tarih çözülemedi — batch pipeline yorumun
     kendi tarihi olarak ingest anına düşer (yorum kaybolmaz). ``url``
-    gönderinin x.com bağlantısı; arşivde "Tweeti aç" düğmesi buna
-    gider (bağlam olmadan alaka anlaşılmıyordu)."""
+    gönderinin x.com bağlantısı (KVKK: her zaman hesap adı içermeyen
+    ``x.com/i/web/status/{id}`` biçimi — bkz. ``tweet_url_from_item``);
+    arşivde "Tweeti aç" düğmesi buna gider (bağlam olmadan alaka
+    anlaşılmıyordu)."""
 
     text: str
     created_at: datetime | None
@@ -179,17 +195,26 @@ def clean_tweet_text(raw: str) -> str:
 
 
 def tweet_url_from_item(item: dict[str, object]) -> str | None:
-    """twitterapi.io öğesinden kalıcı bağlantı: ``url`` alanı varsa o;
-    yoksa ``id`` üzerinden x.com/i/web/status/{id} (hesap adı olmadan
-    da çözülür)."""
-    url = item.get("url")
-    if isinstance(url, str) and url.startswith(("https://", "http://")):
-        return url
+    """twitterapi.io öğesinden KVKK-uyumlu kalıcı bağlantı üretir.
+
+    Dönen bağlantı HER ZAMAN hesap adı içermeyen kanonik biçimdir:
+    ``https://x.com/i/web/status/{id}``. ``item["url"]`` (varsa
+    ``https://x.com/<handle>/status/<id>``) hiçbir zaman doğrudan
+    döndürülmez — yazar hesap adı da kimliktir. Önce ``id`` alanından
+    sayısal id denenir; o yoksa/sayısal değilse ``url``'den regex ile
+    id çıkarılır. İkisi de başarısızsa None (bağlantısız satır olarak
+    işlenir)."""
     tweet_id = item.get("id")
-    if tweet_id is None:
-        return None
-    tweet_id = str(tweet_id).strip()
-    return f"https://x.com/i/web/status/{tweet_id}" if tweet_id.isdigit() else None
+    if tweet_id is not None:
+        candidate = str(tweet_id).strip()
+        if candidate.isdigit():
+            return f"https://x.com/i/web/status/{candidate}"
+    url = item.get("url")
+    if isinstance(url, str):
+        match = _STATUS_ID_RE.search(url)
+        if match:
+            return f"https://x.com/i/web/status/{match.group(1)}"
+    return None
 
 
 def _coerce_engagement_count(raw: object) -> int | None:

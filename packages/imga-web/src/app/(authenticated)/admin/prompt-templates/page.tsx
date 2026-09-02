@@ -6,6 +6,10 @@
 // defaults + tenant overrides side by side. Selecting a row opens
 // an inline editor; "Test" runs the server-side render with a
 // user-supplied JSON variables blob.
+//
+// F2 (2026-09-02) — locked to super_admin. Backend routes moved
+// from tenant_admin-or-super to super_admin-only in this same
+// sprint; RequireRole below mirrors that (was level="admin").
 
 import { Code2, Loader2 } from "lucide-react";
 import { useState } from "react";
@@ -50,7 +54,7 @@ const KEY_TITLE_KEYS: Record<string, string> = {
 
 export default function PromptTemplatesPage() {
   return (
-    <RequireRole level="admin">
+    <RequireRole level="super">
       <PromptTemplatesPageInner />
     </RequireRole>
   );

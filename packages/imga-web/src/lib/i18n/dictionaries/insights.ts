@@ -29,13 +29,11 @@ export const insights: Bundle = {
 
     // --- /insights: sayfa başlığı ---
     "insights.page.title": "İçgörüler",
-    "insights.page.subtitle":
-      "Duygu, kategori ve Ticket metriklerinin ayrıntılı görünümü.",
+    "insights.page.subtitle": "Duygu, kategori ve Ticket metriklerinin ayrıntılı görünümü.",
 
     // --- /insights: filtre çubuğu ---
     "insights.filter.allTime": "Tüm zamanlar",
-    "insights.filter.noFilterHint":
-      "Filtre uygulanmadı — başlangıç ve bitiş seçerek daraltın.",
+    "insights.filter.noFilterHint": "Filtre uygulanmadı — başlangıç ve bitiş seçerek daraltın.",
     "insights.filter.startDate": "Başlangıç",
     "insights.filter.endDate": "Bitiş",
     "insights.filter.source": "Kaynak",
@@ -47,8 +45,7 @@ export const insights: Bundle = {
     // Paylaşılan bileşen (/insights + ana sayfa filtre çubuğu).
     "insights.filter.includeFlaggedLabel": "Düşük kaliteli veriyi dahil et",
     "insights.filter.includeFlaggedAria": "Düşük kaliteli veriyi dahil et",
-    "insights.filter.includeFlaggedBadge":
-      "tekrar/boş/bilgilendirme satırları dahil",
+    "insights.filter.includeFlaggedBadge": "tekrar/boş/bilgilendirme satırları dahil",
 
     // --- /insights: ortak durum metinleri ---
     "insights.state.loadError": "Veri yüklenemedi: {message}",
@@ -64,10 +61,9 @@ export const insights: Bundle = {
     "insights.chart.categorySentimentMatrix": "Kategori × Duygu Matrisi",
     "insights.chart.matrixTooltip": "{row} × {col}: {value} analiz",
     "insights.chart.belirsizNote":
-      "\"Belirsiz\" kategori sınıflandırılamayan yorumları kapsar — büyük rakam genelde aşırı geniş veya çok kısa yorumlardan kaynaklanır. Tablonun sonuna alındı ki sinyalleri görmek kolaylaşsın.",
+      '"Belirsiz" kategori sınıflandırılamayan yorumları kapsar — büyük rakam genelde aşırı geniş veya çok kısa yorumlardan kaynaklanır. Tablonun sonuna alındı ki sinyalleri görmek kolaylaşsın.',
     "insights.chart.ruleLayers": "Kural Katmanları",
-    "insights.chart.ruleLayersNotePre":
-      "Kural katman sayımı Sprint 8.3.4'te doldurulacak (",
+    "insights.chart.ruleLayersNotePre": "Kural katman sayımı Sprint 8.3.4'te doldurulacak (",
     "insights.chart.ruleLayersNotePost":
       "JSONB kolonu); şimdilik 5 katman sıfır sayımla gösteriliyor.",
     "insights.chart.npsScore": "NPS Skoru",
@@ -77,8 +73,7 @@ export const insights: Bundle = {
     "insights.chart.companyPerspectiveTop10": "Şirket Perspektifi Top 10",
     "insights.chart.unmatchedLabel": "Eşleşme yok:",
     "insights.chart.analysesCount": "{count} analiz",
-    "insights.chart.unmatchedHint":
-      "(heuristik bir taksonomi girdisiyle eşleşmedi).",
+    "insights.chart.unmatchedHint": "(heuristik bir taksonomi girdisiyle eşleşmedi).",
     "insights.chart.resolutionTimeDistribution": "Çözüm Süresi Dağılımı",
     "insights.chart.avg": "Ortalama",
     "insights.chart.median": "Ortanca",
@@ -127,10 +122,8 @@ export const insights: Bundle = {
     "insights.opsTab.slaWithin": "İçinde",
     "insights.opsTab.csatTitle": "CSAT",
     "insights.opsTab.csatAvgLabel": "Ortalama CSAT Skoru",
-    "insights.opsTab.csatAgreementHigh":
-      "CSAT 4-5 verenlerin %{pct}'si modelce POZİTİF",
-    "insights.opsTab.csatAgreementLow":
-      "CSAT 1-2 verenlerin %{pct}'si modelce NEGATİF",
+    "insights.opsTab.csatAgreementHigh": "CSAT 4-5 verenlerin %{pct}'si modelce POZİTİF",
+    "insights.opsTab.csatAgreementLow": "CSAT 1-2 verenlerin %{pct}'si modelce NEGATİF",
     "insights.opsTab.lowSampleNote": "n={n} (düşük örneklem)",
     "insights.opsTab.compensationTitle": "Tazmin",
     "insights.opsTab.deliveryTitle": "Teslimat",
@@ -209,8 +202,7 @@ export const insights: Bundle = {
 
     // --- /reviews: liste ---
     "reviews.list.title": "Analiz Arşivi",
-    "reviews.list.subtitleBatch":
-      "Belirli bir yüklemenin analizleri gösteriliyor.",
+    "reviews.list.subtitleBatch": "Belirli bir yüklemenin analizleri gösteriliyor.",
     "reviews.list.subtitleAll": "Tüm analizler — manuel ve toplu giriş bir arada.",
     "reviews.list.recordCount": "{count} kayıt",
     "reviews.list.emptyTitle": "Bu filtrelerle eşleşen analiz yok",
@@ -369,8 +361,7 @@ export const insights: Bundle = {
     "reviews.detail.linkedTicket": "Bağlı Ticket:",
     "reviews.detail.goToTicket": "Ticket'a Git →",
     "reviews.detail.promoteButton": "Bu Analizi Ticket'a Dönüştür",
-    "reviews.detail.promoteHint":
-      "Elle açıldı — sistem bu karar için Ticket açmamıştı.",
+    "reviews.detail.promoteHint": "Elle açıldı — sistem bu karar için Ticket açmamıştı.",
 
     // --- /reviews/[id]: satır bazlı yeniden analiz (2026-09-01) ---
     "reviews.detail.reanalyze": "Yeniden analiz et",
@@ -418,8 +409,7 @@ export const insights: Bundle = {
     "reviews.summary.headline.ticketLinked": "{count} Ticket'a bağlı",
     "reviews.summary.sentiment.title": "Duygu dağılımı",
     "reviews.summary.contentTypes.title": "İçerik türleri",
-    "reviews.summary.contentTypes.escalationHint":
-      "Önce şikâyet tehdidi içeren yorumlara bakın.",
+    "reviews.summary.contentTypes.escalationHint": "Önce şikâyet tehdidi içeren yorumlara bakın.",
     "reviews.summary.nps.title": "NPS",
     "reviews.summary.nps.promoter": "Destekçi",
     "reviews.summary.nps.passive": "Pasif",
@@ -441,6 +431,12 @@ export const insights: Bundle = {
     "reviews.summary.questions.totalCount": "{count} soru toplam",
     "reviews.summary.quality.title": "Veri kalitesi kırılımı",
     "reviews.summary.quality.clean": "Temiz",
+
+    // Sıralama (reviews/page.tsx OrderByFilterDropdown)
+    "reviews.sort.trigger": "Sırala: {value}",
+    "reviews.sort.date": "Tarih",
+    "reviews.sort.sentimentScore": "Duygu skoru",
+    "reviews.sort.engagement": "Etkileşim",
 
     // --- /reports: tip + durum etiketleri ---
     "reports.type.comprehensive": "Kapsamlı",
@@ -521,8 +517,7 @@ export const insights: Bundle = {
 
     // --- /insights: page header ---
     "insights.page.title": "Insights",
-    "insights.page.subtitle":
-      "Detailed view of sentiment, category, and Ticket metrics.",
+    "insights.page.subtitle": "Detailed view of sentiment, category, and Ticket metrics.",
 
     // --- /insights: filter bar ---
     "insights.filter.allTime": "All time",
@@ -539,8 +534,7 @@ export const insights: Bundle = {
     // Shared component (/insights + dashboard filter bar).
     "insights.filter.includeFlaggedLabel": "Include low-quality data",
     "insights.filter.includeFlaggedAria": "Include low-quality data",
-    "insights.filter.includeFlaggedBadge":
-      "includes duplicate/empty/informational rows",
+    "insights.filter.includeFlaggedBadge": "includes duplicate/empty/informational rows",
 
     // --- /insights: shared state messages ---
     "insights.state.loadError": "Failed to load data: {message}",
@@ -558,8 +552,7 @@ export const insights: Bundle = {
     "insights.chart.belirsizNote":
       "The \"Belirsiz\" (unclassifiable) category covers comments that couldn't be classified — a large number usually comes from overly broad or very short comments. It's moved to the end of the table to make the signals easier to see.",
     "insights.chart.ruleLayers": "Rule Layers",
-    "insights.chart.ruleLayersNotePre":
-      "The rule-layer counts will be populated in Sprint 8.3.4 (",
+    "insights.chart.ruleLayersNotePre": "The rule-layer counts will be populated in Sprint 8.3.4 (",
     "insights.chart.ruleLayersNotePost":
       "JSONB column); for now the 5 layers show with zero counts.",
     "insights.chart.npsScore": "NPS Score",
@@ -702,8 +695,7 @@ export const insights: Bundle = {
     // --- /reviews: list ---
     "reviews.list.title": "Analysis Archive",
     "reviews.list.subtitleBatch": "Showing analyses from a specific upload.",
-    "reviews.list.subtitleAll":
-      "All analyses — manual and batch entries together.",
+    "reviews.list.subtitleAll": "All analyses — manual and batch entries together.",
     "reviews.list.recordCount": "{count} records",
     "reviews.list.emptyTitle": "No analyses match these filters",
     "reviews.list.emptyHint": "Clear the filters or upload a new file.",
@@ -873,8 +865,7 @@ export const insights: Bundle = {
     "reviews.detail.reanalyzeQueued": "Re-analysis queued.",
     "reviews.detail.reanalyzeNotCandidate":
       "This review can't be re-analysed (it has a human correction or empty content).",
-    "reviews.detail.reanalyzeNoPermission":
-      "You don't have permission to re-analyse.",
+    "reviews.detail.reanalyzeNoPermission": "You don't have permission to re-analyse.",
     "reviews.detail.reanalyzeFailed": "Couldn't start the re-analysis.",
 
     // --- /reviews/[id]: Operational Info card (2026-08-21) ---
@@ -904,7 +895,8 @@ export const insights: Bundle = {
     // --- /reviews: filter-reactive summary panel (W3) ---
     "reviews.summary.panelTitle": "Filter Summary",
     "reviews.summary.loading": "Loading summary…",
-    "reviews.summary.loadError": "The summary couldn't load right now — the review list isn't affected.",
+    "reviews.summary.loadError":
+      "The summary couldn't load right now — the review list isn't affected.",
     "reviews.summary.emptyTitle": "No data matches these filters",
     "reviews.summary.headline.recordCount": "{count} records",
     "reviews.summary.headline.avgScore": "Average score",
@@ -936,6 +928,12 @@ export const insights: Bundle = {
     "reviews.summary.questions.totalCount": "{count} questions total",
     "reviews.summary.quality.title": "Data quality breakdown",
     "reviews.summary.quality.clean": "Clean",
+
+    // Sort control (reviews/page.tsx OrderByFilterDropdown)
+    "reviews.sort.trigger": "Sort: {value}",
+    "reviews.sort.date": "Date",
+    "reviews.sort.sentimentScore": "Sentiment score",
+    "reviews.sort.engagement": "Engagement",
 
     // --- /reports: type + status labels ---
     "reports.type.comprehensive": "Comprehensive",

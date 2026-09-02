@@ -1,8 +1,9 @@
 """Sprint 9.3 D — ``/tenants/me/prompt-templates``.
 
-Admin-only CRUD for tenant-override templates plus a read view of
-the global defaults. Five endpoints:
+Super-admin-only CRUD for tenant-override templates plus a read view
+of the global defaults. Six endpoints:
 
+  * GET    /code-defaults        — koda gömülü varsayılan prompt'lar
   * GET    /                     — list templates the tenant sees
                                    (global defaults + tenant overrides)
   * POST   /                     — create / replace a tenant override
@@ -16,6 +17,17 @@ the global defaults. Five endpoints:
 Override creation also fires a ``decision_audit_log`` row of type
 ``prompt_template_overridden`` so the admin timeline shows who
 flipped the prompt.
+
+2026-09-02 (TASK B2) — WHOLE ROUTER locked to ``require_super_admin``.
+Prompt gövdeleri (system_prompt/user_prompt_template) imga.ai'ın
+kendi fikri mülkiyeti/rekabet avantajı — daha önce ``tenant_admin``
+rolü hem ``/code-defaults`` (global varsayılan prompt metinleri) hem
+de kendi kurumunun override listesini okuyabiliyordu; bir müşterinin
+KENDİ admin'i bile prompt içeriğini görebiliyordu. Her endpoint ya
+prompt metni döndürüyor (GET'ler, POST .../test) ya da bir prompt
+satırını değiştiriyor (POST/PATCH/DELETE) — ayıracak "zararsız"
+endpoint yok, o yüzden ``_AnyMember``/tenant_admin ayrımı kaldırılıp
+tüm router süper-admine kilitlendi.
 """
 
 from __future__ import annotations
@@ -26,12 +38,12 @@ from typing import Annotated, Any
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
-from imga_db.models import PromptTemplate, UserTenantRole
+from imga_db.models import PromptTemplate
 from pydantic import BaseModel, Field
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from imga_api.auth_deps import CurrentUser, bind_tenant, require_role
+from imga_api.auth_deps import CurrentUser, bind_tenant, require_super_admin
 from imga_api.db_deps import get_app_session
 from imga_api.services import (
     DECISION_PROMPT_TEMPLATE_OVERRIDDEN,
@@ -50,12 +62,10 @@ router = APIRouter(
     tags=["Prompt Templates"],
 )
 
-_AdminOnly = Depends(require_role(UserTenantRole.TENANT_ADMIN))
-_AnyMember = Depends(require_role(
-    UserTenantRole.TENANT_ADMIN,
-    UserTenantRole.ANALYST,
-    UserTenantRole.VIEWER,
-))
+# Prompt gövdesi taşıyan/değiştiren HER endpoint süper-admin gerektirir
+# (bkz. modül docstring'i) — routes/admin/prompt_templates.py ile aynı
+# isimlendirme.
+_SuperAdmin = Depends(require_super_admin)
 
 
 class PromptTemplateResponse(BaseModel):
@@ -298,7 +308,7 @@ def _build_code_defaults() -> list[CodeDefaultTemplate]:
     ),
 )
 async def list_code_defaults(
-    current: Annotated[CurrentUser, _AnyMember],
+    current: Annotated[CurrentUser, _SuperAdmin],
 ) -> list[CodeDefaultTemplate]:
     _require_active_tenant(current)
     return _build_code_defaults()
@@ -344,7 +354,7 @@ def _row_to_response(row: PromptTemplate) -> PromptTemplateResponse:
     ),
 )
 async def list_templates(
-    current: Annotated[CurrentUser, _AnyMember],
+    current: Annotated[CurrentUser, _SuperAdmin],
     app_session: Annotated[AsyncSession, Depends(get_app_session)],
 ) -> list[PromptTemplateResponse]:
     tenant_id = _require_active_tenant(current)
@@ -381,7 +391,7 @@ async def list_templates(
 async def create_override(
     body: PromptTemplateUpsertRequest,
     request: Request,
-    current: Annotated[CurrentUser, _AdminOnly],
+    current: Annotated[CurrentUser, _SuperAdmin],
     app_session: Annotated[AsyncSession, Depends(get_app_session)],
 ) -> PromptTemplateResponse:
     tenant_id = _require_active_tenant(current)
@@ -476,7 +486,7 @@ async def create_override(
 async def patch_override(
     template_id: UUID,
     body: PromptTemplatePatchRequest,
-    current: Annotated[CurrentUser, _AdminOnly],
+    current: Annotated[CurrentUser, _SuperAdmin],
     app_session: Annotated[AsyncSession, Depends(get_app_session)],
 ) -> PromptTemplateResponse:
     tenant_id = _require_active_tenant(current)
@@ -525,7 +535,7 @@ async def patch_override(
 )
 async def delete_override(
     template_id: UUID,
-    current: Annotated[CurrentUser, _AdminOnly],
+    current: Annotated[CurrentUser, _SuperAdmin],
     app_session: Annotated[AsyncSession, Depends(get_app_session)],
 ) -> None:
     tenant_id = _require_active_tenant(current)
@@ -548,7 +558,7 @@ async def delete_override(
 async def test_render(
     template_id: UUID,
     body: PromptTemplateTestRequest,
-    current: Annotated[CurrentUser, _AdminOnly],
+    current: Annotated[CurrentUser, _SuperAdmin],
     app_session: Annotated[AsyncSession, Depends(get_app_session)],
 ) -> PromptTemplateTestResponse:
     tenant_id = _require_active_tenant(current)

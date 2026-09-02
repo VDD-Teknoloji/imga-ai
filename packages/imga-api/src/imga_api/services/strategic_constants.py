@@ -8,6 +8,12 @@ the human label only ever surfaces in prompt text + UI.
 The "other" branch is deliberately a sentinel value: when ``industry =
 "other"``, ``industry_other_text`` carries the user-typed label and the
 prompt renderer prefers it over the generic "Diğer" rendering.
+
+2026-09-02 (TASK B2) — ``_CATEGORY_PLAYBOOK`` / ``playbook_directive``:
+kök neden analizine giren kategori-bazlı "kurucu CX pratiği" notları.
+Bu dosyada yaşıyor çünkü ``language_directive``/``terminology_directive``
+ile aynı "system prompt'un sonuna eklenen dil-üstü katman" ailesinin
+üyesi — root_cause_service dördünü de aynı yerde birleştiriyor.
 """
 
 from __future__ import annotations
@@ -79,6 +85,96 @@ def language_directive(language: str | None) -> str:
             "regardless of the language of the input data or these instructions."
         )
     return ""
+
+
+#: 2026-09-02 (TASK B2) — kurucu CX pratiği: her global kategori kodu için
+#: (bkz. ``imga_core.categories.taxonomy.DEFAULT_GLOBAL_CATEGORIES``) 2-3
+#: cümlelik, gerçek saha bilgisi. Kök neden analizindeki ``expert_note``
+#: alanının kaynağı — model bu pratiği kanıta uygulayıp TEK cümleye indirger
+#: (bkz. ``playbook_directive``). "belirsiz" kasıtlı olarak yok: o kova
+#: taksonomik bir çöp kutusu, üzerine oturacak somut bir CX pratiği yok.
+_CATEGORY_PLAYBOOK: dict[str, str] = {
+    "kargo": (
+        "Proaktif durum bildirimi, reaktif destekten her zaman daha ucuz ve "
+        "daha etkilidir: müşteri gecikmeyi kargo firmasını arayarak değil "
+        "bir bildirimle öğrenmeli. Kanal başına ilk yanıt SLA'sını (canlı "
+        "destek, e-posta, sosyal medya) ayrı ayrı ölçün — ortalama SLA tek "
+        "başına yavaş kanalı gizler."
+    ),
+    "faturalama": (
+        "Ücret şikâyetlerinin çoğu tutarın büyüklüğünden değil, ANLAŞILMAZ "
+        "olmasından doğar: fatura kalemleri müşterinin önceden gördüğü "
+        "tutarla birebir eşleşmeli, farklıysa fark en üstte gerekçeli "
+        "gösterilmeli. İade edilen paranın hesaba düşme süresi, algılanan "
+        "adaleti tutarın kendisinden daha çok belirler — rakip fiyat "
+        "çapası değil, gecikme süresi asıl güven kırıcı."
+    ),
+    "urun_kalitesi": (
+        "Tekil şikâyeti değil KÜMEYİ izleyin: aynı hata SKU/parti/tedarikçi "
+        "bazında kümeleniyorsa kalite kontrolde değil üretim/tedarik "
+        "zincirinde bir sorun var demektir. Kümelenme tespit edildiğinde "
+        "hatanın kaynağına (tek parti mi, sürekli mi) göre iade mi geri "
+        "çağırma mı gerektiğine erken karar verin."
+    ),
+    "musteri_hizmetleri": (
+        "Tekrar-temas oranı (repeat-contact rate) memnuniyet anketinden "
+        "daha güvenilir bir öncü göstergedir: aynı müşteri aynı konu için "
+        "ikinci kez yazıyorsa ilk temasta çözülmemiş demektir. İlk-temas "
+        "çözüm oranını (first-contact resolution) ekip performans metriği "
+        "yapın, yanıt hızını değil çözüm kalitesini ödüllendirin."
+    ),
+    "iade": (
+        "İade edilen paranın müşteriye ULAŞMA süresi, tek başına en güçlü "
+        "yeniden-satın-alma sürücüsüdür — onay hızından çok bu süre "
+        "belirleyicidir. Süreç adımlarını (talep → onay → kargo → iade) "
+        "ayrı ayrı ölçün; darboğaz genelde onay ile kargoya veriliş "
+        "arasındaki bekleme, tek bir 'iade süresi' ortalaması bunu gizler."
+    ),
+    "teknik_destek": (
+        "Hata mesajları müşteriye ne yapması gerektiğini söylemiyorsa "
+        "destek yükü kaçınılmaz artar — hata metnini teknik log değil "
+        "yönlendirici bir cümle yapın. Kendi kendine çözülen (self-service) "
+        "oranı izleyin: aynı hata tekrar tekrar bilet açtırıyorsa arayüzde "
+        "düzeltilmesi gereken asıl sorun odur, destek ekibi değil."
+    ),
+    "siparis_sureci": (
+        "Sipariş akışındaki her ekstra adım terk oranını artırır — "
+        "şikâyetin kaynağı çoğu zaman tek bir doğrulama/form adımıdır, "
+        "akışın tamamı değil. Hatalı/eksik sipariş kayıtlarını gerçek "
+        "zamanlı doğrulama ile en başta yakalamak, sonradan düzeltmekten "
+        "hem müşteri hem operasyon için çok daha ucuzdur."
+    ),
+    "pazarlama": (
+        "Bildirim yorgunluğu (mesaj sıklığı, kanal, zamanlama şikâyeti) "
+        "genelde içerikten değil frekans kontrolünün eksikliğinden "
+        "kaynaklanır — kanal ve sıklık tercihini müşteriye bırakan bir "
+        "opt-in/opt-out ayrımı bu şikâyetlerin çoğunu önler. Kampanya "
+        "mesajı ile işlemsel bildirim (sipariş/teslimat) aynı kanaldan "
+        "gidiyorsa müşteri ikisini ayırt edemez ve güveni sarsılır."
+    ),
+}
+
+
+def playbook_directive(primary_category_code: str) -> str:
+    """Kategoriye özgü kurucu CX pratiğini system prompt'a ekler.
+
+    Bilinmeyen (ya da kasıtlı boş bırakılan, örn. "belirsiz") kod için ""
+    döner — prompt'a hiçbir şey eklenmez. Bilinen kod için modele TEK bir
+    ``expert_note`` cümlesi üretmesini, bu pratiği eldeki kanıta
+    uygulayarak yazmasını (ya da uymuyorsa alanı boş bırakmasını) söyler
+    — ``language_directive``/``terminology_directive`` ile aynı desen:
+    dil-üstü bir katman, sona eklenir."""
+    playbook = _CATEGORY_PLAYBOOK.get(primary_category_code)
+    if not playbook:
+        return ""
+    return (
+        "\n\nUZMAN NOTU (kurucu CX pratiği):\n"
+        f"{playbook}\n"
+        "Her kök neden için expert_note alanına, bu pratiği eldeki "
+        "kanıta uygulayan TEK bir cümle yaz (en fazla ~200 karakter). "
+        "Pratik bu kök nedene uymuyorsa expert_note alanını HİÇ YAZMA — "
+        "zorlama, uydurma bağlantı kurma."
+    )
 
 
 def terminology_directive(terminology: list[dict[str, Any]] | None) -> str:

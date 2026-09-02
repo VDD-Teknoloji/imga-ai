@@ -174,10 +174,12 @@ export const NAV_SECTIONS: ReadonlyArray<NavSection> = [
  * ardından tenant-scoped "admin" gözlemlenebilirlik öğeleri geliyor.
  */
 // Sprint 13 — bölüm artık tenant_admin'e de görünür: backend
-// llm-audit / decision-audit / prompt-templates GET'lerine
-// tenant_admin'i zaten kabul ediyordu ama nav yalnız super_admin'e
-// gösteriyordu (hak sahibi kullanıcı kapıyı bulamıyordu). Kurum
-// CRUD'u ise super_admin'de kalır.
+// llm-audit / decision-audit GET'lerine tenant_admin'i zaten kabul
+// ediyordu ama nav yalnız super_admin'e gösteriyordu (hak sahibi
+// kullanıcı kapıyı bulamıyordu). Kurum CRUD'u ise super_admin'de kalır.
+// F2 (2026-09-02) — prompt-templates bu genellemeden ÇIKARILDI:
+// backend kilidi süper-yöneticiye geri çekildi, aşağıdaki öğe kendi
+// yorumunda "super" olarak işaretli.
 export const ADMIN_NAV_ITEMS: ReadonlyArray<NavItem> = [
   {
     label: "shell.nav.tenants",
@@ -209,11 +211,16 @@ export const ADMIN_NAV_ITEMS: ReadonlyArray<NavItem> = [
     icon: History,
     minRole: "admin",
   },
+  // F2 (2026-09-02) — Kural Katmanları/Prompt Şablonları geri
+  // super_admin-only'e alındı: backend GET/PATCH/POST artık yalnız
+  // süper yönetici kabul ediyor (tenant_admin 403 yer), bu yüzden
+  // menü öğesi de "admin"den "super"e döndü — aksi halde tenant_admin
+  // linki görür ama tıklayınca 403 yer.
   {
     label: "shell.nav.promptTemplates",
     href: "/admin/prompt-templates",
     icon: Code2,
-    minRole: "admin",
+    minRole: "super",
   },
   // Sprint 9.8 — Madde 5: Bekleyen Bildirimler içerik çok teknik
   // (SLA webhook dispatch detayı). Operasyon grubundan çıkarıldı,

@@ -37,6 +37,10 @@ export interface RootCauseOverviewCauseItem {
   /** Aynı sprint: tek satırlık emir kipi aksiyon. Yoksa `suggested_action`e
    *  düşülür. */
   action_short?: string | null;
+  /** F2 (2026-09-02) — arka planda başka bir ajan tarafından eklenen alan
+   *  (root-cause.ts prompt genişlemesi): serbest metin uzman yorumu. Eski
+   *  kalıcı analizlerde yok — opsiyonel, `generating?` ile aynı savunma. */
+  expert_note?: string | null;
 }
 
 export interface RootCauseOverviewAnalysis {
@@ -65,6 +69,11 @@ export interface RootCauseOverviewResponse {
    *  sprintte ayrı bir ajan tarafından ekleniyor, o yüzden opsiyonel:
    *  alan henüz gelmeyen eski/yeni sunucu karışımında da derlenir. */
   generating?: boolean;
+  /** F2 (2026-09-02) — en son otomatik üretim denemesinin sonucu; kart
+   *  hiç üretilmemişse (cards boş) boş-durum kopyası bu alana göre
+   *  seçilir (root-cause-cards.tsx). `generating?` ile aynı gerekçeyle
+   *  opsiyonel. */
+  last_error?: "no_credentials" | "failed" | null;
 }
 
 export interface RootCauseOverviewFilters {
@@ -83,9 +92,7 @@ export function useRootCauseOverview(filters: RootCauseOverviewFilters = {}, lim
     // (executive-overview hook'undaki aynı gerekçe).
     queryKey: ["root-cause-overview", query],
     queryFn: () =>
-      apiRequest<RootCauseOverviewResponse>(
-        `/tenants/me/insights/root-cause/overview?${query}`,
-      ),
+      apiRequest<RootCauseOverviewResponse>(`/tenants/me/insights/root-cause/overview?${query}`),
     staleTime: 60_000,
     placeholderData: keepPreviousData,
     // generating true iken 5sn'de bir yoklar — arka plan üretimi bitince

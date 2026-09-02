@@ -48,17 +48,64 @@ def fake_redis_client() -> Any:
 
 
 class _StubRedis:
-    """Event-loop'a bağlı olmayan minik Redis ikizi: yalnız ``get``
-    gerekiyor (bayrak okuma yolu). fakeredis'in aksine hangi loop'tan
-    çağrıldığı önemsizdir — TestClient'ın kendi loop'u ile testin loop'u
-    farklı olduğu için bu şart."""
+    """Event-loop'a bağlı olmayan minik Redis ikizi: ``root_cause_autogen``
+    modülünün kullandığı küçük komut kümesini (sadd/srem/scard/expire/
+    get/set/delete) bellek-içi iki sözlükle (SET'ler + STRING'ler)
+    taklit eder. fakeredis'in aksine hangi loop'tan çağrıldığı
+    önemsizdir — TestClient'ın kendi loop'u ile testin loop'u farklı
+    olduğu için bu şart (bkz. test_overview_generating_true_when_flag_set)."""
 
-    def __init__(self, value: bytes | None) -> None:
-        self._value = value
+    def __init__(self) -> None:
+        self._sets: dict[str, set[bytes]] = {}
+        self._strings: dict[str, bytes] = {}
+
+    async def sadd(self, key: str, *values: str) -> int:
+        bucket = self._sets.setdefault(key, set())
+        added = 0
+        for v in values:
+            vb = v.encode() if isinstance(v, str) else v
+            if vb not in bucket:
+                bucket.add(vb)
+                added += 1
+        return added
+
+    async def srem(self, key: str, *values: str) -> int:
+        bucket = self._sets.get(key)
+        if not bucket:
+            return 0
+        removed = 0
+        for v in values:
+            vb = v.encode() if isinstance(v, str) else v
+            if vb in bucket:
+                bucket.discard(vb)
+                removed += 1
+        return removed
+
+    async def scard(self, key: str) -> int:
+        return len(self._sets.get(key, set()))
+
+    async def expire(self, key: str, seconds: int) -> bool:
+        del seconds
+        return key in self._sets or key in self._strings
 
     async def get(self, key: str) -> bytes | None:
-        del key
-        return self._value
+        return self._strings.get(key)
+
+    async def set(self, key: str, value: str, ex: int | None = None) -> bool:
+        del ex
+        self._strings[key] = value.encode() if isinstance(value, str) else value
+        return True
+
+    async def delete(self, *keys: str) -> int:
+        removed = 0
+        for key in keys:
+            if key in self._sets:
+                del self._sets[key]
+                removed += 1
+            if key in self._strings:
+                del self._strings[key]
+                removed += 1
+        return removed
 
 
 def _auth(token: str) -> dict[str, str]:
@@ -439,8 +486,11 @@ async def test_overview_parses_headline_and_action_short(
 
 
 # ---------------------------------------------------------------------------
-# "generating" flag — set by batch_analyzer._enqueue_root_cause_auto_gen
-# at enqueue time, cleared by generate_root_causes_task's finally block.
+# "generating" flag — a Redis SET (services/root_cause_autogen.py),
+# one member per in-flight batch_job_id. mark_enqueued adds a member
+# at enqueue time, mark_started refreshes it when the worker picks the
+# job up, mark_finished removes ONLY that job's own member in the
+# task's finally block.
 # ---------------------------------------------------------------------------
 
 
@@ -450,13 +500,14 @@ async def test_overview_generating_false_when_no_flag_set(
     semi_auto_tenant: tuple[User, UUID, str],
     fake_redis_client: Any,
 ) -> None:
-    del fake_redis_client  # installed only so the read hits a real (empty) client
-    set_redis_client(_StubRedis(None))
+    del fake_redis_client  # installed only so teardown resets the singleton
+    set_redis_client(_StubRedis())
     user, tid, pw = semi_auto_tenant
     token = login_token(batch_client, user.email, pw, tid)
     r = batch_client.get(_OVERVIEW_ENDPOINT, headers=_auth(token))
     assert r.status_code == 200, r.text
     assert r.json()["generating"] is False
+    assert r.json()["last_error"] is None
 
 
 @pytest.mark.asyncio
@@ -470,13 +521,81 @@ async def test_overview_generating_true_when_flag_set(
     # TestClient uygulamayı KENDİ event loop'unda koşturur; fakeredis
     # örneği testin loop'una bağlı olduğundan cross-loop okuma savunmacı
     # except'e düşüp False dönüyordu. Döngüden bağımsız stub, uçtaki
-    # "anahtar var mı" mantığını gerçekten sınar.
-    set_redis_client(_StubRedis(b"1"))
+    # "kümede en az bir üye var mı" mantığını gerçekten sınar.
+    stub = _StubRedis()
+    stub._sets[f"root_cause_autogen_jobs:{tid}"] = {str(uuid4()).encode()}
+    set_redis_client(stub)
 
     token = login_token(batch_client, user.email, pw, tid)
     r = batch_client.get(_OVERVIEW_ENDPOINT, headers=_auth(token))
     assert r.status_code == 200, r.text
     assert r.json()["generating"] is True
+
+
+@pytest.mark.asyncio
+async def test_overview_surfaces_last_error_and_expert_note(
+    batch_client: TestClient,
+    semi_auto_tenant: tuple[User, UUID, str],
+    admin_session: AsyncSession,
+    fake_redis_client: Any,
+) -> None:
+    """``last_error`` Redis STRING'inden aynen geçer (decode edilmiş).
+    Bir kök nedenin ``expert_note`` alanı payload'da varsa
+    ``causes[i].expert_note`` içinde görünür; yoksa (eski analiz ya da
+    henüz uzman notu eklenmemiş bir madde) None kalır — route yalnız
+    geçirgen: alanı DOLDURAN servis tarafı ayrı bir değişikliktir."""
+    del fake_redis_client
+    user, tid, pw = semi_auto_tenant
+    stub = _StubRedis()
+    await stub.set(f"root_cause_autogen_error:{tid}", "no_credentials")
+    set_redis_client(stub)
+
+    note = "Uzman notu: entegrasyon webhook'u yeniden dene kuyruğuna eklendi."
+    async with admin_session.begin():
+        await _bind_tenant(admin_session, tid)
+        await _seed_reviews(
+            admin_session,
+            tenant_id=tid,
+            category="kargo",
+            perspective_code="order_status_wrong",
+            count=12,
+        )
+        payload = _payload()
+        payload["root_causes"].append(
+            {
+                "title": "Uzman notu yok — eski analiz",
+                "description": "expert_note eklenmeden önce üretildi.",
+                "evidence_quotes": ["alıntı"],
+                "affected_surface": "web",
+                "suggested_action": "aksiyon",
+                "share_estimate_pct": 10,
+            }
+        )
+        payload["root_causes"][0]["expert_note"] = note
+        admin_session.add(
+            RootCauseAnalysis(
+                tenant_id=tid,
+                primary_category_code="kargo",
+                perspective_code="order_status_wrong",
+                date_from=None,
+                date_to=None,
+                review_count=12,
+                model_provider="gemini",
+                model_name="gemini-3-flash-preview",
+                payload=payload,
+                generated_by_user_id=None,
+            )
+        )
+        await admin_session.flush()
+
+    token = login_token(batch_client, user.email, pw, tid)
+    r = batch_client.get(_OVERVIEW_ENDPOINT, headers=_auth(token))
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["last_error"] == "no_credentials"
+    with_note, without_note = body["cards"][0]["analysis"]["causes"]
+    assert with_note["expert_note"] == note
+    assert without_note["expert_note"] is None
 
 
 # ---------------------------------------------------------------------------
@@ -710,6 +829,44 @@ async def test_enqueue_root_cause_auto_gen_job_id_differs_per_batch(
         assert job_ids[0] != job_ids[1]
         assert str(batch_a) in job_ids[0]
         assert str(batch_b) in job_ids[1]
+        # Sprint 13.x+ arq task sözleşmesi: tenant_id, rows_succeeded,
+        # sonra batch_job_id — üçüncü pozisyonel arg olarak str geçer.
+        for call in context.arq_pool.enqueue_job.await_args_list:
+            assert call.args[0] == "generate_root_causes_task"
+            assert call.args[3] in (str(batch_a), str(batch_b))
+    finally:
+        await context.dispose()
+
+
+@pytest.mark.asyncio
+async def test_enqueue_root_cause_auto_gen_flag_not_set_when_dedup_returns_none(
+    batch_client: TestClient,
+    fake_redis_client: Any,
+) -> None:
+    """arq'ın kendi ``_job_id`` dedup'ı ``enqueue_job``'dan ``None``
+    döndürdüğünde (izlenecek YENİ bir iş yok) ``mark_enqueued`` HİÇ
+    çağrılmamalı — aksi halde 'hazırlanıyor' kümesine karşılığı
+    olmayan sahte bir üyelik eklenir ve o üyelik hiçbir zaman
+    ``mark_finished`` ile silinmez (hiçbir task onu işlemeyecek)."""
+    del fake_redis_client
+    from imga_api.services import root_cause_autogen
+    from imga_api.workers import batch_analyzer
+
+    test_app = batch_client.app  # type: ignore[attr-defined]
+    context = await batch_analyzer.build_worker_context(
+        pipeline=test_app.state.pipeline,
+        tenant_config_cache=test_app.state.tenant_config_cache,
+        settings=test_app.state.settings.batch,
+    )
+    context.arq_pool = AsyncMock()
+    context.arq_pool.enqueue_job.return_value = None
+    tid = uuid4()
+    batch_job_id = uuid4()
+    try:
+        await batch_analyzer._enqueue_root_cause_auto_gen(
+            tid, context, batch_job_id=batch_job_id, rows_succeeded=5
+        )
+        assert await root_cause_autogen.is_generating(tid) is False
     finally:
         await context.dispose()
 

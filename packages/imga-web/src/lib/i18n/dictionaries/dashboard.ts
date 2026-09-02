@@ -33,8 +33,7 @@ export const dashboard: Bundle = {
     "dashboard.strategy.title": "Strateji",
     "dashboard.strategy.subtitle":
       "Analizleriniz üzerine SWOT ve OKR raporları üretin. Raporlar Gemini ile oluşturulur ve PDF olarak indirilebilir.",
-    "dashboard.strategy.banner.title":
-      "Strateji raporu üretmek için Gemini API anahtarı gerekli.",
+    "dashboard.strategy.banner.title": "Strateji raporu üretmek için Gemini API anahtarı gerekli.",
     "dashboard.strategy.banner.desc":
       "En az bir aktif anahtar tanımlanana kadar SWOT/OKR üretimi devre dışı. Geçmiş raporlar görüntülenebilir ve indirilebilir.",
     "dashboard.strategy.banner.addKey": "Anahtar ekle",
@@ -70,8 +69,7 @@ export const dashboard: Bundle = {
       "OKR'lar mevcut bir SWOT raporundan türetilir — önce bir SWOT seçin, ardından Gemini hedef-anahtar sonuç önerisi üretir.",
     "dashboard.strategy.okr.sourceSwot": "Kaynak SWOT",
     "dashboard.strategy.okr.swotListLoading": "SWOT listesi yükleniyor…",
-    "dashboard.strategy.okr.needSwotFirst":
-      "Önce bir SWOT raporu üretmeniz gerekir.",
+    "dashboard.strategy.okr.needSwotFirst": "Önce bir SWOT raporu üretmeniz gerekir.",
     "dashboard.strategy.okr.selectSwot": "Bir SWOT seçin…",
     "dashboard.strategy.okr.generate": "OKR üret",
     "dashboard.strategy.okr.ready": "OKR raporu hazır.",
@@ -123,8 +121,7 @@ export const dashboard: Bundle = {
     "dashboard.actionItems.history": "Geçmiş",
     "dashboard.actionItems.restored": "Geri alındı.",
     "dashboard.actionItems.restore": "Geri al",
-    "dashboard.actionItems.archiveConfirm":
-      "Aksiyon arşivlensin mi? (Geri alınabilir)",
+    "dashboard.actionItems.archiveConfirm": "Aksiyon arşivlensin mi? (Geri alınabilir)",
     "dashboard.actionItems.archivedToast": "Arşivlendi.",
     "dashboard.actionItems.archive": "Arşivle",
     "dashboard.actionItems.event.created": "Oluşturuldu",
@@ -153,8 +150,7 @@ export const dashboard: Bundle = {
     // Not: anahtar kasıtlı olarak "dashboard." önekini taşımıyor —
     // brifte belirtilen ad aynen kullanıldı.
     "actionItems.priority.title": "Stratejik öncelik",
-    "actionItems.priority.desc":
-      "SWOT analizinden gelen, bu dönem için en öncelikli konu.",
+    "actionItems.priority.desc": "SWOT analizinden gelen, bu dönem için en öncelikli konu.",
     "actionItems.priority.cta": "Stratejiyi aç",
 
     // --- trend uyarıları ---
@@ -176,29 +172,16 @@ export const dashboard: Bundle = {
     "dashboard.trendAlerts.acknowledged": "Onaylandı",
     "dashboard.trendAlerts.dismissed": "Atıldı",
 
-    // --- yönetici özeti şeridi ---
-    "dashboard.aiInsight.period.week": "Haftalık",
-    "dashboard.aiInsight.period.month": "Aylık",
-    "dashboard.aiInsight.period.quarter": "Üç aylık",
-    "dashboard.aiInsight.empty.title": "Yönetici özetinizi oluşturun",
-    "dashboard.aiInsight.empty.desc":
-      "Dönemin değişimleri, kritik içgörüler ve öncelikli aksiyonlar — tek tıkla.",
-    "dashboard.aiInsight.aria": "Yönetici özeti",
-    "dashboard.aiInsight.label": "Yönetici Özeti",
-    "dashboard.aiInsight.seeFull": "Özetin tamamını gör",
-
     // --- yönetici hero ---
     "dashboard.executiveHero.headline.critical.prefix": "Müşterileriniz ",
     "dashboard.executiveHero.headline.critical.keyword": "memnun değil",
-    "dashboard.executiveHero.headline.watch.prefix":
-      "Müşterilerinizin bir kısmı ",
+    "dashboard.executiveHero.headline.watch.prefix": "Müşterilerinizin bir kısmı ",
     "dashboard.executiveHero.headline.watch.keyword": "memnun değil",
     "dashboard.executiveHero.headline.healthy.prefix": "Müşterileriniz ",
     "dashboard.executiveHero.headline.healthy.keyword": "memnun",
     "dashboard.executiveHero.headline.balanced.prefix": "Müşteri memnuniyeti ",
     "dashboard.executiveHero.headline.balanced.keyword": "dengeli",
-    "dashboard.executiveHero.empty.title":
-      "Müşterilerinizin sesini dinlemeye başlayın",
+    "dashboard.executiveHero.empty.title": "Müşterilerinizin sesini dinlemeye başlayın",
     "dashboard.executiveHero.empty.desc":
       "İlk yorum dosyanızı yükleyin — dakikalar içinde memnuniyet durumunuz, ana sorunlarınız ve yönetici özetiniz hazır olsun.",
     "dashboard.executiveHero.empty.descPointUp":
@@ -214,10 +197,8 @@ export const dashboard: Bundle = {
     "dashboard.executiveHero.summary.suffix": "tanesi olumsuz.",
     "dashboard.executiveHero.satisfaction": "memnuniyet",
     "dashboard.executiveHero.trend.flat": "Son 30 günde memnuniyet değişmedi",
-    "dashboard.executiveHero.trend.up":
-      "Son 30 günde memnuniyet +{points} puan arttı",
-    "dashboard.executiveHero.trend.down":
-      "Son 30 günde memnuniyet −{points} puan düştü",
+    "dashboard.executiveHero.trend.up": "Son 30 günde memnuniyet +{points} puan arttı",
+    "dashboard.executiveHero.trend.down": "Son 30 günde memnuniyet −{points} puan düştü",
     "dashboard.executiveHero.reviewReviews": "Müşteri yorumlarını incele",
     "dashboard.executiveHero.reviewNegative": "Olumsuz yorumları incele",
     "dashboard.executiveHero.createActionPlan": "Aksiyon planı oluştur",
@@ -228,19 +209,16 @@ export const dashboard: Bundle = {
     // role="img" yerine role="group" + her segmentin kendi aria-label'i.
     "dashboard.executiveHero.satisfactionBarAria":
       "Memnuniyet dağılımı — bir segmente tıklayarak ilgili yorumları görüntüleyin",
-    "dashboard.executiveHero.legend.segmentAria":
-      "{label}: %{pct} — görüntülemek için tıklayın",
+    "dashboard.executiveHero.legend.segmentAria": "{label}: %{pct} — görüntülemek için tıklayın",
     "dashboard.executiveHero.windowEmpty.title": "Seçilen dönemde yorum yok",
     "dashboard.executiveHero.windowEmpty.desc":
       "Dönem filtresini genişletin veya yeni yorum verisi yükleyin.",
     "dashboard.executiveHero.batchEmpty.title": "Seçilen yüklemede yorum yok",
     "dashboard.executiveHero.batchEmpty.desc":
       "Başka bir yükleme seçin veya yükleme filtresini temizleyin.",
-    "dashboard.executiveHero.scoreInfo.aria":
-      "Memnuniyet skoru nasıl hesaplanır?",
+    "dashboard.executiveHero.scoreInfo.aria": "Memnuniyet skoru nasıl hesaplanır?",
     "dashboard.executiveHero.scoreInfo.text":
       "Memnuniyet skoru, pozitif yorumların tüm yorumlara (pozitif + nötr + negatif) oranıdır ve seçili döneme göre hesaplanır. Trend rozeti son 30 günü önceki 30 günle karşılaştırır.",
-    "dashboard.executiveHero.swotCta": "Aksiyon planını gör",
 
     // --- dönem filtresi ---
     "dashboard.window.label": "Dönem",
@@ -256,32 +234,15 @@ export const dashboard: Bundle = {
     "dashboard.filterBar.batchChipRemove": "Yükleme filtresini kaldır",
     "dashboard.filterBar.clear": "Filtreleri temizle",
 
-    // --- NPS dağılımı kartı ---
-    "dashboard.npsCard.title": "NPS Dağılımı",
-    "dashboard.npsCard.infoAria": "NPS nasıl hesaplanır?",
-    "dashboard.npsCard.info":
-      "NPS = Destekçi yüzdesi − Kötüleyen yüzdesi (−100 ile +100 arası). 0-10 ölçeğinde 9-10 puan Destekçi, 7-8 Pasif, 0-6 Kötüleyen sayılır.",
-    "dashboard.npsCard.promoters": "Destekçiler",
-    "dashboard.npsCard.passives": "Pasifler",
-    "dashboard.npsCard.detractors": "Kötüleyenler",
-    "dashboard.npsCard.scoreLabel": "NPS Skoru",
-    "dashboard.npsCard.empty":
-      "Bu dönemde NPS verisi yok. Yükleme dosyanızda NPS kolonu eşlerseniz dağılım burada görünür.",
-    "dashboard.npsCard.insufficientN": "NPS için yeterli yanıt yok ({count} yanıt)",
-    "dashboard.npsCard.coverage": "NPS verisi olan yorum oranı: %{pct}",
-
     // --- kategori bazlı duygu dağılımı ---
     // --- alt kategori kırılımı + kök neden (Sprint 13.1) ---
     "dashboard.rootCause.action": "Kök Neden Analizi",
-    "dashboard.rootCause.title": "Kök Neden Analizi",
-    "dashboard.rootCause.generate": "Analiz Oluştur",
-    "dashboard.rootCause.regenerate": "Yeniden Oluştur",
-    "dashboard.rootCause.close": "Kapat",
-    "dashboard.rootCause.empty":
-      "Bu alt kategori için henüz analiz oluşturulmadı.",
-    "dashboard.rootCause.meta": "{n} yorum incelendi",
+    // F1 (2026-09-02) — title/generate/regenerate/close/empty/meta/
+    // suggestedAction silindi: yalnız orphan root-cause-dialog.tsx
+    // kullanıyordu (dosya silindi, sıfır importer doğrulandı).
+    // affectedSurface/noCredentials/providerUnavailable/generateFailed
+    // kalıyor — root-cause-cards.tsx da bu anahtarları kullanıyor.
     "dashboard.rootCause.affectedSurface": "Etkilenen temas noktası",
-    "dashboard.rootCause.suggestedAction": "Yapılacak iş",
     "dashboard.rootCause.noCredentials":
       "LLM API anahtarı tanımlanmamış. Ayarlar > Entegrasyonlar üzerinden ekleyin.",
     "dashboard.rootCause.providerUnavailable":
@@ -332,8 +293,7 @@ export const dashboard: Bundle = {
 
     // --- veri kalitesi koçu (ana sayfa, A2 — ClassificationQualityChip'in yerini alır) ---
     "dashboard.dataQuality.aria": "Veri kalitesi koçu",
-    "dashboard.dataQuality.good":
-      "Veri kaliteniz iyi — kök neden analizleriniz güvenilir temelde.",
+    "dashboard.dataQuality.good": "Veri kaliteniz iyi — kök neden analizleriniz güvenilir temelde.",
     "dashboard.dataQuality.flaggedShare":
       "Boş/anlamsız/kopya işaretli yorum oranı: %{pct} ({count} yorum)",
     "dashboard.dataQuality.hint": "Veri kalitesi arttıkça kök neden isabeti artar.",
@@ -344,6 +304,17 @@ export const dashboard: Bundle = {
     "dashboard.dataQuality.escalation":
       "{n} yorumda resmî şikâyet veya dava tehdidi var — önce bunlara bakın.",
     "dashboard.dataQuality.escalationCta": "Tehdit içeren yorumları gör",
+
+    // --- aksayan süreçler (ana sayfa sağ ray, F1 2026-09-02) ---
+    "dashboard.failingProcesses.title": "Aksayan süreçler",
+    "dashboard.failingProcesses.trendAlerts": "{n} aktif trend uyarısı var",
+    "dashboard.failingProcesses.slaResolution": "Çözüm SLA'sı %{pct} ihlal ediliyor",
+    "dashboard.failingProcesses.slaFirstResponse": "İlk yanıt SLA'sı %{pct} ihlal ediliyor",
+    "dashboard.failingProcesses.viral": "{n} olumsuz tweet yüksek etkileşim aldı",
+
+    // --- sektör hatırlatması (ana sayfa sağ ray, F1 2026-09-02) ---
+    "dashboard.contextNudge.text":
+      "Sektörünüzü belirtin — kök neden önerileri kurumunuza göre özelleşir",
 
     // --- deneyim dağılımı kartları ---
     "dashboard.experience.title": "Deneyim Dağılımı",
@@ -369,29 +340,11 @@ export const dashboard: Bundle = {
     "dashboard.uploadFirst.title": "Bugün henüz veri yüklemediniz",
     "dashboard.uploadFirst.desc":
       "Son 24 saatte yeni yorum verisi gelmedi. Analizlerin güncel kalması için son müşteri yorumlarınızı yükleyin — sonuçlar dakikalar içinde bu sayfaya yansır.",
-    "dashboard.uploadFirst.titleNew":
-      "Hoş geldiniz — ilk yorum dosyanızı yükleyelim",
+    "dashboard.uploadFirst.titleNew": "Hoş geldiniz — ilk yorum dosyanızı yükleyelim",
     "dashboard.uploadFirst.descNew":
       "Henüz hiç yorum yüklemediniz. CSV veya Excel dosyanızı aşağıya bırakın; imga birkaç dakika içinde duygu, kategori ve kök neden analizini çıkarsın.",
 
     // --- öncelikli aksiyon ---
-
-    // --- en çok şikayet edilen konular ---
-    "dashboard.topProblems.title": "En çok şikayet edilen konular",
-    "dashboard.topProblems.description":
-      "Müşterileriniz en çok bunlardan şikayetçi",
-    "dashboard.topProblems.actionLabel": "Aksiyon planı",
-    "dashboard.topProblems.statSuffix":
-      "olumsuz yorum · şikayetlerin %{share}'i",
-
-    // --- müşterinin sesi ---
-    "dashboard.voiceOfCustomer.aria": "Müşterinin sesi",
-    "dashboard.voiceOfCustomer.title": "Müşterinin Sesi",
-    "dashboard.voiceOfCustomer.description": "Yorumların kendi cümleleriyle",
-    "dashboard.voiceOfCustomer.action": "Tüm yorumlar",
-    "dashboard.voiceOfCustomer.sentiment.negative": "Olumsuz",
-    "dashboard.voiceOfCustomer.sentiment.positive": "Olumlu",
-    "dashboard.voiceOfCustomer.sentiment.neutral": "Nötr",
 
     // --- hızlı kapılar ---
     "dashboard.quickLinks.briefing.label": "Yönetici Özeti oluştur",
@@ -404,11 +357,9 @@ export const dashboard: Bundle = {
     "dashboard.quickLinks.reports.desc": "PDF / Excel dışa aktarım",
 
     // --- yükleme rıhtımı ---
-    "dashboard.uploadDock.acceptError":
-      "Sadece .csv veya .xlsx dosyaları kabul edilir.",
+    "dashboard.uploadDock.acceptError": "Sadece .csv veya .xlsx dosyaları kabul edilir.",
     "dashboard.uploadDock.sizeError": "Dosya 50 MB sınırını aşıyor.",
-    "dashboard.uploadDock.uploadError":
-      "Yükleme sırasında beklenmeyen bir hata oluştu.",
+    "dashboard.uploadDock.uploadError": "Yükleme sırasında beklenmeyen bir hata oluştu.",
     "dashboard.uploadDock.aria": "Hızlı yükleme",
     "dashboard.uploadDock.title": "Hızlı yükleme",
     "dashboard.uploadDock.subtitle": "Dosyayı bırakın — analiz burada başlasın",
@@ -422,45 +373,12 @@ export const dashboard: Bundle = {
     "dashboard.uploadDock.retry": "Tekrar dene",
     "dashboard.uploadDock.advanced": "Gelişmiş yükleme",
     "dashboard.uploadDock.hint.prefix": "Şablon standardı: yorumlar ",
-    "dashboard.uploadDock.hint.mid":
-      " kolonunda. Farklı düzendeki dosyalar için ",
+    "dashboard.uploadDock.hint.mid": " kolonunda. Farklı düzendeki dosyalar için ",
     "dashboard.uploadDock.hint.linkText": "gelişmiş yükleme",
     "dashboard.uploadDock.drop.title": "CSV / XLSX dosyanızı buraya bırakın",
     "dashboard.uploadDock.drop.subtitle": "veya tıklayarak seçin · en fazla 50 MB",
     "dashboard.uploadDock.dimensionNudge":
       "Tarih ve temsilci kolonlarınız da varsa gelişmiş yüklemeden eşleyin — trend ve veri kalitesi kartları daha isabetli çalışır.",
-
-    // --- strateji anlık kartları ---
-    "dashboard.strategySnapshots.swot.emptyTitle": "SWOT analizinizi oluşturun",
-    "dashboard.strategySnapshots.swot.emptyDesc":
-      "Tüm yorumlarınız okunur; güçlü ve zayıf yönleriniz kanıtlarıyla çıkar.",
-    "dashboard.strategySnapshots.swot.emptyCta": "SWOT oluştur",
-    "dashboard.strategySnapshots.swot.title": "Son SWOT Analizi",
-    "dashboard.strategySnapshots.swot.strengths": "Güçlü yönler",
-    "dashboard.strategySnapshots.swot.weaknesses": "Zayıf yönler",
-    "dashboard.strategySnapshots.swot.seeFull": "Analizin tamamı",
-    "dashboard.strategySnapshots.okr.emptyTitle": "OKR hedeflerinizi oluşturun",
-    "dashboard.strategySnapshots.okr.emptyDesc":
-      "SWOT'unuzdan yola çıkarak önümüzdeki dönem için ölçülebilir hedefler üretilir.",
-    "dashboard.strategySnapshots.okr.emptyCta": "OKR oluştur",
-    "dashboard.strategySnapshots.okr.title": "Son OKR Hedefleri",
-    "dashboard.strategySnapshots.okr.seeFull": "Hedeflerin tamamı",
-
-    // --- sınıflandırma kalitesi ---
-    "dashboard.classificationQuality.band.good": "İyi",
-    "dashboard.classificationQuality.band.watch": "İyileştirilebilir",
-    "dashboard.classificationQuality.band.low": "Düşük",
-    "dashboard.classificationQuality.good.headline":
-      "Sınıflandırma kalitesi: %{pct} eşleşme",
-    "dashboard.classificationQuality.good.hint":
-      "Yorumların çoğu doğru kategoriye düştü.",
-    "dashboard.classificationQuality.uncertain.headline":
-      "{count} yorum 'belirsiz' (%{pct})",
-    "dashboard.classificationQuality.watch.hint":
-      "Çok kısa veya bağlamsız yorumlar genellikle 'belirsiz'e düşer. Özel kategori eklemek oranı iyileştirir.",
-    "dashboard.classificationQuality.low.hint":
-      "Belirsiz oranı yüksek. Ayarlar / Kategoriler menüsünden özel kategoriler ekleyerek {total} yorumun daha büyük kısmını doğru sınıflandırabilirsiniz.",
-    "dashboard.classificationQuality.aria": "Sınıflandırma kalite uyarısı",
 
     // --- bugün dikkat listesi ---
     "dashboard.attentionList.empty":
@@ -514,16 +432,12 @@ export const dashboard: Bundle = {
       "Genel his belirgin biçimde negatif — yönetim aksiyonu değerlendirin.",
     "dashboard.healthHero.narrative.negative":
       "Genel his hafif negatif — eğilim tersine dönmeden ele alın.",
-    "dashboard.healthHero.narrative.avgNegative":
-      "Ortalama duygu negatif tarafa eğilimli.",
-    "dashboard.healthHero.narrative.good":
-      "Genel seyir iyi — kritik bir sinyal yok.",
-    "dashboard.healthHero.narrative.balanced":
-      "Genel seyir dengeli — periyodik takip yeterli.",
+    "dashboard.healthHero.narrative.avgNegative": "Ortalama duygu negatif tarafa eğilimli.",
+    "dashboard.healthHero.narrative.good": "Genel seyir iyi — kritik bir sinyal yok.",
+    "dashboard.healthHero.narrative.balanced": "Genel seyir dengeli — periyodik takip yeterli.",
     "dashboard.healthHero.deltaLabel": "önceki aya göre {delta}",
     "dashboard.healthHero.error.title": "CX Sağlık verisi alınamadı.",
-    "dashboard.healthHero.error.desc":
-      "API erişimi yeniden kurulduğunda otomatik yenilenir.",
+    "dashboard.healthHero.error.desc": "API erişimi yeniden kurulduğunda otomatik yenilenir.",
     "dashboard.healthHero.aria": "CX Sağlık",
     "dashboard.healthHero.headerLabel": "CX Sağlık · Son 30 gün",
     "dashboard.healthHero.coverage.totalReviews": "Toplam yorum",
@@ -544,23 +458,19 @@ export const dashboard: Bundle = {
 
     // --- metrik kartları (ticket) ---
     "dashboard.metricCards.openTickets": "Açık ticket",
-    "dashboard.metricCards.openTicketsHint":
-      "Açık, ilerlemekte veya müşteri bekleyen",
+    "dashboard.metricCards.openTicketsHint": "Açık, ilerlemekte veya müşteri bekleyen",
     "dashboard.metricCards.openedToday": "Bugün açılan",
     "dashboard.metricCards.openedTodayHint": "Bugünün başından beri yeni ticket",
     "dashboard.metricCards.highPriority": "Yüksek öncelik",
-    "dashboard.metricCards.highPriorityHint":
-      "Acil ya da yüksek, henüz kapatılmamış",
+    "dashboard.metricCards.highPriorityHint": "Acil ya da yüksek, henüz kapatılmamış",
     "dashboard.metricCards.resolved7d": "Son 7 günde çözülen",
     "dashboard.metricCards.resolved7dHint": "Çözüldü veya kapatıldı",
 
     // --- NPS aylık trend ---
     "dashboard.npsMonthlyTrend.title": "Son 12 ay NPS trendi",
-    "dashboard.npsMonthlyTrend.subtitle":
-      "Aylık · veri olmayan aylar boşluk olarak görünür",
+    "dashboard.npsMonthlyTrend.subtitle": "Aylık · veri olmayan aylar boşluk olarak görünür",
     "dashboard.npsMonthlyTrend.tooltipNoData": "veri yok",
-    "dashboard.npsMonthlyTrend.months":
-      "Oca,Şub,Mar,Nis,May,Haz,Tem,Ağu,Eyl,Eki,Kas,Ara",
+    "dashboard.npsMonthlyTrend.months": "Oca,Şub,Mar,Nis,May,Haz,Tem,Ağu,Eyl,Eki,Kas,Ara",
 
     // --- hızlı işlem kutuları ---
     "dashboard.quickActions.newUpload": "Yeni yükleme",
@@ -625,8 +535,7 @@ export const dashboard: Bundle = {
     "dashboard.strategy.title": "Strategy",
     "dashboard.strategy.subtitle":
       "Generate SWOT and OKR reports from your analyses. Reports are created with Gemini and can be downloaded as PDF.",
-    "dashboard.strategy.banner.title":
-      "A Gemini API key is required to generate strategy reports.",
+    "dashboard.strategy.banner.title": "A Gemini API key is required to generate strategy reports.",
     "dashboard.strategy.banner.desc":
       "SWOT/OKR generation is disabled until at least one active key is defined. Past reports can still be viewed and downloaded.",
     "dashboard.strategy.banner.addKey": "Add key",
@@ -643,10 +552,8 @@ export const dashboard: Bundle = {
     "dashboard.strategy.noKeyHint":
       "No active Gemini key — you need to add one from the notice above.",
     "dashboard.strategy.swot.ready": "SWOT report is ready.",
-    "dashboard.strategy.geminiUnavailable":
-      "Gemini is currently unavailable: {detail}",
-    "dashboard.strategy.swot.generateFailed":
-      "Couldn't generate the SWOT report.",
+    "dashboard.strategy.geminiUnavailable": "Gemini is currently unavailable: {detail}",
+    "dashboard.strategy.swot.generateFailed": "Couldn't generate the SWOT report.",
     "dashboard.strategy.reportLoading": "Loading report…",
     "dashboard.strategy.reportLoadFailed": "Couldn't load the report.",
     "dashboard.strategy.swot.strengths": "Strengths",
@@ -664,8 +571,7 @@ export const dashboard: Bundle = {
       "OKRs are derived from an existing SWOT report — select a SWOT first, then Gemini generates objective and key-result suggestions.",
     "dashboard.strategy.okr.sourceSwot": "Source SWOT",
     "dashboard.strategy.okr.swotListLoading": "Loading SWOT list…",
-    "dashboard.strategy.okr.needSwotFirst":
-      "You need to generate a SWOT report first.",
+    "dashboard.strategy.okr.needSwotFirst": "You need to generate a SWOT report first.",
     "dashboard.strategy.okr.selectSwot": "Select a SWOT…",
     "dashboard.strategy.okr.generate": "Generate OKR",
     "dashboard.strategy.okr.ready": "OKR report is ready.",
@@ -717,8 +623,7 @@ export const dashboard: Bundle = {
     "dashboard.actionItems.history": "History",
     "dashboard.actionItems.restored": "Restored.",
     "dashboard.actionItems.restore": "Restore",
-    "dashboard.actionItems.archiveConfirm":
-      "Archive this action item? (Can be undone)",
+    "dashboard.actionItems.archiveConfirm": "Archive this action item? (Can be undone)",
     "dashboard.actionItems.archivedToast": "Archived.",
     "dashboard.actionItems.archive": "Archive",
     "dashboard.actionItems.event.created": "Created",
@@ -733,8 +638,7 @@ export const dashboard: Bundle = {
     "dashboard.actionItems.audit.loading": "Loading history…",
     "dashboard.actionItems.audit.failed": "Couldn't load history.",
     "dashboard.actionItems.audit.empty": "No events.",
-    "dashboard.actionItems.create.required":
-      "Title and description are required.",
+    "dashboard.actionItems.create.required": "Title and description are required.",
     "dashboard.actionItems.create.added": "Action item added.",
     "dashboard.actionItems.create.failed": "Couldn't add.",
     "dashboard.actionItems.create.title": "New Action Item",
@@ -771,30 +675,16 @@ export const dashboard: Bundle = {
     "dashboard.trendAlerts.acknowledged": "Acknowledged",
     "dashboard.trendAlerts.dismissed": "Dismissed",
 
-    // --- executive summary strip ---
-    "dashboard.aiInsight.period.week": "Weekly",
-    "dashboard.aiInsight.period.month": "Monthly",
-    "dashboard.aiInsight.period.quarter": "Quarterly",
-    "dashboard.aiInsight.empty.title": "Create your executive summary",
-    "dashboard.aiInsight.empty.desc":
-      "Period changes, critical insights, and priority actions — in one click.",
-    "dashboard.aiInsight.aria": "Executive summary",
-    "dashboard.aiInsight.label": "Executive Summary",
-    "dashboard.aiInsight.seeFull": "See the full summary",
-
     // --- executive hero ---
     "dashboard.executiveHero.headline.critical.prefix": "Your customers are ",
     "dashboard.executiveHero.headline.critical.keyword": "not satisfied",
-    "dashboard.executiveHero.headline.watch.prefix":
-      "Some of your customers are ",
+    "dashboard.executiveHero.headline.watch.prefix": "Some of your customers are ",
     "dashboard.executiveHero.headline.watch.keyword": "not satisfied",
     "dashboard.executiveHero.headline.healthy.prefix": "Your customers are ",
     "dashboard.executiveHero.headline.healthy.keyword": "satisfied",
-    "dashboard.executiveHero.headline.balanced.prefix":
-      "Customer satisfaction is ",
+    "dashboard.executiveHero.headline.balanced.prefix": "Customer satisfaction is ",
     "dashboard.executiveHero.headline.balanced.keyword": "balanced",
-    "dashboard.executiveHero.empty.title":
-      "Start listening to your customers' voice",
+    "dashboard.executiveHero.empty.title": "Start listening to your customers' voice",
     "dashboard.executiveHero.empty.desc":
       "Upload your first review file — within minutes your satisfaction status, main problems, and executive summary will be ready.",
     "dashboard.executiveHero.empty.descPointUp":
@@ -809,12 +699,9 @@ export const dashboard: Bundle = {
     "dashboard.executiveHero.summary.mid2": "are positive and",
     "dashboard.executiveHero.summary.suffix": "are negative.",
     "dashboard.executiveHero.satisfaction": "satisfaction",
-    "dashboard.executiveHero.trend.flat":
-      "Satisfaction unchanged in the last 30 days",
-    "dashboard.executiveHero.trend.up":
-      "Satisfaction rose {points} points in the last 30 days",
-    "dashboard.executiveHero.trend.down":
-      "Satisfaction fell {points} points in the last 30 days",
+    "dashboard.executiveHero.trend.flat": "Satisfaction unchanged in the last 30 days",
+    "dashboard.executiveHero.trend.up": "Satisfaction rose {points} points in the last 30 days",
+    "dashboard.executiveHero.trend.down": "Satisfaction fell {points} points in the last 30 days",
     "dashboard.executiveHero.reviewReviews": "Review customer feedback",
     "dashboard.executiveHero.reviewNegative": "Review negative feedback",
     "dashboard.executiveHero.createActionPlan": "Create an action plan",
@@ -825,21 +712,15 @@ export const dashboard: Bundle = {
     // role="img" replaced with role="group" + a per-segment aria-label.
     "dashboard.executiveHero.satisfactionBarAria":
       "Satisfaction distribution — click a segment to view the matching reviews",
-    "dashboard.executiveHero.legend.segmentAria":
-      "{label}: {pct}% — click to view",
-    "dashboard.executiveHero.windowEmpty.title":
-      "No reviews in the selected period",
+    "dashboard.executiveHero.legend.segmentAria": "{label}: {pct}% — click to view",
+    "dashboard.executiveHero.windowEmpty.title": "No reviews in the selected period",
     "dashboard.executiveHero.windowEmpty.desc":
       "Widen the period filter or upload new review data.",
-    "dashboard.executiveHero.batchEmpty.title":
-      "No reviews in the selected upload",
-    "dashboard.executiveHero.batchEmpty.desc":
-      "Pick another upload or clear the upload filter.",
-    "dashboard.executiveHero.scoreInfo.aria":
-      "How is the satisfaction score calculated?",
+    "dashboard.executiveHero.batchEmpty.title": "No reviews in the selected upload",
+    "dashboard.executiveHero.batchEmpty.desc": "Pick another upload or clear the upload filter.",
+    "dashboard.executiveHero.scoreInfo.aria": "How is the satisfaction score calculated?",
     "dashboard.executiveHero.scoreInfo.text":
       "The satisfaction score is the share of positive reviews among all reviews (positive + neutral + negative), calculated for the selected period. The trend badge compares the last 30 days with the previous 30 days.",
-    "dashboard.executiveHero.swotCta": "See the action plan",
 
     // --- period filter ---
     "dashboard.window.label": "Period",
@@ -855,38 +736,18 @@ export const dashboard: Bundle = {
     "dashboard.filterBar.batchChipRemove": "Remove upload filter",
     "dashboard.filterBar.clear": "Clear filters",
 
-    // --- NPS breakdown card ---
-    "dashboard.npsCard.title": "NPS Distribution",
-    "dashboard.npsCard.infoAria": "How is NPS calculated?",
-    "dashboard.npsCard.info":
-      "NPS = % Promoters − % Detractors (ranges from −100 to +100). On a 0-10 scale, 9-10 counts as Promoter, 7-8 as Passive and 0-6 as Detractor.",
-    "dashboard.npsCard.promoters": "Promoters",
-    "dashboard.npsCard.passives": "Passives",
-    "dashboard.npsCard.detractors": "Detractors",
-    "dashboard.npsCard.scoreLabel": "NPS Score",
-    "dashboard.npsCard.empty":
-      "No NPS data in this period. Map an NPS column in your upload file and the distribution will appear here.",
-    "dashboard.npsCard.insufficientN": "Not enough responses for NPS ({count} responses)",
-    "dashboard.npsCard.coverage": "Reviews carrying NPS data: {pct}%",
-
     // --- category sentiment breakdown ---
     // --- sub-category drill-down + root cause (Sprint 13.1) ---
     "dashboard.rootCause.action": "Root Cause Analysis",
-    "dashboard.rootCause.title": "Root Cause Analysis",
-    "dashboard.rootCause.generate": "Generate analysis",
-    "dashboard.rootCause.regenerate": "Regenerate",
-    "dashboard.rootCause.close": "Close",
-    "dashboard.rootCause.empty":
-      "No analysis has been generated for this sub-category yet.",
-    "dashboard.rootCause.meta": "{n} reviews analysed",
+    // F1 (2026-09-02) — title/generate/regenerate/close/empty/meta/
+    // suggestedAction removed: only the orphaned root-cause-dialog.tsx
+    // used them (file deleted, zero importers confirmed).
     "dashboard.rootCause.affectedSurface": "Affected touchpoint",
-    "dashboard.rootCause.suggestedAction": "What to do",
     "dashboard.rootCause.noCredentials":
       "No LLM API key configured. Add one under Settings > Integrations.",
     "dashboard.rootCause.providerUnavailable":
       "The LLM provider is unavailable right now. Please try again shortly.",
-    "dashboard.rootCause.generateFailed":
-      "Could not generate the root cause analysis.",
+    "dashboard.rootCause.generateFailed": "Could not generate the root cause analysis.",
 
     // --- simple category card (home page, Sprint 13.3) ---
     "dashboard.categorySimple.title": "Satisfaction by category",
@@ -920,8 +781,7 @@ export const dashboard: Bundle = {
     "dashboard.rootCauseCards.lastAnalysis": "Last analysis: {time}",
     "dashboard.rootCauseCards.showDetails": "Show details",
     "dashboard.rootCauseCards.hideDetails": "Hide details",
-    "dashboard.rootCauseCards.queued":
-      "Analysis is queued — ready after the next upload.",
+    "dashboard.rootCauseCards.queued": "Analysis is queued — ready after the next upload.",
     "dashboard.rootCauseCards.generateNow": "Generate now",
     "dashboard.rootCauseCards.emptyViewer":
       "No root cause analysis yet — a manager can generate one.",
@@ -944,6 +804,17 @@ export const dashboard: Bundle = {
     "dashboard.dataQuality.escalation":
       "{n} reviews threaten a formal complaint or legal action — start with these.",
     "dashboard.dataQuality.escalationCta": "See the reviews with threats",
+
+    // --- failing processes (home right rail, F1 2026-09-02) ---
+    "dashboard.failingProcesses.title": "Processes at risk",
+    "dashboard.failingProcesses.trendAlerts": "{n} active trend alerts",
+    "dashboard.failingProcesses.slaResolution": "Resolution SLA violated at {pct}%",
+    "dashboard.failingProcesses.slaFirstResponse": "First response SLA violated at {pct}%",
+    "dashboard.failingProcesses.viral": "{n} negative tweets got high engagement",
+
+    // --- context nudge (home right rail, F1 2026-09-02) ---
+    "dashboard.contextNudge.text":
+      "Tell us your industry — root cause suggestions get tailored to your business",
 
     // --- experience breakdown cards ---
     "dashboard.experience.title": "Experience Breakdown",
@@ -975,23 +846,6 @@ export const dashboard: Bundle = {
 
     // --- priority action ---
 
-    // --- top problems ---
-    "dashboard.topProblems.title": "Most-complained-about topics",
-    "dashboard.topProblems.description":
-      "What your customers complain about most",
-    "dashboard.topProblems.actionLabel": "Action plan",
-    "dashboard.topProblems.statSuffix":
-      "negative reviews · {share}% of complaints",
-
-    // --- voice of customer ---
-    "dashboard.voiceOfCustomer.aria": "Voice of the customer",
-    "dashboard.voiceOfCustomer.title": "Voice of the Customer",
-    "dashboard.voiceOfCustomer.description": "In your customers' own words",
-    "dashboard.voiceOfCustomer.action": "All reviews",
-    "dashboard.voiceOfCustomer.sentiment.negative": "Negative",
-    "dashboard.voiceOfCustomer.sentiment.positive": "Positive",
-    "dashboard.voiceOfCustomer.sentiment.neutral": "Neutral",
-
     // --- quick links ---
     "dashboard.quickLinks.briefing.label": "Create Executive Summary",
     "dashboard.quickLinks.briefing.desc": "Period report",
@@ -1003,11 +857,9 @@ export const dashboard: Bundle = {
     "dashboard.quickLinks.reports.desc": "PDF / Excel export",
 
     // --- upload dock ---
-    "dashboard.uploadDock.acceptError":
-      "Only .csv or .xlsx files are accepted.",
+    "dashboard.uploadDock.acceptError": "Only .csv or .xlsx files are accepted.",
     "dashboard.uploadDock.sizeError": "File exceeds the 50 MB limit.",
-    "dashboard.uploadDock.uploadError":
-      "An unexpected error occurred during upload.",
+    "dashboard.uploadDock.uploadError": "An unexpected error occurred during upload.",
     "dashboard.uploadDock.aria": "Quick upload",
     "dashboard.uploadDock.title": "Quick upload",
     "dashboard.uploadDock.subtitle": "Drop a file — analysis starts right here",
@@ -1021,54 +873,19 @@ export const dashboard: Bundle = {
     "dashboard.uploadDock.retry": "Try again",
     "dashboard.uploadDock.advanced": "Advanced upload",
     "dashboard.uploadDock.hint.prefix": "Template standard: reviews go in the ",
-    "dashboard.uploadDock.hint.mid":
-      " column. For files with a different layout, use ",
+    "dashboard.uploadDock.hint.mid": " column. For files with a different layout, use ",
     "dashboard.uploadDock.hint.linkText": "advanced upload",
     "dashboard.uploadDock.drop.title": "Drop your CSV / XLSX file here",
     "dashboard.uploadDock.drop.subtitle": "or click to choose · up to 50 MB",
     "dashboard.uploadDock.dimensionNudge":
       "If you also have date and agent columns, map them via advanced upload — trend and data-quality cards work more precisely.",
 
-    // --- strategy snapshot cards ---
-    "dashboard.strategySnapshots.swot.emptyTitle": "Create your SWOT analysis",
-    "dashboard.strategySnapshots.swot.emptyDesc":
-      "All your reviews are read; your strengths and weaknesses emerge with evidence.",
-    "dashboard.strategySnapshots.swot.emptyCta": "Create SWOT",
-    "dashboard.strategySnapshots.swot.title": "Latest SWOT Analysis",
-    "dashboard.strategySnapshots.swot.strengths": "Strengths",
-    "dashboard.strategySnapshots.swot.weaknesses": "Weaknesses",
-    "dashboard.strategySnapshots.swot.seeFull": "Full analysis",
-    "dashboard.strategySnapshots.okr.emptyTitle": "Create your OKR goals",
-    "dashboard.strategySnapshots.okr.emptyDesc":
-      "Measurable goals for the coming period are generated from your SWOT.",
-    "dashboard.strategySnapshots.okr.emptyCta": "Create OKR",
-    "dashboard.strategySnapshots.okr.title": "Latest OKR Goals",
-    "dashboard.strategySnapshots.okr.seeFull": "All goals",
-
-    // --- classification quality ---
-    "dashboard.classificationQuality.band.good": "Good",
-    "dashboard.classificationQuality.band.watch": "Can be improved",
-    "dashboard.classificationQuality.band.low": "Low",
-    "dashboard.classificationQuality.good.headline":
-      "Classification quality: {pct}% match",
-    "dashboard.classificationQuality.good.hint":
-      "Most reviews landed in the correct category.",
-    "dashboard.classificationQuality.uncertain.headline":
-      "{count} reviews are 'uncertain' ({pct}%)",
-    "dashboard.classificationQuality.watch.hint":
-      "Very short or context-free reviews usually fall into 'uncertain'. Adding a custom category improves the rate.",
-    "dashboard.classificationQuality.low.hint":
-      "The uncertain rate is high. By adding custom categories from the Settings / Categories menu, you can correctly classify a larger portion of {total} reviews.",
-    "dashboard.classificationQuality.aria": "Classification quality warning",
-
     // --- attention list ---
-    "dashboard.attentionList.empty":
-      "No negative signals — no category stood out recently.",
+    "dashboard.attentionList.empty": "No negative signals — no category stood out recently.",
     "dashboard.attentionList.rowTotal": "within {n} total reviews",
     "dashboard.attentionList.rowNegative": "{n} negative reviews",
     "dashboard.attentionList.title": "Attention today",
-    "dashboard.attentionList.subtitle":
-      "categories with the most negative reviews",
+    "dashboard.attentionList.subtitle": "categories with the most negative reviews",
 
     // --- category distribution ---
     "dashboard.categoryChart.title": "Category distribution",
@@ -1089,8 +906,7 @@ export const dashboard: Bundle = {
     "dashboard.headlineMetrics.totalReviews": "Total reviews",
     "dashboard.headlineMetrics.totalReviewsHint": "Active records",
     "dashboard.headlineMetrics.openTickets": "Open tickets",
-    "dashboard.headlineMetrics.openTicketsHint":
-      "Open + in progress + pending",
+    "dashboard.headlineMetrics.openTicketsHint": "Open + in progress + pending",
     "dashboard.headlineMetrics.openedToday": "Opened today",
     "dashboard.headlineMetrics.openedTodayHint": "Since the start of today",
     "dashboard.headlineMetrics.crisisCount": "Crisis count",
@@ -1107,24 +923,20 @@ export const dashboard: Bundle = {
     "dashboard.healthHero.band.watch": "Watch",
     "dashboard.healthHero.band.risk": "At risk",
     "dashboard.healthHero.band.critical": "Critical",
-    "dashboard.healthHero.narrative.empty":
-      "No analyzed reviews yet. Start with a batch upload.",
+    "dashboard.healthHero.narrative.empty": "No analyzed reviews yet. Start with a batch upload.",
     "dashboard.healthHero.narrative.crisis":
       "Crisis volume is high — negative signals have intensified recently, attention needed.",
     "dashboard.healthHero.narrative.veryNegative":
       "Overall sentiment is clearly negative — consider management action.",
     "dashboard.healthHero.narrative.negative":
       "Overall sentiment is slightly negative — address it before the trend reverses.",
-    "dashboard.healthHero.narrative.avgNegative":
-      "Average sentiment leans negative.",
-    "dashboard.healthHero.narrative.good":
-      "The overall trend is good — no critical signals.",
+    "dashboard.healthHero.narrative.avgNegative": "Average sentiment leans negative.",
+    "dashboard.healthHero.narrative.good": "The overall trend is good — no critical signals.",
     "dashboard.healthHero.narrative.balanced":
       "The overall trend is balanced — periodic monitoring is enough.",
     "dashboard.healthHero.deltaLabel": "{delta} vs. previous month",
     "dashboard.healthHero.error.title": "Couldn't load CX Health data.",
-    "dashboard.healthHero.error.desc":
-      "It refreshes automatically once API access is restored.",
+    "dashboard.healthHero.error.desc": "It refreshes automatically once API access is restored.",
     "dashboard.healthHero.aria": "CX Health",
     "dashboard.healthHero.headerLabel": "CX Health · Last 30 days",
     "dashboard.healthHero.coverage.totalReviews": "Total reviews",
@@ -1145,24 +957,19 @@ export const dashboard: Bundle = {
 
     // --- metric cards (ticket) ---
     "dashboard.metricCards.openTickets": "Open tickets",
-    "dashboard.metricCards.openTicketsHint":
-      "Open, in progress, or pending customer",
+    "dashboard.metricCards.openTicketsHint": "Open, in progress, or pending customer",
     "dashboard.metricCards.openedToday": "Opened today",
-    "dashboard.metricCards.openedTodayHint":
-      "New tickets since the start of today",
+    "dashboard.metricCards.openedTodayHint": "New tickets since the start of today",
     "dashboard.metricCards.highPriority": "High priority",
-    "dashboard.metricCards.highPriorityHint":
-      "Urgent or high, not yet closed",
+    "dashboard.metricCards.highPriorityHint": "Urgent or high, not yet closed",
     "dashboard.metricCards.resolved7d": "Resolved in last 7 days",
     "dashboard.metricCards.resolved7dHint": "Resolved or closed",
 
     // --- NPS monthly trend ---
     "dashboard.npsMonthlyTrend.title": "Last 12 months NPS trend",
-    "dashboard.npsMonthlyTrend.subtitle":
-      "Monthly · months with no data appear as gaps",
+    "dashboard.npsMonthlyTrend.subtitle": "Monthly · months with no data appear as gaps",
     "dashboard.npsMonthlyTrend.tooltipNoData": "no data",
-    "dashboard.npsMonthlyTrend.months":
-      "Jan,Feb,Mar,Apr,May,Jun,Jul,Aug,Sep,Oct,Nov,Dec",
+    "dashboard.npsMonthlyTrend.months": "Jan,Feb,Mar,Apr,May,Jun,Jul,Aug,Sep,Oct,Nov,Dec",
 
     // --- quick action tiles ---
     "dashboard.quickActions.newUpload": "New upload",

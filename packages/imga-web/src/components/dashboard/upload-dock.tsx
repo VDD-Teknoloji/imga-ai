@@ -166,10 +166,15 @@ export function UploadDock() {
                   failed: snapshot.failed,
                   jobId: state.jobId,
                 });
-                // Hero + rapor blokları yeni veriyle tazelensin.
-                void queryClient.invalidateQueries({
-                  queryKey: ["executive-overview"],
-                });
+                // F1 (2026-09-02) — bir toplu yükleme tamamlandığında
+                // kurumun TÜM veri kümesi değişmiş olur (yalnız hero
+                // değil): kök neden, kategori, deneyim, özet paneli ve
+                // sağ raydaki yeni kartlar (Aksayan süreçler, veri
+                // kalitesi) hepsi aynı analizlerden besleniyor. Tek bir
+                // queryKey'i invalidate etmek F5 olmadan güncellenmeyen
+                // kartlara yol açıyordu — filtresiz invalidateQueries()
+                // her aktif sorguyu tazeler.
+                void queryClient.invalidateQueries();
               }}
             />
           </div>

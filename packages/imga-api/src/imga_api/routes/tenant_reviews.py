@@ -211,6 +211,9 @@ class ReviewSummaryResponse(BaseModel):
     entered_by: list[EnteredByCountItem]
     daily: list[DailyCountItem]
     ticket_linked: int
+    # B3 — NEGATİF + engagement (like+retweet+reply) >=
+    # VIRAL_ENGAGEMENT_THRESHOLD count (review_list_service.py).
+    viral_negative_count: int = 0
 
 
 class SentimentBlock(BaseModel):
@@ -413,7 +416,7 @@ async def list_reviews(
     ),
     limit: int = Query(default=100, ge=1, le=500),
     offset: int = Query(default=0, ge=0),
-    order_by: Literal["created_at", "sentiment_score"] = "created_at",
+    order_by: Literal["created_at", "sentiment_score", "engagement"] = "created_at",
     order: Literal["asc", "desc"] = "desc",
 ) -> ReviewListResponse:
     tenant_id = _require_active_tenant(current)
@@ -1194,4 +1197,5 @@ def _to_summary_response(summary: ReviewSummary) -> ReviewSummaryResponse:
             DailyCountItem(date=d.date, count=d.count, negative=d.negative) for d in summary.daily
         ],
         ticket_linked=summary.ticket_linked,
+        viral_negative_count=summary.viral_negative_count,
     )

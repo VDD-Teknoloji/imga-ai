@@ -74,7 +74,6 @@ from sqlalchemy import and_, or_, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
-from imga_api.cache.redis_client import get_redis_client
 from imga_api.services.audit_service import AuditService
 from imga_api.services.batch_service import (
     BatchAnalyzeService,
@@ -83,6 +82,7 @@ from imga_api.services.batch_service import (
 from imga_api.services.data_quality import classify_data_quality, detect_content_type
 from imga_api.services.fact_parsing import build_fact_row
 from imga_api.services.review_service import ReviewService
+from imga_api.services.root_cause_autogen import mark_enqueued
 from imga_api.services.tenant_config_service import TenantConfigService
 from imga_api.services.ticket_service import TicketService
 from imga_api.settings import BatchSettings
@@ -100,15 +100,6 @@ if TYPE_CHECKING:
     from imga_api.services.correction_store import CorrectedDecision
 
 log = logging.getLogger("imga-api.workers.batch")
-
-# Sprint 13.x+ — "hazırlanıyor" bayrağının TTL'i. generate_root_causes_task
-# bundan daha uzun sürerse (arq kuyruk gecikmesi dahil), FE bayrağın
-# süresi dolunca sessizce "hazır değil" durumuna döner — üretim gerçekten
-# bitince kart zaten dolu gelir, en kötü ihtimalde spinner biraz erken
-# kaybolur. Anahtar formatı ("root_cause_autogen:{tenant_id}") burada,
-# arq_worker.generate_root_causes_task'ta ve tenant_insights.py'de AYNEN
-# tekrarlanır — üçü de aynı sözleşmeyi paylaşan ayrı dosyalar.
-_ROOT_CAUSE_AUTOGEN_TTL_SECONDS = 20 * 60
 
 
 # ---------------------------------------------------------------------------
@@ -748,28 +739,33 @@ async def _enqueue_root_cause_auto_gen(
     ``generate_root_causes_task`` docstring'i) ve ``RootCauseService``'in
     12h cache'i küçük tekrar-yüklemeleri ücretsiz karşılar.
 
-    "Hazırlanıyor" bayrağı — enqueue BAŞARILI olduktan hemen sonra,
-    burada set edilir (task'ın kendi içinde DEĞİL): batch dakikalar
-    sürebiliyor, bayrağı task başlangıcında set etmek kullanıcının tam
-    beklediği süre boyunca ekranı boş bırakırdı. TTL kuyruk gecikmesi +
-    üretim süresini rahatça kapsar; ``generate_root_causes_task`` kendi
-    ``finally`` bloğunda (başarı/başarısızlık fark etmeksizin) bu
-    anahtarı siler.
+    "Hazırlanıyor" bayrağı — 2026-09 sonrası bir Redis SET'e taşındı
+    (``services/root_cause_autogen.py``): her batch kendi
+    ``batch_job_id``'sini o SET'e üye ekler, task başlarken üyeliği
+    yeniler (imga-batch tek işçili FIFO — büyük bir batch kuyrukta
+    öndeyse eski string-bayrağın TTL'i işin gerçek başlangıcından ÖNCE
+    dolabiliyordu) ve kendi ``finally``'sinde SADECE kendi üyeliğini
+    siler — iki eşzamanlı yükleme artık birbirinin bayrağını erken
+    kapatmaz (eski tasarımın ikinci audited kusuru). ``enqueue_job``
+    ``None`` döndüğünde (arq'ın kendi job-id dedup'ı) HİÇBİR üyelik
+    eklenmez — izlenecek yeni bir iş yok.
 
     Best-effort like ``_publish_terminal``: no arq pool wired (tests,
     or the in-process-scheduler fallback deploy) is a silent no-op,
     and an enqueue failure is logged + swallowed — a stalled root-
     cause refresh must never fail the batch that already succeeded.
-    The flag-set below is equally best-effort: a Redis failure there
-    is logged + swallowed, never allowed to fail the batch.
+    ``mark_enqueued`` is equally best-effort on its own (see
+    ``root_cause_autogen.py``); a Redis failure there is logged +
+    swallowed, never allowed to fail the batch.
     """
     if context.arq_pool is None:
         return
     try:
-        await context.arq_pool.enqueue_job(
+        job = await context.arq_pool.enqueue_job(
             "generate_root_causes_task",
             str(tenant_id),
             rows_succeeded,
+            str(batch_job_id),
             _job_id=f"rootcause:{tenant_id}:{batch_job_id}",
             _queue_name="imga-batch",
         )
@@ -780,18 +776,14 @@ async def _enqueue_root_cause_auto_gen(
         )
         return
 
-    try:
-        redis_client = get_redis_client()
-        await redis_client.set(
-            f"root_cause_autogen:{tenant_id}",
-            "1",
-            ex=_ROOT_CAUSE_AUTOGEN_TTL_SECONDS,
-        )
-    except Exception:
-        log.exception(
-            "batch worker: root-cause 'hazirlaniyor' flag set failed (non-fatal)",
-            extra={"tenant_id": str(tenant_id)},
-        )
+    if job is None:
+        # arq dedup: a job with this _job_id already exists (queued or
+        # in flight). No NEW job means nothing new to track — that
+        # existing job's own mark_enqueued/mark_started/mark_finished
+        # lifecycle already owns the tracking-set membership.
+        return
+
+    await mark_enqueued(tenant_id, batch_job_id)
 
 
 async def _publish_terminal(job_id: UUID, tenant_id: UUID, context: WorkerContext) -> None:

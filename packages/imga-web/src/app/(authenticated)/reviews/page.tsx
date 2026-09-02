@@ -101,6 +101,30 @@ const UNMATCHED_SENTINEL = "__unmatched__";
 // yerine ayrı bir dropdown'da; SENTIMENT_LABEL_KEYS zaten üstte tanımlı.
 const SENTIMENT_VALUES: readonly string[] = ["POZITIF", "NÖTR", "NEGATIF"];
 
+// F1 (2026-09-02) — sıralama kontrolü. Önceden hiç UI yoktu (order_by
+// yalnız use-reviews.ts'in buildQueryString'inde tanımlıydı, hiçbir
+// çağıran set etmiyordu); bu görevle birlikte "engagement" (viral
+// olumsuz tweet linki için) eklendi ve aynı anda ilk kez bir sıralama
+// kontrolü kondu. "created_at" backend varsayılanı — URL'i kirletmemek
+// için yalnız varsayılan-dışı bir değer seçiliyken yazılır.
+//
+// i18n notu: "reviews.*" anahtarları normalde insights.ts'de yaşıyor
+// (bu sayfanın diğer tüm çevirileri orada) ama bu ajanın HARD RULE
+// dosya listesi yalnız dashboard.ts'e dictionary erişimi veriyor —
+// anahtarlar isim uzayı tutarlılığı için "reviews.sort.*" kaldı,
+// fiziksel olarak dashboard.ts'te tanımlı (sözlükler tek bir düz
+// haritaya birleşiyor, bkz. lib/i18n/dictionaries.ts).
+const ORDER_BY_VALUES = ["created_at", "sentiment_score", "engagement"] as const;
+type OrderByValue = (typeof ORDER_BY_VALUES)[number];
+function isOrderByValue(v: string | null): v is OrderByValue {
+  return v !== null && (ORDER_BY_VALUES as readonly string[]).includes(v);
+}
+const ORDER_BY_LABEL_KEYS: Record<OrderByValue, string> = {
+  created_at: "reviews.sort.date",
+  sentiment_score: "reviews.sort.sentimentScore",
+  engagement: "reviews.sort.engagement",
+};
+
 // WS5 — /reviews/[id]/page.tsx ile aynı harita ("mevcut karar
 // etiketleri" — lib/types.ts'teki ReviewDecision NOT'una bkz:
 // backend'in yeni skipped_quality dalı bilinçli olarak dışarıda,
@@ -231,6 +255,7 @@ function readFiltersFromParams(params: URLSearchParams): ReviewListFiltersExt {
   const sentimentRaw = params.get("sentiment_labels");
   const sourceRaw = params.get("source_types");
   const perspectiveRaw = params.get("perspective_codes");
+  const orderByRaw = params.get("order_by");
   const primaryCatsRaw = params.get("primary_categories");
   const decisionsRaw = params.get("decisions");
   const qualityFlagsRaw = params.get("quality_flags");
@@ -280,6 +305,9 @@ function readFiltersFromParams(params: URLSearchParams): ReviewListFiltersExt {
     // İçerik türü çoklu-seçim filtresi (bkz. CONTENT_TYPE_LABEL_KEYS) —
     // diğer CSV filtrelerle aynı desen.
     content_types: contentTypesRaw?.split(",").filter(Boolean),
+    // F1 (2026-09-02) — sıralama; geçersiz/eksik değer undefined'a
+    // düşer (backend "created_at" varsayılanını kullanır).
+    order_by: isOrderByValue(orderByRaw) ? orderByRaw : undefined,
     ...dims,
   };
 }
@@ -318,6 +346,7 @@ function filtersEq(a: ReviewListFiltersExt, b: ReviewListFiltersExt): boolean {
     arrEq(a.quality_flags, b.quality_flags) &&
     a.include_flagged === b.include_flagged &&
     arrEq(a.content_types, b.content_types) &&
+    a.order_by === b.order_by &&
     DIMENSION_FILTER_CONFIGS.every((cfg) => arrEq(a[cfg.filterKey], b[cfg.filterKey]))
   );
 }
@@ -393,6 +422,11 @@ function ReviewsPageInner() {
       }
       if (next.content_types?.length) {
         params.set("content_types", next.content_types.join(","));
+      }
+      // F1 (2026-09-02) — sıralama; "created_at" backend varsayılanı,
+      // URL'i kirletmemek için yalnız varsayılan-dışı yazılır.
+      if (next.order_by && next.order_by !== "created_at") {
+        params.set("order_by", next.order_by);
       }
       // 2026-08-20 — 6 boyut filtresi, tek döngüde yazılıyor.
       for (const cfg of DIMENSION_FILTER_CONFIGS) {
@@ -577,6 +611,11 @@ function ReviewsPageInner() {
                 {t("reviews.list.reanalyzeBatch")}
               </Button>
             )}
+            {/* F1 (2026-09-02) — sıralama kontrolü. */}
+            <OrderByFilterDropdown
+              selected={filters.order_by ?? "created_at"}
+              onApply={(next) => applyFilters({ ...filters, order_by: next })}
+            />
             <FilterPills filters={filters} onApply={applyFilters} />
           </div>
 
@@ -1172,6 +1211,47 @@ function QualityFilterDropdown({
           {QUALITY_FLAG_VALUES.map((flag) => (
             <DropdownMenuRadioItem key={flag} value={flag} closeOnClick>
               {t(QUALITY_FLAG_LABEL_KEYS[flag]!)}
+            </DropdownMenuRadioItem>
+          ))}
+        </DropdownMenuRadioGroup>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+/** F1 (2026-09-02) — sıralama kontrolü. QualityFilterDropdown ile AYNI
+ *  tek-seçim radio-group deseni; farkı, her zaman bir değeri seçili
+ *  olması (kapatılamaz "Tümü" seçeneği yok — sıralama zorunlu bir
+ *  varsayılana sahip). */
+function OrderByFilterDropdown({
+  selected,
+  onApply,
+}: {
+  selected: OrderByValue;
+  onApply: (next: OrderByValue) => void;
+}) {
+  const { t } = useTranslation();
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger
+        render={
+          <Button variant="outline" size="sm" className="gap-1">
+            {t("reviews.sort.trigger", { value: t(ORDER_BY_LABEL_KEYS[selected]) })}
+            <ChevronDown className="size-4" aria-hidden />
+          </Button>
+        }
+      />
+      <DropdownMenuContent align="start" className="w-48">
+        <DropdownMenuRadioGroup
+          value={selected}
+          onValueChange={(v) => {
+            if (isOrderByValue(v)) onApply(v);
+          }}
+        >
+          {ORDER_BY_VALUES.map((value) => (
+            <DropdownMenuRadioItem key={value} value={value} closeOnClick>
+              {t(ORDER_BY_LABEL_KEYS[value])}
             </DropdownMenuRadioItem>
           ))}
         </DropdownMenuRadioGroup>

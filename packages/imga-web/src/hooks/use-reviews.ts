@@ -46,7 +46,17 @@ export interface ReviewDimensionFilterFields {
   sources?: string[];
 }
 
-export type ReviewListFiltersExt = ReviewListFilters & ReviewDimensionFilterFields;
+// F1 (2026-09-02) — "engagement" order_by değeri eklendi (viral olumsuz
+// tweet'leri etkileşime göre sıralamak için, bkz. failing-processes-card.tsx
+// + reviews/page.tsx sıralama kontrolü). lib/types.ts'teki ReviewListFilters.
+// order_by union'ı elle genişletilemiyor (o dosya bu ajanın dosya listesinde
+// değil — HARD RULE); intersection yerine Omit + yerel override kullanılıyor,
+// çünkü `("created_at"|"sentiment_score") & "engagement"` intersection'ı
+// disjoint literal union'lar için `never`e düşer.
+export type ReviewListFiltersExt = Omit<ReviewListFilters, "order_by"> &
+  ReviewDimensionFilterFields & {
+    order_by?: "created_at" | "sentiment_score" | "engagement";
+  };
 
 export interface ManualPromotionResponse {
   review_id: string;

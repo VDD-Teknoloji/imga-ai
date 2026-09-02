@@ -20,10 +20,12 @@ import { toast } from "sonner";
 import { SectionHeading } from "@/components/dashboard/section-heading";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useCreateActionItem } from "@/hooks/use-action-items";
 import { useRoleFlags } from "@/hooks/use-role-flags";
 import { useGenerateRootCause } from "@/hooks/use-root-cause";
 import {
   useRootCauseOverview,
+  type RootCauseOverviewAnalysis,
   type RootCauseOverviewCard,
   type RootCauseOverviewCauseItem,
   type RootCauseOverviewFilters,
@@ -31,7 +33,7 @@ import {
 import { ApiError } from "@/lib/api-client";
 import { useTranslation } from "@/lib/i18n/use-translation";
 import { formatDateTr, relativeTimeTr } from "@/lib/relative-time";
-import type { SentimentByCategoryResponse } from "@/lib/types";
+import type { ActionItemPriority, SentimentByCategoryResponse } from "@/lib/types";
 
 interface Props {
   /** Sayfanın aktif dönemi — RootCause overview çağrısı VE her kartın
@@ -49,6 +51,7 @@ interface Props {
 export function RootCauseCards({ filters, categories }: Props) {
   const { t } = useTranslation();
   const overview = useRootCauseOverview(filters, 3);
+  const { isSuperAdmin } = useRoleFlags();
 
   if (overview.isLoading) {
     return (
@@ -73,6 +76,11 @@ export function RootCauseCards({ filters, categories }: Props) {
   }
 
   const cards = overview.data?.cards ?? [];
+  const generating = overview.data?.generating ?? false;
+  // F2 — last_error yalnız üretim sürmüyorken anlamlı: üretim sürerken
+  // (generating true) şerit zaten "hazırlanıyor" diyor, hata kopyası onu
+  // gölgelememeli (görev talimatı: "never while generating is true").
+  const lastError = generating ? null : (overview.data?.last_error ?? null);
 
   return (
     <section aria-label={t("dashboard.rootCauseCards.aria")}>
@@ -82,14 +90,49 @@ export function RootCauseCards({ filters, categories }: Props) {
           varsa gizlenmez, üstlerinde sakin bir ilerleme şeridi belirir
           (PO isteği). Hook 5sn'de bir yoklayıp bu bayrak false olunca
           durur. */}
-      {overview.data?.generating && <RootCauseGeneratingStrip />}
+      {generating && <RootCauseGeneratingStrip />}
+
+      {/* Son otomatik üretim hata verdiyse kartlar çoğunlukla "analysis
+          null" hâlde gelir (cards.length > 0) — o durumda kartların kendi
+          "kuyruğa alındı" satırı yanıltıcı olurdu. Tek sakin şerit nedeni
+          söyler; gerçek analiz olan kart varsa şerit görünmez. */}
+      {lastError !== null && cards.length > 0 && cards.every((c) => !c.analysis) && (
+        <RootCauseErrorStrip kind={lastError} isSuperAdmin={isSuperAdmin} />
+      )}
 
       {cards.length === 0 ? (
         <div className="rise-in shadow-soft bg-card ring-foreground/5 mt-5 rounded-3xl p-6 ring-1 md:p-7">
           <p className="text-sm font-semibold">{t("dashboard.rootCauseCards.empty.title")}</p>
-          <p className="text-muted-foreground mt-1.5 text-sm leading-relaxed">
-            {t("dashboard.rootCauseCards.empty.desc")}
-          </p>
+          {/* F2 — hiç kart üretilmemişken son otomatik denemenin neden
+              boş kaldığını anlatır. Gerçek içerik varsa (cards.length
+              > 0) bu blok hiç render edilmez — görev talimatı. */}
+          {lastError === "no_credentials" ? (
+            <>
+              <p className="text-muted-foreground mt-1.5 text-sm leading-relaxed">
+                {t("rootCause.error.noCredentials")}
+              </p>
+              {/* Anahtar yönetimi 2026-08-09'dan beri yalnız süper yönetici
+                  yüzeyinde (/admin/tenants/{id}/llm); kurum yöneticisine
+                  tıklayınca hiçbir şey yapamayacağı bir link göstermeyiz. */}
+              {isSuperAdmin && (
+                <Link
+                  href="/admin/tenants"
+                  className="text-primary mt-2 inline-flex items-center gap-1 text-sm font-medium hover:underline"
+                >
+                  {t("rootCause.error.noCredentialsCta")}
+                  <ArrowRight className="size-3.5" aria-hidden />
+                </Link>
+              )}
+            </>
+          ) : lastError === "failed" ? (
+            <p className="text-muted-foreground mt-1.5 text-sm leading-relaxed">
+              {t("rootCause.error.failed")}
+            </p>
+          ) : (
+            <p className="text-muted-foreground mt-1.5 text-sm leading-relaxed">
+              {t("dashboard.rootCauseCards.empty.desc")}
+            </p>
+          )}
         </div>
       ) : (
         <div className="mt-5 space-y-4">
@@ -120,7 +163,7 @@ function RootCauseGeneratingStrip() {
     >
       <p className="text-sm font-semibold">{t("dashboard.rootCauseCards.generating")}</p>
       <div className="relative mt-3 h-1.5 w-full overflow-hidden rounded-full bg-zinc-200 dark:bg-zinc-800">
-        <div className="absolute inset-y-0 w-1/3 animate-[progress-slide_1.2s_ease-in-out_infinite] rounded-full bg-gradient-to-r from-primary/30 via-primary to-primary/30" />
+        <div className="from-primary/30 via-primary to-primary/30 absolute inset-y-0 w-1/3 animate-[progress-slide_1.2s_ease-in-out_infinite] rounded-full bg-gradient-to-r" />
       </div>
       <p className="text-muted-foreground mt-2 text-xs leading-relaxed">
         {t("dashboard.rootCauseCards.generatingHint")}
@@ -129,10 +172,38 @@ function RootCauseGeneratingStrip() {
   );
 }
 
-function labelFor(
-  code: string,
-  categories: SentimentByCategoryResponse | undefined,
-): string {
+function RootCauseErrorStrip({
+  kind,
+  isSuperAdmin,
+}: {
+  kind: "no_credentials" | "failed";
+  isSuperAdmin: boolean;
+}) {
+  const { t } = useTranslation();
+  return (
+    <div
+      role="status"
+      className="rise-in shadow-soft bg-card ring-foreground/5 mt-5 rounded-3xl p-5 ring-1"
+    >
+      <p className="text-muted-foreground text-sm leading-relaxed">
+        {kind === "no_credentials"
+          ? t("rootCause.error.noCredentials")
+          : t("rootCause.error.failed")}
+      </p>
+      {kind === "no_credentials" && isSuperAdmin && (
+        <Link
+          href="/admin/tenants"
+          className="text-primary mt-2 inline-flex items-center gap-1 text-sm font-medium hover:underline"
+        >
+          {t("rootCause.error.noCredentialsCta")}
+          <ArrowRight className="size-3.5" aria-hidden />
+        </Link>
+      )}
+    </div>
+  );
+}
+
+function labelFor(code: string, categories: SentimentByCategoryResponse | undefined): string {
   if (!categories) return code;
   const idx = categories.categories.indexOf(code);
   return idx >= 0 ? (categories.category_labels_tr[idx] ?? code) : code;
@@ -147,6 +218,20 @@ function evidenceHref(code: string, filters: RootCauseOverviewFilters): string {
   if (filters.date_from) params.set("date_from", filters.date_from);
   if (filters.date_to) params.set("date_to", filters.date_to);
   return `/reviews?${params.toString()}`;
+}
+
+/** F2 — "Süreç verisine bak" linki: /insights sayfasının operations
+ *  tab'ına, kartın KENDİ analiz penceresiyle (sayfanın o anki filtresi
+ *  değil — analiz başka bir dönem için üretilmiş olabilir). page.tsx
+ *  date_from/date_to'yu ham YYYY-MM-DD okur (searchParams.get), backend
+ *  bu alanları `date` tipiyle aynı biçimde döner (routes/tenant_insights.py
+ *  RootCauseAnalysisBlock) — dönüştürme gerekmez. */
+function processHref(analysis: RootCauseOverviewAnalysis): string {
+  const params = new URLSearchParams();
+  params.set("tab", "operations");
+  if (analysis.date_from) params.set("date_from", analysis.date_from);
+  if (analysis.date_to) params.set("date_to", analysis.date_to);
+  return `/insights?${params.toString()}`;
 }
 
 /** Alıntının ilk ~7 kelimesi — /reviews'in `search` filtresi ILIKE
@@ -202,11 +287,79 @@ function EvidenceQuoteList({ quotes }: { quotes: string[] }) {
   );
 }
 
+/** F2 — bir nedenin detayında kanıt alıntılarından sonra gelen iki ek
+ *  parça: (varsa) uzman notu + "Aksiyona çevir" mikro-akışı. İlk neden
+ *  VE her "diğer neden" aynı bileşeni paylaşır (PO isteği: ikisi de
+ *  aynı iskelet). "Oluşturuldu" durumu ve mutasyon çağrısı çağıran
+ *  bileşenden (RootCauseCardTile) prop olarak gelir — showDetails
+ *  kapanıp açıldığında OtherCauseBlock yeniden mount olsa bile durum
+ *  kaybolmasın diye (aksi halde aynı oturumda iki kez oluşturulabilirdi). */
+function CauseExtras({
+  cause,
+  canWrite,
+  isConverted,
+  isPending,
+  onConvert,
+}: {
+  cause: RootCauseOverviewCauseItem;
+  canWrite: boolean;
+  isConverted: boolean;
+  isPending: boolean;
+  onConvert: () => void;
+}) {
+  const { t } = useTranslation();
+  return (
+    <>
+      {cause.expert_note && (
+        <div className="space-y-1">
+          <p className="text-muted-foreground text-[11px] font-semibold tracking-wide uppercase">
+            {t("rootCause.expertNote.label")}
+          </p>
+          <p className="text-muted-foreground text-xs leading-relaxed">{cause.expert_note}</p>
+        </div>
+      )}
+      {canWrite &&
+        (isConverted ? (
+          <Link
+            href="/action-items"
+            className="text-muted-foreground hover:text-foreground inline-flex w-fit items-center gap-1 text-xs font-medium transition-colors"
+          >
+            {t("rootCause.convert.done")}
+            <ArrowRight className="size-3" aria-hidden />
+          </Link>
+        ) : (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={onConvert}
+            disabled={isPending}
+            className="self-start"
+          >
+            {t("rootCause.convert.button")}
+          </Button>
+        ))}
+    </>
+  );
+}
+
 /** "Diğer nedenler" bölümündeki her satır — ilk nedenle aynı iskelet:
  *  kendi Çıkarım etiketi + başlık, kendi açıklaması, kendi alıntıları,
  *  kendi mütevazı öneri satırı (PO isteği: diğer nedenler için de
  *  çıkarım ve yorumlar olsun). */
-function OtherCauseBlock({ cause }: { cause: RootCauseOverviewCauseItem }) {
+function OtherCauseBlock({
+  cause,
+  canWrite,
+  isConverted,
+  isPending,
+  onConvert,
+}: {
+  cause: RootCauseOverviewCauseItem;
+  canWrite: boolean;
+  isConverted: boolean;
+  isPending: boolean;
+  onConvert: () => void;
+}) {
   const { t } = useTranslation();
   const suggestion = suggestionText(cause);
   return (
@@ -219,6 +372,13 @@ function OtherCauseBlock({ cause }: { cause: RootCauseOverviewCauseItem }) {
         {cause.description}
       </p>
       <EvidenceQuoteList quotes={cause.evidence_quotes} />
+      <CauseExtras
+        cause={cause}
+        canWrite={canWrite}
+        isConverted={isConverted}
+        isPending={isPending}
+        onConvert={onConvert}
+      />
       {suggestion && (
         <p className="text-muted-foreground line-clamp-2 text-sm leading-relaxed">
           {t("dashboard.rootCauseCards.suggestion")}: {suggestion}
@@ -249,6 +409,48 @@ function RootCauseCardTile({
   // tek satır aksiyon dışındaki her şey bu state'in arkasında.
   const [showDetails, setShowDetails] = useState(false);
   const generate = useGenerateRootCause();
+  // F2 — "Aksiyona çevir" durumu burada, showDetails'in İÇİNDE değil:
+  // showDetails kapanıp tekrar açıldığında OtherCauseBlock/CauseExtras
+  // yeniden mount olur, state orada yaşasaydı "bir oturumda en fazla
+  // bir kez" garantisi bozulurdu. Anahtar bare index DEĞİL — bu tile
+  // primary_category_code'a göre kalıcı (root-cause-overview refetch'i
+  // üzerinden hayatta kalır); arka planda yeni bir analysis gelirse
+  // (generating polling / staleTime) aynı index farklı bir nedene
+  // işaret eder. `${analysis.generated_at}:${i}` bu analizin kendi
+  // kimliğini taşır, yeni analiz gelince durum otomatik sıfırlanır.
+  // Mutasyon da burada tek örnek — pending durumu kartın tüm "Aksiyona
+  // çevir" butonlarını (aynı anda tek tıklama beklenir) birlikte kilitler.
+  const createAction = useCreateActionItem();
+  const [converted, setConverted] = useState<Record<string, boolean>>({});
+
+  function convertCause(
+    causeKey: string,
+    cause: RootCauseOverviewCauseItem,
+    priority: ActionItemPriority,
+  ) {
+    const quotes = cause.evidence_quotes
+      .slice(0, 2)
+      .map((q) => `- ${q}`)
+      .join("\n");
+    const rationale = quotes ? `${cause.description}\n${quotes}` : cause.description;
+    createAction.mutate(
+      {
+        // Backend title <= 256 karakter kabul ediyor (görev kontratı) —
+        // headline/title zaten kısa üretilir ama savunmacı kesme.
+        title: (cause.headline ?? cause.title).slice(0, 256),
+        // suggestionText()'in kendi sırasından FARKLI: burada ham
+        // suggested_action önce (görev kontratı) — "" boş string de
+        // düşülsün diye `||` (ActionItem description boş kalmasın).
+        description: cause.suggested_action || cause.action_short || cause.description,
+        rationale,
+        priority,
+      },
+      {
+        onSuccess: () => setConverted((prev) => ({ ...prev, [causeKey]: true })),
+        onError: () => toast.error(t("rootCause.convert.error")),
+      },
+    );
+  }
 
   const analysis = card.analysis;
   const [firstCause, ...restCauses] = analysis?.causes ?? [];
@@ -373,6 +575,13 @@ function RootCauseCardTile({
                 {firstCause.description}
               </p>
               <EvidenceQuoteList quotes={firstCause.evidence_quotes} />
+              <CauseExtras
+                cause={firstCause}
+                canWrite={canWrite}
+                isConverted={Boolean(converted[`${analysis.generated_at}:0`])}
+                isPending={createAction.isPending}
+                onConvert={() => convertCause(`${analysis.generated_at}:0`, firstCause, "high")}
+              />
               {firstCause.affected_surface && (
                 <p className="text-muted-foreground text-xs">
                   {t("dashboard.rootCause.affectedSurface")}: {firstCause.affected_surface}
@@ -386,6 +595,15 @@ function RootCauseCardTile({
                   time: relativeTimeTr(analysis.generated_at),
                 })}
               </p>
+              {/* F2 — kartın kendi üretim penceresine bağlı operasyon
+                  verisi; sayfanın aktif filtresi değil (bkz. processHref). */}
+              <Link
+                href={processHref(analysis)}
+                className="text-muted-foreground hover:text-foreground inline-flex w-fit items-center gap-1 text-xs font-medium transition-colors"
+              >
+                {t("rootCause.processLink")}
+                <ArrowRight className="size-3" aria-hidden />
+              </Link>
               {/* PO isteği: diğer nedenler artık başlık listesi değil —
                   her biri ilk nedenle aynı iskelette (çıkarım + açıklama
                   + alıntı + öneri) tam anlatılır. */}
@@ -395,9 +613,19 @@ function RootCauseCardTile({
                     {t("dashboard.rootCauseCards.otherCausesTitle")}
                   </p>
                   <div className="space-y-4">
-                    {restCauses.map((cause, i) => (
-                      <OtherCauseBlock key={`${cause.title}-${i}`} cause={cause} />
-                    ))}
+                    {restCauses.map((cause, i) => {
+                      const causeKey = `${analysis.generated_at}:${i + 1}`;
+                      return (
+                        <OtherCauseBlock
+                          key={`${cause.title}-${i}`}
+                          cause={cause}
+                          canWrite={canWrite}
+                          isConverted={Boolean(converted[causeKey])}
+                          isPending={createAction.isPending}
+                          onConvert={() => convertCause(causeKey, cause, "medium")}
+                        />
+                      );
+                    })}
                   </div>
                 </div>
               )}

@@ -515,3 +515,114 @@ async def test_detail_exposes_source_meta(
         headers={"Authorization": f"Bearer {token}"},
     ).json()
     assert detail["source_meta"] == {"like_count": 5}
+
+
+# --- B3 — engagement sort + viral_negative_count ----------------------
+
+
+@pytest.mark.asyncio
+async def test_summary_viral_negative_count(
+    batch_client: TestClient,
+    semi_auto_tenant: tuple[User, UUID, str],
+    admin_session: AsyncSession,
+) -> None:
+    """viral_negative_count counts NEGATIF rows whose Twitter engagement
+    (like+retweet+reply from source_meta) meets VIRAL_ENGAGEMENT_
+    THRESHOLD (100). The second row's engagement (10) proves the
+    threshold actually excludes sub-threshold complaints rather than
+    counting every NEGATIF row with any source_meta at all; its huge
+    view_count proves view_count doesn't leak into the engagement sum."""
+    user, tid, pw = semi_auto_tenant
+    async with admin_session.begin():
+        await admin_session.execute(
+            text("SELECT set_config('app.current_tenant_id', :t, true)"),
+            {"t": str(tid)},
+        )
+        await _insert_review(
+            admin_session,
+            tenant_id=tid,
+            text_value="Bu kargo firmasi rezalet, herkes duysun!",
+            sentiment="NEGATIF",
+            score=-0.8,
+            source="Twitter",
+            source_meta={
+                "like_count": 100,
+                "retweet_count": 30,
+                "reply_count": 20,
+                "view_count": 50_000,
+            },
+        )
+        await _insert_review(
+            admin_session,
+            tenant_id=tid,
+            text_value="kargo biraz gec geldi",
+            sentiment="NEGATIF",
+            score=-0.3,
+            source="Twitter",
+            source_meta={
+                "like_count": 5,
+                "retweet_count": 3,
+                "reply_count": 2,
+                "view_count": 500_000,
+            },
+        )
+
+    token = login_token(batch_client, user.email, pw, tid)
+    r = batch_client.get(
+        "/tenants/me/reviews/summary",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["viral_negative_count"] == 1
+
+
+@pytest.mark.asyncio
+async def test_list_order_by_engagement_desc(
+    batch_client: TestClient,
+    semi_auto_tenant: tuple[User, UUID, str],
+    admin_session: AsyncSession,
+) -> None:
+    """order_by=engagement sorts the most-engaged Twitter row first; a
+    row with no source_meta at all (engagement 0, no tie with anything
+    else here) sorts last."""
+    user, tid, pw = semi_auto_tenant
+    async with admin_session.begin():
+        await admin_session.execute(
+            text("SELECT set_config('app.current_tenant_id', :t, true)"),
+            {"t": str(tid)},
+        )
+        await _insert_review(
+            admin_session,
+            tenant_id=tid,
+            text_value="viral sikayet",
+            sentiment="NEGATIF",
+            source="Twitter",
+            source_meta={"like_count": 100, "retweet_count": 30, "reply_count": 20},
+        )
+        await _insert_review(
+            admin_session,
+            tenant_id=tid,
+            text_value="az etkilesimli sikayet",
+            sentiment="NEGATIF",
+            source="Twitter",
+            source_meta={"like_count": 5, "retweet_count": 3, "reply_count": 2},
+        )
+        await _insert_review(
+            admin_session,
+            tenant_id=tid,
+            text_value="kaynak metasi olmayan yorum",
+            sentiment="NÖTR",
+            source="Email",
+        )
+
+    token = login_token(batch_client, user.email, pw, tid)
+    r = batch_client.get(
+        "/tenants/me/reviews",
+        params={"order_by": "engagement", "order": "desc"},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert r.status_code == 200, r.text
+    items = r.json()["items"]
+    assert len(items) == 3
+    assert items[0]["text"] == "viral sikayet"
+    assert items[-1]["text"] == "kaynak metasi olmayan yorum"

@@ -15,6 +15,7 @@ import { compare } from "./dictionaries/compare";
 import { core } from "./dictionaries/core";
 import { dashboard } from "./dictionaries/dashboard";
 import { insights } from "./dictionaries/insights";
+import { rootCause } from "./dictionaries/root-cause";
 import { settings } from "./dictionaries/settings";
 import { shell } from "./dictionaries/shell";
 import { tickets } from "./dictionaries/tickets";
@@ -32,6 +33,7 @@ const MODULES: readonly Bundle[] = [
   compare,
   settings,
   admin,
+  rootCause,
 ];
 
 function build(locale: Locale): Record<string, string> {

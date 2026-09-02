@@ -85,6 +85,14 @@ export interface ReviewSummaryResponse {
   entered_by: ReviewSummaryEnteredBy[];
   daily: ReviewSummaryDaily[];
   ticket_linked: number;
+  /** F1 (2026-09-02) — viral olumsuz tweet sayacı (failing-processes-card.tsx).
+   *  Backend alan adı birebir bu; tenant_reviews.py'nin ReviewSummaryResponse'una
+   *  eşzamanlı bir backend görevi ekledi (kontrol edildi, kodda mevcut).
+   *  Web + api bağımsız deploy edildiğinden yine de defansif okunuyor:
+   *  tüketici tarafı `> 0` karşılaştırmasıyla okur — bir ortamda alan
+   *  henüz `undefined` gelse bile `undefined > 0` `false` olduğundan
+   *  sessizce 0 gibi davranır. */
+  viral_negative_count: number;
 }
 
 /** filters must be the SAME object the list uses (prop-drilled from

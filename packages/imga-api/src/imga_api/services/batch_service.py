@@ -25,7 +25,7 @@ from imga_core.llm import (
     InvalidKeyError,
     LLMError,
 )
-from imga_db.models import AnalyzeBatchJob, BatchJobStatus, Review
+from imga_db.models import AnalyzeBatchJob, BatchJobStatus, Review, Tenant
 from sqlalchemy import desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -45,6 +45,7 @@ from imga_api.services.llm_provider_factory import (
     build_structured_provider,
     resolve_model_name,
 )
+from imga_api.services.strategic_constants import language_directive
 
 
 class BatchServiceError(Exception):
@@ -525,10 +526,12 @@ class QualityReportService:
 
         # B1b — DB override (tenant > global) varsa onu kullan, yoksa
         # kod sabitleri (swot_service.py:181-194 ile aynı desen).
-        # Dil/terim yönergesi kasıtlı olarak EKLENMEDİ — kalite raporu
-        # bugüne kadar bunları hiç uygulamıyordu (root_cause/swot'un
-        # aksine); bu değişiklik yalnız override yolunu açar, davranışı
-        # başka yönde genişletmez.
+        # Terim sözlüğü kasıtlı olarak EKLENMEDİ — kalite raporu iç
+        # operasyon metriği, müşteri kelime dağarcığına ihtiyaç
+        # duymuyor. Dil yönergesi ise 2026-09-02'de (TASK B2) EKLENDİ:
+        # daha önce hiç uygulanmıyordu ve İngilizce dilli kurumlar bu
+        # rapor için Türkçe koçluk metni alıyordu (root_cause/swot'un
+        # aksine bu servis language_directive'i hiç çağırmıyordu).
         from imga_api.services.prompt_override import select_prompt
 
         _ctx: dict[str, Any] = {
@@ -550,6 +553,8 @@ class QualityReportService:
             default_user_prompt=lambda: render_quality_report_user_prompt(_ctx),
         )
         user_prompt = selection.user_prompt
+        language = await self._tenant_language(tenant_id)
+        system_prompt = selection.system_prompt + language_directive(language)
 
         failed_invalid_key_ids: list[UUID] = []
 
@@ -559,7 +564,7 @@ class QualityReportService:
             try:
                 return await provider.generate_root_cause(
                     api_key=api_key,
-                    system_prompt=selection.system_prompt,
+                    system_prompt=system_prompt,
                     user_prompt=user_prompt,
                     response_schema=QUALITY_REPORT_RESPONSE_SCHEMA,
                     model_name=model_name,
@@ -666,6 +671,13 @@ class QualityReportService:
         return report
 
     # --- private aggregation queries ------------------------------------
+
+    async def _tenant_language(self, tenant_id: UUID) -> str:
+        """root_cause_service._tenant_language ile aynı desen."""
+        language = (
+            await self._session.execute(select(Tenant.language).where(Tenant.id == tenant_id))
+        ).scalar_one_or_none()
+        return language or "tr"
 
     async def _top_repeated_texts(self, job_id: UUID) -> list[dict[str, Any]]:
         stmt = (

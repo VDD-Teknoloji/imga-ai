@@ -60,6 +60,14 @@ services:
     build:
       context: .
       dockerfile: ./packages/imga-api/Dockerfile
+      # imga-api ships a ``smoke-runtime`` stage AFTER ``runtime`` (pytest
+      # CMD, no HTTP server) — without an explicit target, `compose build`
+      # takes the LAST stage. Pinned here (and on api-worker below) both
+      # because api itself needs the uvicorn CMD and because the two
+      # services share the ``imga-api:latest`` tag: if their targets ever
+      # diverged, whichever service built last would silently overwrite
+      # the other's image content.
+      target: runtime
     container_name: imga-api
     restart: unless-stopped
     ports:
@@ -67,6 +75,11 @@ services:
     volumes:
       - hf_cache:/cache/huggingface
       - ${IMGA_DATA_PATH:-./data}:/data
+      # Shared with api-worker — the API writes batch upload payloads +
+      # report output here, the worker reads them back (see api-worker's
+      # comment below).
+      - uploads_data:/var/imga/uploads
+      - reports_data:/var/imga/reports
     environment:
       IMGA_KB_PATH: /data/training_data.csv
       IMGA_RULES_PATH: /data/cx_rules.json
@@ -75,12 +88,82 @@ services:
       IMGA_LLM_PROVIDER: "${IMGA_LLM_PROVIDER:-gemini}"
       GEMINI_API_KEY: "${GEMINI_API_KEY:-}"
       IMGA_GEMINI_MODEL: "${IMGA_GEMINI_MODEL:-gemini-2.5-flash}"
+      # main.py reads this to switch batch dispatch onto the arq queue
+      # (api-worker below) instead of the in-process APScheduler path —
+      # unset, root-cause auto-generation after upload never fires
+      # locally because app.state.arq_pool stays None.
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "curl", "--fail", "http://localhost:8000/health"]
       interval: 30s
       timeout: 5s
       retries: 3
       start_period: 120s
+
+  # Sprint 9.0.5-A mirror (see infra/imga/production/docker-compose.yml)
+  # — out-of-process batch worker (arq). Local dev had no redis/worker
+  # at all, so REDIS_URL was always unset and app.state.arq_pool stayed
+  # None: batch jobs ran in-process (still worked) but root-cause
+  # auto-generation, which is dispatched onto the arq queue after a
+  # successful upload, silently never fired. Same image as api, CMD
+  # swapped to the arq entrypoint.
+  api-worker:
+    image: imga-api:latest
+    build:
+      context: .
+      dockerfile: ./packages/imga-api/Dockerfile
+      target: runtime
+    container_name: imga-api-worker
+    restart: unless-stopped
+    volumes:
+      - hf_cache:/cache/huggingface
+      - ${IMGA_DATA_PATH:-./data}:/data
+      - uploads_data:/var/imga/uploads
+      - reports_data:/var/imga/reports
+    environment:
+      IMGA_KB_PATH: /data/training_data.csv
+      IMGA_RULES_PATH: /data/cx_rules.json
+      IMGA_LLM_FALLBACK_ENABLED: "${IMGA_LLM_FALLBACK_ENABLED:-false}"
+      IMGA_LLM_PROVIDER: "${IMGA_LLM_PROVIDER:-gemini}"
+      GEMINI_API_KEY: "${GEMINI_API_KEY:-}"
+      IMGA_GEMINI_MODEL: "${IMGA_GEMINI_MODEL:-gemini-2.5-flash}"
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: ["python", "-m", "arq", "imga_api.workers.arq_worker.WorkerSettings"]
+    healthcheck:
+      test: ["CMD", "python", "-m", "imga_api.workers.healthcheck"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  # Sprint 8.3.6 cache + Sprint 9.0.5-A arq queue backend, mirrored from
+  # the production stack so the worker above has something to enqueue
+  # onto locally.
+  redis:
+    image: redis:7-alpine
+    container_name: imga-redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      # 127.0.0.1 explicit — same IPv6/BusyBox reasoning as the web/api
+      # healthchecks above (see CLAUDE.md); redis-cli defaults to
+      # 127.0.0.1 too, but this keeps the intent visible.
+      test: ["CMD", "redis-cli", "-h", "127.0.0.1", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
 
   dashboard:
     image: imga-dashboard:latest
@@ -160,3 +243,11 @@ volumes:
     name: imga_hf_cache
   postgres_data:
     name: imga_postgres_data
+  redis_data:
+    name: imga_redis_data
+  # Batch upload payloads + report output, shared between api and
+  # api-worker (see api-worker's comment above).
+  uploads_data:
+    name: imga_uploads_data
+  reports_data:
+    name: imga_reports_data

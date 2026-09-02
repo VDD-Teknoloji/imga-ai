@@ -104,14 +104,29 @@ def test_tweet_matches_is_accent_insensitive() -> None:
     assert tweet_matches_terms("caydanlik sızdırıyor", terms, None)
 
 
-def test_tweet_url_from_item_prefers_url_then_id() -> None:
+def test_tweet_url_from_item_strips_handle_via_id() -> None:
+    # KVKK: id sayısalsa hesap adı hiç okunmaz, url alanı yok sayılır.
     assert (
-        tweet_url_from_item({"url": "https://x.com/a/status/1", "id": "1"})
-        == "https://x.com/a/status/1"
+        tweet_url_from_item({"url": "https://x.com/handle/status/1", "id": "1"})
+        == "https://x.com/i/web/status/1"
     )
     assert tweet_url_from_item({"id": "2092540287411159128"}) == (
         "https://x.com/i/web/status/2092540287411159128"
     )
+
+
+def test_tweet_url_from_item_extracts_id_from_url_when_id_missing() -> None:
+    # id eksik/sayısal değilse url'deki status id'si regex ile çıkarılır
+    # ama hesap adı ("handle" kısmı) sonuca hiç taşınmaz.
+    assert (
+        tweet_url_from_item({"url": "https://x.com/handle/status/42", "id": "abc"})
+        == "https://x.com/i/web/status/42"
+    )
+    assert (
+        tweet_url_from_item({"url": "https://twitter.com/handle/status/7"})
+        == "https://x.com/i/web/status/7"
+    )
+    assert tweet_url_from_item({"url": "https://x.com/handle/status/not-a-number"}) is None
     assert tweet_url_from_item({"id": "abc"}) is None
     assert tweet_url_from_item({}) is None
 
@@ -181,7 +196,10 @@ async def test_fetch_tweets_filters_noise_and_keeps_url(
         "tencerenin dibi 2 ayda tuttu",
         "Karaca'nın porselenleri gerçekten kaliteli",
     ]
-    assert result.tweets[0].url == "https://x.com/musteri/status/2"
+    # id alanı sayısal olduğundan, item["url"]'deki "musteri" hesap
+    # adı çıktıya hiç taşınmaz (KVKK) — her iki gönderi de kanonik,
+    # hesap adı içermeyen bağlantıyla döner.
+    assert result.tweets[0].url == "https://x.com/i/web/status/2"
     assert result.tweets[1].url == "https://x.com/i/web/status/3"
     assert result.tweets[1].created_at == datetime(2026, 8, 26, 8, 0, tzinfo=UTC)
     # Migration 0049 — likeCount/retweetCount parsed; absent replyCount
@@ -254,7 +272,7 @@ def _two_tweets_fetch(**_: object) -> TwitterFetchResult:
             TwitterTweet(
                 text="tencerenin dibi tuttu",
                 created_at=datetime(2026, 8, 26, 8, 0, tzinfo=UTC),
-                url="https://x.com/a/status/1",
+                url="https://x.com/i/web/status/1",
                 raw_text="@karacaonline tencerenin dibi tuttu",
             ),
             TwitterTweet(text="Cem Karaca konseri harikaydı", created_at=None),
@@ -302,7 +320,7 @@ async def test_twitter_import_happy_path(
                 TwitterTweet(
                     text="kargo çok iyi geldi",
                     created_at=datetime(2026, 5, 12, 8, 15, tzinfo=UTC),
-                    url="https://x.com/musteri/status/123",
+                    url="https://x.com/i/web/status/123",
                 ),
                 TwitterTweet(text="teslimat kötü ve geç", created_at=None),
             ],
@@ -353,7 +371,7 @@ async def test_twitter_import_happy_path(
         "kargo çok iyi geldi",
         "2026-05-12T08:15:00+00:00",
         "twitter",
-        "https://x.com/musteri/status/123",
+        "https://x.com/i/web/status/123",
         "",
         "",
         "",

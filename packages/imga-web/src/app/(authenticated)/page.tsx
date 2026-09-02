@@ -44,11 +44,13 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useState } from "react";
 
 import { CategorySentimentBreakdown } from "@/components/dashboard/category-sentiment-breakdown";
+import { ContextNudge } from "@/components/dashboard/context-nudge";
 import { DashboardFilterBar } from "@/components/dashboard/dashboard-filter-bar";
 import { DataQualityCoach } from "@/components/dashboard/data-quality-coach";
 import { DataSourceStrip } from "@/components/dashboard/data-source-strip";
 import { ExecutiveHero } from "@/components/dashboard/executive-hero";
 import { ExperienceBreakdownCards } from "@/components/dashboard/experience-breakdown-cards";
+import { FailingProcessesCard } from "@/components/dashboard/failing-processes-card";
 import { QuickLinks } from "@/components/dashboard/quick-links";
 import { RootCauseCards } from "@/components/dashboard/root-cause-cards";
 import {
@@ -60,7 +62,6 @@ import { UploadDock } from "@/components/dashboard/upload-dock";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   type AnalyticsQueryFilters,
-  useNpsSummary,
   useSentimentByCategory,
   useSentimentDistribution,
 } from "@/hooks/use-analytics";
@@ -69,6 +70,7 @@ import {
   type ExecutiveOverview,
 } from "@/hooks/use-executive-overview";
 import { useExperienceDistribution } from "@/hooks/use-experience";
+import { useReviewSummary } from "@/hooks/use-review-summary";
 import { useRoleFlags } from "@/hooks/use-role-flags";
 import { useAuthStore } from "@/lib/auth-store";
 import { useTranslation } from "@/lib/i18n/use-translation";
@@ -211,7 +213,7 @@ function DashboardInner() {
     batch_job_id: batchJobId || undefined,
   };
   // 2026-08-18 (Dalga 3, WS2) — include_flagged yalnız ham analitik
-  // uçlarına gider (dist/nps/byCategory/experience). useExecutiveOverview
+  // uçlarına gider (dist/byCategory/experience). useExecutiveOverview
   // her zaman temiz veri döner (backend FX2: 7 yüzeyde quality_flag IS
   // NULL sabit filtre, include_flagged param'ı hiç kabul etmiyor) — bu
   // yüzden AKSİYON/SORUNLAR/KANIT/DERİNLİK bölümleri toggle'dan etkilenmez.
@@ -221,7 +223,6 @@ function DashboardInner() {
   };
   const overview = useExecutiveOverview(filters);
   const dist = useSentimentDistribution(queryFilters);
-  const nps = useNpsSummary(queryFilters);
   const byCategory = useSentimentByCategory(queryFilters, 10);
   // Deneyim dağılımı yalnız tarih aralığı alır — uç henüz
   // batch_job_id kabul etmiyor; yükleme filtresi bu kartlara işlemez.
@@ -229,6 +230,14 @@ function DashboardInner() {
     date_from: filters.date_from,
     date_to: filters.date_to,
     include_flagged: includeFlagged || undefined,
+  });
+  // F1 (2026-09-02) — DataQualityCoach + FailingProcessesCard'ın ikisi
+  // de aynı /reviews/summary verisini kullanıyor; tek çağrı burada,
+  // aşağı prop olarak akar (iki ayrı hook çağrısı aynı queryKey'i
+  // tetiklerdi — "reuse by prop" görev notu).
+  const reviewSummary = useReviewSummary({
+    date_from: filters.date_from,
+    date_to: filters.date_to,
   });
 
   const sentimentCounts = toSentimentCounts(dist.data);
@@ -314,7 +323,6 @@ function DashboardInner() {
           <ExecutiveHero
             sentiment={sentimentCounts}
             trend={data?.trend}
-            npsScore={nps.data?.score}
             isLoading={isLoading || dist.isLoading}
             hasAnyData={hasAnyData}
             batchFilterActive={batchJobId !== ""}
@@ -365,12 +373,32 @@ function DashboardInner() {
 
           {/* KOÇ — veri kalitesi sinyali (eski ClassificationQualityChip'in
               yerine; bkz. data-quality-coach.tsx). */}
-          <DataQualityCoach dateFrom={filters.date_from} dateTo={filters.date_to} />
+          <DataQualityCoach
+            summary={reviewSummary.data}
+            isLoading={reviewSummary.isLoading}
+            isError={reviewSummary.isError}
+            dateFrom={filters.date_from}
+            dateTo={filters.date_to}
+          />
+
+          {/* AKSAYAN — trend uyarısı + SLA ihlali + viral olumsuz tweet
+              (F1, YENİ). Üç sinyalden hiçbiri ateşlemezse tamamen
+              gizlenir (silence rule); bkz. failing-processes-card.tsx. */}
+          <FailingProcessesCard
+            summary={reviewSummary.data}
+            summaryLoading={reviewSummary.isLoading}
+            dateFrom={filters.date_from}
+            dateTo={filters.date_to}
+          />
 
           {/* Yükleme tepede öne alındıysa rayda tekrarlama; viewer
               hiç görmez (yükleme yetkisi yok). */}
           {canWrite && !uploadFirst && <UploadDock />}
           <QuickLinks />
+
+          {/* NUDGE — sektör eksikse yönetici hatırlatması (F1, YENİ;
+              yalnız isAdmin; profil dolu/yükleniyorken sessiz). */}
+          <ContextNudge />
         </aside>
       </div>
     </main>

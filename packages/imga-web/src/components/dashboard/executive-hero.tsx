@@ -20,14 +20,19 @@
 //   * Memnuniyet skoru yanına "nasıl hesaplanıyor?" tooltip'i.
 //   * Veri artık sayfadaki dönem filtresine göre pencereli gelir;
 //     pencere boşsa hafif bir "bu dönemde yorum yok" kartı çizilir.
-//   * SWOT analizine göze çarpan yönlendirme butonu.
 //
 // WS5 (2026-08-18): SatisfactionBar'ın üç segmenti tıklanabilir hale
 // geldi — /insights heatmap'indeki handleCellClick deseniyle aynı:
 // segment kendi duygusuyla filtrelenmiş /reviews'e router.push eder,
 // sayfadaki aktif dönem varsa (dateFrom/dateTo) o da taşınır.
+//
+// F1 (2026-09-02) — ürün sahibi doğrudan talimatı: NPS satırı ve SWOT
+// yönlendirme butonu ana sayfadan kaldırıldı. Hero artık tek bir
+// birincil CTA'ya (yorumları incele) sahip; NPS ayrı bir sözleşme
+// altında zaten /insights NPS sekmesinde yaşıyor, ana sayfada rakam
+// kalabalığı yaratmasın diye tekrarlanmıyor.
 
-import { ArrowRight, Compass, Info, Upload } from "lucide-react";
+import { ArrowRight, Info, Upload } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 
@@ -127,8 +132,6 @@ interface Props {
   sentiment: SentimentCounts | undefined;
   /** Son 30 gün vs önceki 30 gün (dönem filtresinden bağımsız). */
   trend: ExecutiveSentimentTrend | null | undefined;
-  /** Seçili dönemin NPS skoru (veri yoksa null). */
-  npsScore: number | null | undefined;
   isLoading: boolean;
   /** Tenant'ta (tüm zamanlar) hiç yorum var mı? Pencere-boş ile
    *  gerçekten-boş ayrımını bu yapar. */
@@ -151,7 +154,6 @@ interface Props {
 export function ExecutiveHero({
   sentiment,
   trend,
-  npsScore,
   isLoading,
   hasAnyData,
   batchFilterActive = false,
@@ -275,15 +277,6 @@ export function ExecutiveHero({
             {t("dashboard.executiveHero.satisfaction")}
             <ScoreInfoTip />
           </p>
-          {npsScore !== null && npsScore !== undefined && (
-            <p className="text-muted-foreground mt-3 text-sm tabular-nums">
-              NPS{" "}
-              <strong className="text-foreground font-semibold">
-                {npsScore > 0 ? "+" : ""}
-                {Math.round(npsScore)}
-              </strong>
-            </p>
-          )}
         </div>
       </div>
 
@@ -297,7 +290,7 @@ export function ExecutiveHero({
         onSegmentClick={handleSegmentClick}
       />
 
-      {/* Aksiyonlar — negatiflere git + göze çarpan SWOT kapısı. */}
+      {/* Aksiyon — tek birincil CTA (F1: SWOT kapısı kaldırıldı). */}
       <div className="mt-7 flex flex-wrap items-center gap-3">
         <Link
           href={
@@ -310,14 +303,6 @@ export function ExecutiveHero({
           {visual.band === "healthy"
             ? t("dashboard.executiveHero.reviewReviews")
             : t("dashboard.executiveHero.reviewNegative")}
-          <ArrowRight className="size-4" aria-hidden />
-        </Link>
-        <Link
-          href="/strategy?tab=swot"
-          className="bg-primary text-primary-foreground hover:bg-primary/90 inline-flex items-center gap-2 rounded-2xl px-5 py-3 text-sm font-semibold transition-colors"
-        >
-          <Compass className="size-4" aria-hidden />
-          {t("dashboard.executiveHero.swotCta")}
           <ArrowRight className="size-4" aria-hidden />
         </Link>
       </div>

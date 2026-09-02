@@ -14,34 +14,42 @@
 //
 // Sprint 13.3 (2026-09-01) - 320px sag raya tasindi; break-words dar
 // sutunda tasmayi onler (kurallar/esikler dokunulmadan kalir).
+//
+// F1 (2026-09-02) — özet sorgusu artık burada değil, page.tsx'te
+// çağrılıyor ve prop olarak akıyor: sağ raydaki yeni FailingProcessesCard
+// da aynı /reviews/summary verisini (viral_negative_count) kullanıyor —
+// iki kart aynı queryKey'i iki kez tetiklemesin diye tek çağrı yukarı
+// taşındı ("reuse by prop" görev notu).
 
 import Link from "next/link";
 import { ArrowRight } from "lucide-react";
 
 import { Skeleton } from "@/components/ui/skeleton";
-import { useReviewSummary } from "@/hooks/use-review-summary";
+import type { ReviewSummaryResponse } from "@/hooks/use-review-summary";
 import { useTranslation } from "@/lib/i18n/use-translation";
 
 interface Props {
+  summary: ReviewSummaryResponse | undefined;
+  isLoading: boolean;
+  isError: boolean;
   dateFrom?: string;
   dateTo?: string;
 }
 
-export function DataQualityCoach({ dateFrom, dateTo }: Props) {
+export function DataQualityCoach({ summary, isLoading, isError, dateFrom, dateTo }: Props) {
   const { t, locale } = useTranslation();
   const numberLocale = locale === "en" ? "en-US" : "tr-TR";
-  const summary = useReviewSummary({ date_from: dateFrom, date_to: dateTo });
 
-  if (summary.isLoading) {
+  if (isLoading) {
     return <Skeleton className="h-24 w-full rounded-3xl" />;
   }
   // Hata da boş de sessizce gizlenir — bu kart bir uyarı değil, ikinci
   // dereceden bir koç; sayfanın geri kalanını bloklamaya değmez.
-  if (summary.isError || !summary.data || summary.data.total === 0) {
+  if (isError || !summary || summary.total === 0) {
     return null;
   }
 
-  const { quality, question_count, total } = summary.data;
+  const { quality, question_count, total } = summary;
   // "boş/anlamsız/kopya" — informational ayrı tutulur (o soru sayısını
   // besler, kalite bayrağı değil, ayrı bir müşteri-sinyali).
   const flaggedCount = quality.duplicate + quality.empty + quality.meaningless;
@@ -49,7 +57,7 @@ export function DataQualityCoach({ dateFrom, dateTo }: Props) {
 
   // Şikâyet tehdidi (hakem heyeti/dava/CİMER) veri kalitesinden bağımsız
   // bir risk sinyali: kalite iyi olsa da gösterilir, önce bunlara bakılsın.
-  const escalationCount = summary.data.content_types?.escalation ?? 0;
+  const escalationCount = summary.content_types?.escalation ?? 0;
   const escalationLine =
     escalationCount > 0 ? (
       <p className="text-sentiment-negative mt-2 text-sm font-medium leading-relaxed">
@@ -76,6 +84,16 @@ export function DataQualityCoach({ dateFrom, dateTo }: Props) {
         <p className="text-muted-foreground text-sm font-medium">
           {t("dashboard.dataQuality.good")}
         </p>
+        {/* F1 (2026-09-02) — soru sayısı önceden yalnız uyarı durumunda
+            görünüyordu; ürün sahibi talimatıyla iyi durumda da ikinci
+            soluk satır olarak eklendi (0 iken sessiz). */}
+        {question_count > 0 && (
+          <p className="text-muted-foreground mt-1 text-sm leading-relaxed">
+            {t("dashboard.dataQuality.questionCount", {
+              n: question_count.toLocaleString(numberLocale),
+            })}
+          </p>
+        )}
         {escalationLine}
       </section>
     );

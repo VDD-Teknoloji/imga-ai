@@ -56,6 +56,7 @@ ROOT_CAUSE_RESPONSE_SCHEMA: dict[str, Any] = {
                     "share_estimate_pct": {"type": "number"},
                     "headline": {"type": "string"},
                     "action_short": {"type": "string"},
+                    "expert_note": {"type": "string"},
                 },
             },
         },
@@ -100,6 +101,11 @@ Yorumları oku ve 1-5 adet kök neden çıkar. Her kök neden için:
   karakter, aynı mütevazı ve iddiasız tonda (buyurgan emir kipiyle \
   BAŞLAMA). suggested_action'ı da her zamanki gibi tam cümleyle yaz; \
   action_short ona EK olarak yazılan kısa özettir.
+- expert_note: yalnız sana ayrıca bir UZMAN NOTU verilmişse doldur — \
+  o notta anlatılan CX pratiğini bu kök nedenin kanıtına uygulayan TEK \
+  cümle (en fazla ~200 karakter). Pratik bu kök nedene uymuyorsa ya da \
+  sana uzman notu verilmemişse alanı HİÇ YAZMA; zorlama, uydurma \
+  bağlantı kurma.
 
 KURALLAR:
 1. Yorumlarda olmayan bir olgu UYDURMA. Elinde kanıt yoksa o kök nedeni verme.
@@ -122,6 +128,11 @@ KURALLAR:
     action_short kısa vitrin alanlarıdır; title ve description tam \
     uzunlukta yazılır, suggested_action ise kısa ama gerçek içerikli TEK \
     bir cümledir — biri diğerinin yerini almaz.
+11. Sana KURUM BAĞLAMI verilmişse önerilerin o kurumun sektörüne ve \
+    büyüklüğüne UYSUN — bir kargo şirketiyle bir bankaya aynı öneri \
+    verilmez, tek kişilik bir işletmeyle kurumsal bir organizasyona aynı \
+    süreç dayatılmaz. KURUM BAĞLAMI verilmemişse ya da eksikse VARSAYIM \
+    YAPMA, uydurma bağlam icat etme; önerini genel tut.
 """
 
 # ---------------------------------------------------------------------------
@@ -133,6 +144,15 @@ ANA KATEGORİ: {{ primary_category_label }}
 ALT KATEGORİ: {{ perspective_label }}
 ANALİZ DÖNEMİ: {% if date_from and date_to %}{{ date_from }} – {{ date_to }}\
 {% else %}Tüm zaman{% endif %}
+{% if industry_label or company_size_label or business_description %}
+KURUM BAĞLAMI:
+{% if industry_label %}- Sektör: {{ industry_label }}
+{% endif %}\
+{% if company_size_label %}- Büyüklük: {{ company_size_label }}
+{% endif %}\
+{% if business_description %}- İş tanımı: {{ business_description }}
+{% endif %}\
+{% endif %}\
 
 KOVA İSTATİSTİĞİ:
 - Bu kovadaki toplam yorum: {{ bucket_total }}
@@ -164,12 +184,18 @@ _root_cause_template = _jinja_env.from_string(ROOT_CAUSE_USER_PROMPT_TEMPLATE)
 def render_root_cause_user_prompt(context: dict[str, Any]) -> str:
     """Render the root-cause user prompt.
 
-    Expected keys (all required — StrictUndefined enforces):
+    Expected keys (all required — StrictUndefined enforces; the three
+    KURUM BAĞLAMI keys must still be PRESENT even when the tenant hasn't
+    filled out a profile — pass None, the ``{% if %}`` guards skip the
+    whole block, they just can't be absent from the dict):
 
       * primary_category_label, perspective_label (str)
       * date_from, date_to (date | str | None)
       * bucket_total, bucket_negative, sample_count (int)
       * reviews: list[{"text": str, "sentiment": str}]
+      * industry_label, company_size_label, business_description
+        (str | None) — kurum profili doldurulmamışsa None; KURUM
+        BAĞLAMI bloğu üçü de boşsa hiç basılmaz.
     """
     ctx = dict(context)
     if isinstance(ctx.get("date_from"), _date):

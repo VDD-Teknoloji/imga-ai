@@ -140,6 +140,9 @@ services:
           tests/test_reviews_list.py \
           tests/test_reviews_summary.py \
           tests/test_root_cause_overview.py \
+          tests/test_root_cause_autogen.py \
+          tests/test_root_cause_context.py \
+          tests/test_prompt_templates_access.py \
           tests/test_orphan_recovery.py \
           tests/test_cleanup.py \
           tests/test_review_manual_ticket.py \

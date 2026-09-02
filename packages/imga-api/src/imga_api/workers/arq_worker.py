@@ -44,7 +44,9 @@ from sqlalchemy import func, select
 
 from imga_api.cache.redis_client import get_redis_client
 from imga_api.dependencies import build_pipeline
+from imga_api.services.root_cause_autogen import mark_finished, mark_started
 from imga_api.services.root_cause_service import (
+    NoCredentialsError,
     RootCauseService,
     day_rounded_window,
     pick_top_categories,
@@ -139,7 +141,10 @@ async def process_reanalysis_task(
 
 
 async def generate_root_causes_task(
-    ctx: dict[str, Any], tenant_id: str, rows_succeeded: int = 0
+    ctx: dict[str, Any],
+    tenant_id: str,
+    rows_succeeded: int = 0,
+    batch_job_id: str | None = None,
 ) -> None:
     """Sprint 13.x+ — post-batch otomatik kök neden üretimi.
 
@@ -184,93 +189,156 @@ async def generate_root_causes_task(
     ``generated_by_user_id=None`` — kolon nullable (root_cause_analysis
     modeli), tetikleyen bir kullanıcı değil bu arka plan görevi.
 
-    "Hazırlanıyor" bayrağı — ``batch_analyzer._enqueue_root_cause_auto_gen``
-    enqueue anında set eder; burada, sonuç ne olursa olsun (başarı,
-    kısmi başarı, tam başarısızlık) ``finally`` bloğunda silinir ki bir
-    hata bayrağı sonsuza dek asılı bırakmasın (TTL zaten bir emniyet
-    ağı, ama finally daha hızlı temizler).
+    "Hazırlanıyor" bayrağı (2026-09, ``services/root_cause_autogen.py``) —
+    ``batch_analyzer._enqueue_root_cause_auto_gen`` enqueue anında bu
+    işin ``batch_job_id``'sini bir Redis SET'e üye ekler
+    (``mark_enqueued``). Burada, KENDİ işlemeye başladığımız anda
+    ``mark_started`` üyeliği YENİLER — imga-batch tek işçili FIFO
+    olduğundan büyük bir batch kuyrukta öndeyse enqueue-anı TTL'i işin
+    gerçek başlangıcından önce dolabilir; SADD tekrarı bu durumda
+    "hazırlanıyor" durumunu erkenden kaybetmeyi önler. Sonuç ne olursa
+    olsun (başarı, kısmi başarı, tam başarısızlık) ``finally``
+    bloğunda ``mark_finished`` çağrılır: SADECE bu işin kendi üyeliği
+    silinir (aynı tenant için kuyrukta bekleyen BAŞKA bir batch'in
+    üyeliğine dokunmaz — eski tek-string tasarımın ikinci audited
+    kusuruydu) ve sonucun hata kodu (``"no_credentials"`` |
+    ``"failed"`` | ``None``) ayrı bir Redis anahtarına yazılır ki GET
+    /root-cause/overview üretim başarısız olduğunda genel "yeterli
+    veri yok" boş durumu yerine gerçek nedeni gösterebilsin.
+    ``batch_job_id=None`` — bu değişiklikten ÖNCE kuyruğa alınmış eski
+    işler için (yalnız tenant_id + rows_succeeded taşırlardı); böyle
+    bir işin izleyecek kendi üyeliği hiç olmadığından ``mark_started``
+    atlanır, ``mark_finished`` ise SET'in TAMAMINI siler (bkz.
+    ``mark_finished`` docstring'i).
+
+    Hata sınıflandırması — herhangi bir kategori ``NoCredentialsError``
+    fırlatırsa (kurumda aktif LLM anahtarı yok) sonuç
+    ``"no_credentials"``; aday seçimi ya da herhangi bir kategori
+    BAŞKA bir istisna fırlatırsa ``"failed"``; TÜM denenen kategoriler
+    başarılıysa (denenen sıfırsa — örn. eşiğin altında kalan tenant —
+    da dahil) ``None``. NoCredentialsError, "failed"'dan ÖNCELİKLİDİR:
+    aynı turda hem kimlik bilgisi eksikliği hem başka bir hata
+    görülürse kullanıcının göreceği (aksiyona dönüştürülebilir) neden
+    kazanır.
     """
     worker_context: WorkerContext = ctx["worker_context"]
-    tid = UUID(tenant_id)
-    date_from, date_to = day_rounded_window()
-    # _collect_bucket'ın (root_cause_service.py) gün sınırı kuralıyla
-    # aynı: kapsayıcı UTC gün sınırları, üst sınır gün SONU.
-    window_from = datetime.combine(date_from, dt_time.min, tzinfo=UTC)
-    window_to = datetime.combine(date_to, dt_time.max, tzinfo=UTC)
-    force_refresh = rows_succeeded >= _AUTO_GEN_FORCE_REFRESH_MIN_ROWS
-
+    tid: UUID | None = None
+    parsed_batch_job_id: UUID | None = None
+    had_no_credentials = False
+    had_other_failure = False
     try:
         try:
-            async with worker_context.app_session_factory() as session, session.begin():
-                await set_current_tenant(session, tid)
-                total = (
-                    await session.execute(
-                        select(func.count())
-                        .select_from(Review)
-                        .where(Review.tenant_id == tid)
-                        .where(Review.deleted_at.is_(None))
-                    )
-                ).scalar_one()
-                if int(total or 0) < _AUTO_GEN_MIN_TENANT_REVIEWS:
-                    return
-                picks = await pick_top_categories(
-                    session,
-                    tid,
-                    date_from=window_from,
-                    date_to=window_to,
-                    limit=_AUTO_GEN_TOP_N,
-                )
-        except Exception:
-            _logger.exception(
-                "root-cause auto-gen: candidate selection failed for tenant %s (non-fatal)",
-                tenant_id,
-            )
-            return
+            tid = UUID(tenant_id)
+            parsed_batch_job_id = UUID(batch_job_id) if batch_job_id is not None else None
+            if parsed_batch_job_id is not None:
+                await mark_started(tid, parsed_batch_job_id)
 
-        for pick in picks:
-            if not pick.can_generate or pick.perspective_code is None:
-                continue
+            date_from, date_to = day_rounded_window()
+            # _collect_bucket'ın (root_cause_service.py) gün sınırı
+            # kuralıyla aynı: kapsayıcı UTC gün sınırları, üst sınır
+            # gün SONU.
+            window_from = datetime.combine(date_from, dt_time.min, tzinfo=UTC)
+            window_to = datetime.combine(date_to, dt_time.max, tzinfo=UTC)
+            force_refresh = rows_succeeded >= _AUTO_GEN_FORCE_REFRESH_MIN_ROWS
+
             try:
                 async with worker_context.app_session_factory() as session, session.begin():
                     await set_current_tenant(session, tid)
-                    service = RootCauseService(session, tid, None)
-                    try:
-                        await service.generate(
-                            primary_category=pick.primary_category_code,
-                            perspective_code=pick.perspective_code,
-                            date_from=date_from,
-                            date_to=date_to,
-                            force_refresh=force_refresh,
+                    total = (
+                        await session.execute(
+                            select(func.count())
+                            .select_from(Review)
+                            .where(Review.tenant_id == tid)
+                            .where(Review.deleted_at.is_(None))
                         )
-                    except Exception:
-                        # İçeride: LLMCallAuditor'ın kendi savepoint'inde
-                        # zaten flush ettiği hata denetim satırı, sarmalayan
-                        # transaction NORMAL kapandığında COMMIT olsun diye
-                        # (route katmanındaki deferred-raise deseniyle aynı
-                        # gerekçe — dıştan yakalamak bu satırı rollback'e
-                        # götürürdü).
-                        _logger.exception(
-                            "root-cause auto-gen: %s/%s failed for tenant %s (non-fatal)",
-                            pick.primary_category_code,
-                            pick.perspective_code,
-                            tenant_id,
-                        )
+                    ).scalar_one()
+                    if int(total or 0) < _AUTO_GEN_MIN_TENANT_REVIEWS:
+                        return
+                    picks = await pick_top_categories(
+                        session,
+                        tid,
+                        date_from=window_from,
+                        date_to=window_to,
+                        limit=_AUTO_GEN_TOP_N,
+                    )
             except Exception:
+                had_other_failure = True
                 _logger.exception(
-                    "root-cause auto-gen: session-level failure for %s/%s, tenant %s (non-fatal)",
-                    pick.primary_category_code,
-                    pick.perspective_code,
+                    "root-cause auto-gen: candidate selection failed for tenant %s (non-fatal)",
                     tenant_id,
                 )
-    finally:
-        try:
-            redis_client = get_redis_client()
-            await redis_client.delete(f"root_cause_autogen:{tid}")
+                return
+
+            for pick in picks:
+                if not pick.can_generate or pick.perspective_code is None:
+                    continue
+                try:
+                    async with worker_context.app_session_factory() as session, session.begin():
+                        await set_current_tenant(session, tid)
+                        service = RootCauseService(session, tid, None)
+                        try:
+                            await service.generate(
+                                primary_category=pick.primary_category_code,
+                                perspective_code=pick.perspective_code,
+                                date_from=date_from,
+                                date_to=date_to,
+                                force_refresh=force_refresh,
+                            )
+                        except NoCredentialsError:
+                            had_no_credentials = True
+                            _logger.warning(
+                                "root-cause auto-gen: %s/%s has no active LLM "
+                                "credentials for tenant %s (non-fatal)",
+                                pick.primary_category_code,
+                                pick.perspective_code,
+                                tenant_id,
+                            )
+                        except Exception:
+                            # İçeride: LLMCallAuditor'ın kendi savepoint'inde
+                            # zaten flush ettiği hata denetim satırı, sarmalayan
+                            # transaction NORMAL kapandığında COMMIT olsun diye
+                            # (route katmanındaki deferred-raise deseniyle aynı
+                            # gerekçe — dıştan yakalamak bu satırı rollback'e
+                            # götürürdü). Aynı gerekçe NoCredentialsError için
+                            # de geçerli — yukarıdaki ayrı except dalı da bu
+                            # yüzden ``async with`` bloğunun İÇİNDE.
+                            had_other_failure = True
+                            _logger.exception(
+                                "root-cause auto-gen: %s/%s failed for tenant %s (non-fatal)",
+                                pick.primary_category_code,
+                                pick.perspective_code,
+                                tenant_id,
+                            )
+                except Exception:
+                    had_other_failure = True
+                    _logger.exception(
+                        "root-cause auto-gen: session-level failure for %s/%s, tenant %s (non-fatal)",
+                        pick.primary_category_code,
+                        pick.perspective_code,
+                        tenant_id,
+                    )
         except Exception:
+            # Savunmacı üst-seviye yakalama: tenant_id/batch_job_id
+            # UUID ayrıştırması ya da yukarıdaki iç try'ların dışında
+            # kalan herhangi bir beklenmedik hata. Bu arka plan
+            # zenginleştirmesi batch'in kendisini ASLA geriye alamaz —
+            # ne olursa olsun raise etmeden burada durur, finally'nin
+            # (tid biliniyorsa) temizliği yine de yapabilmesi için.
+            had_other_failure = True
             _logger.exception(
-                "root-cause auto-gen: 'hazirlaniyor' flag clear failed for tenant %s (non-fatal)",
+                "root-cause auto-gen: unexpected failure for tenant %s (non-fatal)",
                 tenant_id,
             )
+    finally:
+        if tid is not None:
+            error_code: str | None
+            if had_no_credentials:
+                error_code = "no_credentials"
+            elif had_other_failure:
+                error_code = "failed"
+            else:
+                error_code = None
+            await mark_finished(tid, parsed_batch_job_id, error=error_code)
 
 
 async def startup(ctx: dict[str, Any]) -> None:

@@ -12,7 +12,9 @@ Akış (executive briefing / SWOT idiomunun birebir aynısı):
   2. Redis cache lookup (12s TTL). Hit → LLM çağrısı yok.
   3. Kimlik bilgileri: ``load_active_llm_keys`` → yoksa
      ``NoCredentialsError`` (route 412'ye çevirir).
-  4. Prompt: root_cause_v1 + kurum diline göre ``language_directive``.
+  4. Prompt: root_cause_v1 + kurum bağlamı (sektör/büyüklük/iş tanımı) +
+     kurum diline göre ``language_directive`` + ``terminology_directive``
+     + kategori bazlı ``playbook_directive`` (uzman CX notu, TASK B2).
   5. Sağlayıcı: ``build_structured_provider`` + ``resolve_model_name``,
      çağrı ``GeminiKeyRotator`` üzerinden.
   6. Denetim: ``LLMCallAuditor`` / ``CALL_TYPE_ROOT_CAUSE``.
@@ -70,7 +72,10 @@ from imga_api.services.llm_provider_factory import (
     resolve_model_name,
 )
 from imga_api.services.strategic_constants import (
+    company_size_label,
+    industry_label,
     language_directive,
+    playbook_directive,
     terminology_directive,
 )
 
@@ -424,6 +429,7 @@ class RootCauseService:
         # birebir aynı şekilde).
         from imga_api.services.prompt_override import select_prompt
 
+        tenant_context = await self._tenant_context()
         _ctx: dict[str, Any] = {
             "primary_category_label": _CATEGORY_LABELS.get(primary_category, primary_category),
             "perspective_label": perspective_label,
@@ -433,6 +439,7 @@ class RootCauseService:
             "bucket_negative": sample.negative,
             "sample_count": len(sample.reviews),
             "reviews": sample.reviews,
+            **tenant_context,
         }
         selection = await select_prompt(
             self._session,
@@ -449,6 +456,7 @@ class RootCauseService:
             selection.system_prompt
             + language_directive(language)
             + terminology_directive(terminology)
+            + playbook_directive(primary_category)
         )
 
         failed_invalid_key_ids: list[UUID] = []
@@ -686,6 +694,36 @@ class RootCauseService:
             )
         ).scalar_one_or_none()
 
+    async def _tenant_context(self) -> dict[str, str | None]:
+        """Kurum profili (sektör / büyüklük / iş tanımı) — user prompt'a
+        KURUM BAĞLAMI bloğu olarak girer (2026-09-02, TASK B2:
+        swot_service._render_context ile aynı industry_label/
+        company_size_label deseni). Kurgu doldurulmamışsa (None) ilgili
+        satır template'te hiç basılmaz — "Sektör: belirsiz" gibi boş
+        gürültü yerine sessizce atlanır."""
+        row = (
+            await self._session.execute(
+                select(
+                    Tenant.industry,
+                    Tenant.industry_other_text,
+                    Tenant.company_size,
+                    Tenant.business_description,
+                ).where(Tenant.id == self._tenant_id)
+            )
+        ).one_or_none()
+        if row is None:
+            return {
+                "industry_label": None,
+                "company_size_label": None,
+                "business_description": None,
+            }
+        industry, industry_other_text, company_size, business_description = row
+        return {
+            "industry_label": industry_label(industry, industry_other_text) if industry else None,
+            "company_size_label": company_size_label(company_size) if company_size else None,
+            "business_description": (business_description or "").strip() or None,
+        }
+
     def _cache_key(
         self,
         primary_category: str,
@@ -774,23 +812,28 @@ def _validate_and_normalise(payload: dict[str, Any]) -> dict[str, Any]:
             share_value = float(share) if share is not None else None
         except (TypeError, ValueError):
             share_value = None
-        causes.append(
-            {
-                "title": str(item.get("title", "")),
-                "description": str(item.get("description", "")),
-                "evidence_quotes": quotes,
-                "affected_surface": str(item.get("affected_surface", "")),
-                "suggested_action": str(item.get("suggested_action", "")),
-                "share_estimate_pct": share_value,
-                # Vitrin alanları (kapalı kart): model yazmadıysa title /
-                # suggested_action'dan türetilir — kart asla uzun paragrafa
-                # düşmesin.
-                "headline": showcase_headline(item.get("headline"), item.get("title")),
-                "action_short": showcase_action(
-                    item.get("action_short"), item.get("suggested_action")
-                ),
-            }
-        )
+        cause: dict[str, Any] = {
+            "title": str(item.get("title", "")),
+            "description": str(item.get("description", "")),
+            "evidence_quotes": quotes,
+            "affected_surface": str(item.get("affected_surface", "")),
+            "suggested_action": str(item.get("suggested_action", "")),
+            "share_estimate_pct": share_value,
+            # Vitrin alanları (kapalı kart): model yazmadıysa title /
+            # suggested_action'dan türetilir — kart asla uzun paragrafa
+            # düşmesin.
+            "headline": showcase_headline(item.get("headline"), item.get("title")),
+            "action_short": showcase_action(item.get("action_short"), item.get("suggested_action")),
+        }
+        # 2026-09-02 (TASK B2) — expert_note opsiyonel: model uzman notunu
+        # bu kök nedene uygulamadıysa (ya da uzman notu hiç verilmediyse)
+        # alanı yazmaz; yer tutucu/boş gelirse anahtar tamamen DÜŞÜRÜLÜR
+        # (None ile doldurmuyoruz — routes/tenant_insights.py yokluğunu
+        # ``"expert_note" in cause`` ile ayırt eder).
+        expert_note = item.get("expert_note")
+        if isinstance(expert_note, str) and not _is_placeholder(expert_note):
+            cause["expert_note"] = _shorten(expert_note, _EXPERT_NOTE_MAX)
+        causes.append(cause)
     if not causes:
         if placeholder_items:
             raise RootCausePlaceholderError(
@@ -803,6 +846,7 @@ def _validate_and_normalise(payload: dict[str, Any]) -> dict[str, Any]:
 
 _SHOWCASE_HEADLINE_MAX = 60
 _SHOWCASE_ACTION_MAX = 90
+_EXPERT_NOTE_MAX = 200
 _SENTENCE_SPLIT_RE = re.compile(r"(?<=[.;!?])\s+")
 
 
