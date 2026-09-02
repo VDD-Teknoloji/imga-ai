@@ -38,28 +38,23 @@ export const analyze: Bundle = {
     "analyze.manual.goExistingTicket": "Mevcut Ticket'a git",
     "analyze.manual.ticketIdLabel": "Ticket ID:",
     "analyze.manual.promoteAnyway": "Yine de Ticket Aç",
-    "analyze.manual.promoteHint":
-      "Sistem güvenini geçersiz kıl — manuel olarak Ticket aç.",
+    "analyze.manual.promoteHint": "Sistem güvenini geçersiz kıl — manuel olarak Ticket aç.",
     "analyze.manual.decision.create.title": "Otomatik Ticket açıldı",
     "analyze.manual.decision.create.message":
       "Kurumunuzun otomasyon ayarı bu yoruma göre yeni bir Ticket açtı.",
-    "analyze.manual.decision.dedup.title":
-      "Aynı metin son 24 saatte zaten analiz edildi",
+    "analyze.manual.decision.dedup.title": "Aynı metin son 24 saatte zaten analiz edildi",
     "analyze.manual.decision.dedup.message":
       "Tekrar Ticket açılmadı; mevcut Ticket'ın altında çalışmaya devam et.",
-    "analyze.manual.decision.mode.title":
-      "Otomasyon modu manuel — Ticket açılmadı",
+    "analyze.manual.decision.mode.title": "Otomasyon modu manuel — Ticket açılmadı",
     "analyze.manual.decision.mode.message":
       "Manuel modda yalnızca duygu ve kategori analizi yapılır; Ticket açma için kurum ayarlarını Tam veya Yarı otomatik yap.",
     "analyze.manual.decision.threshold.title": "Eşik altı — Ticket açılmadı",
     "analyze.manual.decision.threshold.message":
       "Kurum otomasyon eşiği bu yorumu otomatik Ticket açmak için yeterli bulmadı; metni manuel inceleyebilirsin.",
-    "analyze.manual.decision.belirsiz.title":
-      "Kategori belirsiz — manuel sınıflandırma gerekli",
+    "analyze.manual.decision.belirsiz.title": "Kategori belirsiz — manuel sınıflandırma gerekli",
     "analyze.manual.decision.belirsiz.message":
       "Sınıflandırıcı bu metni emin bir kategoriye yerleştiremedi. Hangi modda olursan ol, belirsiz yorumlardan otomatik Ticket açılmaz.",
-    "analyze.manual.decision.quality.title":
-      "Düşük kaliteli veri — Ticket açılmadı",
+    "analyze.manual.decision.quality.title": "Düşük kaliteli veri — Ticket açılmadı",
     "analyze.manual.decision.quality.message":
       "Bu metin gerçek bir müşteri yorumu olarak değerlendirilmedi (boş/anlamsız veya otomatik bilgilendirme). Analiz kaydı tutuldu; varsayılan grafiklerde hariç tutulur.",
 
@@ -78,8 +73,7 @@ export const analyze: Bundle = {
     "analyze.upload.previewFailed": "Önizleme alınamadı.",
     "analyze.upload.uploadError": "Yükleme sırasında hata oluştu.",
     "analyze.upload.cancelFailed": "İptal başarısız.",
-    "analyze.upload.template.heading":
-      "İlk defa mı yüklüyorsunuz? Önce şablonu indirin.",
+    "analyze.upload.template.heading": "İlk defa mı yüklüyorsunuz? Önce şablonu indirin.",
     "analyze.upload.template.bodyBefore": "Yorumlarınızı şablondaki ",
     "analyze.upload.template.bodyAfter":
       " kolonuna yapıştırın. Şablona uymayan dosyalar reddedilir.",
@@ -95,8 +89,7 @@ export const analyze: Bundle = {
     "analyze.upload.onlyCsvXlsx": "Sadece .csv veya .xlsx dosyaları kabul edilir.",
     "analyze.upload.fileTooLarge": "Dosya 50 MB sınırını aşıyor.",
     "analyze.upload.dropzone": "Dosyayı buraya bırakın veya tıklayarak seçin",
-    "analyze.upload.dropzoneHint":
-      "CSV, XLSX — en fazla 50 MB, en fazla 25.000 satır",
+    "analyze.upload.dropzoneHint": "CSV, XLSX — en fazla 50 MB, en fazla 25.000 satır",
     "analyze.upload.step2Title": "Adım 2 — Sütun Eşleştirme",
     "analyze.upload.rowCount": "{n} satır",
     "analyze.upload.analyzingColumns": "Sütunlar analiz ediliyor…",
@@ -106,8 +99,7 @@ export const analyze: Bundle = {
     "analyze.upload.autoCreateHelp":
       "Kurumunuzun otomasyon modu ayarına göre eşiği geçen satırlar için otomatik Ticket açılır. Kapalıysa hiçbir satır Ticket açmaz; tüm analizler Analiz Arşivi'nde listelenir.",
     "analyze.upload.back": "Geri",
-    "analyze.upload.fixErrorsTitle":
-      "Dosyadaki engelleyici hataları düzeltip yeniden yükleyin",
+    "analyze.upload.fixErrorsTitle": "Dosyadaki engelleyici hataları düzeltip yeniden yükleyin",
     "analyze.upload.piiConsentFirst": "Önce PII onayı verin",
     "analyze.upload.uploading": "Yükleniyor…",
     "analyze.upload.startUpload": "Yüklemeyi Başlat",
@@ -178,7 +170,7 @@ export const analyze: Bundle = {
       "Gönderi metinlerinde aranır. Virgülle birden çok terim yazabilirsiniz; başına - koyduklarınız hariç tutulur. AI planı bu alanı doldurur, dilediğiniz gibi düzenleyin.",
     "analyze.twitter.relevanceLabel": "AI alaka kontrolü",
     "analyze.twitter.relevanceHelp":
-      "Çekilen her gönderi \"bu marka hakkında mı?\" diye AI'a sorulur; alakasızlar arşive girmeden elenir. Yaygın soyadı/kelime olan markalar için önerilir.",
+      'Çekilen her gönderi "bu marka hakkında mı?" diye AI\'a sorulur; alakasızlar arşive girmeden elenir. Yaygın soyadı/kelime olan markalar için önerilir.',
     "analyze.twitter.countLabel": "Kaç gönderi çekilsin?",
     "analyze.twitter.countOption": "{n} gönderi",
     "analyze.twitter.excludeLabel": "Hariç tutulacak hesap (opsiyonel)",
@@ -195,13 +187,35 @@ export const analyze: Bundle = {
     "analyze.twitter.queued": "{found} gönderi bulundu — analiz kuyruğa alındı.",
     "analyze.twitter.filteredNote": " {n} alakasız gönderi elendi.",
     "analyze.twitter.aiFilteredNote": " AI alaka kontrolü {n} gönderiyi eledi.",
-    "analyze.twitter.aiSkippedNote": " (AI alaka kontrolü çalışmadı — LLM anahtarı yok ya da hata.)",
+    "analyze.twitter.aiSkippedNote":
+      " (AI alaka kontrolü çalışmadı — LLM anahtarı yok ya da hata.)",
     "analyze.twitter.queuedPartial":
       "{found} gönderi bulundu (X'te bu arama için daha fazla Türkçe sonuç yok) — analiz kuyruğa alındı.",
     "analyze.twitter.notConfigured":
       "Twitter entegrasyonu henüz bu sunucuda yapılandırılmamış. Sistem yöneticinize başvurun.",
     "analyze.twitter.failed": "Gönderiler çekilemedi, lütfen tekrar deneyin.",
     "analyze.twitter.termRequired": "Arama terimi en az 2 karakter olmalı.",
+
+    // --- Arka plan ilerleme kartı (twitter-fetch-progress.tsx) ---
+    "analyze.twitter.progressTitle": "Gönderiler çekiliyor",
+    "analyze.twitter.progressQueued": "Kuyrukta bekleniyor…",
+    "analyze.twitter.progressStageFetching": "X/Twitter taranıyor…",
+    "analyze.twitter.progressStageJudging": "AI alaka kontrolü çalışıyor…",
+    "analyze.twitter.progressStageFinalizing": "Analiz kuyruğa hazırlanıyor…",
+    "analyze.twitter.progressFound": "{n} gönderi bulundu",
+    "analyze.twitter.progressJudging": "{n} gönderi AI kontrolünde",
+    "analyze.twitter.progressPages": "{n} sayfa tarandı",
+    "analyze.twitter.progressOldest": "En eskisi: {date}",
+    "analyze.twitter.progressExcludedCollab": "{n} işbirliği/reklam gönderisi hariç tutuldu",
+    "analyze.twitter.progressElapsed": "{time} geçti",
+    "analyze.twitter.progressLeaveHint": "Sayfadan ayrılabilirsiniz, çekim arka planda sürer.",
+    "analyze.twitter.continueToUpload": "Toplu Yükleme'ye devam et",
+    "analyze.twitter.noResultsError":
+      '"{term}" için uygun gönderi bulunamadı: X\'ten {fetched} gönderi çekildi, {filteredOut} tanesi alaka filtresinde elendi. Terimleri değiştirip tekrar deneyin.',
+    "analyze.twitter.noRelevantError":
+      "{found} gönderi çekildi ama AI alaka kontrolü hiçbirini markayla ilişkilendiremedi. Terimleri daraltın ya da AI kontrolünü kapatıp tekrar deneyin.",
+    "analyze.twitter.jobLost":
+      "İlerleme takibi kesildi. İşlem arka planda sürüyor olabilir — birkaç dakika sonra Toplu Yükleme listesini kontrol edin.",
 
     // --- Geçmiş Yüklemeler (analyze/upload/history/page.tsx) ---
     "analyze.history.backUpload": "Toplu Yükleme",
@@ -212,8 +226,7 @@ export const analyze: Bundle = {
     "analyze.history.emptyLink": "buradan",
     "analyze.history.emptyAfter": " yükleyebilirsiniz.",
     "analyze.history.retry": "Tekrar Dene",
-    "analyze.history.retryQueued":
-      "Yükleme kuyruğa alındı — kaldığı satırdan devam edecek.",
+    "analyze.history.retryQueued": "Yükleme kuyruğa alındı — kaldığı satırdan devam edecek.",
     "analyze.history.retryFailed": "Tekrar deneme başarısız.",
     "analyze.history.col.date": "Tarih",
     "analyze.history.col.file": "Dosya",
@@ -254,8 +267,7 @@ export const analyze: Bundle = {
     "analyze.history.qualityReport.generateButton": "Değerlendirme Üret",
     "analyze.history.qualityReport.generating": "Değerlendirme üretiliyor…",
     "analyze.history.qualityReport.generatedMeta": "{model} · {date}",
-    "analyze.history.qualityReport.generateFailed":
-      "Değerlendirme üretilemedi.",
+    "analyze.history.qualityReport.generateFailed": "Değerlendirme üretilemedi.",
     "analyze.history.qualityReport.loadFailed": "Kalite raporu yüklenemedi.",
     "analyze.history.qualityReport.close": "Kapat",
 
@@ -272,8 +284,7 @@ export const analyze: Bundle = {
     "analyze.history.reanalyze.noPermission":
       "Yeniden analiz için kurum yöneticisi olmanız gerekir.",
     "analyze.history.reanalyze.allButton": "Tüm yorumları yeniden analiz et",
-    "analyze.history.reanalyze.allConfirmTitle":
-      "Kurumun tüm yorumları yeniden analiz edilsin mi?",
+    "analyze.history.reanalyze.allConfirmTitle": "Kurumun tüm yorumları yeniden analiz edilsin mi?",
     "analyze.history.reanalyze.allConfirmDesc":
       "Kurumdaki TÜM yorumlar yeni sınıflandırma kurallarıyla baştan analiz edilecek; insan düzeltmeleri korunur. Veri hacmine göre uzun sürebilir ve bu süre boyunca analiz sonuçları değişmeye devam eder. Tek bir yüklemeyi güncellemek istiyorsanız satır bazındaki Yeniden Analiz Et'i kullanın.",
     "analyze.history.reanalyze.allConfirm": "Evet, tümünü yeniden analiz et",
@@ -293,13 +304,11 @@ export const analyze: Bundle = {
     "analyze.confidence.low": "Düşük güven — lütfen kontrol edin",
 
     // --- PII uyarısı (components/analyze/pii-warning-banner.tsx) ---
-    "analyze.pii.heading":
-      "Bu dosyada kişisel veri içerebilecek sütun(lar) bulundu.",
+    "analyze.pii.heading": "Bu dosyada kişisel veri içerebilecek sütun(lar) bulundu.",
     "analyze.pii.detectedColumns": "Tespit edilen sütun(lar): ",
     "analyze.pii.body":
       "Bu sütunlardaki değerler analiz sürecinde işlenecek ve ilgili kurumun veri kayıtlarında saklanabilir. KVKK uyarınca yüklemeye devam etmek için aşağıdaki onayı işaretleyin.",
-    "analyze.pii.consent":
-      "Bu kolonlardaki kişisel verilerin işlenmesine onay veriyorum.",
+    "analyze.pii.consent": "Bu kolonlardaki kişisel verilerin işlenmesine onay veriyorum.",
   },
   en: {
     // --- Manual Analysis (analyze/page.tsx) ---
@@ -329,8 +338,7 @@ export const analyze: Bundle = {
     "analyze.manual.noMatch": "no match",
     "analyze.manual.summary": "Summary",
     "analyze.manual.promoteSuccess": "Ticket opened manually.",
-    "analyze.manual.alreadyLinked":
-      "This analysis is already linked to a Ticket.",
+    "analyze.manual.alreadyLinked": "This analysis is already linked to a Ticket.",
     "analyze.manual.categoryNotConfigured":
       "Category is not configured for this organization — could not open a Ticket.",
     "analyze.manual.promoteFailed": "Ticket could not be opened.",
@@ -338,8 +346,7 @@ export const analyze: Bundle = {
     "analyze.manual.goExistingTicket": "Go to existing Ticket",
     "analyze.manual.ticketIdLabel": "Ticket ID:",
     "analyze.manual.promoteAnyway": "Open Ticket Anyway",
-    "analyze.manual.promoteHint":
-      "Override the system's confidence — open a Ticket manually.",
+    "analyze.manual.promoteHint": "Override the system's confidence — open a Ticket manually.",
     "analyze.manual.decision.create.title": "Ticket opened automatically",
     "analyze.manual.decision.create.message":
       "Your organization's automation setting opened a new Ticket for this comment.",
@@ -347,20 +354,16 @@ export const analyze: Bundle = {
       "The same text was already analyzed in the last 24 hours",
     "analyze.manual.decision.dedup.message":
       "No new Ticket was opened; continue working under the existing Ticket.",
-    "analyze.manual.decision.mode.title":
-      "Automation mode is manual — no Ticket opened",
+    "analyze.manual.decision.mode.title": "Automation mode is manual — no Ticket opened",
     "analyze.manual.decision.mode.message":
       "In manual mode only sentiment and category analysis runs; to open Tickets, set your organization to Full or Semi-automatic.",
-    "analyze.manual.decision.threshold.title":
-      "Below threshold — no Ticket opened",
+    "analyze.manual.decision.threshold.title": "Below threshold — no Ticket opened",
     "analyze.manual.decision.threshold.message":
       "The organization's automation threshold didn't find this comment sufficient to open a Ticket automatically; you can review the text manually.",
-    "analyze.manual.decision.belirsiz.title":
-      "Category unclear — manual classification required",
+    "analyze.manual.decision.belirsiz.title": "Category unclear — manual classification required",
     "analyze.manual.decision.belirsiz.message":
       "The classifier couldn't confidently place this text in a category. Regardless of mode, unclear comments don't open Tickets automatically.",
-    "analyze.manual.decision.quality.title":
-      "Low-quality data — no Ticket opened",
+    "analyze.manual.decision.quality.title": "Low-quality data — no Ticket opened",
     "analyze.manual.decision.quality.message":
       "This text wasn't treated as a genuine customer review (empty/meaningless or an automated notification). The analysis row is kept and excluded from default charts.",
 
@@ -379,8 +382,7 @@ export const analyze: Bundle = {
     "analyze.upload.previewFailed": "Preview failed.",
     "analyze.upload.uploadError": "An error occurred during upload.",
     "analyze.upload.cancelFailed": "Cancellation failed.",
-    "analyze.upload.template.heading":
-      "First time uploading? Download the template first.",
+    "analyze.upload.template.heading": "First time uploading? Download the template first.",
     "analyze.upload.template.bodyBefore": "Paste your comments into the ",
     "analyze.upload.template.bodyAfter":
       " column of the template. Files that don't match the template are rejected.",
@@ -396,8 +398,7 @@ export const analyze: Bundle = {
     "analyze.upload.onlyCsvXlsx": "Only .csv or .xlsx files are accepted.",
     "analyze.upload.fileTooLarge": "File exceeds the 50 MB limit.",
     "analyze.upload.dropzone": "Drop the file here or click to select",
-    "analyze.upload.dropzoneHint":
-      "CSV, XLSX — up to 50 MB, up to 25,000 rows",
+    "analyze.upload.dropzoneHint": "CSV, XLSX — up to 50 MB, up to 25,000 rows",
     "analyze.upload.step2Title": "Step 2 — Column Mapping",
     "analyze.upload.rowCount": "{n} rows",
     "analyze.upload.analyzingColumns": "Analyzing columns…",
@@ -407,8 +408,7 @@ export const analyze: Bundle = {
     "analyze.upload.autoCreateHelp":
       "Depending on your organization's automation mode, Tickets are opened automatically for rows that pass the threshold. If off, no row opens a Ticket; all analyses are listed in the Analysis Archive.",
     "analyze.upload.back": "Back",
-    "analyze.upload.fixErrorsTitle":
-      "Fix the blocking errors in the file and re-upload",
+    "analyze.upload.fixErrorsTitle": "Fix the blocking errors in the file and re-upload",
     "analyze.upload.piiConsentFirst": "Give PII consent first",
     "analyze.upload.uploading": "Uploading…",
     "analyze.upload.startUpload": "Start Upload",
@@ -478,7 +478,7 @@ export const analyze: Bundle = {
       "Matched inside post texts. Separate several terms with commas; a leading - excludes a term. The AI plan fills this field — edit it freely.",
     "analyze.twitter.relevanceLabel": "AI relevance check",
     "analyze.twitter.relevanceHelp":
-      "Every fetched post is asked \"is this about the brand?\"; unrelated ones are dropped before they reach the archive. Recommended for brands that are common surnames/words.",
+      'Every fetched post is asked "is this about the brand?"; unrelated ones are dropped before they reach the archive. Recommended for brands that are common surnames/words.',
     "analyze.twitter.countLabel": "How many posts?",
     "analyze.twitter.countOption": "{n} posts",
     "analyze.twitter.excludeLabel": "Account to exclude (optional)",
@@ -503,18 +503,38 @@ export const analyze: Bundle = {
     "analyze.twitter.failed": "Could not fetch posts, please try again.",
     "analyze.twitter.termRequired": "The search term must be at least 2 characters.",
 
+    // --- Background progress card (twitter-fetch-progress.tsx) ---
+    "analyze.twitter.progressTitle": "Fetching posts",
+    "analyze.twitter.progressQueued": "Waiting in queue…",
+    "analyze.twitter.progressStageFetching": "Scanning X/Twitter…",
+    "analyze.twitter.progressStageJudging": "Running AI relevance check…",
+    "analyze.twitter.progressStageFinalizing": "Preparing for analysis…",
+    "analyze.twitter.progressFound": "{n} posts found",
+    "analyze.twitter.progressJudging": "{n} posts under AI review",
+    "analyze.twitter.progressPages": "{n} pages scanned",
+    "analyze.twitter.progressOldest": "Oldest: {date}",
+    "analyze.twitter.progressExcludedCollab": "{n} sponsored/collab posts excluded",
+    "analyze.twitter.progressElapsed": "{time} elapsed",
+    "analyze.twitter.progressLeaveHint":
+      "You can leave this page — the import keeps running in the background.",
+    "analyze.twitter.continueToUpload": "Continue to Bulk Upload",
+    "analyze.twitter.noResultsError":
+      'No suitable posts found for "{term}": {fetched} posts fetched from X, {filteredOut} dropped by the relevance filter. Try different terms.',
+    "analyze.twitter.noRelevantError":
+      "{found} posts fetched, but the AI relevance check couldn't connect any of them to the brand. Narrow the terms or turn off the AI check and try again.",
+    "analyze.twitter.jobLost":
+      "Progress tracking was lost. The import may still be running in the background — check the Bulk Upload list in a few minutes.",
+
     // --- Past Uploads (analyze/upload/history/page.tsx) ---
     "analyze.history.backUpload": "Bulk Upload",
     "analyze.history.title": "Past Uploads",
     "analyze.history.newUpload": "New Upload",
     "analyze.history.loading": "Loading…",
-    "analyze.history.emptyBefore":
-      "No bulk uploads yet. You can upload your first file ",
+    "analyze.history.emptyBefore": "No bulk uploads yet. You can upload your first file ",
     "analyze.history.emptyLink": "here",
     "analyze.history.emptyAfter": ".",
     "analyze.history.retry": "Retry",
-    "analyze.history.retryQueued":
-      "Upload queued — it will resume from where it left off.",
+    "analyze.history.retryQueued": "Upload queued — it will resume from where it left off.",
     "analyze.history.retryFailed": "Retry failed.",
     "analyze.history.col.date": "Date",
     "analyze.history.col.file": "File",
@@ -555,8 +575,7 @@ export const analyze: Bundle = {
     "analyze.history.qualityReport.generateButton": "Generate Assessment",
     "analyze.history.qualityReport.generating": "Generating assessment…",
     "analyze.history.qualityReport.generatedMeta": "{model} · {date}",
-    "analyze.history.qualityReport.generateFailed":
-      "Could not generate the assessment.",
+    "analyze.history.qualityReport.generateFailed": "Could not generate the assessment.",
     "analyze.history.qualityReport.loadFailed": "Could not load the quality report.",
     "analyze.history.qualityReport.close": "Close",
 
@@ -570,11 +589,9 @@ export const analyze: Bundle = {
     "analyze.history.reanalyze.submitting": "Queueing…",
     "analyze.history.reanalyze.queued": "Re-analysis queued",
     "analyze.history.reanalyze.failed": "Could not start the re-analysis.",
-    "analyze.history.reanalyze.noPermission":
-      "Re-analysis requires a tenant admin role.",
+    "analyze.history.reanalyze.noPermission": "Re-analysis requires a tenant admin role.",
     "analyze.history.reanalyze.allButton": "Re-analyze all reviews",
-    "analyze.history.reanalyze.allConfirmTitle":
-      "Re-analyze every review in this tenant?",
+    "analyze.history.reanalyze.allConfirmTitle": "Re-analyze every review in this tenant?",
     "analyze.history.reanalyze.allConfirmDesc":
       "EVERY review in this tenant will be re-analyzed from scratch with the new classification rules; human corrections are preserved. Depending on your data volume this can take a long time, and analysis results will keep changing until it finishes. To update a single upload, use the per-row Re-analyze action instead.",
     "analyze.history.reanalyze.allConfirm": "Yes, re-analyze everything",
@@ -594,12 +611,10 @@ export const analyze: Bundle = {
     "analyze.confidence.low": "Low confidence — please check",
 
     // --- PII warning (components/analyze/pii-warning-banner.tsx) ---
-    "analyze.pii.heading":
-      "This file contains column(s) that may include personal data.",
+    "analyze.pii.heading": "This file contains column(s) that may include personal data.",
     "analyze.pii.detectedColumns": "Detected column(s): ",
     "analyze.pii.body":
       "Values in these columns will be processed during analysis and may be stored in the organization's data records. Under KVKK (data protection law), check the consent below to continue with the upload.",
-    "analyze.pii.consent":
-      "I consent to the processing of the personal data in these columns.",
+    "analyze.pii.consent": "I consent to the processing of the personal data in these columns.",
   },
 };

@@ -90,6 +90,10 @@ MAX_SAMPLE_REVIEWS = 300
 MIN_REVIEWS = 10
 #: Tek yorumun prompt'a giren en fazla karakteri (uzun kuyruğu kırp).
 _MAX_REVIEW_CHARS = 600
+#: ``RootCauseCard.share_basis`` — ``total_negative_count`` 'belirsiz' dahil
+#: TÜM negatifleri sayar (primary_category filtresi yok, bkz. o fonksiyonun
+#: docstring'i), o yüzden isim "categorised" değil "all" demeli.
+SHARE_BASIS_WINDOW_ALL = "window_negatives_all"
 # 2026-09-01 — yer tutucu ('...') iskelet yanıt için yeniden deneme sayısı.
 _PLACEHOLDER_RETRIES = 2
 

@@ -14,19 +14,13 @@
 // progress events; no refetchInterval.
 
 import { useEffect, useRef, useState } from "react";
-import {
-  useInfiniteQuery,
-  useMutation,
-  useQuery,
-  useQueryClient,
-} from "@tanstack/react-query";
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { apiRequest } from "@/lib/api-client";
 import { openSseStream, type SseHandle } from "@/lib/sse-client";
 import type { BatchJob, BatchJobListResponse } from "@/lib/types";
 
-const API_BASE =
-  process.env.NEXT_PUBLIC_API_URL || "http://localhost:8003";
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8003";
 
 export interface BatchUploadInput {
   file: File;
@@ -42,22 +36,12 @@ export interface BatchUploadInput {
   autoCreateTickets: boolean;
 }
 
-const TERMINAL_STATUSES = new Set<BatchJob["status"]>([
-  "completed",
-  "failed",
-  "cancelled",
-]);
+const TERMINAL_STATUSES = new Set<BatchJob["status"]>(["completed", "failed", "cancelled"]);
 
 export function useBatchUploadMutation() {
   const queryClient = useQueryClient();
   return useMutation<BatchJob, Error, BatchUploadInput>({
-    mutationFn: async ({
-      file,
-      textColumn,
-      sourceColumn,
-      dateColumn,
-      autoCreateTickets,
-    }) => {
+    mutationFn: async ({ file, textColumn, sourceColumn, dateColumn, autoCreateTickets }) => {
       const fd = new FormData();
       fd.append("file", file);
       if (textColumn) fd.append("text_column", textColumn);
@@ -90,24 +74,6 @@ export interface TwitterImportInput {
   relevanceCheck?: boolean;
 }
 
-export interface TwitterImportResult {
-  job: BatchJob;
-  requested: number;
-  found: number;
-  /** true → X'te bu sorgu için daha fazla Türkçe sonuç yok; found <
-   *  requested ise eksik çekim değil, kaynağın tamamı demektir. */
-  exhausted: boolean;
-  /** X'ten çekilen toplam gönderi (filtrelerden önce). */
-  fetched_total: number;
-  /** Alaka filtresinin elediği gönderi sayısı (terim metinde geçmiyor,
-   *  resmi hesaba da yazılmamış — çoğunlukla aynı soyadlı yazarlar). */
-  filtered_out: number;
-  /** AI hakeminin elediği gönderi sayısı. */
-  filtered_by_ai: number;
-  /** true → hakem hiç çalışmadı (LLM anahtarı yok / tüm partiler hata). */
-  ai_check_skipped: boolean;
-}
-
 export interface TwitterPlanInput {
   brand: string;
   handle?: string;
@@ -135,29 +101,6 @@ export function useTwitterPlanMutation() {
         method: "POST",
         body: { brand, handle: handle?.trim() || null },
       }),
-  });
-}
-
-export function useTwitterImportMutation() {
-  const queryClient = useQueryClient();
-  return useMutation<TwitterImportResult, Error, TwitterImportInput>({
-    mutationFn: async ({ term, count, excludeHandle, brandSummary, relevanceCheck }) =>
-      apiRequest<TwitterImportResult>("/tenants/me/analyze/twitter-import", {
-        method: "POST",
-        body: {
-          term,
-          count,
-          exclude_handle: excludeHandle?.trim() || null,
-          brand_summary: brandSummary?.trim() || null,
-          relevance_check: relevanceCheck ?? true,
-        },
-      }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["batch-history"] });
-      // Upload sayfası mount'ta bu anahtardan aktif işi bulur —
-      // invalidation, yönlendirme sonrası yeniden bağlanmayı garantiler.
-      queryClient.invalidateQueries({ queryKey: ["batch-active"] });
-    },
   });
 }
 
@@ -276,9 +219,7 @@ function sseSnapshotToPatch(raw: object): Partial<LiveBatchJob> {
  * doesn't need a structural rewrite — ``data`` is a partial
  * BatchJob (initial fetch + last SSE snapshot folded together).
  */
-export function useBatchProgressStream(
-  jobId: string | null,
-): BatchProgressStreamState {
+export function useBatchProgressStream(jobId: string | null): BatchProgressStreamState {
   const [data, setData] = useState<LiveBatchJob | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(jobId !== null);
   const [error, setError] = useState<string | null>(null);
@@ -412,7 +353,6 @@ function mergeProgress(
   return { ...prev, ...patch };
 }
 
-
 export function useBatchHistory(limit = 50) {
   return useInfiniteQuery<BatchJobListResponse>({
     queryKey: ["batch-history", limit],
@@ -443,11 +383,7 @@ export function useActiveBatchJob() {
       const data = await apiRequest<BatchJobListResponse>(
         "/tenants/me/analyze/batch?limit=10&offset=0",
       );
-      return (
-        data.jobs.find(
-          (j) => j.status === "queued" || j.status === "processing",
-        ) ?? null
-      );
+      return data.jobs.find((j) => j.status === "queued" || j.status === "processing") ?? null;
     },
     // Mount'ta bir kez yeter — aktif iş bulunursa SSE devralır.
     staleTime: 5_000,

@@ -23,6 +23,12 @@ import { ChevronDown, ChevronRight } from "lucide-react";
 
 import { Skeleton } from "@/components/ui/skeleton";
 import { useCategoryDrilldown } from "@/hooks/use-analytics";
+import {
+  CATEGORY_ICON_FALLBACK,
+  CATEGORY_ICON_MAP,
+  categoryIconFallbackIndex,
+  categoryTone,
+} from "@/lib/category-icons";
 import { useTranslation } from "@/lib/i18n/use-translation";
 import type { AnalyticsFilters, SentimentByCategoryResponse } from "@/lib/types";
 
@@ -93,6 +99,24 @@ function reviewsHref(params: Record<string, string | undefined>): string {
   return query ? `/reviews?${query}` : "/reviews";
 }
 
+/** Satır başındaki küçük ikon rozeti — root-cause-cards.tsx'teki
+ *  CategoryIconBadge ile aynı kayıt defterini (lib/category-icons.ts)
+ *  kullanır, yalnız daha küçük (satır listesi için sade tutulur). */
+function CategoryIconDot({ code }: { code: string }) {
+  // Satır içi tablo indekslemesi — bkz. root-cause-cards.tsx'teki aynı
+  // WHY yorumu (react-hooks/static-components).
+  const Icon = CATEGORY_ICON_MAP[code] ?? CATEGORY_ICON_FALLBACK[categoryIconFallbackIndex(code)]!;
+  const tone = categoryTone(code);
+  return (
+    <span
+      className={`inline-flex size-7 shrink-0 items-center justify-center rounded-full ${tone.bg} ${tone.fg}`}
+      aria-hidden
+    >
+      <Icon className="size-3.5" />
+    </span>
+  );
+}
+
 export function CategorySentimentBreakdown({ data, isLoading, filters }: Props) {
   const { t, locale } = useTranslation();
   const numberLocale = locale === "en" ? "en-US" : "tr-TR";
@@ -151,15 +175,18 @@ export function CategorySentimentBreakdown({ data, isLoading, filters }: Props) 
                     className="flex min-w-0 flex-1 flex-col gap-2 py-3.5"
                   >
                     <div className="flex items-center justify-between gap-4">
-                      <div className="min-w-0">
-                        <p className="text-foreground truncate text-sm font-medium">
-                          {row.label}
-                        </p>
-                        <p className="text-muted-foreground mt-0.5 text-xs">
-                          {t("dashboard.categorySimple.reviews", {
-                            n: row.total.toLocaleString(numberLocale),
-                          })}
-                        </p>
+                      <div className="flex min-w-0 items-center gap-2.5">
+                        <CategoryIconDot code={row.code} />
+                        <div className="min-w-0">
+                          <p className="text-foreground truncate text-sm font-medium">
+                            {row.label}
+                          </p>
+                          <p className="text-muted-foreground mt-0.5 text-xs">
+                            {t("dashboard.categorySimple.reviews", {
+                              n: row.total.toLocaleString(numberLocale),
+                            })}
+                          </p>
+                        </div>
                       </div>
                       <span className="text-sentiment-negative shrink-0 text-sm font-semibold tabular-nums">
                         {t("dashboard.categorySimple.negShare", { pct })}
@@ -189,7 +216,9 @@ export function CategorySentimentBreakdown({ data, isLoading, filters }: Props) 
                   {filters !== undefined && (
                     <button
                       type="button"
-                      onClick={() => setExpandedCode((prev) => (prev === row.code ? null : row.code))}
+                      onClick={() =>
+                        setExpandedCode((prev) => (prev === row.code ? null : row.code))
+                      }
                       aria-expanded={isOpen}
                       aria-label={
                         isOpen

@@ -8,6 +8,7 @@
 // kuralı: "render null while loading or when industry is set").
 
 import Link from "next/link";
+import { Building2 } from "lucide-react";
 
 import { useRoleFlags } from "@/hooks/use-role-flags";
 import { useTenantProfile } from "@/hooks/use-tenant-profile";
@@ -27,7 +28,8 @@ export function ContextNudge() {
       href="/settings/profile"
       className="rise-in shadow-soft bg-card ring-foreground/5 hover:bg-accent/40 block rounded-3xl p-4 ring-1 transition-colors"
     >
-      <p className="text-muted-foreground text-sm leading-relaxed">
+      <p className="text-muted-foreground flex items-center gap-2 text-sm leading-relaxed">
+        <Building2 className="size-4 shrink-0" aria-hidden />
         {t("dashboard.contextNudge.text")}
       </p>
     </Link>

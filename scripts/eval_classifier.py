@@ -10,6 +10,22 @@ puanlanır. api konteyneri içinde çalışır:
 
 Çıktı: eksen bazında doğruluk + karışıklık + /tmp/eval4_out.csv.
 2026-08-10 hedef çalışması — kalıcı regresyon kapısı.
+
+2026-09-02 (corrections-quality dalgası, scout item 2 — RC5) —
+``--with-corrections`` bayrağı: tenant'ın kayıtlı düzeltmelerini
+(``CorrectionStore.recent_examples``) prompt'a few-shot olarak
+enjekte eder, üretim yolunun (batch_analyzer._few_shot_for_chunk /
+tenant_analyze) yaptığının AYNISI. ÖNEMLİ SINIR: bu mod yalnız
+"en-güncel N" katmanını (``recent_examples``) ölçer — gold satırları
+hiçbir zaman embed edilmez, bu yüzden anlamsal-en-yakın
+(``nearest_corrections``) ve anlamsal-doğrudan-override
+(``semantic_override_lookup``) katmanlarının etkisini ÖLÇMEZ. Bu
+bayrağın sonucunu "RAG'ın tamamı işe yarıyor/yaramıyor" diye okumayın
+— yalnız "geçmiş insan kararlarını örnek göstermek prompt'u
+iyileştiriyor mu" sorusuna cevap verir. gold4-500 hiçbir düzeltmeden
+doğmadığı için (bağımsız örneklem) anlamsal katmanların gerçek
+etkisini ölçmek ayrı bir "düzeltme-genelleme" referans seti ister
+(bkz. docs/analysis/2026-09-02-duygu-kategori-iyilestirme-analizi.md).
 """
 
 from __future__ import annotations
@@ -47,11 +63,12 @@ async def main() -> None:
         CATEGORY_DESCRIPTIONS_TR,
         GLOBAL_CATEGORY_CODES,
     )
-    from imga_core.llm.unified_classifier import GeminiUnifiedEngine
+    from imga_core.llm.unified_classifier import FewShotExample, GeminiUnifiedEngine
     from imga_db import create_engine, create_session_factory
     from imga_db.session import set_current_tenant
     from sqlalchemy import text as sql_text
 
+    from imga_api.services.correction_store import load_correction_store
     from imga_api.services.llm_credentials import load_active_llm_keys
     from imga_api.services.llm_provider_factory import resolve_model_name
     from imga_api.workers.batch_analyzer import _load_taxonomy_payload
@@ -69,6 +86,12 @@ async def main() -> None:
     # saglayicilar icin esz. dusurme.
     ap.add_argument("--call-batch-size", type=int, default=None)
     ap.add_argument("--concurrency", type=int, default=4)
+    # 2026-09-02 (scout item 2, RC5) — tenant'in kayitli duzeltmelerini
+    # (en-guncel N) few-shot olarak enjekte eder; uretim yolunun
+    # kullandigi ayni CorrectionStore.recent_examples'i okur. Bkz. modul
+    # docstring'indeki sinir: yalnizca bu katmani olcer, anlamsal
+    # RAG katmanlarini degil.
+    ap.add_argument("--with-corrections", action="store_true")
     args = ap.parse_args()
 
     rows = list(csv.DictReader(open(args.gold_csv, encoding="utf-8")))
@@ -91,8 +114,26 @@ async def main() -> None:
         await set_current_tenant(session, tid)
         selection = await load_active_llm_keys(session, tid)
         snapshot = await _load_taxonomy_payload(session, tid)
+        few_shot: tuple[FewShotExample, ...] = ()
+        if args.with_corrections:
+            store = await load_correction_store(session, tid)
+            few_shot = tuple(
+                FewShotExample(
+                    text=e.text,
+                    sentiment_label=e.sentiment_label,
+                    category=e.category,
+                    reason=e.reason,
+                )
+                for e in store.recent_examples
+            )
     await engine.dispose()
     assert selection is not None, "aktif LLM kimligi yok"
+    if args.with_corrections:
+        print(
+            f"few-shot: {len(few_shot)} ornek yuklendi (yalniz en-guncel katman, "
+            f"anlamsal RAG katmanlari bu modda olculmuyor)",
+            flush=True,
+        )
 
     model = args.model or resolve_model_name(selection.provider, selection.model)
     print(f"model: {selection.provider}/{model}", flush=True)
@@ -111,6 +152,7 @@ async def main() -> None:
     preds, stats = await ue.classify_unified_batch_async(
         [r["text"] for r in rows],
         available_categories=list(GLOBAL_CATEGORY_CODES),
+        few_shot=few_shot,
         perspective_options=snapshot.perspective_options,
         category_descriptions=CATEGORY_DESCRIPTIONS_TR,
     )

@@ -503,6 +503,90 @@ async def test_pgvector_nearest_corrections_roundtrip(
     assert neighbours[0].sentiment_label == "NEGATIF"
 
 
+@pytest.mark.asyncio
+async def test_pgvector_nearest_corrections_default_k_widened(
+    semi_auto_tenant: tuple[User, UUID, str],
+    admin_session: AsyncSession,
+) -> None:
+    """2026-09-02 (corrections-quality dalgası, scout item 1) —
+    ``nearest_corrections``'ın varsayılan ``k``'si artık
+    ``SEMANTIC_FEWSHOT_K`` (10), eski sabit 6 değil. 200 satırlık bir
+    chunk'ta aynı konuda 6'dan fazla eşik-içi düzeltme varsa (yoğun,
+    tekrarlayan şikayet kümesi) eski kod 7.+ adayı hiç görmüyordu.
+    Bu regresyon testi eşik-içi ``SEMANTIC_FEWSHOT_K + 2`` aday seed
+    eder: varsayılan çağrı TAM ``SEMANTIC_FEWSHOT_K`` döner (eski
+    davranışta 6 dönerdi); ``k=6`` açıkça geçilince eski davranış hâlâ
+    elde edilebilir (geri uyum kırılmadı). Eşik dışı bir aday hiçbir
+    ``k`` değerinde dönmemeli."""
+    from imga_api.services.correction_store import (
+        SEMANTIC_FEWSHOT_K,
+        nearest_corrections,
+    )
+
+    _user, tid, _pw = semi_auto_tenant
+    review_id = await _seed_review(
+        admin_session,
+        tenant_id=tid,
+        text_value="Genis k testi icin catisma yorumu.",
+    )
+    query = [0.0] * 768
+    query[0] = 1.0
+
+    async with admin_session.begin():
+        await admin_session.execute(
+            text("SELECT set_config('app.current_tenant_id', :t, true)"),
+            {"t": str(tid)},
+        )
+        for i in range(SEMANTIC_FEWSHOT_K + 2):
+            vector = [0.0] * 768
+            vector[0] = 0.98
+            vector[10 + i] = 0.2
+            admin_session.add(
+                ReviewCorrection(
+                    tenant_id=tid,
+                    review_id=review_id,
+                    text_hash=review_text_hash(f"genis k adayi {i}"),
+                    review_text=f"Genis k adayi metni numara {i}.",
+                    old_sentiment_label="NÖTR",
+                    new_sentiment_label="NEGATIF",
+                    old_category="belirsiz",
+                    new_category="kargo",
+                    reason=None,
+                    embedding=vector,
+                )
+            )
+        # Eşik dışı uzak bir aday — hiçbir k değerinde dönmemeli.
+        far = [0.0] * 768
+        far[300] = 1.0
+        admin_session.add(
+            ReviewCorrection(
+                tenant_id=tid,
+                review_id=review_id,
+                text_hash=review_text_hash("uzak aday"),
+                review_text="Bu tamamen alakasiz bir yorum metni.",
+                old_sentiment_label="NÖTR",
+                new_sentiment_label="POZITIF",
+                old_category="belirsiz",
+                new_category="urun_kalitesi",
+                reason=None,
+                embedding=far,
+            )
+        )
+        await admin_session.flush()
+
+    async with admin_session.begin():
+        await admin_session.execute(
+            text("SELECT set_config('app.current_tenant_id', :t, true)"),
+            {"t": str(tid)},
+        )
+        default_result = await nearest_corrections(admin_session, tid, query)
+        legacy_result = await nearest_corrections(admin_session, tid, query, k=6)
+
+    assert len(default_result) == SEMANTIC_FEWSHOT_K
+    assert len(legacy_result) == 6
+    assert all(r.category == "kargo" for r in default_result)
+
+
 def test_apply_corrections_patches_matching_rows() -> None:
     from imga_api.services.correction_store import (
         CorrectedDecision,
@@ -1556,3 +1640,35 @@ def test_merge_few_shot_prioritises_semantic_and_dedupes() -> None:
     merged = merge_few_shot(recent, semantic, limit=4)
     texts = [m.text for m in merged]
     assert texts == ["anlamsal bir", "ortak metin", "guncel bir", "guncel iki"]
+
+
+def test_merge_few_shot_leaves_room_for_recent_after_widened_semantic_k() -> None:
+    """2026-09-02 (corrections-quality dalgası, scout item 1) —
+    ``SEMANTIC_FEWSHOT_K`` 6'dan 10'a çıkınca ``merge_few_shot``'un
+    en-güncel örnekler için ayırdığı pay ``FEW_SHOT_LIMIT(12) -
+    SEMANTIC_FEWSHOT_K(10) = 2`` slota düştü (bilinçli — bkz.
+    correction_store.py'daki SEMANTIC_FEWSHOT_K yorumu: yeni bir
+    düzeltme yoğun bir anlamsal kümenin altında hiç görünmez
+    olmasın). Bu test, ``nearest_corrections``'ın gerçek 10 anlamsal
+    aday döndürdüğü senaryoda ``merge_few_shot``'un hâlâ en az iki
+    güncel örneği bütçeye sığdırdığını doğrular."""
+    from imga_api.services.correction_store import (
+        FEW_SHOT_LIMIT,
+        SEMANTIC_FEWSHOT_K,
+        CorrectionExample,
+        merge_few_shot,
+    )
+
+    def example(text_value: str) -> CorrectionExample:
+        return CorrectionExample(
+            text=text_value, sentiment_label="NEGATIF", category="kargo", reason=None
+        )
+
+    semantic = [example(f"anlamsal {i}") for i in range(SEMANTIC_FEWSHOT_K)]
+    recent = [example(f"guncel {i}") for i in range(5)]
+    merged = merge_few_shot(recent, semantic)
+
+    assert len(merged) == FEW_SHOT_LIMIT
+    texts = [m.text for m in merged]
+    assert texts[:SEMANTIC_FEWSHOT_K] == [f"anlamsal {i}" for i in range(SEMANTIC_FEWSHOT_K)]
+    assert texts[SEMANTIC_FEWSHOT_K:] == ["guncel 0", "guncel 1"]

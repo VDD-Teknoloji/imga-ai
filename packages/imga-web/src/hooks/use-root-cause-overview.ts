@@ -61,6 +61,22 @@ export interface RootCauseOverviewCard {
   perspective_code: string | null;
   can_generate: boolean;
   analysis: RootCauseOverviewAnalysis | null;
+  /** home-liveliness (2026-09-02) — paralel bir backend ajanı ekliyor:
+   *  share_pct'in gerçek paydası (bu pencerede TÜM negatifler, 'belirsiz'
+   *  dahil — root_cause_service.py total_negative_count). Eskiden karta
+   *  hiç yansımayan bu sayı, hero'nun tüm-zamanlar negatif sayısıyla
+   *  karıştırılan "%67" şikayetinin kök nedeniydi (bkz. görev notu).
+   *  `generating?`/`last_error?` ile aynı gerekçeyle opsiyonel: web + api
+   *  bağımsız deploy edilir, eski sunucu bu alanları hiç göndermeyebilir. */
+  window_negative_total?: number;
+  /** YYYY-MM-DD, backend `date` tipiyle aynı ham biçim (bu dosyanın
+   *  üstündeki date_from/date_to notuyla aynı — ISO'ya genişletilmez). */
+  window_from?: string | null;
+  window_to?: string | null;
+  /** Bugün tek değer taşır: "window_negatives_all" — ileride başka bir
+   *  payda tanımı eklenirse FE bunu ayırt edebilsin diye string (enum
+   *  değil) bırakıldı. */
+  share_basis?: string;
 }
 
 export interface RootCauseOverviewResponse {

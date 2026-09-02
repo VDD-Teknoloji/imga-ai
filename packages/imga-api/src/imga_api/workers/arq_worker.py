@@ -63,6 +63,7 @@ from imga_api.workers.email_outbox_worker import (
     sla_breach_tick,
 )
 from imga_api.workers.scheduled_briefings import scheduled_briefing_tick
+from imga_api.workers.twitter_fetch import process_twitter_fetch_task
 
 #: Tenant genelinde bu eşiğin altında yorum varsa auto-gen hiç
 #: denenmez — küçük/yeni tenant'ta 90 günlük pencere zaten MIN_REVIEWS
@@ -443,9 +444,14 @@ class WorkerSettings:
     """arq picks this up via the ``arq imga_api.workers.arq_worker.WorkerSettings``
     CLI invocation in the api-worker compose service.
 
-    ``max_jobs`` matches ``chunk_concurrency`` — one job at a time per
-    worker process so the pool is fully owned. Multiple workers (a
-    second container) can share the queue if throughput needs it.
+    ``max_jobs`` (2026-09-02: 1 -> 2) — eskiden tek iş: havuz tamamen
+    o işe aitti. Twitter çekimi (``process_twitter_fetch_task``, I/O
+    ağırlıklı, BERT havuzuna dokunmaz) aynı kuyruğa girince tek işlik
+    kuyruk onu saatlerce bir batch'in arkasında bekletiyordu. İki iş:
+    ``settings.batch.global_concurrency`` (=2) ve paylaşılan
+    ``chunk_pool_semaphore`` zaten iki üst-düzey batch'i sınırlıyor;
+    prod işçi konteyneri 8 GiB limitte ~370 MiB kullanıyor. Daha fazla
+    throughput gerekirse ikinci konteyner kuyruğu paylaşabilir.
 
     ``job_timeout`` is generous: a 10K-row batch at the parallel/
     non-blocking baseline targets 15-30 min; 25K (2026-08-09 limit
@@ -459,11 +465,12 @@ class WorkerSettings:
         process_batch_task,
         process_reanalysis_task,
         generate_root_causes_task,
+        process_twitter_fetch_task,
     ]
     on_startup = staticmethod(startup)
     on_shutdown = staticmethod(shutdown)
     redis_settings = _redis_settings()
-    max_jobs = 1
+    max_jobs = 2
     job_timeout = 14400  # 4h — 25k satır worst-case payı
     keep_result = 86400  # 24h
     queue_name = "imga-batch"

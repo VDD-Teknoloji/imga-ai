@@ -65,10 +65,7 @@ import {
   useSentimentByCategory,
   useSentimentDistribution,
 } from "@/hooks/use-analytics";
-import {
-  useExecutiveOverview,
-  type ExecutiveOverview,
-} from "@/hooks/use-executive-overview";
+import { useExecutiveOverview, type ExecutiveOverview } from "@/hooks/use-executive-overview";
 import { useExperienceDistribution } from "@/hooks/use-experience";
 import { useReviewSummary } from "@/hooks/use-review-summary";
 import { useRoleFlags } from "@/hooks/use-role-flags";
@@ -118,9 +115,7 @@ function DashboardInner() {
   const [customDateFrom, setCustomDateFrom] = useState<string>(
     () => searchParams.get("date_from") ?? "",
   );
-  const [customDateTo, setCustomDateTo] = useState<string>(
-    () => searchParams.get("date_to") ?? "",
-  );
+  const [customDateTo, setCustomDateTo] = useState<string>(() => searchParams.get("date_to") ?? "");
   const [batchJobId, setBatchJobId] = useState<string>(
     () => searchParams.get("batch_job_id") ?? "",
   );
@@ -244,8 +239,7 @@ function DashboardInner() {
   // hasAnyData filtreye duyarsız olmalı (boş-pencere ≠ boş-tenant);
   // filtreli overview'da sentiment.total artık pencereli, last_data_at
   // ise tüm-zamanlar — ayrımı o yapar.
-  const hasAnyData =
-    overview.data !== undefined && overview.data.last_data_at !== null;
+  const hasAnyData = overview.data !== undefined && overview.data.last_data_at !== null;
 
   // 24 saat kuralı: yalnız yükleme yetkisi olan roller için (viewer
   // yükleyemez — backend 403; ona bu çağrıyı yapmak anlamsız).
@@ -259,15 +253,12 @@ function DashboardInner() {
   // bir karşılama metni alır (uploadFirst.title yerine titleNew).
   const neverUploaded = lastDataAt === null;
 
-  const dateFormatter = new Intl.DateTimeFormat(
-    locale === "en" ? "en-US" : "tr-TR",
-    {
-      day: "numeric",
-      month: "long",
-      year: "numeric",
-      weekday: "long",
-    },
-  );
+  const dateFormatter = new Intl.DateTimeFormat(locale === "en" ? "en-US" : "tr-TR", {
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+    weekday: "long",
+  });
 
   const tenantName = activeContext?.tenant_name ?? t("dashboard.home.noTenant");
   const firstName = user?.full_name?.split(" ")[0] ?? "";
@@ -286,10 +277,7 @@ function DashboardInner() {
           <p className="text-muted-foreground text-sm">{tenantName}</p>
         </div>
         {/* Rapor tarihi. SSG/client farkı olabilir; uyarıyı bastır. */}
-        <p
-          className="text-muted-foreground text-sm tabular-nums"
-          suppressHydrationWarning
-        >
+        <p className="text-muted-foreground text-sm tabular-nums" suppressHydrationWarning>
           {dateFormatter.format(new Date())}
         </p>
       </header>
@@ -304,9 +292,7 @@ function DashboardInner() {
                 : t("dashboard.uploadFirst.title")}
             </h2>
             <p className="text-muted-foreground mt-1 max-w-2xl text-sm leading-relaxed">
-              {neverUploaded
-                ? t("dashboard.uploadFirst.descNew")
-                : t("dashboard.uploadFirst.desc")}
+              {neverUploaded ? t("dashboard.uploadFirst.descNew") : t("dashboard.uploadFirst.desc")}
             </p>
           </div>
           <UploadDock />
@@ -330,6 +316,8 @@ function DashboardInner() {
             dateTo={filters.date_to}
             canWrite={canWrite}
             hideOwnUpload={uploadFirst}
+            avgSentimentScore={reviewSummary.data?.avg_sentiment_score}
+            includeFlagged={includeFlagged}
           />
 
           {/* NEDEN — en çok şikayet edilen ≤3 kategori + kök neden +
@@ -347,10 +335,7 @@ function DashboardInner() {
           </div>
 
           <div className="rise-in" style={{ animationDelay: "180ms" }}>
-            <ExperienceBreakdownCards
-              data={experience.data}
-              isLoading={experience.isLoading}
-            />
+            <ExperienceBreakdownCards data={experience.data} isLoading={experience.isLoading} />
           </div>
         </div>
 
@@ -414,7 +399,7 @@ function toSentimentCounts(
   const counts: ExecutiveOverview["sentiment"] = {
     POZITIF: 0,
     NEGATIF: 0,
-    "NÖTR": 0,
+    NÖTR: 0,
     total: dist.total,
   };
   for (const row of dist.data) {

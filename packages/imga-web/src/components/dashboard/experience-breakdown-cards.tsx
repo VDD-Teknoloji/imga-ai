@@ -13,7 +13,7 @@
 // Yüzde paydası = dijital + operasyonel. Kovaya düşemeyen satırlar
 // (atanmamis) paydaya girmez; altta ayrı bir not olarak görünür.
 
-import { ArrowRight, Info, Monitor, Package } from "lucide-react";
+import { ArrowRight, Info } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
 import { toast } from "sonner";
@@ -30,16 +30,12 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { useCategories } from "@/hooks/use-categories";
 import type { ExperienceDistribution } from "@/hooks/use-experience";
 import { useReanalyzeAllReviews } from "@/hooks/use-reanalyze";
 import { useRoleFlags } from "@/hooks/use-role-flags";
+import { EXPERIENCE_ICON_MAP } from "@/lib/category-icons";
 import { experienceOf, type ExperienceType } from "@/lib/experience";
 import { useTranslation } from "@/lib/i18n/use-translation";
 
@@ -62,12 +58,14 @@ export function ExperienceBreakdownCards({ data, isLoading }: Props) {
   if (total === 0 && data.atanmamis.total === 0) return null;
 
   const codesFor = (kind: ExperienceType): string[] =>
-    (categories.data ?? [])
-      .filter((c) => experienceOf(c.code) === kind)
-      .map((c) => c.code);
+    (categories.data ?? []).filter((c) => experienceOf(c.code) === kind).map((c) => c.code);
 
   const nf = new Intl.NumberFormat(locale === "en" ? "en-US" : "tr-TR");
   const pct = (n: number) => (total === 0 ? 0 : Math.round((n / total) * 1000) / 10);
+  // Sabit obje alan erişimi (fonksiyon çağrısı DEĞİL) — bkz.
+  // lib/category-icons.ts dosya üstü notu (react-hooks/static-components).
+  const DigitalIcon = EXPERIENCE_ICON_MAP.dijital;
+  const OperationalIcon = EXPERIENCE_ICON_MAP.operasyonel;
   const hrefFor = (kind: ExperienceType): string => {
     const codes = codesFor(kind);
     return codes.length === 0
@@ -78,15 +76,13 @@ export function ExperienceBreakdownCards({ data, isLoading }: Props) {
   return (
     <section aria-label={t("dashboard.experience.title")}>
       <header className="mb-3 flex items-center gap-1.5">
-        <h2 className="text-base font-semibold">
-          {t("dashboard.experience.title")}
-        </h2>
+        <h2 className="text-base font-semibold">{t("dashboard.experience.title")}</h2>
         <ExperienceInfoTip />
       </header>
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
         <ExperienceCard
           label={t("dashboard.experience.digital")}
-          icon={<Monitor className="size-5" aria-hidden />}
+          icon={<DigitalIcon className="size-5" aria-hidden />}
           pct={pct(data.dijital.total)}
           count={nf.format(data.dijital.total)}
           countLabel={t("dashboard.experience.reviews")}
@@ -100,7 +96,7 @@ export function ExperienceBreakdownCards({ data, isLoading }: Props) {
         />
         <ExperienceCard
           label={t("dashboard.experience.operational")}
-          icon={<Package className="size-5" aria-hidden />}
+          icon={<OperationalIcon className="size-5" aria-hidden />}
           pct={pct(data.operasyonel.total)}
           count={nf.format(data.operasyonel.total)}
           countLabel={t("dashboard.experience.reviews")}
@@ -163,9 +159,7 @@ function UnassignedNote({ noteText }: { noteText: string }) {
           <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
             <AlertDialogContent>
               <AlertDialogHeader>
-                <AlertDialogTitle>
-                  {t("dashboard.experience.reanalyzeCta")}
-                </AlertDialogTitle>
+                <AlertDialogTitle>{t("dashboard.experience.reanalyzeCta")}</AlertDialogTitle>
                 <AlertDialogDescription>
                   {t("dashboard.experience.reanalyzeConfirm")}
                 </AlertDialogDescription>
@@ -174,10 +168,7 @@ function UnassignedNote({ noteText }: { noteText: string }) {
                 <AlertDialogCancel disabled={reanalyzeAll.isPending}>
                   {t("common.cancel")}
                 </AlertDialogCancel>
-                <AlertDialogAction
-                  onClick={handleConfirm}
-                  disabled={reanalyzeAll.isPending}
-                >
+                <AlertDialogAction onClick={handleConfirm} disabled={reanalyzeAll.isPending}>
                   {t("dashboard.experience.reanalyzeCta")}
                 </AlertDialogAction>
               </AlertDialogFooter>
@@ -234,15 +225,13 @@ function ExperienceCard({
       </div>
       <div className="mt-5 flex items-end justify-between gap-4">
         <div>
-          <span className="text-5xl font-semibold tabular-nums tracking-tight md:text-6xl">
+          <span className="text-5xl font-semibold tracking-tight tabular-nums md:text-6xl">
             %{pctText}
           </span>
           <p className="mt-1 text-sm text-white/80 tabular-nums">
             {count} {countLabel}
           </p>
-          <p className="mt-0.5 text-xs text-white/70 tabular-nums">
-            {negativeLabel}
-          </p>
+          <p className="mt-0.5 text-xs text-white/70 tabular-nums">{negativeLabel}</p>
         </div>
         {!disabled && (
           <span className="inline-flex items-center gap-1.5 rounded-xl bg-white/15 px-3.5 py-2 text-xs font-semibold backdrop-blur transition-colors group-hover:bg-white/25">

@@ -31,98 +31,84 @@
 // birincil CTA'ya (yorumları incele) sahip; NPS ayrı bir sözleşme
 // altında zaten /insights NPS sekmesinde yaşıyor, ana sayfada rakam
 // kalabalığı yaratmasın diye tekrarlanmıyor.
+//
+// F (2026-09-02, home-liveliness) — ürün sahibi: "çarpıcı ve dürüst
+// bir memnuniyet anlatısı" istedi. İki değişiklik:
+//   1. Manşet artık oran (%X memnun) değil, lib/satisfaction.ts'in
+//      ürettiği "her N yorumdan..." SAYI ifadesi — bandFor/headlineFor
+//      (posPct/negPct eşikli 4 bant) tamamen kaldırıldı.
+//   2. Büyük rakam artık "memnuniyet %" değil "Deneyim skoru" (0-100,
+//      ortalama duygu skorunun haritalanmışı) — şikayet kanalları
+//      doğası gereği olumsuza yatkın olduğundan SAYMAK yerine
+//      YOĞUNLUK gösterilir (bkz. ScoreInfoTip metni).
 
 import { ArrowRight, Info, Upload } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 
 import { Skeleton } from "@/components/ui/skeleton";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { useCountUp, useMounted } from "@/hooks/use-count-up";
-import type {
-  ExecutiveOverview,
-  ExecutiveSentimentTrend,
-} from "@/hooks/use-executive-overview";
+import type { ExecutiveOverview, ExecutiveSentimentTrend } from "@/hooks/use-executive-overview";
 import { useTranslation } from "@/lib/i18n/use-translation";
+import {
+  experienceScoreFromAvg,
+  pseudoSentimentScore,
+  satisfactionHeadline,
+  turkishPossessiveSuffix,
+  type SatisfactionHeadline,
+} from "@/lib/satisfaction";
+import { sentimentScoreBucket, type SentimentScoreBucket } from "@/lib/sentiment-score";
 
 type Translate = (key: string, vars?: Record<string, string | number>) => string;
 
 type SentimentCounts = ExecutiveOverview["sentiment"];
 
-type Band = "healthy" | "watch" | "critical" | "balanced";
+const HEADLINE_COLOR: Record<SatisfactionHeadline["band"], string> = {
+  complaint: "text-red-600 dark:text-red-400",
+  mostlyFine: "text-amber-600 dark:text-amber-400",
+  fine: "text-emerald-600 dark:text-emerald-400",
+};
 
-interface BandVisual {
-  band: Band;
-  /** Anahtar kelime rengi (aydınlık zeminde okunur ton). */
-  keywordClass: string;
-  /** Büyük yüzde rengi. */
-  numberClass: string;
-}
+const SCORE_BUCKET_COLOR: Record<SentimentScoreBucket, string> = {
+  veryNegative: "text-red-600 dark:text-red-400",
+  negative: "text-red-600 dark:text-red-400",
+  neutral: "text-foreground",
+  positive: "text-emerald-600 dark:text-emerald-400",
+  veryPositive: "text-emerald-600 dark:text-emerald-400",
+};
 
-function bandFor(posPct: number, negPct: number): BandVisual {
-  if (negPct >= 60) {
-    return {
-      band: "critical",
-      keywordClass: "text-red-600 dark:text-red-400",
-      numberClass: "text-red-600 dark:text-red-400",
-    };
-  }
-  if (negPct >= 30) {
-    return {
-      band: "watch",
-      keywordClass: "text-amber-600 dark:text-amber-400",
-      numberClass: "text-amber-600 dark:text-amber-400",
-    };
-  }
-  if (posPct >= 60) {
-    return {
-      band: "healthy",
-      keywordClass: "text-emerald-600 dark:text-emerald-400",
-      numberClass: "text-emerald-600 dark:text-emerald-400",
-    };
-  }
-  return {
-    band: "balanced",
-    keywordClass: "text-foreground",
-    numberClass: "text-foreground",
-  };
-}
-
-/** Manşet: sabit önek + duruma göre renklenen anahtar kelime.
- *  Yöneticinin tek bakışta okuduğu "cevap". */
-function headlineFor(
-  band: Band,
+/** Manşet: sabit önek + duruma göre renklenen anahtar kelime — üç bant
+ *  (satisfactionHeadline), her biri kendi sayısal ifadesini taşır.
+ *  Türkçe iyelik eki (nMinus1/pct) turkishPossessiveSuffix ile
+ *  hesaplanır (sabit "'i" çoğu değer için yanlış olurdu — bkz. o
+ *  dosyadaki WHY yorumu); İngilizce'de kullanılmaz, `t()` sfx
+ *  değişkenini yalnız TR şablonunda tüketir. */
+function headlineParts(
+  headline: SatisfactionHeadline,
   t: Translate,
-): { prefix: string; keyword: string; suffix: string } {
-  switch (band) {
-    case "critical":
+): { prefix: string; keyword: string } {
+  switch (headline.band) {
+    case "complaint":
       return {
-        prefix: t("dashboard.executiveHero.headline.critical.prefix"),
-        keyword: t("dashboard.executiveHero.headline.critical.keyword"),
-        suffix: ".",
+        prefix: t("dashboard.executiveHero.headline.complaint.prefix", { n: headline.n }),
+        keyword: t("dashboard.executiveHero.headline.complaint.keyword"),
       };
-    case "watch":
+    case "mostlyFine":
       return {
-        prefix: t("dashboard.executiveHero.headline.watch.prefix"),
-        keyword: t("dashboard.executiveHero.headline.watch.keyword"),
-        suffix: ".",
-      };
-    case "healthy":
-      return {
-        prefix: t("dashboard.executiveHero.headline.healthy.prefix"),
-        keyword: t("dashboard.executiveHero.headline.healthy.keyword"),
-        suffix: ".",
+        prefix: t("dashboard.executiveHero.headline.mostlyFine.prefix", { n: headline.n }),
+        keyword: t("dashboard.executiveHero.headline.mostlyFine.keyword", {
+          nMinus1: headline.nMinus1,
+          sfx: turkishPossessiveSuffix(headline.nMinus1),
+        }),
       };
     default:
       return {
-        prefix: t("dashboard.executiveHero.headline.balanced.prefix"),
-        keyword: t("dashboard.executiveHero.headline.balanced.keyword"),
-        suffix: ".",
+        prefix: t("dashboard.executiveHero.headline.fine.prefix"),
+        keyword: t("dashboard.executiveHero.headline.fine.keyword", {
+          pct: headline.pct,
+          sfx: turkishPossessiveSuffix(headline.pct),
+        }),
       };
   }
 }
@@ -149,6 +135,27 @@ interface Props {
   /** Sayfanın UploadFirst bloğu zaten gösteriliyorsa true — hero kendi
    *  yükleme butonunu tekrarlamaz, "yukarıdaki kutuya bırakın" der. */
   hideOwnUpload: boolean;
+  /** reviews/summary'den (page.tsx'in tek useReviewSummary çağrısı,
+   *  W3/F1 "reuse by prop" deseni) — -1..+1 ortalama duygu skoru.
+   *  null/undefined ise (eski API ya da hiç veri yok) POZİTİF/NEGATİF
+   *  sayımından türetilen bir yedeğe düşülür (bkz. rawScore notu). */
+  avgSentimentScore?: number | null;
+  /** F (2026-09-02) — "düşük kaliteliyi dahil et" anahtarı. page.tsx'in
+   *  ayrı ayrı çağırdığı iki uç, kalite-bayraklı satırlar için ZIT
+   *  varsayılana sahip: /analytics/sentiment-distribution (`sentiment`
+   *  prop'unu — segmentli çubuğu — besler) `include_flagged=False`
+   *  varsayılanıyla çağrılır (tenant_analytics.py Query default'ları);
+   *  /reviews/summary (`avgSentimentScore`'u besler, page.tsx'in
+   *  useReviewSummary çağrısı hiç include_flagged göndermez) BİR ARŞİV
+   *  panelidir ve `include_flagged=True` varsayılanı taşır
+   *  (tenant_reviews.py review_summary route docstring: "this is an
+   *  archive panel, not an analytics report"). Yani anahtar KAPALIYKEN
+   *  (sayfanın varsayılan durumu) ikisi FARKLI popülasyon — çubuk
+   *  bayraklıları dışlar, skor dışlamaz; anahtar AÇIKKEN ikisi de
+   *  bayraklıları dahil eder, popülasyonlar EŞLEŞİR. Bu yüzden
+   *  scopeMismatch mantığı `!includeFlagged` üzerinden çalışır (aşağı
+   *  bakınız) — sezgiye ters ama backend'in gerçek varsayılanı bu. */
+  includeFlagged?: boolean;
 }
 
 export function ExecutiveHero({
@@ -161,6 +168,8 @@ export function ExecutiveHero({
   dateTo,
   canWrite,
   hideOwnUpload,
+  avgSentimentScore,
+  includeFlagged = false,
 }: Props) {
   const { t } = useTranslation();
   const router = useRouter();
@@ -192,8 +201,7 @@ export function ExecutiveHero({
             href="/analyze/upload"
             className="bg-primary text-primary-foreground hover:bg-primary/90 mt-7 inline-flex items-center gap-2 rounded-2xl px-6 py-3 text-sm font-semibold transition-colors"
           >
-            <Upload className="size-4" aria-hidden />{" "}
-            {t("dashboard.executiveHero.empty.upload")}
+            <Upload className="size-4" aria-hidden /> {t("dashboard.executiveHero.empty.upload")}
           </Link>
         )}
       </section>
@@ -222,8 +230,25 @@ export function ExecutiveHero({
   const posPct = Math.round((POZITIF / total) * 100);
   const negPct = Math.round((NEGATIF / total) * 100);
   const notrPct = Math.max(0, 100 - posPct - negPct);
-  const visual = bandFor(posPct, negPct);
-  const headline = headlineFor(visual.band, t);
+  const NOTR = sentiment["NÖTR"];
+  const headline = satisfactionHeadline(POZITIF, NOTR, NEGATIF);
+  const headlineColor = HEADLINE_COLOR[headline.band];
+  const parts = headlineParts(headline, t);
+
+  // Popülasyon uyuşmazlığı — bkz. Props.includeFlagged notu. Yükleme
+  // filtresi HER ZAMAN uyuşmazlık yaratır (avgSentimentScore hiçbir
+  // zaman batch_job_id almaz). "Düşük kaliteliyi dahil et" anahtarı
+  // KAPALIYKEN de uyuşmazlık var — sezgiye ters ama backend'in gerçek
+  // varsayılanı bu (dosya üstü not): kapalıyken çubuk bayraklıları
+  // dışlar, skor dışlamaz; anahtar AÇILINCA ikisi de dahil eder ve
+  // popülasyonlar eşleşir.
+  const scopeMismatch = batchFilterActive || !includeFlagged;
+  const rawScore =
+    !scopeMismatch && avgSentimentScore != null
+      ? avgSentimentScore
+      : pseudoSentimentScore(POZITIF, NEGATIF, total);
+  const experienceScore = Math.max(0, Math.min(100, experienceScoreFromAvg(rawScore)));
+  const scoreBucket = sentimentScoreBucket(rawScore);
 
   // WS5 — segment tıklaması /reviews'e duyguya göre filtrelenmiş gider;
   // sayfanın aktif dönem filtresi varsa (dateFrom/dateTo) o da taşınır
@@ -247,10 +272,9 @@ export function ExecutiveHero({
           <p className="text-muted-foreground text-sm font-medium">
             {t("dashboard.executiveHero.overallLabel")}
           </p>
-          <h2 className="mt-2 text-3xl font-semibold leading-tight tracking-tight md:text-5xl md:leading-[1.1]">
-            {headline.prefix}
-            <span className={visual.keywordClass}>{headline.keyword}</span>
-            {headline.suffix}
+          <h2 className="mt-2 text-3xl leading-tight font-semibold tracking-tight md:text-5xl md:leading-[1.1]">
+            {parts.prefix}
+            <span className={headlineColor}>{parts.keyword}</span>.
           </h2>
           <p className="text-muted-foreground mt-4 max-w-xl text-base leading-relaxed md:text-lg">
             {t("dashboard.executiveHero.summary.prefix")}{" "}
@@ -270,12 +294,16 @@ export function ExecutiveHero({
           {trend && <TrendPill trend={trend} />}
         </div>
 
-        {/* Büyük yüzde — destekleyici tek rakam. */}
+        {/* Deneyim skoru — destekleyici tek rakam (0-100, ortalama
+            duygu skorunun haritalanmışı; bkz. dosya üstü not). */}
         <div className="flex shrink-0 flex-col items-start md:items-end">
-          <BigPercent pct={posPct} className={visual.numberClass} />
+          <BigScore value={experienceScore} className={SCORE_BUCKET_COLOR[scoreBucket]} />
           <p className="text-muted-foreground mt-0.5 inline-flex items-center gap-1.5 text-sm font-medium">
             {t("dashboard.executiveHero.satisfaction")}
             <ScoreInfoTip />
+          </p>
+          <p className="text-muted-foreground mt-0.5 text-xs">
+            {t(`dashboard.executiveHero.scoreBucket.${scoreBucket}`)}
           </p>
         </div>
       </div>
@@ -293,14 +321,10 @@ export function ExecutiveHero({
       {/* Aksiyon — tek birincil CTA (F1: SWOT kapısı kaldırıldı). */}
       <div className="mt-7 flex flex-wrap items-center gap-3">
         <Link
-          href={
-            visual.band === "healthy"
-              ? "/reviews"
-              : "/reviews?sentiment_labels=NEGATIF"
-          }
+          href={headline.band === "fine" ? "/reviews" : "/reviews?sentiment_labels=NEGATIF"}
           className="bg-primary text-primary-foreground hover:bg-primary/90 inline-flex items-center gap-2 rounded-2xl px-5 py-3 text-sm font-semibold transition-colors"
         >
-          {visual.band === "healthy"
+          {headline.band === "fine"
             ? t("dashboard.executiveHero.reviewReviews")
             : t("dashboard.executiveHero.reviewNegative")}
           <ArrowRight className="size-4" aria-hidden />
@@ -359,16 +383,18 @@ function TrendPill({ trend }: { trend: ExecutiveSentimentTrend }) {
   );
 }
 
-/** Büyük memnuniyet yüzdesi — açılışta sıfırdan sayar (sakin,
- *  reduced-motion'a saygılı). Glow/gösterge yok; sadece rakam. */
-function BigPercent({ pct, className }: { pct: number; className: string }) {
-  const counted = useCountUp(Math.max(0, Math.min(100, pct)), 900);
+/** Büyük Deneyim Skoru (0-100) — açılışta sıfırdan sayar (sakin,
+ *  reduced-motion'a saygılı). Glow/gösterge yok; sadece rakam. Yüzde
+ *  işareti YOK kasıtlı: bu bir oran değil, -1..+1 ortalama duygu
+ *  skorunun 0-100'e haritalanmış YOĞUNLUĞU (dosya üstü not). */
+function BigScore({ value, className }: { value: number; className: string }) {
+  const counted = useCountUp(Math.max(0, Math.min(100, value)), 900);
   return (
     <span
-      className={`text-6xl font-semibold tabular-nums tracking-tight md:text-7xl ${className}`}
+      className={`text-6xl font-semibold tracking-tight tabular-nums md:text-7xl ${className}`}
       style={{ letterSpacing: "-0.03em" }}
     >
-      %{Math.round(counted)}
+      {Math.round(counted)}
     </span>
   );
 }
@@ -495,7 +521,7 @@ function SatisfactionSegment({
       type="button"
       onClick={onClick}
       aria-label={ariaLabel}
-      className={`${sharedClassName} cursor-pointer hover:brightness-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset`}
+      className={`${sharedClassName} cursor-pointer hover:brightness-110 focus-visible:ring-2 focus-visible:outline-none focus-visible:ring-inset`}
       style={style}
     >
       {pct >= 8 && <span className={`${pctLabelClass} ${textClassName}`}>%{pct}</span>}
@@ -503,15 +529,7 @@ function SatisfactionSegment({
   );
 }
 
-function LegendDot({
-  className,
-  label,
-  pct,
-}: {
-  className: string;
-  label: string;
-  pct: number;
-}) {
+function LegendDot({ className, label, pct }: { className: string; label: string; pct: number }) {
   return (
     <span className="inline-flex items-center gap-2">
       <span className={`size-2.5 rounded-full ${className}`} aria-hidden />

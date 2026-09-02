@@ -22,7 +22,7 @@
 // taşındı ("reuse by prop" görev notu).
 
 import Link from "next/link";
-import { ArrowRight } from "lucide-react";
+import { ArrowRight, ShieldAlert, ShieldCheck } from "lucide-react";
 
 import { Skeleton } from "@/components/ui/skeleton";
 import type { ReviewSummaryResponse } from "@/hooks/use-review-summary";
@@ -60,7 +60,7 @@ export function DataQualityCoach({ summary, isLoading, isError, dateFrom, dateTo
   const escalationCount = summary.content_types?.escalation ?? 0;
   const escalationLine =
     escalationCount > 0 ? (
-      <p className="text-sentiment-negative mt-2 text-sm font-medium leading-relaxed">
+      <p className="text-sentiment-negative mt-2 text-sm leading-relaxed font-medium">
         {t("dashboard.dataQuality.escalation", {
           n: escalationCount.toLocaleString(numberLocale),
         })}{" "}
@@ -78,10 +78,14 @@ export function DataQualityCoach({ summary, isLoading, isError, dateFrom, dateTo
   if (flaggedPct < 5) {
     return (
       <section
-        className="rise-in shadow-soft bg-card ring-foreground/5 break-words rounded-3xl p-5 ring-1"
+        className="rise-in shadow-soft bg-card ring-foreground/5 rounded-3xl p-5 break-words ring-1"
         aria-label={t("dashboard.dataQuality.aria")}
       >
-        <p className="text-muted-foreground text-sm font-medium">
+        <p className="text-muted-foreground flex items-center gap-1.5 text-sm font-medium">
+          <ShieldCheck
+            className="size-4 shrink-0 text-emerald-600 dark:text-emerald-400"
+            aria-hidden
+          />
           {t("dashboard.dataQuality.good")}
         </p>
         {/* F1 (2026-09-02) — soru sayısı önceden yalnız uyarı durumunda
@@ -101,10 +105,11 @@ export function DataQualityCoach({ summary, isLoading, isError, dateFrom, dateTo
 
   return (
     <section
-      className="rise-in shadow-soft bg-card ring-foreground/5 break-words rounded-3xl p-5 ring-1"
+      className="rise-in shadow-soft bg-card ring-foreground/5 rounded-3xl p-5 break-words ring-1"
       aria-label={t("dashboard.dataQuality.aria")}
     >
-      <p className="text-sm font-semibold">
+      <p className="flex items-center gap-1.5 text-sm font-semibold">
+        <ShieldAlert className="size-4 shrink-0 text-amber-600 dark:text-amber-400" aria-hidden />
         {t("dashboard.dataQuality.flaggedShare", {
           pct: flaggedPct,
           count: flaggedCount.toLocaleString(numberLocale),

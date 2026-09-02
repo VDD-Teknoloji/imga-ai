@@ -173,14 +173,16 @@ export const dashboard: Bundle = {
     "dashboard.trendAlerts.dismissed": "Atıldı",
 
     // --- yönetici hero ---
-    "dashboard.executiveHero.headline.critical.prefix": "Müşterileriniz ",
-    "dashboard.executiveHero.headline.critical.keyword": "memnun değil",
-    "dashboard.executiveHero.headline.watch.prefix": "Müşterilerinizin bir kısmı ",
-    "dashboard.executiveHero.headline.watch.keyword": "memnun değil",
-    "dashboard.executiveHero.headline.healthy.prefix": "Müşterileriniz ",
-    "dashboard.executiveHero.headline.healthy.keyword": "memnun",
-    "dashboard.executiveHero.headline.balanced.prefix": "Müşteri memnuniyeti ",
-    "dashboard.executiveHero.headline.balanced.keyword": "dengeli",
+    // F (2026-09-02, home-liveliness) — manşet artık oran değil,
+    // lib/satisfaction.ts'in ürettiği "her N yorumdan..." sayı ifadesi
+    // (eski headline.critical/watch/healthy/balanced dörtlüsünün yerini
+    // aldı — posPct/negPct eşikli bant tamamen kaldırıldı).
+    "dashboard.executiveHero.headline.complaint.prefix": "Her {n} yorumdan ",
+    "dashboard.executiveHero.headline.complaint.keyword": "1'i şikâyet",
+    "dashboard.executiveHero.headline.mostlyFine.prefix": "Her {n} yorumdan ",
+    "dashboard.executiveHero.headline.mostlyFine.keyword": "{nMinus1}'{sfx} sorunsuz",
+    "dashboard.executiveHero.headline.fine.prefix": "Yorumların ",
+    "dashboard.executiveHero.headline.fine.keyword": "%{pct}'{sfx} sorunsuz",
     "dashboard.executiveHero.empty.title": "Müşterilerinizin sesini dinlemeye başlayın",
     "dashboard.executiveHero.empty.desc":
       "İlk yorum dosyanızı yükleyin — dakikalar içinde memnuniyet durumunuz, ana sorunlarınız ve yönetici özetiniz hazır olsun.",
@@ -195,7 +197,14 @@ export const dashboard: Bundle = {
     "dashboard.executiveHero.summary.mid1": "yorumdan",
     "dashboard.executiveHero.summary.mid2": "tanesi olumlu,",
     "dashboard.executiveHero.summary.suffix": "tanesi olumsuz.",
-    "dashboard.executiveHero.satisfaction": "memnuniyet",
+    // F (2026-09-02) — büyük rakam artık "memnuniyet %" değil "Deneyim
+    // skoru" (0-100) taşıyor; anahtar aynı kaldı, değeri değişti.
+    "dashboard.executiveHero.satisfaction": "Deneyim skoru",
+    "dashboard.executiveHero.scoreBucket.veryNegative": "olumsuz ağırlıklı",
+    "dashboard.executiveHero.scoreBucket.negative": "hafif olumsuz",
+    "dashboard.executiveHero.scoreBucket.neutral": "dengeli",
+    "dashboard.executiveHero.scoreBucket.positive": "olumlu ağırlıklı",
+    "dashboard.executiveHero.scoreBucket.veryPositive": "çok olumlu",
     "dashboard.executiveHero.trend.flat": "Son 30 günde memnuniyet değişmedi",
     "dashboard.executiveHero.trend.up": "Son 30 günde memnuniyet +{points} puan arttı",
     "dashboard.executiveHero.trend.down": "Son 30 günde memnuniyet −{points} puan düştü",
@@ -216,9 +225,9 @@ export const dashboard: Bundle = {
     "dashboard.executiveHero.batchEmpty.title": "Seçilen yüklemede yorum yok",
     "dashboard.executiveHero.batchEmpty.desc":
       "Başka bir yükleme seçin veya yükleme filtresini temizleyin.",
-    "dashboard.executiveHero.scoreInfo.aria": "Memnuniyet skoru nasıl hesaplanır?",
+    "dashboard.executiveHero.scoreInfo.aria": "Deneyim skoru nasıl hesaplanır?",
     "dashboard.executiveHero.scoreInfo.text":
-      "Memnuniyet skoru, pozitif yorumların tüm yorumlara (pozitif + nötr + negatif) oranıdır ve seçili döneme göre hesaplanır. Trend rozeti son 30 günü önceki 30 günle karşılaştırır.",
+      "Şikâyet kanalları doğası gereği olumsuza yatkındır — memnun bir müşteri nadiren yazar. Bu yüzden yorumları SAYMAK yerine ortalama duygu YOĞUNLUĞUNU (−1 ile +1 arası bir skor) 0-100 ölçeğine haritalayarak gösteriyoruz. Trend rozeti, olumlu yorum ORANININ son 30 günü önceki 30 günle karşılaştırır.",
 
     // --- dönem filtresi ---
     "dashboard.window.label": "Dönem",
@@ -275,6 +284,17 @@ export const dashboard: Bundle = {
       "Yeni yüklenen veriler işleniyor; sonuç birkaç dakika içinde burada görünecek.",
     "dashboard.rootCauseCards.shareChip": "olumsuzların payı: %{pct} · {count} yorum",
     "dashboard.rootCauseCards.shareChipCountOnly": "{count} olumsuz yorum",
+    // F (2026-09-02, home-liveliness) — backend window_negative_total/
+    // window_from/window_to gönderdiğinde şu üçü shareChip'in yerini
+    // alır: opak "%67" artık gerçek paydayı ("2.189 / 3.267") taşır +
+    // tooltip payda ve istisnaları açıklar (hero'nun tüm-zamanlar
+    // sayısıyla karıştırılan "%67" şikayetinin kökeni buydu).
+    "dashboard.rootCauseCards.shareChipWithTotal": "{count} / {total} olumsuz (%{pct})",
+    "dashboard.rootCauseCards.shareInfoAria": "Bu oran neye göre hesaplanıyor?",
+    "dashboard.rootCauseCards.shareTooltipDefault":
+      "Son {days} günde olumsuz {total} yorumun {count} tanesi (%{pct}). Silinmiş ve düşük kaliteli (yinelenen/boş/bilgilendirici/anlamsız) yorumlar hariç; kategori atanmamış ('belirsiz') olumsuz yorumlar paydaya dahildir ama kendi kartı olarak gösterilmez. Yükleme filtresi ve 'düşük kaliteliyi dahil et' anahtarı bu karta işlemez.",
+    "dashboard.rootCauseCards.shareTooltipRange":
+      "{from}–{to} arasında olumsuz {total} yorumun {count} tanesi (%{pct}). Silinmiş ve düşük kaliteli (yinelenen/boş/bilgilendirici/anlamsız) yorumlar hariç; kategori atanmamış ('belirsiz') olumsuz yorumlar paydaya dahildir ama kendi kartı olarak gösterilmez. Yükleme filtresi ve 'düşük kaliteliyi dahil et' anahtarı bu karta işlemez.",
     "dashboard.rootCauseCards.otherCauses": "Diğer nedenler ({n})",
     "dashboard.rootCauseCards.searchQuote": "Yorumlarda ara",
     "dashboard.rootCauseCards.evidenceLink": "Kanıtı gör ({n} yorum)",
@@ -676,14 +696,15 @@ export const dashboard: Bundle = {
     "dashboard.trendAlerts.dismissed": "Dismissed",
 
     // --- executive hero ---
-    "dashboard.executiveHero.headline.critical.prefix": "Your customers are ",
-    "dashboard.executiveHero.headline.critical.keyword": "not satisfied",
-    "dashboard.executiveHero.headline.watch.prefix": "Some of your customers are ",
-    "dashboard.executiveHero.headline.watch.keyword": "not satisfied",
-    "dashboard.executiveHero.headline.healthy.prefix": "Your customers are ",
-    "dashboard.executiveHero.headline.healthy.keyword": "satisfied",
-    "dashboard.executiveHero.headline.balanced.prefix": "Customer satisfaction is ",
-    "dashboard.executiveHero.headline.balanced.keyword": "balanced",
+    // F (2026-09-02, home-liveliness) — see the TR block's WHY comment;
+    // English phrasing puts the count-driven clause first (natural word
+    // order), coloured keyword carries the verdict.
+    "dashboard.executiveHero.headline.complaint.prefix": "1 in {n} reviews ",
+    "dashboard.executiveHero.headline.complaint.keyword": "is a complaint",
+    "dashboard.executiveHero.headline.mostlyFine.prefix": "{nMinus1} in {n} reviews ",
+    "dashboard.executiveHero.headline.mostlyFine.keyword": "are problem-free",
+    "dashboard.executiveHero.headline.fine.prefix": "",
+    "dashboard.executiveHero.headline.fine.keyword": "{pct}% of reviews are problem-free",
     "dashboard.executiveHero.empty.title": "Start listening to your customers' voice",
     "dashboard.executiveHero.empty.desc":
       "Upload your first review file — within minutes your satisfaction status, main problems, and executive summary will be ready.",
@@ -698,7 +719,12 @@ export const dashboard: Bundle = {
     "dashboard.executiveHero.summary.mid1": "total reviews,",
     "dashboard.executiveHero.summary.mid2": "are positive and",
     "dashboard.executiveHero.summary.suffix": "are negative.",
-    "dashboard.executiveHero.satisfaction": "satisfaction",
+    "dashboard.executiveHero.satisfaction": "Experience score",
+    "dashboard.executiveHero.scoreBucket.veryNegative": "mostly negative",
+    "dashboard.executiveHero.scoreBucket.negative": "leaning negative",
+    "dashboard.executiveHero.scoreBucket.neutral": "balanced",
+    "dashboard.executiveHero.scoreBucket.positive": "mostly positive",
+    "dashboard.executiveHero.scoreBucket.veryPositive": "very positive",
     "dashboard.executiveHero.trend.flat": "Satisfaction unchanged in the last 30 days",
     "dashboard.executiveHero.trend.up": "Satisfaction rose {points} points in the last 30 days",
     "dashboard.executiveHero.trend.down": "Satisfaction fell {points} points in the last 30 days",
@@ -718,9 +744,9 @@ export const dashboard: Bundle = {
       "Widen the period filter or upload new review data.",
     "dashboard.executiveHero.batchEmpty.title": "No reviews in the selected upload",
     "dashboard.executiveHero.batchEmpty.desc": "Pick another upload or clear the upload filter.",
-    "dashboard.executiveHero.scoreInfo.aria": "How is the satisfaction score calculated?",
+    "dashboard.executiveHero.scoreInfo.aria": "How is the experience score calculated?",
     "dashboard.executiveHero.scoreInfo.text":
-      "The satisfaction score is the share of positive reviews among all reviews (positive + neutral + negative), calculated for the selected period. The trend badge compares the last 30 days with the previous 30 days.",
+      "Complaint channels are inherently negativity-biased — a satisfied customer rarely writes in. So instead of counting reviews, we score their average sentiment INTENSITY (a −1 to +1 score) mapped onto a 0-100 scale. The trend badge compares the SHARE of positive reviews in the last 30 days with the previous 30 days.",
 
     // --- period filter ---
     "dashboard.window.label": "Period",
@@ -775,6 +801,12 @@ export const dashboard: Bundle = {
       "The newly uploaded data is being processed; the result will appear here in a few minutes.",
     "dashboard.rootCauseCards.shareChip": "share of negatives: {pct}% · {count} reviews",
     "dashboard.rootCauseCards.shareChipCountOnly": "{count} negative reviews",
+    "dashboard.rootCauseCards.shareChipWithTotal": "{count} / {total} negative ({pct}%)",
+    "dashboard.rootCauseCards.shareInfoAria": "What is this share calculated against?",
+    "dashboard.rootCauseCards.shareTooltipDefault":
+      "Of {total} negative reviews in the last {days} days, {count} ({pct}%). Deleted and low-quality (duplicate/empty/informational/meaningless) reviews are excluded; reviews with no assigned category ('belirsiz') count toward the total but never get their own card. The upload filter and the 'include low-quality' toggle above do not apply to this card.",
+    "dashboard.rootCauseCards.shareTooltipRange":
+      "Of {total} negative reviews between {from}–{to}, {count} ({pct}%). Deleted and low-quality (duplicate/empty/informational/meaningless) reviews are excluded; reviews with no assigned category ('belirsiz') count toward the total but never get their own card. The upload filter and the 'include low-quality' toggle above do not apply to this card.",
     "dashboard.rootCauseCards.otherCauses": "Other causes ({n})",
     "dashboard.rootCauseCards.searchQuote": "Search in reviews",
     "dashboard.rootCauseCards.evidenceLink": "See the evidence ({n} reviews)",

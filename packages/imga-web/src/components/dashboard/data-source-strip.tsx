@@ -10,10 +10,20 @@
 // yalnız date_from/date_to ile çağrılır; batch/kaynak/kategori gibi
 // diğer filtreler bilerek boş bırakılır (bu şerit sayfanın dönemini
 // özetler, alt filtrelerini değil).
+//
+// F (2026-09-02, home-liveliness) — düz metin satırı, ikonlu kaynak
+// çipleri + orantılı mini çubuklara dönüştü (ürün sahibi: "çok metin
+// ağırlıklı, canlılık istiyorum"). Toplam + dönem sol küme olarak
+// kalır, kaynaklar sağda ayrı bir küme — flex-wrap ile masaüstünde tek
+// satır, dar ekranda doğal biçimde sarar (satır zorlaması yok).
+
+import { HelpCircle } from "lucide-react";
 
 import { Skeleton } from "@/components/ui/skeleton";
+import { useMounted } from "@/hooks/use-count-up";
 import { useReviewSummary } from "@/hooks/use-review-summary";
 import { useTranslation } from "@/lib/i18n/use-translation";
+import { SOURCE_ICONS, sourceIconIndex } from "@/lib/source-icons";
 
 interface Props {
   dateFrom?: string;
@@ -81,30 +91,83 @@ export function DataSourceStrip({ dateFrom, dateTo }: Props) {
           })}`
         : t("dashboard.dataStrip.allTime");
 
-  const chips: string[] = sources
-    .slice(0, 4)
-    .map((s) => `${sourceLabel(s.value)} (${s.count.toLocaleString(locale)})`);
-  if (rest > 0) {
-    chips.push(t("dashboard.dataStrip.unspecified", { n: rest.toLocaleString(locale) }));
-  }
-  chips.push(period);
+  const topSources = sources.slice(0, 4);
 
   return (
     <div
       aria-label={aria}
-      className="rise-in text-muted-foreground flex flex-wrap items-center gap-x-2 gap-y-1 text-sm"
+      className="rise-in text-muted-foreground flex flex-wrap items-center gap-x-5 gap-y-2 text-sm"
     >
-      <span className="text-foreground font-medium">
-        {t("dashboard.dataStrip.total", { n: total.toLocaleString(locale) })}
-      </span>
-      {chips.map((chip, i) => (
-        <span key={i} className="flex items-center gap-x-2">
-          <span aria-hidden className="text-muted-foreground/50">
-            ·
-          </span>
-          {chip}
+      <span className="flex shrink-0 items-center gap-x-2">
+        <span className="text-foreground font-medium">
+          {t("dashboard.dataStrip.total", { n: total.toLocaleString(locale) })}
         </span>
-      ))}
+        <span aria-hidden className="text-muted-foreground/50">
+          ·
+        </span>
+        <span>{period}</span>
+      </span>
+      <div className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-1.5">
+        {topSources.map((s) => (
+          <SourceChip key={s.value} value={s.value} count={s.count} total={total} locale={locale} />
+        ))}
+        {rest > 0 && (
+          <SourceChip
+            value=""
+            label={t("dashboard.dataStrip.unspecified", { n: rest.toLocaleString(locale) })}
+            hideCount
+            count={rest}
+            total={total}
+            locale={locale}
+          />
+        )}
+      </div>
     </div>
+  );
+}
+
+/** Kaynak çipi — ikon + etiket + sayı + toplam içindeki payı gösteren
+ *  minik orantılı çubuk (SatisfactionSegment'teki mount-tetikli CSS
+ *  transition deseni, ölçek küçültülmüş). Renk kasıtlı olarak nötr
+ *  (görev talimatı: "muted colours") — kategori ikonlarının aksine
+ *  burada renk kodlaması değil, yalnızca oran taşınıyor. */
+function SourceChip({
+  value,
+  label,
+  hideCount = false,
+  count,
+  total,
+  locale,
+}: {
+  value: string;
+  /** "Belirtilmemiş N" gibi zaten biçimlenmiş özel bir etiket varsa
+   *  sourceLabel() atlanır. */
+  label?: string;
+  /** label kendi sayısını zaten taşıyorsa ("Belirtilmemiş 42") ayrı
+   *  "(42)" eki tekrar basılmasın diye. */
+  hideCount?: boolean;
+  count: number;
+  total: number;
+  locale: string;
+}) {
+  // Satır içi tablo indekslemesi (fonksiyon çağrısının SONUCU değil) —
+  // bkz. lib/source-icons.ts / lib/category-icons.ts dosya üstü notu
+  // (react-hooks/static-components).
+  const iconIdx = sourceIconIndex(value);
+  const Icon = iconIdx === -1 ? HelpCircle : SOURCE_ICONS[iconIdx]!;
+  const mounted = useMounted();
+  const share = total > 0 ? Math.min(100, (count / total) * 100) : 0;
+  return (
+    <span className="inline-flex items-center gap-1.5">
+      <Icon className="text-muted-foreground/70 size-3.5 shrink-0" aria-hidden />
+      <span className="text-foreground/80">{label ?? sourceLabel(value)}</span>
+      {!hideCount && <span className="tabular-nums">({count.toLocaleString(locale)})</span>}
+      <span className="bg-muted relative h-1 w-6 shrink-0 overflow-hidden rounded-full" aria-hidden>
+        <span
+          className="bg-muted-foreground/50 absolute inset-y-0 left-0 rounded-full transition-[width] duration-700 [transition-timing-function:var(--motion-ease)]"
+          style={{ width: mounted ? `${share}%` : "0%" }}
+        />
+      </span>
+    </span>
   );
 }

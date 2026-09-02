@@ -7,8 +7,10 @@ bir görüntüsünü taşır; üç tüketim noktası:
      pipeline'a sokmadan düzeltilmiş kararı uygular (eski sistemin
      KB davranışının DB-bazlı, tenant-scoped hali; restart yok).
   2. ``few_shot`` — Gemini birleşik sınıflandırma prompt'una giren
-     örnekler. Seçim: en güncel N/2 + (embedding varsa) sorgu
-     vektörüne anlamsal en yakın N/2 (RAG).
+     örnekler. Seçim: (embedding varsa) sorgu vektörüne anlamsal en
+     yakın ``SEMANTIC_FEWSHOT_K`` (2026-09-02 — eskiden 6) + kalan
+     bütçe en güncel örneklerle dolar (``merge_few_shot``, anlamsal
+     öncelikli).
   3. ``nearest()`` — pgvector cosine komşu araması (HNSW indeks).
 
 Depo SNAPSHOT'tır: job başında yüklenir; job sırasında eklenen
@@ -31,10 +33,27 @@ logger = logging.getLogger(__name__)
 
 # Few-shot bütçesi: prompt'a girecek örnek tavanı. 12 örnek ≈ 1.5-3K
 # token — flash free-tier TPM (250K) içinde önemsiz, isabet için
-# yeterli çeşitlilik.
+# yeterli çeşitlilik. BU DEĞİŞMEDİ (2026-09-02) — aşağıdaki
+# SEMANTIC_FEWSHOT_K artışı bu tavan İÇİNDE paylaşımı kaydırır,
+# toplam prompt token maliyetini büyütmez.
 FEW_SHOT_LIMIT = 12
+# 2026-09-02 (corrections-quality dalgası, scout item 1) — anlamsal
+# en-yakın adaylardan few-shot'a girecek üst sınır. Eskiden
+# ``nearest_corrections`` varsayılanı 6'ydı: 200 satırlık bir chunk'ta
+# aynı konuda 6'dan fazla geçmiş düzeltme varsa (yoğun, tekrarlayan
+# şikayet kümesi) 7.+ aday hiç görülmüyordu — "düzeltiyorum ama model
+# aynı hatayı başka yorumlarda tekrarlıyor" şikayetinin bir kısmı bu
+# kesilmeydi. 10'a çıkarıldı (FEW_SHOT_LIMIT=12'nin altında, en az 2
+# slot ``merge_few_shot`` ile en-güncel örneklere kalsın diye — yeni
+# bir düzeltme yoğun bir anlamsal kümenin altında hiç görünmez
+# olmasın). NOT: yalnız yoğun/tekrarlayan düzeltmesi olan tenant'larda
+# etkili — ``nearest_corrections``'ın ``.limit(k)``'i SQL'de, 0.25
+# mesafe filtresinden ÖNCE çalışır (bkz. altta); centroid'e 0.25
+# içinde 6'dan az adayı olan tenant'lar için bu değişiklik no-op'tur.
+SEMANTIC_FEWSHOT_K = 10
 # Anlamsal komşuluk eşiği (cosine distance, pgvector `<=>`):
 # distance < 0.25 (≈ benzerlik > 0.75) few-shot adayı sayılır.
+# BİLİNÇLİ OLARAK DEĞİŞTİRİLMEDİ — bu k artışından bağımsız bir eksen.
 NEAREST_MAX_DISTANCE = 0.25
 # Sprint 11.3 — anlamsal DOĞRUDAN override eşiği: distance ≤ 0.05
 # (≈ benzerlik ≥ 0.95). Birebir olmayan ama fiilen aynı şikayet olan
@@ -163,10 +182,20 @@ async def nearest_corrections(
     tenant_id: UUID,
     query_embedding: list[float],
     *,
-    k: int = 6,
+    k: int = SEMANTIC_FEWSHOT_K,
 ) -> list[CorrectionExample]:
     """pgvector cosine komşuları (RAG). Embedding'i NULL olan
-    düzeltmeler HNSW indeksinde yoktur, kendiliğinden elenir."""
+    düzeltmeler HNSW indeksinde yoktur, kendiliğinden elenir.
+
+    ``k`` varsayılanı tek kaynaktan (``SEMANTIC_FEWSHOT_K``) gelir —
+    batch worker (``_few_shot_for_chunk``) ve tekil analiz
+    (``tenant_analyze``) çağıranları parametreyi ELLE geçmez, ikisi de
+    aynı bütçeyi paylaşır (reanalyzer de aynı ``_few_shot_for_chunk``
+    üzerinden buraya düşer). DİKKAT: ``.limit(k)`` SQL'de,
+    ``NEAREST_MAX_DISTANCE`` filtresinden ÖNCE uygulanır — yani ``k``
+    yalnız "chunk merkezine 0.25 mesafe içinde k'dan fazla adayı olan"
+    tenant'larda dönen örnek sayısını artırır; adayı azsa sonuç
+    değişmez."""
     distance = ReviewCorrection.embedding.cosine_distance(query_embedding)
     rows = (
         await session.execute(

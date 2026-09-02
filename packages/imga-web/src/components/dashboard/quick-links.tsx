@@ -6,13 +6,7 @@
 // kolonda akarken, sık kullanılan dört kapı sağ rayda dikey ve
 // sade durur. UploadDock'un altında yaşar.
 
-import {
-  ArrowUpRight,
-  Compass,
-  FileBarChart,
-  FileText,
-  Ticket,
-} from "lucide-react";
+import { ArrowUpRight, Compass, FileBarChart, FileText, Sparkles, Ticket } from "lucide-react";
 import Link from "next/link";
 
 import { useTranslation } from "@/lib/i18n/use-translation";
@@ -52,7 +46,8 @@ export function QuickLinks() {
       className="rise-in shadow-soft bg-card ring-foreground/5 overflow-hidden rounded-3xl ring-1"
       style={{ animationDelay: "120ms" }}
     >
-      <h2 className="text-muted-foreground px-5 pt-4 pb-1 text-xs font-semibold">
+      <h2 className="text-muted-foreground flex items-center gap-1.5 px-5 pt-4 pb-1 text-xs font-semibold">
+        <Sparkles className="size-3.5" aria-hidden />
         {t("dashboard.common.quickActions")}
       </h2>
       <ul className="pb-2">
@@ -68,9 +63,7 @@ export function QuickLinks() {
                   <Icon className="size-4" aria-hidden />
                 </span>
                 <span className="min-w-0 flex-1">
-                  <span className="block truncate text-sm font-semibold">
-                    {t(link.labelKey)}
-                  </span>
+                  <span className="block truncate text-sm font-semibold">{t(link.labelKey)}</span>
                   <span className="text-muted-foreground block truncate text-xs">
                     {t(link.descKey)}
                   </span>

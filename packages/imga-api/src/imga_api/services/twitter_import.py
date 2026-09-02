@@ -21,18 +21,31 @@ HER ZAMAN hesap adı içermeyen kanonik biçimi
 doğrudan döndürülmez, yalnız id çıkarımı için okunur. Geçmiş satırlar
 ``scripts/sql/2026-09-02-twitter-source-url-anonymize.sql`` ile tek
 seferlik geri dönüştürülür.
+
+2026-09-02 — #işbirliği/#reklam ön-filtresi + arka plan ilerlemesi.
+İşbirliği/reklam etiketli gönderiler (``is_collab_hashtag``) marka
+alaka hakemine hiç gitmeden elenir: bunlar zaten "marka hakkında"
+ama müşteri sesi değil (sponsorlu içerik), hakem parasını harcamaya
+değmez. Aynı değişiklikle ``fetch_tweets`` isteğe bağlı bir ``on_page``
+kancası aldı — çekim artık uzun sürebilen bir arka plan işinde
+(``workers/twitter_fetch.py``) koşuyor, kancasız hâliyle çağıran taraf
+tamamlanana kadar hiçbir ilerleme göremiyordu.
 """
 
 from __future__ import annotations
 
 import asyncio
+import logging
 import re
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
 import httpx
 
 from imga_api.services.smart_parser.base import normalize_header
+
+_logger = logging.getLogger("imga-api.services.twitter_import")
 
 SEARCH_URL = "https://api.twitterapi.io/twitter/tweet/advanced_search"
 # twitterapi.io sayfa başına ~20 tweet döner; 1000 hedefi için 80 sayfa
@@ -104,6 +117,31 @@ class TwitterFetchResult:
     # Alaka filtresinin elediği gönderi sayısı (terim metinde yok ve
     # resmi hesaba yazılmamış). Kullanıcıya "neden az geldi" bilgisi.
     filtered_out: int = 0
+    # #işbirliği/#reklam/#sponsor/#sponsorlu etiketli, alaka hakemine
+    # hiç gitmeden elenen gönderi sayısı (bkz. ``is_collab_hashtag``).
+    excluded_collab: int = 0
+    # Tutulan gönderiler arasında en eski/en yeni atılma anı — "ne
+    # kadar geriye gidildi" sorusunun cevabı (arka plan ilerlemesi
+    # bunu ``on_page`` üzerinden zaten anlık gösterir; burada
+    # çekimin TAMAMI bittiğindeki son değer).
+    oldest_tweet_at: datetime | None = None
+    newest_tweet_at: datetime | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class TwitterFetchProgress:
+    """``fetch_tweets``'in ``on_page`` kancasına verdiği anlık durum —
+    her sayfa sonunda bir kez, çekimin tamamı bitene kadar arka plan
+    işinin ilerleme yayınlayabilmesi için (bkz. ``workers/twitter_fetch.py``).
+    """
+
+    pages_done: int
+    fetched_total: int
+    tweets_found: int
+    filtered_out: int
+    excluded_collab: int
+    oldest_tweet_at: datetime | None
+    newest_tweet_at: datetime | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -229,6 +267,30 @@ def _coerce_engagement_count(raw: object) -> int | None:
     return value if value >= 0 else None
 
 
+_HASHTAG_RE = re.compile(r"#(\w+)")
+# Türkçe-aware fold sonrası (bkz. normalize_header) tam eşleşme —
+# startswith DEĞİL: "#reklamsız" ("reklam yok" anlamında, markayla
+# ilgili meşru bir gönderi olabilir) "reklam" ile başlar ama
+# normalize_header sonrası "reklamsiz" != "reklam", yanlış elenmez.
+# "iş birliği" iki ayrı kelime olarak bir hashtag'e HİÇ giremez
+# (``#\w+`` boşluk üzerinden asla eşleşmez) — bilerek ayrı bir
+# ifade-arama kuralı eklenmedi; sıradan "iş birliği yaptık" gibi
+# markayla ilgili cümlelerde yanlış pozitif üretmemesi için.
+_COLLAB_HASHTAG_STEMS = frozenset({"isbirligi", "reklam", "sponsor", "sponsorlu"})
+
+
+def is_collab_hashtag(raw_text: str) -> bool:
+    """Gönderi #işbirliği/#reklam/#sponsor/#sponsorlu etiketlerinden
+    birini taşıyor mu (büyük/küçük harf, Türkçe İ/ı ve aksan
+    duyarsız). Böyle gönderiler sponsorlu içeriktir — marka hakkında
+    olsa bile gerçek müşteri sesi değildir, alaka hakemine hiç
+    gitmeden elenir (bkz. ``fetch_tweets``, ``excluded_collab``)."""
+    for match in _HASHTAG_RE.finditer(raw_text):
+        if normalize_header(match.group(1)) in _COLLAB_HASHTAG_STEMS:
+            return True
+    return False
+
+
 def tweet_matches_terms(
     raw_text: str,
     terms: SearchTerms,
@@ -260,14 +322,26 @@ async def fetch_tweets(
     term: str,
     count: int,
     exclude_handle: str | None = None,
+    on_page: Callable[[TwitterFetchProgress], Awaitable[None]] | None = None,
 ) -> TwitterFetchResult:
     """En yeni tweetlerden ``count`` temiz metin + tarih + bağlantı topla.
 
     İlk sayfa hatası ``TwitterFetchError`` olarak yükselir; sonraki
     sayfalardaki hatalar eldeki kısmi sonuçla sessizce döner (yarım
     veri, sıfır veriden iyidir — batch pipeline gerisini halleder).
-    Alaka filtresi (``tweet_matches_terms``) sayfa sayfa uygulanır;
-    elenenler ``count``'a sayılmaz, ``filtered_out``'a yazılır.
+    Sırayla iki filtre uygulanır: önce ``is_collab_hashtag``
+    (``excluded_collab``'a sayılır — işbirlikli/sponsorlu bir gönderi
+    marka hakkında olsa bile müşteri sesi değildir, alaka hakemine hiç
+    gitmez), sonra ``tweet_matches_terms`` (``filtered_out``). Bu sıra
+    bilerek böyle: sponsor etiketli AMA konu dışı bir gönderi
+    "sponsorlu" olarak sayılır — kullanıcıya daha eyleme dönüştürülebilir
+    sinyal budur.
+
+    ``on_page`` verilirse her sayfa sonunda (son sayfa dahil, uyku
+    öncesi) bir kez çağrılır — arka plan işinin ilerlemeyi Redis'e
+    yazabilmesi içindir (bkz. ``workers/twitter_fetch.py``). Kanca bir
+    istisna fırlatırsa çekim DURMAZ: loglanır ve yutulur — bu yalnız
+    bir UI ipucu, hiçbir zaman çekimi engellememeli.
     """
     query = build_search_query(term, exclude_handle)
     terms = parse_search_terms(term)
@@ -277,9 +351,12 @@ async def fetch_tweets(
     seen: set[str] = set()
     fetched_total = 0
     filtered_out = 0
+    excluded_collab = 0
     pages = 0
     cursor = ""
     exhausted = False
+    oldest_at: datetime | None = None
+    newest_at: datetime | None = None
 
     async with httpx.AsyncClient(timeout=httpx.Timeout(25.0)) as client:
         while len(tweets) < count and pages < MAX_PAGES:
@@ -299,6 +376,9 @@ async def fetch_tweets(
             fetched_total += len(batch)
             for item in batch:
                 raw_text = str(item.get("text") or "")
+                if is_collab_hashtag(raw_text):
+                    excluded_collab += 1
+                    continue
                 reply_to = item.get("inReplyToUsername")
                 if not tweet_matches_terms(
                     raw_text,
@@ -312,12 +392,18 @@ async def fetch_tweets(
                 key = cleaned.lower()
                 if len(cleaned) >= MIN_TEXT_LENGTH and key not in seen:
                     seen.add(key)
+                    created_at = parse_tweet_created_at(
+                        item.get("createdAt") or item.get("created_at")
+                    )
+                    if created_at is not None:
+                        if oldest_at is None or created_at < oldest_at:
+                            oldest_at = created_at
+                        if newest_at is None or created_at > newest_at:
+                            newest_at = created_at
                     tweets.append(
                         TwitterTweet(
                             text=cleaned,
-                            created_at=parse_tweet_created_at(
-                                item.get("createdAt") or item.get("created_at")
-                            ),
+                            created_at=created_at,
                             url=tweet_url_from_item(item),
                             raw_text=_WS_RE.sub(" ", raw_text).strip(),
                             like_count=_coerce_engagement_count(item.get("likeCount")),
@@ -329,6 +415,22 @@ async def fetch_tweets(
                     if len(tweets) >= count:
                         break
             pages += 1
+
+            if on_page is not None:
+                try:
+                    await on_page(
+                        TwitterFetchProgress(
+                            pages_done=pages,
+                            fetched_total=fetched_total,
+                            tweets_found=len(tweets),
+                            filtered_out=filtered_out,
+                            excluded_collab=excluded_collab,
+                            oldest_tweet_at=oldest_at,
+                            newest_tweet_at=newest_at,
+                        )
+                    )
+                except Exception:
+                    _logger.warning("twitter fetch: on_page hook failed (non-fatal)", exc_info=True)
 
             if not payload.get("has_next_page") or not payload.get("next_cursor"):
                 exhausted = True
@@ -342,4 +444,7 @@ async def fetch_tweets(
         pages=pages,
         exhausted=exhausted,
         filtered_out=filtered_out,
+        excluded_collab=excluded_collab,
+        oldest_tweet_at=oldest_at,
+        newest_tweet_at=newest_at,
     )

@@ -12,48 +12,48 @@ katmanıdır.
 hesap ve marka özeti üretir (kullanıcı formda düzenler); içe aktarma
 ``relevance_check`` açıkken çekilen gönderileri hakeme sorup markayla
 ilgisiz olanları CSV'ye yazmadan eler.
+
+2026-09-02 — ARKA PLAN İŞİ. Fetch→hakem→CSV→kuyruklama zinciri
+(``workers/twitter_fetch.py``'a taşındı) 1000 gönderilik bir çekimde
+1-3+ dakika sürebiliyordu; ÖNCEDEN bu süre boyunca tarayıcı yalnız
+düğme spinner'ı görüyordu. ``POST`` artık ANINDA 202 döner (``job_id``
++ Redis'te izlenen bir ilerleme kaydı); ``GET .../jobs/{job_id}`` 2sn
+aralıklarla poll edilir. Yalnız iş BİTTİĞİNDE (ilerleme durumu "done")
+normal batch pipeline'ın SSE/poll yüzeyi devreye girer — ``job`` alanı
+artık POST yanıtında değil, ``GET`` yanıtındaki ``batch_job_id``'de.
 """
 
 from __future__ import annotations
 
-import csv
 import logging
-import re
+from dataclasses import asdict
+from datetime import datetime
 from typing import Annotated
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
-from imga_db.models import AnalyzeBatchJob, UserTenantRole
+from imga_db.models import UserTenantRole
 from pydantic import BaseModel, Field
-from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from imga_api.auth_deps import CurrentUser, bind_tenant, require_role
 from imga_api.db_deps import get_app_session
-from imga_api.routes.tenant_batch import (
-    BatchJobResponse,
-    _client_ip,
-    _job_view,
-    _require_active_tenant,
-)
-from imga_api.services import AuditService, BatchAnalyzeService
+from imga_api.routes.tenant_batch import _client_ip, _require_active_tenant
 from imga_api.services.llm_credentials import NoCredentialsError
 from imga_api.services.twitter_brand_service import (
     BrandPlanError,
     compose_term,
-    judge_tweet_relevance,
     normalize_handle,
     plan_brand_search,
 )
-from imga_api.services.twitter_import import (
-    TwitterFetchError,
-    TwitterTweet,
-    build_search_query,
-    fetch_tweets,
-    parse_search_terms,
-)
+from imga_api.services.twitter_import import build_search_query, parse_search_terms
 from imga_api.settings import Settings
-from imga_api.workers.scheduler import enqueue_batch_job
+from imga_api.workers.twitter_fetch import (
+    TwitterFetchPayload,
+    init_job,
+    process_twitter_fetch_job,
+    read_job,
+)
 
 log = logging.getLogger("imga-api.routes.twitter")
 
@@ -97,23 +97,48 @@ class TwitterImportRequest(BaseModel):
     brand_summary: str | None = Field(default=None, max_length=1000)
 
 
-class TwitterImportResponse(BaseModel):
-    job: BatchJobResponse
+class TwitterImportEnqueuedResponse(BaseModel):
+    """``POST``'un ANINDA yanıtı — çekim/hakem/CSV/kuyruklama zinciri
+    bundan sonra arka planda (``workers/twitter_fetch.py``) koşar.
+    İlerleme ``GET .../jobs/{job_id}`` ile izlenir."""
+
+    job_id: UUID
+    status: str = "queued"
+
+
+class TwitterFetchJobStatusResponse(BaseModel):
+    """``GET .../jobs/{job_id}`` — Redis'teki ilerleme HASH'inin
+    JSON görünümü (bkz. ``workers/twitter_fetch.TwitterFetchJobSnapshot``).
+    Alan adları kasıtlı olarak Redis şemasıyla birebir aynı."""
+
+    job_id: UUID
+    status: str
+    # Yalnız status="running" iken anlamlı.
+    stage: str | None
     requested: int
-    found: int
-    # True → X'te bu sorgu için daha fazla Türkçe sonuç yok; found <
-    # requested ise eksik veri değil, kaynağın tamamı demektir.
-    exhausted: bool
-    # X'ten çekilen toplam gönderi (filtrelerden önce).
-    fetched_total: int = 0
-    # Aşama-1 alaka filtresinin elediği gönderi sayısı (terim metinde
-    # geçmiyor ve resmi hesaba yazılmamış — çoğunlukla aynı soyadlı
-    # yazarlar).
-    filtered_out: int = 0
-    # AI hakeminin elediği gönderi sayısı.
-    filtered_by_ai: int = 0
-    # True → hakem hiç çalışmadı (anahtar yok ya da tüm partiler hata).
-    ai_check_skipped: bool = False
+    # "fetching" sırasında koşan tutulan-gönderi sayısı; hakem
+    # başlar başlamaz DONAR (nihai değer kept_after_filter'dadır).
+    tweets_found: int
+    pages_done: int
+    fetched_total: int
+    # Aşama-1 alt-dizi filtresinin elediği sayı.
+    filtered_out: int
+    # #işbirliği/#reklam/#sponsor/#sponsorlu etiketiyle elenen sayı.
+    excluded_collab: int
+    # Tutulan gönderiler arasında en eski/en yeni atılma anı — "ne
+    # kadar geriye gidildi" sorusunun cevabı.
+    oldest_tweet_at: datetime | None
+    newest_tweet_at: datetime | None
+    # Aşağıdaki dördü çekim/hakem aşamaları SONLANANA kadar None kalır.
+    exhausted: bool | None
+    kept_after_filter: int | None
+    filtered_by_ai: int | None
+    ai_check_skipped: bool | None
+    # Yalnız status="done" iken dolu — normal batch ilerleme/geçmiş
+    # yüzeyine geçiş için (bu uç kendi başına o yüzeyi tekrarlamaz).
+    batch_job_id: UUID | None
+    # Yalnız status="failed" iken dolu.
+    error: str | None
 
 
 class TwitterPlanRequest(BaseModel):
@@ -206,29 +231,28 @@ async def plan_twitter_import(
 
 @router.post(
     "",
-    response_model=TwitterImportResponse,
-    status_code=status.HTTP_201_CREATED,
-    summary="X/Twitter'dan arama terimiyle gönderi çekip toplu analiz başlat.",
+    response_model=TwitterImportEnqueuedResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+    summary="X/Twitter'dan arama terimiyle gönderi çekmeyi arka planda başlat.",
     description=(
-        "twitterapi.io advanced_search ile en yeni Türkçe, RT'siz "
-        "gönderiler çekilir (istenirse resmi hesap hariç), alaka "
-        "filtresi + (açıksa) AI hakemi uygulanır, şablon uyumlu CSV "
-        "üretilir ve standart batch işine kuyruklanır. İlerleme diğer "
-        "yüklemelerle aynı SSE/poll yüzeyinden izlenir. Sunucuda "
-        "IMGA_TWITTERAPI_IO_KEY tanımlı değilse 503."
+        "twitterapi.io advanced_search ile en yeni Türkçe, RT'siz gönderiler "
+        "ARKA PLANDA çekilir (istenirse resmi hesap hariç), #işbirliği/"
+        "#reklam etiketli gönderiler + alaka filtresi + (açıksa) AI hakemi "
+        "uygulanır, şablon uyumlu CSV üretilir ve standart batch işine "
+        "kuyruklanır. İlerleme ``GET .../jobs/{job_id}`` ile 2sn "
+        "aralıklarla izlenir. Sunucuda IMGA_TWITTERAPI_IO_KEY tanımlı "
+        "değilse 503."
     ),
     responses={
-        422: {"description": "Sorgu için uygun gönderi bulunamadı."},
-        502: {"description": "Twitter API'ye ulaşılamadı."},
-        503: {"description": "Entegrasyon yapılandırılmamış."},
+        422: {"description": "Arama terimi geçersiz (en az 2 karakterlik pozitif terim yok)."},
+        503: {"description": "Entegrasyon yapılandırılmamış ya da ilerleme izleme başlatılamadı."},
     },
 )
 async def import_from_twitter(
     request: Request,
     body: TwitterImportRequest,
     current: Annotated[CurrentUser, _TenantMember],
-    app_session: Annotated[AsyncSession, Depends(get_app_session)],
-) -> TwitterImportResponse:
+) -> TwitterImportEnqueuedResponse:
     tenant_id = _require_active_tenant(current)
     settings: Settings = request.app.state.settings
     if not settings.twitterapi_io_key:
@@ -247,164 +271,109 @@ async def import_from_twitter(
                 "(yalnız '-' ile başlayan hariç tutma terimleri yetmez)."
             ),
         )
+    # Hem çekimin ``-from:`` dışlamasında hem hakemin bağlamında AYNI
+    # normalize edilmiş değer kullanılır — bkz. TwitterFetchPayload.
     handle = normalize_handle(body.exclude_handle)
 
+    job_id = uuid4()
     try:
-        result = await fetch_tweets(
-            api_key=settings.twitterapi_io_key,
-            term=term,
-            count=body.count,
-            exclude_handle=handle,
+        await init_job(tenant_id, job_id, requested=body.count)
+    except Exception as exc:
+        log.exception(
+            "twitter fetch: init_job failed; refusing to enqueue an untracked job",
+            extra={"tenant_id": str(tenant_id)},
         )
-    except TwitterFetchError as exc:
-        log.warning("twitter fetch failed for term=%r: %s", term, exc)
         raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail="Twitter API'ye şu anda ulaşılamıyor, lütfen tekrar deneyin.",
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Twitter içe aktarma şu anda kullanılamıyor, lütfen tekrar deneyin.",
         ) from exc
 
-    if not result.tweets:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=(
-                f'"{term}" için uygun gönderi bulunamadı: X\'ten '
-                f"{result.fetched_total} gönderi çekildi, {result.filtered_out} "
-                "tanesi alaka filtresinde elendi. Terimleri değiştirip "
-                "tekrar deneyin."
-            ),
-        )
+    payload = TwitterFetchPayload(
+        term=term,
+        count=body.count,
+        exclude_handle=handle,
+        auto_create_tickets=body.auto_create_tickets,
+        relevance_check=body.relevance_check,
+        brand_summary=body.brand_summary,
+        actor_user_id=current.user_id,
+        client_ip=_client_ip(request),
+    )
 
-    tweets: list[TwitterTweet] = list(result.tweets)
-    filtered_by_ai = 0
-    ai_check_skipped = False
-    if body.relevance_check:
+    # Öncelik arq (prod): sır (api key) argümanlarda TAŞINMAZ — işçi
+    # kendi ortamından okur (bkz. workers/twitter_fetch.py). arq
+    # bağlı değilse (test / arq'sız dev-staging) mevcut batch
+    # yüklemesiyle AYNI in-process APScheduler yedeğine düşülür —
+    # ``enqueue_batch_job``'ın dual-path deseniyle birebir aynı fikir,
+    # yalnız bu görev için scheduler.py'ye dokunulmadan route içinde.
+    dispatched = False
+    arq_pool = getattr(request.app.state, "arq_pool", None)
+    if arq_pool is not None:
         try:
-            async with app_session.begin():
-                await bind_tenant(app_session, current)
-                verdict = await judge_tweet_relevance(
-                    app_session,
-                    tenant_id,
-                    brand=terms.positive[0],
-                    brand_summary=(body.brand_summary or "").strip() or None,
-                    include=list(terms.positive),
-                    exclude=list(terms.negative),
-                    handle=handle,
-                    tweets=[t.raw_text or t.text for t in tweets],
-                    actor_user_id=current.user_id,
-                )
-        except NoCredentialsError:
-            ai_check_skipped = True
-            log.info(
-                "twitter import: tenant=%s has no LLM key; AI relevance check skipped", tenant_id
+            arq_job = await arq_pool.enqueue_job(
+                "process_twitter_fetch_task",
+                str(job_id),
+                str(tenant_id),
+                term,
+                body.count,
+                handle,
+                body.auto_create_tickets,
+                body.relevance_check,
+                body.brand_summary,
+                str(current.user_id),
+                payload.client_ip,
+                _job_id=f"twitter-fetch:{job_id}",
+                _queue_name="imga-batch",
+            )
+        except Exception:
+            log.exception(
+                "twitter fetch: arq enqueue failed; falling back to in-process",
+                extra={"tenant_id": str(tenant_id), "job_id": str(job_id)},
             )
         else:
-            if verdict.batches and verdict.failed_batches == verdict.batches:
-                ai_check_skipped = True
-            tweets = [t for t, ok in zip(tweets, verdict.relevant, strict=True) if ok]
-            filtered_by_ai = verdict.dropped
-        if not tweets:
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail=(
-                    f"{len(result.tweets)} gönderi çekildi ama AI alaka kontrolü "
-                    "hiçbirini markayla ilişkilendiremedi. Terimleri daraltın "
-                    "ya da AI kontrolünü kapatıp tekrar deneyin."
-                ),
-            )
-
-    # Şablonla birebir aynı kolonlar: yorum (zorunlu) + tarih + kaynak,
-    # artı ``bağlantı`` (tweet URL'si — parser otomatik tanır,
-    # Review.source_url'e iner). ``tarih`` tweet'in atılma anıdır —
-    # parser bunu Review.review_date olarak çözer, böylece analizler
-    # gerçek gönderim tarihine oturur (çekim anına değil). Tarih
-    # çözülemeyen tweet boş bırakılır.
-    # Migration 0049 — dört etkileşim sayacı kolonu ``bağlantı``dan
-    # sonra: parser bunları ``_META_INT_HEADERS`` ile otomatik tanır ve
-    # Review.source_meta'ya yazar. Sayaç yoksa hücre boş bırakılır
-    # (None ≠ 0 — "bilinmiyor" ile "sıfır etkileşim" karıştırılmaz).
-    # Dosya normal yüklemelerle aynı dizin düzenine iner;
-    # retention/reaper cron'ları ekstra kural olmadan kapsar.
-    dir_id = uuid4()
-    job_dir = settings.batch.upload_dir / str(tenant_id) / str(dir_id)
-    job_dir.mkdir(parents=True, exist_ok=True)
-    slug = re.sub(r"[^a-z0-9]+", "-", terms.positive[0].lower()).strip("-") or "arama"
-    file_name = f"twitter-{slug}.csv"
-    file_path = job_dir / file_name
-    with file_path.open("w", encoding="utf-8-sig", newline="") as fh:
-        writer = csv.writer(fh)
-        writer.writerow(
-            ["yorum", "tarih", "kaynak", "bağlantı", "beğeni", "retweet", "yanıt", "görüntülenme"]
+            dispatched = arq_job is not None
+    if not dispatched:
+        request.app.state.batch_scheduler.add_job(
+            process_twitter_fetch_job,
+            trigger="date",
+            args=[job_id, tenant_id, payload, request.app.state.batch_worker_context],
+            kwargs={"api_key": settings.twitterapi_io_key},
+            id=f"twitter-fetch-{job_id}",
+            replace_existing=True,
         )
-        for tweet in tweets:
-            posted = tweet.created_at.isoformat() if tweet.created_at else ""
-            writer.writerow(
-                [
-                    tweet.text,
-                    posted,
-                    "twitter",
-                    tweet.url or "",
-                    tweet.like_count if tweet.like_count is not None else "",
-                    tweet.retweet_count if tweet.retweet_count is not None else "",
-                    tweet.reply_count if tweet.reply_count is not None else "",
-                    tweet.view_count if tweet.view_count is not None else "",
-                ]
-            )
-    file_size = file_path.stat().st_size
-
-    async with app_session.begin():
-        await bind_tenant(app_session, current)
-        service = BatchAnalyzeService(app_session, AuditService(app_session))
-        job = await service.create_job(
-            tenant_id=tenant_id,
-            triggered_by_user_id=current.user_id,
-            file_name=file_name,
-            file_size_bytes=file_size,
-            file_path=str(file_path),
-            text_column="yorum",
-            source_column="kaynak",
-            auto_create_tickets=body.auto_create_tickets,
-            total_rows=len(tweets),
-            ip_address=_client_ip(request),
-        )
-
-    worker_job_id, queued_at = await enqueue_batch_job(
-        request.app,
-        job_id=job.id,
-        tenant_id=tenant_id,
-    )
-    if worker_job_id is not None or queued_at is not None:
-        async with app_session.begin():
-            await bind_tenant(app_session, current)
-            await app_session.execute(
-                update(AnalyzeBatchJob)
-                .where(AnalyzeBatchJob.id == job.id)
-                .values(worker_job_id=worker_job_id, queued_at=queued_at)
-            )
-    async with app_session.begin():
-        await bind_tenant(app_session, current)
-        refreshed = await app_session.get(AnalyzeBatchJob, job.id)
-        view = _job_view(refreshed if refreshed is not None else job)
 
     log.info(
-        "twitter import queued: tenant=%s term=%r found=%d/%d pages=%d "
-        "fetched=%d filtered_out=%d filtered_by_ai=%d ai_skipped=%s",
+        "twitter fetch queued: tenant=%s job_id=%s term=%r requested=%d dispatch=%s",
         tenant_id,
+        job_id,
         term,
-        len(tweets),
         body.count,
-        result.pages,
-        result.fetched_total,
-        result.filtered_out,
-        filtered_by_ai,
-        ai_check_skipped,
+        "arq" if dispatched else "in-process",
     )
-    return TwitterImportResponse(
-        job=view,
-        requested=body.count,
-        found=len(tweets),
-        exhausted=result.exhausted,
-        fetched_total=result.fetched_total,
-        filtered_out=result.filtered_out,
-        filtered_by_ai=filtered_by_ai,
-        ai_check_skipped=ai_check_skipped,
-    )
+    return TwitterImportEnqueuedResponse(job_id=job_id, status="queued")
+
+
+@router.get(
+    "/jobs/{job_id}",
+    response_model=TwitterFetchJobStatusResponse,
+    summary="Arka plandaki Twitter'dan Çek işinin anlık durumu.",
+    description=(
+        "2sn aralıklarla poll edilir (SSE değil — bkz. modül docstring'i). "
+        "Redis HASH'i hiç var olmadıysa ya da TTL'i dolduysa 404: bu içe "
+        "aktarmanın BAŞARISIZ olduğu anlamına gelmez, yalnızca ilerleme "
+        "izlemenin koptuğu anlamına gelir; iş arka planda sürüyor ya da "
+        "bitmiş olabilir (Toplu Yüklemeler'de görünür)."
+    ),
+    responses={404: {"description": "İş bulunamadı ya da ilerleme izleme süresi doldu."}},
+)
+async def get_twitter_fetch_job(
+    job_id: UUID,
+    current: Annotated[CurrentUser, _TenantMember],
+) -> TwitterFetchJobStatusResponse:
+    tenant_id = _require_active_tenant(current)
+    snapshot = await read_job(tenant_id, job_id)
+    if snapshot is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="twitter import job not found",
+        )
+    return TwitterFetchJobStatusResponse(job_id=job_id, **asdict(snapshot))

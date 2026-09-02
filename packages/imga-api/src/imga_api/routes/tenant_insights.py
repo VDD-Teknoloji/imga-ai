@@ -48,6 +48,7 @@ from imga_api.services.heatmap_generator import (
     HeatmapGenerator,
 )
 from imga_api.services.root_cause_service import (
+    SHARE_BASIS_WINDOW_ALL,
     InvalidCategoryError,
     NoCredentialsError,
     NotEnoughReviewsError,
@@ -203,6 +204,15 @@ class RootCauseCard(BaseModel):
     perspective_code: str | None
     can_generate: bool
     analysis: RootCauseAnalysisBlock | None
+    # 2026-09-02 — share_pct'in paydası: pencere içindeki TÜM negatifler
+    # ('belirsiz' dahil, bkz. total_negative_count docstring'i). Kart bu
+    # sayıyı göstermeden %67 gibi bir oran, sayfadaki tek başka toplam
+    # olan (penceresiz) hero negatif sayısıyla kıyaslanıp yanlışlıkla
+    # tutarsız görünüyordu — FE artık paydayı da render eder.
+    window_negative_total: int
+    window_from: date | None
+    window_to: date | None
+    share_basis: str
 
 
 class RootCauseOverviewResponse(BaseModel):
@@ -600,6 +610,8 @@ async def get_root_cause_overview(
             negative_total = await total_negative_count(
                 app_session, tenant_id, date_from=window_from, date_to=window_to
             )
+            window_from_date = window_from.date()
+            window_to_date = window_to.date()
             cards: list[RootCauseCard] = []
             for pick in picks:
                 share = (
@@ -625,6 +637,10 @@ async def get_root_cause_overview(
                         perspective_code=pick.perspective_code,
                         can_generate=pick.can_generate,
                         analysis=analysis_block,
+                        window_negative_total=negative_total,
+                        window_from=window_from_date,
+                        window_to=window_to_date,
+                        share_basis=SHARE_BASIS_WINDOW_ALL,
                     )
                 )
     except HTTPException:

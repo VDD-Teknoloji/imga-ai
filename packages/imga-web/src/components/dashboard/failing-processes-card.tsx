@@ -25,6 +25,7 @@
 // raporu open_issues.
 
 import Link from "next/link";
+import { Activity } from "lucide-react";
 
 import { useOperationsSummary } from "@/hooks/use-operations";
 import type { ReviewSummaryResponse } from "@/hooks/use-review-summary";
@@ -44,12 +45,7 @@ interface Props {
   dateTo?: string;
 }
 
-export function FailingProcessesCard({
-  summary,
-  summaryLoading,
-  dateFrom,
-  dateTo,
-}: Props) {
+export function FailingProcessesCard({ summary, summaryLoading, dateFrom, dateTo }: Props) {
   const { t } = useTranslation();
   const trendAlerts = useTrendAlerts("active");
   const operations = useOperationsSummary({ date_from: dateFrom, date_to: dateTo });
@@ -117,10 +113,13 @@ export function FailingProcessesCard({
 
   return (
     <section
-      className="rise-in shadow-soft bg-card ring-foreground/5 break-words rounded-3xl p-5 ring-1"
+      className="rise-in shadow-soft bg-card ring-foreground/5 rounded-3xl p-5 break-words ring-1"
       aria-label={t("dashboard.failingProcesses.title")}
     >
-      <h2 className="text-sm font-semibold">{t("dashboard.failingProcesses.title")}</h2>
+      <h2 className="flex items-center gap-1.5 text-sm font-semibold">
+        <Activity className="text-muted-foreground size-4 shrink-0" aria-hidden />
+        {t("dashboard.failingProcesses.title")}
+      </h2>
       <ul className="mt-2 space-y-1.5">
         {lines.map((line) => (
           <li key={line.key}>

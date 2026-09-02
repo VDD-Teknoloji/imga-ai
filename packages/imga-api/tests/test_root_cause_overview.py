@@ -291,6 +291,101 @@ async def test_overview_orders_cards_picks_worst_perspective_and_parses_analysis
     assert diger_card["can_generate"] is True
     assert diger_card["analysis"] is None
 
+    # Payda: 20 kargo + 8 iade + 3 diğer negatif = 31 (9 nötr "diğer"
+    # satırı sayılmaz). Her kartta AYNI değer — üçü de aynı pencereyi
+    # paylaşıyor. share_pct bu paydayla yuvarlama payında uzlaşmalı.
+    today = datetime.now(UTC).date()
+    for card in cards:
+        assert card["window_negative_total"] == 31
+        assert card["share_basis"] == "window_negatives_all"
+        assert card["window_to"] is not None
+        assert card["window_from"] is not None
+        window_to = date.fromisoformat(card["window_to"])
+        window_from = date.fromisoformat(card["window_from"])
+        # UTC gece yarısı flake'inden kaçınmak için tolerans (bkz.
+        # test_day_rounded_window_dedups_within_same_utc_day).
+        assert today - timedelta(days=1) <= window_to <= today
+        assert window_to - window_from == timedelta(days=90)
+        recomputed = round((card["negative_count"] / card["window_negative_total"]) * 100, 1)
+        assert card["share_pct"] == pytest.approx(recomputed, abs=0.05)
+
+
+@pytest.mark.asyncio
+async def test_overview_window_denominator_excludes_old_rows_includes_belirsiz(
+    batch_client: TestClient,
+    semi_auto_tenant: tuple[User, UUID, str],
+    admin_session: AsyncSession,
+) -> None:
+    """``window_negative_total`` paydası (a) pencere dışına düşen satırları
+    ``negative_count`` ile AYNI şekilde dışlar — pay ve payda farklı
+    pencereler görmez — ve (b) 'belirsiz' negatiflerini içerir; kendi
+    kartı yok ama paydaya girer (root_cause_service.total_negative_count
+    docstring'i, satır 247-249)."""
+    user, tid, pw = semi_auto_tenant
+    async with admin_session.begin():
+        await _bind_tenant(admin_session, tid)
+        # Pencere içi: 20 kargo negatif.
+        await _seed_reviews(
+            admin_session,
+            tenant_id=tid,
+            category="kargo",
+            perspective_code="order_status_wrong",
+            count=20,
+        )
+        # Pencere dışı (90 günden eski): ne pay'a ne payda'ya girmeli.
+        await _seed_reviews(
+            admin_session,
+            tenant_id=tid,
+            category="kargo",
+            perspective_code="order_status_wrong",
+            count=5,
+            review_date=datetime.now(UTC) - timedelta(days=100),
+        )
+        # 'belirsiz': kendi kartı olmaz ama paydaya girer.
+        await _seed_reviews(
+            admin_session,
+            tenant_id=tid,
+            category="belirsiz",
+            perspective_code=None,
+            count=5,
+        )
+
+    token = login_token(batch_client, user.email, pw, tid)
+    r = batch_client.get(_OVERVIEW_ENDPOINT, headers=_auth(token))
+    assert r.status_code == 200, r.text
+    cards = r.json()["cards"]
+
+    assert [c["primary_category_code"] for c in cards] == ["kargo"]
+    kargo_card = cards[0]
+    # Pencere dışı 5 satır ne numaratöre ne paydaya girmiş: 20 (kargo,
+    # pencere içi) + 5 (belirsiz, pencere içi) = 25 — 100 gün önceki 5
+    # kargo satırı hiçbir yerde yok.
+    assert kargo_card["negative_count"] == 20
+    assert kargo_card["window_negative_total"] == 25
+    assert kargo_card["share_basis"] == "window_negatives_all"
+
+
+@pytest.mark.asyncio
+async def test_overview_empty_tenant_denominator_is_zero(
+    semi_auto_tenant: tuple[User, UUID, str],
+    admin_session: AsyncSession,
+) -> None:
+    """Boş kurum (hiç yorum yok): route ``cards: []`` döner (bkz.
+    ``test_overview_empty_tenant_returns_no_cards``), dolayısıyla hiçbir
+    kartta ``window_negative_total`` yok — ama altındaki servis
+    fonksiyonu, kart yokken bile payda 0 döner. ``window_from``/
+    ``window_to`` route'ta HİÇBİR ZAMAN None olmaz (``window_from`` her
+    zaman ya çağıranın date_from'u ya da ``window_to - 90 gün``'e
+    çözülür); tip ``date | None`` sadece kardeş alanlarla tutarlılık
+    için savunmacıdır, gerçek bir None dalı yoktur."""
+    from imga_api.services.root_cause_service import total_negative_count
+
+    _, tid, _ = semi_auto_tenant
+    async with admin_session.begin():
+        await _bind_tenant(admin_session, tid)
+        total = await total_negative_count(admin_session, tid, date_from=None, date_to=None)
+    assert total == 0
+
 
 @pytest.mark.asyncio
 async def test_overview_null_heavy_category_cannot_generate(

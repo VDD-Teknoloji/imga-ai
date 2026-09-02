@@ -14,13 +14,15 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useQueryClient } from "@tanstack/react-query";
-import { ArrowRight, ChevronDown, ChevronRight, Sparkles } from "lucide-react";
+import { ArrowRight, ChevronDown, ChevronRight, Info, Sparkles, Target } from "lucide-react";
 import { toast } from "sonner";
 
 import { SectionHeading } from "@/components/dashboard/section-heading";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { useCreateActionItem } from "@/hooks/use-action-items";
+import { useMounted } from "@/hooks/use-count-up";
 import { useRoleFlags } from "@/hooks/use-role-flags";
 import { useGenerateRootCause } from "@/hooks/use-root-cause";
 import {
@@ -31,6 +33,12 @@ import {
   type RootCauseOverviewFilters,
 } from "@/hooks/use-root-cause-overview";
 import { ApiError } from "@/lib/api-client";
+import {
+  CATEGORY_ICON_FALLBACK,
+  CATEGORY_ICON_MAP,
+  categoryIconFallbackIndex,
+  categoryTone,
+} from "@/lib/category-icons";
 import { useTranslation } from "@/lib/i18n/use-translation";
 import { localizePlaceholders, maskPii, searchableQuoteFragment } from "@/lib/pii-mask";
 import { formatDateTr, relativeTimeTr } from "@/lib/relative-time";
@@ -70,7 +78,7 @@ export function RootCauseCards({ filters, categories }: Props) {
   if (overview.isError) {
     return (
       <section aria-label={t("dashboard.rootCauseCards.aria")}>
-        <SectionHeading title={t("dashboard.rootCauseCards.title")} />
+        <SectionHeading title={t("dashboard.rootCauseCards.title")} icon={Target} />
         <p className="text-destructive mt-5 text-sm">{t("dashboard.common.loadFailed")}</p>
       </section>
     );
@@ -85,7 +93,7 @@ export function RootCauseCards({ filters, categories }: Props) {
 
   return (
     <section aria-label={t("dashboard.rootCauseCards.aria")}>
-      <SectionHeading title={t("dashboard.rootCauseCards.title")} />
+      <SectionHeading title={t("dashboard.rootCauseCards.title")} icon={Target} />
 
       {/* generating: arka planda kuyruklanmış üretim sürüyor — kartlar
           varsa gizlenmez, üstlerinde sakin bir ilerleme şeridi belirir
@@ -402,6 +410,142 @@ function OtherCauseBlock({
   );
 }
 
+/** Kart başlığındaki yumuşak tonlu ikon dairesi — kategori kodunu tek
+ *  bakışta ayırt edilir kılar (görev A: root-cause-cards + category-
+ *  sentiment-breakdown ortak kayıt defterini paylaşır, lib/category-icons.ts). */
+function CategoryIconBadge({ code }: { code: string }) {
+  // Satır içi tablo indekslemesi (fonksiyon çağrısının SONUCU değil) —
+  // React Compiler'ın react-hooks/static-components kuralı bir JSX
+  // etiketinin render sırasında ÇAĞRILAN bir fonksiyondan gelmesini
+  // hata sayar; categoryIconFallbackIndex() bir SAYI döndüğü için
+  // (JSX etiketi değil) güvenli, `MAP[code] ?? FALLBACK[idx]` düz bir
+  // dizi/obje indekslemesi (bkz. lib/category-icons.ts dosya üstü not).
+  const Icon = CATEGORY_ICON_MAP[code] ?? CATEGORY_ICON_FALLBACK[categoryIconFallbackIndex(code)]!;
+  const tone = categoryTone(code);
+  return (
+    <span
+      className={`inline-flex size-8 shrink-0 items-center justify-center rounded-full ${tone.bg} ${tone.fg}`}
+      aria-hidden
+    >
+      <Icon className="size-4" />
+    </span>
+  );
+}
+
+/** ExecutiveHero.ScoreInfoTip ile aynı desen — küçük "i" tetikleyicisi +
+ *  hover/focus balonu. Burada paydayı (window_negative_total) açıklar. */
+function ShareInfoTip({ text }: { text: string }) {
+  const { t } = useTranslation();
+  return (
+    <TooltipProvider>
+      <Tooltip>
+        <TooltipTrigger
+          aria-label={t("dashboard.rootCauseCards.shareInfoAria")}
+          className="text-muted-foreground/70 hover:text-foreground inline-flex cursor-help items-center transition-colors"
+        >
+          <Info className="size-3.5" aria-hidden />
+        </TooltipTrigger>
+        <TooltipContent className="max-w-72 leading-relaxed">{text}</TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  );
+}
+
+/** Kartın sağ üst payı rozeti. Kök neden scout'unun kontratı: backend
+ *  window_negative_total/window_from/window_to gönderiyorsa gerçek
+ *  paydayı ("2.189 / 3.267 olumsuz") + payda + istisnaları açıklayan
+ *  bir tooltip gösterir; alanlar henüz gelmiyorsa (eski sunucu, paralel
+ *  deploy) eski opak kopyaya sessizce düşer — yarım bir kart göstermek
+ *  yerine (görev talimatı: "fall back to the old copy"). n<5 kuralı
+ *  (yüzde tek başına yanıltıcı) her iki dalda da aynen korunur. */
+function SharePill({
+  card,
+  filters,
+}: {
+  card: RootCauseOverviewCard;
+  filters: RootCauseOverviewFilters;
+}) {
+  const { t, locale } = useTranslation();
+  const numberLocale = locale === "en" ? "en-US" : "tr-TR";
+  const pillClass =
+    "rounded-full bg-red-50 px-2.5 py-0.5 text-xs font-medium text-red-700 tabular-nums dark:bg-red-950/40 dark:text-red-300";
+
+  if (card.negative_count < 5) {
+    return (
+      <span className={pillClass}>
+        {t("dashboard.rootCauseCards.shareChipCountOnly", {
+          count: card.negative_count.toLocaleString(numberLocale),
+        })}
+      </span>
+    );
+  }
+
+  const pct = Math.round(card.share_pct);
+  const count = card.negative_count.toLocaleString(numberLocale);
+  const hasWindow =
+    card.window_negative_total !== undefined &&
+    Boolean(card.window_from) &&
+    Boolean(card.window_to);
+
+  if (!hasWindow) {
+    return (
+      <span className={pillClass}>{t("dashboard.rootCauseCards.shareChip", { pct, count })}</span>
+    );
+  }
+
+  const total = card.window_negative_total!.toLocaleString(numberLocale);
+  const windowDays = Math.round(
+    (new Date(card.window_to!).getTime() - new Date(card.window_from!).getTime()) / 86_400_000,
+  );
+  // filters.date_from doluysa sayfa özel bir aralık/preset üzerinde —
+  // pencere tamamen backend'in sessiz 90-günlük varsayılanından
+  // GELMİYOR, bu yüzden "son N günde" değil açık tarih aralığı denir.
+  const tooltipText = filters.date_from
+    ? t("dashboard.rootCauseCards.shareTooltipRange", {
+        from: formatDateTr(card.window_from!),
+        to: formatDateTr(card.window_to!),
+        total,
+        count,
+        pct,
+      })
+    : t("dashboard.rootCauseCards.shareTooltipDefault", { days: windowDays, total, count, pct });
+
+  return (
+    <span className="inline-flex items-center gap-1">
+      <span className={pillClass}>
+        {t("dashboard.rootCauseCards.shareChipWithTotal", { count, total, pct })}
+      </span>
+      <ShareInfoTip text={tooltipText} />
+    </span>
+  );
+}
+
+/** İnce yatay pay çubuğu — açılışta soldan dolar (SatisfactionSegment
+ *  ile aynı mount-tetikli CSS transition deseni, reduced-motion
+ *  globals.css guard'ı zaten kapsıyor). Payda yeni alanlar taşımıyorsa
+ *  (eski sunucu) backend'in zaten hesapladığı share_pct'e düşülür — bar
+ *  hiçbir sürümde eksik kalmaz. */
+function ShareBar({ card }: { card: RootCauseOverviewCard }) {
+  const mounted = useMounted();
+  const pct = Math.max(
+    0,
+    Math.min(
+      100,
+      card.window_negative_total
+        ? (card.negative_count / card.window_negative_total) * 100
+        : card.share_pct,
+    ),
+  );
+  return (
+    <div className="bg-muted mt-3 h-1.5 w-full overflow-hidden rounded-full" aria-hidden>
+      <div
+        className="bg-sentiment-negative h-full rounded-full transition-[width] duration-700 [transition-timing-function:var(--motion-ease)]"
+        style={{ width: mounted ? `${pct}%` : "0%" }}
+      />
+    </div>
+  );
+}
+
 function RootCauseCardTile({
   card,
   label,
@@ -530,20 +674,13 @@ function RootCauseCardTile({
       style={{ animationDelay: `${index * 70}ms` }}
     >
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="text-sm font-semibold">{label}</p>
-        <span className="rounded-full bg-red-50 px-2.5 py-0.5 text-xs font-medium text-red-700 tabular-nums dark:bg-red-950/40 dark:text-red-300">
-          {/* n < 5: yüzde tek başına yanıltıcı (5 yorumun %60'ı gibi) —
-              o eşiğin altında yalnız ham sayı gösterilir. */}
-          {card.negative_count < 5
-            ? t("dashboard.rootCauseCards.shareChipCountOnly", {
-                count: card.negative_count.toLocaleString("tr-TR"),
-              })
-            : t("dashboard.rootCauseCards.shareChip", {
-                pct: Math.round(card.share_pct),
-                count: card.negative_count.toLocaleString("tr-TR"),
-              })}
-        </span>
+        <div className="flex min-w-0 items-center gap-2.5">
+          <CategoryIconBadge code={card.primary_category_code} />
+          <p className="truncate text-sm font-semibold">{label}</p>
+        </div>
+        <SharePill card={card} filters={filters} />
       </div>
+      <ShareBar card={card} />
 
       {analysis && firstCause ? (
         <>
