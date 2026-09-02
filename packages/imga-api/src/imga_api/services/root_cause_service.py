@@ -71,6 +71,7 @@ from imga_api.services.llm_provider_factory import (
     build_structured_provider,
     resolve_model_name,
 )
+from imga_api.services.pii_mask import mask_pii, mask_pii_list
 from imga_api.services.strategic_constants import (
     company_size_label,
     industry_label,
@@ -812,18 +813,25 @@ def _validate_and_normalise(payload: dict[str, Any]) -> dict[str, Any]:
             share_value = float(share) if share is not None else None
         except (TypeError, ValueError):
             share_value = None
+        # KVKK (2026-09-02) — prompt kişi adlarını "[ad]" ile değiştirir;
+        # burası e-posta/telefon/TCKN/IBAN için deterministik emniyet ağı
+        # (services/pii_mask.py). Alıntılar ham yorumdan geldiği için en
+        # riskli alan onlar, ama model description'a da ad taşıyabilir —
+        # bu yüzden tüm serbest metin alanları maskelenir.
+        headline = showcase_headline(item.get("headline"), item.get("title"))
+        action_short = showcase_action(item.get("action_short"), item.get("suggested_action"))
         cause: dict[str, Any] = {
-            "title": str(item.get("title", "")),
-            "description": str(item.get("description", "")),
-            "evidence_quotes": quotes,
-            "affected_surface": str(item.get("affected_surface", "")),
-            "suggested_action": str(item.get("suggested_action", "")),
+            "title": mask_pii(str(item.get("title", ""))),
+            "description": mask_pii(str(item.get("description", ""))),
+            "evidence_quotes": mask_pii_list(quotes),
+            "affected_surface": mask_pii(str(item.get("affected_surface", ""))),
+            "suggested_action": mask_pii(str(item.get("suggested_action", ""))),
             "share_estimate_pct": share_value,
             # Vitrin alanları (kapalı kart): model yazmadıysa title /
             # suggested_action'dan türetilir — kart asla uzun paragrafa
             # düşmesin.
-            "headline": showcase_headline(item.get("headline"), item.get("title")),
-            "action_short": showcase_action(item.get("action_short"), item.get("suggested_action")),
+            "headline": mask_pii(headline) if headline else headline,
+            "action_short": mask_pii(action_short) if action_short else action_short,
         }
         # 2026-09-02 (TASK B2) — expert_note opsiyonel: model uzman notunu
         # bu kök nedene uygulamadıysa (ya da uzman notu hiç verilmediyse)
@@ -832,7 +840,7 @@ def _validate_and_normalise(payload: dict[str, Any]) -> dict[str, Any]:
         # ``"expert_note" in cause`` ile ayırt eder).
         expert_note = item.get("expert_note")
         if isinstance(expert_note, str) and not _is_placeholder(expert_note):
-            cause["expert_note"] = _shorten(expert_note, _EXPERT_NOTE_MAX)
+            cause["expert_note"] = mask_pii(_shorten(expert_note, _EXPERT_NOTE_MAX))
         causes.append(cause)
     if not causes:
         if placeholder_items:
@@ -841,7 +849,10 @@ def _validate_and_normalise(payload: dict[str, Any]) -> dict[str, Any]:
             )
         raise RootCauseResponseInvalidError("root cause response items were all unusable")
     summary = payload.get("summary", "")
-    return {"summary": "" if _is_placeholder(summary) else str(summary), "root_causes": causes}
+    return {
+        "summary": "" if _is_placeholder(summary) else mask_pii(str(summary)),
+        "root_causes": causes,
+    }
 
 
 _SHOWCASE_HEADLINE_MAX = 60

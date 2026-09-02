@@ -32,6 +32,7 @@ import {
 } from "@/hooks/use-root-cause-overview";
 import { ApiError } from "@/lib/api-client";
 import { useTranslation } from "@/lib/i18n/use-translation";
+import { localizePlaceholders, maskPii, searchableQuoteFragment } from "@/lib/pii-mask";
 import { formatDateTr, relativeTimeTr } from "@/lib/relative-time";
 import type { ActionItemPriority, SentimentByCategoryResponse } from "@/lib/types";
 
@@ -243,9 +244,17 @@ function processHref(analysis: RootCauseOverviewAnalysis): string {
  *  dizgenin içine gerçek yorumda hiç geçmeyen "…" karakteri karışır ve
  *  ILIKE hiç eşleşmez. */
 function quoteSearchHref(quote: string): string {
-  const truncated = quote.split(/\.{3}|…/)[0] ?? quote;
-  const words = truncated.trim().split(/\s+/).filter(Boolean).slice(0, 7).join(" ");
-  return `/reviews?search=${encodeURIComponent(words)}`;
+  // KVKK yer tutucuları ("[ad]" vb.) aramada eşleşmez; en uzun
+  // yer-tutucusuz parça aranır (lib/pii-mask.ts).
+  return `/reviews?search=${encodeURIComponent(searchableQuoteFragment(quote))}`;
+}
+
+/** KVKK — serbest metin alanları görüntülenirken maske emniyet ağı +
+ *  yer tutucu yerelleştirme (eski analizlerde ham e-posta/telefon
+ *  kalmış olabilir; sunucu maskesi 2026-09-02'den sonra üretilenleri
+ *  zaten temizler). */
+function presentText(text: string, locale: "tr" | "en"): string {
+  return localizePlaceholders(maskPii(text), locale);
 }
 
 /** action_short varsa o (zaten tek satır); yoksa suggested_action'ın
@@ -264,25 +273,28 @@ function suggestionText(cause: RootCauseOverviewCauseItem): string | null {
  *  bölümündeki her satır aynı biçimi kullanır (PO isteği: diğer
  *  nedenler de kendi yorum alıntılarını taşısın). */
 function EvidenceQuoteList({ quotes }: { quotes: string[] }) {
-  const { t } = useTranslation();
+  const { t, locale } = useTranslation();
   if (quotes.length === 0) return null;
   return (
     <ul className="space-y-2">
-      {quotes.slice(0, 2).map((quote, i) => (
-        <li
-          key={`${quote.slice(0, 24)}-${i}`}
-          className="border-foreground/15 border-l-2 pl-3 text-xs"
-        >
-          <p className="text-muted-foreground italic">&ldquo;{quote}&rdquo;</p>
-          <Link
-            href={quoteSearchHref(quote)}
-            className="text-primary mt-1 inline-flex items-center gap-1 font-medium not-italic hover:underline"
+      {quotes.slice(0, 2).map((rawQuote, i) => {
+        const quote = presentText(rawQuote, locale);
+        return (
+          <li
+            key={`${quote.slice(0, 24)}-${i}`}
+            className="border-foreground/15 border-l-2 pl-3 text-xs"
           >
-            {t("dashboard.rootCauseCards.searchQuote")}
-            <ArrowRight className="size-3" aria-hidden />
-          </Link>
-        </li>
-      ))}
+            <p className="text-muted-foreground italic">&ldquo;{quote}&rdquo;</p>
+            <Link
+              href={quoteSearchHref(quote)}
+              className="text-primary mt-1 inline-flex items-center gap-1 font-medium not-italic hover:underline"
+            >
+              {t("dashboard.rootCauseCards.searchQuote")}
+              <ArrowRight className="size-3" aria-hidden />
+            </Link>
+          </li>
+        );
+      })}
     </ul>
   );
 }
@@ -307,7 +319,7 @@ function CauseExtras({
   isPending: boolean;
   onConvert: () => void;
 }) {
-  const { t } = useTranslation();
+  const { t, locale } = useTranslation();
   return (
     <>
       {cause.expert_note && (
@@ -315,7 +327,9 @@ function CauseExtras({
           <p className="text-muted-foreground text-[11px] font-semibold tracking-wide uppercase">
             {t("rootCause.expertNote.label")}
           </p>
-          <p className="text-muted-foreground text-xs leading-relaxed">{cause.expert_note}</p>
+          <p className="text-muted-foreground text-xs leading-relaxed">
+            {presentText(cause.expert_note, locale)}
+          </p>
         </div>
       )}
       {canWrite &&
@@ -360,7 +374,7 @@ function OtherCauseBlock({
   isPending: boolean;
   onConvert: () => void;
 }) {
-  const { t } = useTranslation();
+  const { t, locale } = useTranslation();
   const suggestion = suggestionText(cause);
   return (
     <div className="space-y-2">
@@ -369,7 +383,7 @@ function OtherCauseBlock({
       </p>
       <p className="text-sm font-semibold text-balance">{cause.headline ?? cause.title}</p>
       <p className="text-muted-foreground line-clamp-3 text-sm leading-relaxed">
-        {cause.description}
+        {presentText(cause.description, locale)}
       </p>
       <EvidenceQuoteList quotes={cause.evidence_quotes} />
       <CauseExtras
@@ -399,7 +413,7 @@ function RootCauseCardTile({
   filters: RootCauseOverviewFilters;
   index: number;
 }) {
-  const { t } = useTranslation();
+  const { t, locale } = useTranslation();
   const { canWrite } = useRoleFlags();
   const qc = useQueryClient();
   // Detay akordeonu URL'de DEĞİL — url-state-patterns.md geçici (kalıcı
@@ -572,7 +586,7 @@ function RootCauseCardTile({
           {showDetails && (
             <div className="border-foreground/10 mt-4 space-y-4 border-t pt-4">
               <p className="text-muted-foreground text-sm leading-relaxed">
-                {firstCause.description}
+                {presentText(firstCause.description, locale)}
               </p>
               <EvidenceQuoteList quotes={firstCause.evidence_quotes} />
               <CauseExtras

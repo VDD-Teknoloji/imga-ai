@@ -79,7 +79,8 @@ Yorumları oku ve 1-5 adet kök neden çıkar. Her kök neden için:
   (2-4 cümle)
 - evidence_quotes: bu nedeni destekleyen EN FAZLA 3 alıntı. Alıntılar \
   sana verilen yorumlardan BİREBİR olmalı; kısaltabilirsin ama \
-  yeniden yazamazsın.
+  yeniden yazamazsın (tek istisna: kural 12'deki kişisel veri yer \
+  tutucuları).
 - affected_surface: sorunun yaşandığı temas noktası \
   (örn. "mobil uygulama", "e-posta bilgilendirmesi", "kargo takip \
   ekranı", "çağrı merkezi")
@@ -133,6 +134,13 @@ KURALLAR:
     verilmez, tek kişilik bir işletmeyle kurumsal bir organizasyona aynı \
     süreç dayatılmaz. KURUM BAĞLAMI verilmemişse ya da eksikse VARSAYIM \
     YAPMA, uydurma bağlam icat etme; önerini genel tut.
+12. KVKK — kişisel veri YAZMA: gerçek kişilerin adlarını (müşteri, alıcı, \
+    gönderici, çalışan/temsilci) hiçbir alanda geçirme. Alıntıda ad \
+    varsa "[ad]", e-posta varsa "[e-posta]", telefon varsa "[telefon]", \
+    açık adres varsa "[adres]" yaz; alıntının geri kalanı kelimesi \
+    kelimesine kalsın (bu, BİREBİR alıntı kuralının tek istisnasıdır). \
+    Marka, kurum, kargo firması ve ürün adları kişisel veri DEĞİLDİR, \
+    aynen kalır. Yer tutucuları her dilde bu Türkçe biçimiyle yaz.
 """
 
 # ---------------------------------------------------------------------------
