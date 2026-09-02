@@ -14,6 +14,7 @@ from uuid import UUID, uuid4
 import pytest
 from fastapi.testclient import TestClient
 from imga_db.models import User
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from imga_api.services.prompt_resolver import (
     MissingRequiredVariable,
@@ -142,10 +143,17 @@ def test_build_code_defaults_has_seven_keys() -> None:
 async def test_create_override_rejects_unknown_template_key(
     batch_client: TestClient,
     semi_auto_tenant: tuple[User, UUID, str],
+    admin_session: AsyncSession,
 ) -> None:
     """Kataloğun dışında bir template_key POST'ta 422 döner; mesaj
     geçerli anahtarları da listeler."""
     user, tid, pw = semi_auto_tenant
+    # 2026-09-02 — router süper yöneticiye kilitlendi (prompt gövdeleri
+    # fikri mülkiyet, bkz. test_prompt_templates_access.py); bu testler
+    # katalog kapısını sınar, yetkiyi değil — seed edilen kullanıcıyı
+    # süper yöneticiye yükseltip aynı kurum bağlamıyla giriş yapıyoruz.
+    user.is_super_admin = True
+    await admin_session.commit()
     token = login_token(batch_client, user.email, pw, tid)
     r = batch_client.post(
         "/tenants/me/prompt-templates",
@@ -166,11 +174,18 @@ async def test_create_override_rejects_unknown_template_key(
 async def test_create_override_accepts_catalog_key(
     batch_client: TestClient,
     semi_auto_tenant: tuple[User, UUID, str],
+    admin_session: AsyncSession,
 ) -> None:
     """Whitelist'in pozitif yarısı: B8'de kataloğa eklenen yeni bir
     anahtar (root_cause) POST'u başarıyla geçmeli — 422 kapısı yalnız
     KATALOG DIŞI anahtarları reddeder."""
     user, tid, pw = semi_auto_tenant
+    # 2026-09-02 — router süper yöneticiye kilitlendi (prompt gövdeleri
+    # fikri mülkiyet, bkz. test_prompt_templates_access.py); bu testler
+    # katalog kapısını sınar, yetkiyi değil — seed edilen kullanıcıyı
+    # süper yöneticiye yükseltip aynı kurum bağlamıyla giriş yapıyoruz.
+    user.is_super_admin = True
+    await admin_session.commit()
     token = login_token(batch_client, user.email, pw, tid)
     r = batch_client.post(
         "/tenants/me/prompt-templates",

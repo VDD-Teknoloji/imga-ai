@@ -135,3 +135,40 @@ tür genişlemesi (öneri/teşekkür — ürün girdisi), viral şikâyet uyarı
 (eşik + kanal kararı; veri artık toplanıyor), kök neden URL-adreslenebilirliği
 (kartlar inline gösterince aciliyeti düştü), üç "ne yapmalıyım" yüzeyinin
 (kök neden / SWOT / brifing) tekilleştirilmesi (kaynak-of-truth kararı).
+
+**Dalga 6 (2026-09-02, denetim kapanışı — commit d364280):** uzun prompt
+4 salt-okunur denetçiyle canlı koda karşı dosya:satır ile yeniden
+doğrulandı; açık istenen her madde yayındaydı. Bulunan boşluklar ve
+yapılanlar:
+1. KVKK: Twitter `source_url` yazar kullanıcı adını taşıyordu (üretimde
+   677/677 satır). `tweet_url_from_item` artık her zaman
+   `x.com/i/web/status/{id}`; mevcut satırlar için
+   `scripts/sql/2026-09-02-twitter-source-url-anonymize.sql` (idempotent).
+2. "Hazırlanıyor" bayrağı batch bazlı Redis kümesine taşındı
+   (`root_cause_autogen_jobs:{tenant}`; enqueue None dönerse set edilmez,
+   görev başında TTL tazelenir). Son hata `root_cause_autogen_error:{tenant}`
+   → overview `last_error` → kartlarda "anahtar yok" / "başarısız" şeridi
+   (süper yönetici için /admin/tenants linki).
+3. Kök neden promptu kurum sektörü/büyüklüğü/iş tanımını görür (SWOT ile
+   aynı); kategori başına kurucu CX playbook'u (`strategic_constants.
+   _CATEGORY_PLAYBOOK`, UZMAN NOTU) → opsiyonel `expert_note` → kart
+   detayında "Uzman notu". İçerik kurucular tarafından güncellenmeli.
+4. Kalite raporu tenant diline uyar (İngilizce kurumlar Türkçe koçluk
+   alıyordu).
+5. Ana sayfa: hero'dan NPS satırı + SWOT butonu kalktı; yükleme bitince
+   tüm sorgular tazelenir (ilerleme şeridi F5'siz); sağ rayda "Aksayan
+   süreçler" (aktif trend uyarısı, %10+ SLA ihlali, 100+ etkileşimli
+   olumsuz tweet — sıfırsa gizli) ve sektör hatırlatması (yönetici,
+   sektör boşsa); koçta "N soru" satırı sessiz durumda da görünür.
+6. Kök neden detayı: "Aksiyona çevir" (aksiyon panosuna kayıt),
+   "Süreç verisine bak" (/insights?tab=operations, analiz penceresiyle).
+7. /reviews sıralama kontrolü (tarih / duygu / etkileşim);
+   `order_by=engagement`, `summary.viral_negative_count`.
+8. Prompt şablonları ekranı ve API'si yalnız süper yönetici (kurum
+   yöneticisi kod varsayılan promptları okuyabiliyordu).
+9. 7 ölü dashboard bileşeni silindi; yerel docker-compose'a redis +
+   api-worker (otomatik kök neden lokalde de çalışır).
+
+**Hâlâ açık (ürün girdisi ister):** playbook metinlerinin kurucular
+tarafından gözden geçirilmesi; batch'e özel LLM kalite değerlendirmesinin
+ana sayfa koçuna tek cümle olarak taşınması; kök neden URL-adreslenebilirliği.
