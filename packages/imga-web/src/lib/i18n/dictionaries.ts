@@ -11,6 +11,7 @@
 import type { Locale } from "./config";
 import { admin } from "./dictionaries/admin";
 import { analyze } from "./dictionaries/analyze";
+import { briefing } from "./dictionaries/briefing";
 import { compare } from "./dictionaries/compare";
 import { core } from "./dictionaries/core";
 import { dashboard } from "./dictionaries/dashboard";
@@ -34,6 +35,7 @@ const MODULES: readonly Bundle[] = [
   settings,
   admin,
   rootCause,
+  briefing,
 ];
 
 function build(locale: Locale): Record<string, string> {
