@@ -179,9 +179,6 @@ export function BriefingHero({ briefing }: { briefing: ExecutiveBriefing }) {
       className="rise-in shadow-soft bg-card ring-foreground/5 rounded-3xl p-6 ring-1 md:p-8"
       aria-label={t("briefing.hero.aria")}
     >
-      <p className="text-muted-foreground text-sm">
-        {t("briefing.hero.modelAttribution", { model: briefing.model_name })}
-      </p>
       <h2 className="mt-2 line-clamp-2 text-2xl leading-tight font-semibold tracking-tight text-balance md:text-3xl">
         {briefing.headline}
       </h2>

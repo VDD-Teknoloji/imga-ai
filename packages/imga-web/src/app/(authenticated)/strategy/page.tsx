@@ -660,7 +660,6 @@ function HistoryTab({
                       : t("dashboard.strategy.history.sourceSwot", {
                           id: r.source_report_id?.slice(0, 8) ?? "-",
                         })}
-                    {r.model_name && ` · ${r.model_name}`}
                   </p>
                 </div>
                 <Button

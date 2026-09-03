@@ -142,7 +142,7 @@ def _llm_error_to_http(exc: Exception) -> HTTPException:
             detail={
                 "code": "no_llm_credentials",
                 "message": (
-                    "Gemini API anahtarı tanımlanmamış. "
+                    "LLM anahtarı tanımlanmamış. "
                     "Ayarlar > Entegrasyonlar üzerinden ekleyin."
                 ),
             },

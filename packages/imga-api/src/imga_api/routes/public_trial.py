@@ -124,7 +124,7 @@ def _require_trial_api_key(
     description=(
         "Server-to-server endpoint called by the imga.ai marketing "
         "backend after a visitor verifies their email and uploads a "
-        "CSV/XLSX. Runs the production BERT + Gemini pipeline against "
+        "CSV/XLSX. Runs the production analysis pipeline against "
         "the (capped) row set and returns a teaser payload. "
         "Idempotency: a second call from the same X-Trial-User-Email "
         "within 24h returns the cached aggregate without re-running "

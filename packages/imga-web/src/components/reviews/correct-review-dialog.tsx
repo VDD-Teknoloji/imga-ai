@@ -19,7 +19,7 @@
 // SCORE_FOR_LABEL sabitleri, correction_service.py ile birebir) ama
 // kullanıcının elle girdiği değeri EZMEZ.
 
-import { Sparkles } from "lucide-react";
+import { ChevronDown, ChevronRight, Sparkles } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 
@@ -65,7 +65,7 @@ type SentimentValue = (typeof SENTIMENTS)[number]["value"];
 const SCORE_FOR_LABEL: Record<SentimentValue, number> = {
   POZITIF: 0.9,
   NEGATIF: -0.9,
-  "NÖTR": 0.0,
+  NÖTR: 0.0,
 };
 
 /** Select'lerde "değiştirme" seçeneği için sentinel — backend'e
@@ -100,8 +100,7 @@ export function CorrectReviewDialog({
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const [sentiment, setSentiment] = useState<SentimentValue>(
-    (SENTIMENTS.find((s) => s.value === currentSentiment)?.value ??
-      "NÖTR") as SentimentValue,
+    (SENTIMENTS.find((s) => s.value === currentSentiment)?.value ?? "NÖTR") as SentimentValue,
   );
   const [category, setCategory] = useState(currentCategory);
   const [reason, setReason] = useState("");
@@ -109,18 +108,16 @@ export function CorrectReviewDialog({
   // WS3 — skor: ön dolu, yalnız doğrudan dokunulursa "dirty" (bkz.
   // dosya başı yorum). Prop yoksa (beklenmedik durum) mevcut duyguya
   // göre SCORE_FOR_LABEL fallback'iyle başlar.
-  const [score, setScore] = useState<number>(
-    currentScore ?? SCORE_FOR_LABEL[sentiment],
-  );
+  const [score, setScore] = useState<number>(currentScore ?? SCORE_FOR_LABEL[sentiment]);
   const [scoreDirty, setScoreDirty] = useState(false);
+  // 2026-09-03 (ürün sahibi) — skor "ince ayar" katlanır bölümde,
+  // varsayılan kapalı: kategori/deneyim düzeltmesi skordan bağımsız,
+  // ekran "önce skoru değiştir" gibi okunmasın.
+  const [scoreOpen, setScoreOpen] = useState(false);
 
   // WS3 — deneyim + alt kategori: tri-state (Dijital/Operasyonel/—).
-  const [experience, setExperience] = useState<string>(
-    currentExperienceType ?? NO_CHANGE,
-  );
-  const [perspective, setPerspective] = useState<string>(
-    currentPerspectiveCode ?? NO_CHANGE,
-  );
+  const [experience, setExperience] = useState<string>(currentExperienceType ?? NO_CHANGE);
+  const [perspective, setPerspective] = useState<string>(currentPerspectiveCode ?? NO_CHANGE);
 
   const categories = useCategories();
   const taxonomies = useCompanyTaxonomies();
@@ -143,8 +140,7 @@ export function CorrectReviewDialog({
   const experienceInitial = currentExperienceType ?? NO_CHANGE;
   const experienceChanged = experience !== NO_CHANGE && experience !== experienceInitial;
   const perspectiveInitial = currentPerspectiveCode ?? NO_CHANGE;
-  const perspectiveChanged =
-    perspective !== NO_CHANGE && perspective !== perspectiveInitial;
+  const perspectiveChanged = perspective !== NO_CHANGE && perspective !== perspectiveInitial;
 
   const unchanged =
     !sentimentChanged &&
@@ -152,6 +148,26 @@ export function CorrectReviewDialog({
     !scoreDirty &&
     !experienceChanged &&
     !perspectiveChanged;
+  const changedFields = [
+    sentimentChanged ? t("reviews.correct.field.sentiment") : null,
+    scoreDirty ? t("reviews.correct.scoreLabel") : null,
+    categoryChanged ? t("reviews.correct.field.category") : null,
+    experienceChanged ? t("reviews.correct.experienceLabel") : null,
+    perspectiveChanged ? t("reviews.correct.subcategoryLabel") : null,
+  ].filter((x): x is string => x !== null);
+  const currentSentimentLabel =
+    SENTIMENTS.find((s) => s.value === currentSentiment)?.label ?? currentSentiment;
+  const currentCategoryLabel =
+    (categories.data ?? []).find((c) => c.code === currentCategory)?.label_tr ?? currentCategory;
+  const currentExperienceLabel =
+    currentExperienceType === null
+      ? t("reviews.correct.unassigned")
+      : t(`reviews.experience.${currentExperienceType}`);
+  const currentPerspectiveLabel =
+    currentPerspectiveCode === null
+      ? t("reviews.correct.unassigned")
+      : ((taxonomies.data ?? []).find((x) => x.code === currentPerspectiveCode)?.label_tr ??
+        currentPerspectiveCode);
 
   function handleSubmit() {
     correct.mutate(
@@ -160,9 +176,7 @@ export function CorrectReviewDialog({
         sentiment_label: sentimentChanged ? sentiment : undefined,
         primary_category: categoryChanged ? category : undefined,
         sentiment_score: scoreDirty ? score : undefined,
-        experience_type: experienceChanged
-          ? (experience as "dijital" | "operasyonel")
-          : undefined,
+        experience_type: experienceChanged ? (experience as "dijital" | "operasyonel") : undefined,
         perspective_code: perspectiveChanged ? perspective : undefined,
         reason: reason.trim() || undefined,
       },
@@ -186,9 +200,7 @@ export function CorrectReviewDialog({
           setPerspective(data.perspective_code ?? NO_CHANGE);
         },
         onError: (err) => {
-          toast.error(
-            err instanceof ApiError ? err.detail : "Düzeltme kaydedilemedi.",
-          );
+          toast.error(err instanceof ApiError ? err.detail : "Düzeltme kaydedilemedi.");
         },
       },
     );
@@ -207,15 +219,17 @@ export function CorrectReviewDialog({
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>Model kararını düzelt</DialogTitle>
-          <DialogDescription>
-            Düzeltmeniz bu yorumu anında günceller ve sistem benzer
-            yorumlarda bu kararı örnek alır — modeli siz eğitirsiniz.
-          </DialogDescription>
+          <DialogDescription>{t("reviews.correct.description")}</DialogDescription>
         </DialogHeader>
 
         <div className="max-h-[70vh] space-y-4 overflow-y-auto py-2">
           <div className="space-y-2">
-            <Label>Duygu</Label>
+            <div className="flex items-baseline justify-between gap-2">
+              <Label>{t("reviews.correct.field.sentiment")}</Label>
+              <span className="text-muted-foreground text-xs">
+                {t("reviews.correct.current", { value: currentSentimentLabel })}
+              </span>
+            </div>
             <Select
               value={sentiment}
               onValueChange={(v) => v && handleSentimentChange(v as SentimentValue)}
@@ -225,9 +239,7 @@ export function CorrectReviewDialog({
                     (NEGATIF, kargo, __no_change__...) — dört tetikleyici
                     de etikete eşlenir. */}
                 <SelectValue>
-                  {(v: string) =>
-                    SENTIMENTS.find((s) => s.value === v)?.label ?? v
-                  }
+                  {(v: string) => SENTIMENTS.find((s) => s.value === v)?.label ?? v}
                 </SelectValue>
               </SelectTrigger>
               <SelectContent>
@@ -241,52 +253,70 @@ export function CorrectReviewDialog({
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="correction-score">
-              {t("reviews.correct.scoreLabel")}
-            </Label>
-            <div className="flex items-center gap-3">
-              <input
-                id="correction-score"
-                type="range"
-                min={-1}
-                max={1}
-                step={0.05}
-                value={score}
-                aria-label={t("reviews.correct.scoreSliderAria")}
-                onChange={(e) => handleScoreChange(Number(e.target.value))}
-                className="accent-primary h-2 flex-1 cursor-pointer"
-              />
-              <input
-                type="number"
-                min={-1}
-                max={1}
-                step={0.05}
-                value={score}
-                aria-label={t("reviews.correct.scoreNumberAria")}
-                onChange={(e) => handleScoreChange(Number(e.target.value))}
-                className="border-input focus-visible:border-ring focus-visible:ring-ring/50 h-8 w-20 rounded-lg border bg-transparent px-2 text-sm tabular-nums outline-none focus-visible:ring-3"
-              />
-              {/* Kaydırıcı/sayı ile canlı güncellenen kova etiketi —
+            <button
+              type="button"
+              onClick={() => setScoreOpen((v) => !v)}
+              className="text-muted-foreground hover:text-foreground inline-flex items-center gap-1 text-xs font-medium"
+              aria-expanded={scoreOpen}
+            >
+              {scoreOpen ? (
+                <ChevronDown className="size-3.5" aria-hidden />
+              ) : (
+                <ChevronRight className="size-3.5" aria-hidden />
+              )}
+              {t("reviews.correct.scoreToggle")}
+              <span className="font-normal">
+                {" "}
+                · {score.toFixed(2)} ({t(`reviews.scoreLabel.${sentimentScoreBucket(score)}`)})
+              </span>
+            </button>
+            {scoreOpen && (
+              <div className="space-y-2 pl-4">
+                <div className="flex items-center gap-3">
+                  <input
+                    id="correction-score"
+                    type="range"
+                    min={-1}
+                    max={1}
+                    step={0.05}
+                    value={score}
+                    aria-label={t("reviews.correct.scoreSliderAria")}
+                    onChange={(e) => handleScoreChange(Number(e.target.value))}
+                    className="accent-primary h-2 flex-1 cursor-pointer"
+                  />
+                  <input
+                    type="number"
+                    min={-1}
+                    max={1}
+                    step={0.05}
+                    value={score}
+                    aria-label={t("reviews.correct.scoreNumberAria")}
+                    onChange={(e) => handleScoreChange(Number(e.target.value))}
+                    className="border-input focus-visible:border-ring focus-visible:ring-ring/50 h-8 w-20 rounded-lg border bg-transparent px-2 text-sm tabular-nums outline-none focus-visible:ring-3"
+                  />
+                  {/* Kaydırıcı/sayı ile canlı güncellenen kova etiketi —
                   "çok olumsuz" gibi yazılar kullanıcının ne girdiğini
                   anında anlamasını sağlar. */}
-              <Badge variant="outline" className="shrink-0">
-                {t(`reviews.scoreLabel.${sentimentScoreBucket(score)}`)}
-              </Badge>
-            </div>
-            <p className="text-muted-foreground text-xs">
-              {t("reviews.correct.scoreHint")}
-            </p>
+                  <Badge variant="outline" className="shrink-0">
+                    {t(`reviews.scoreLabel.${sentimentScoreBucket(score)}`)}
+                  </Badge>
+                </div>
+                <p className="text-muted-foreground text-xs">{t("reviews.correct.scoreHint")}</p>
+              </div>
+            )}
           </div>
 
           <div className="space-y-2">
-            <Label>Kategori</Label>
+            <div className="flex items-baseline justify-between gap-2">
+              <Label>{t("reviews.correct.field.category")}</Label>
+              <span className="text-muted-foreground text-xs">
+                {t("reviews.correct.current", { value: currentCategoryLabel })}
+              </span>
+            </div>
             <Select value={category} onValueChange={(v) => v && setCategory(v)}>
               <SelectTrigger>
                 <SelectValue>
-                  {(v: string) =>
-                    (categories.data ?? []).find((c) => c.code === v)
-                      ?.label_tr ?? v
-                  }
+                  {(v: string) => (categories.data ?? []).find((c) => c.code === v)?.label_tr ?? v}
                 </SelectValue>
               </SelectTrigger>
               <SelectContent>
@@ -299,65 +329,57 @@ export function CorrectReviewDialog({
                   ))}
                 {/* Mevcut kategori listede yoksa (arşivlenmiş vb.)
                     yine seçilebilir kalsın. */}
-                {!(categories.data ?? []).some(
-                  (c) => c.code === currentCategory,
-                ) && (
-                  <SelectItem value={currentCategory}>
-                    {currentCategory}
-                  </SelectItem>
+                {!(categories.data ?? []).some((c) => c.code === currentCategory) && (
+                  <SelectItem value={currentCategory}>{currentCategory}</SelectItem>
                 )}
               </SelectContent>
             </Select>
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="correction-experience">
-              {t("reviews.correct.experienceLabel")}
-            </Label>
+            <div className="flex items-baseline justify-between gap-2">
+              <Label htmlFor="correction-experience">{t("reviews.correct.experienceLabel")}</Label>
+              <span className="text-muted-foreground text-xs">
+                {t("reviews.correct.current", { value: currentExperienceLabel })}
+              </span>
+            </div>
             <Select value={experience} onValueChange={(v) => v && setExperience(v)}>
               <SelectTrigger id="correction-experience" className="w-full">
                 <SelectValue>
                   {(v: string) =>
-                    v === NO_CHANGE
-                      ? t("reviews.correct.noChange")
-                      : t(`reviews.experience.${v}`)
+                    v === NO_CHANGE ? t("reviews.correct.noChange") : t(`reviews.experience.${v}`)
                   }
                 </SelectValue>
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value={NO_CHANGE}>
-                  {t("reviews.correct.noChange")}
-                </SelectItem>
+                <SelectItem value={NO_CHANGE}>{t("reviews.correct.noChange")}</SelectItem>
                 <SelectItem value="dijital">{t("reviews.experience.dijital")}</SelectItem>
-                <SelectItem value="operasyonel">
-                  {t("reviews.experience.operasyonel")}
-                </SelectItem>
+                <SelectItem value="operasyonel">{t("reviews.experience.operasyonel")}</SelectItem>
               </SelectContent>
             </Select>
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="correction-perspective">
-              {t("reviews.correct.subcategoryLabel")}
-            </Label>
-            <Select
-              value={perspective}
-              onValueChange={(v) => v && setPerspective(v)}
-            >
+            <div className="flex items-baseline justify-between gap-2">
+              <Label htmlFor="correction-perspective">
+                {t("reviews.correct.subcategoryLabel")}
+              </Label>
+              <span className="text-muted-foreground text-xs">
+                {t("reviews.correct.current", { value: currentPerspectiveLabel })}
+              </span>
+            </div>
+            <Select value={perspective} onValueChange={(v) => v && setPerspective(v)}>
               <SelectTrigger id="correction-perspective" className="w-full">
                 <SelectValue>
                   {(v: string) =>
                     v === NO_CHANGE
                       ? t("reviews.correct.noChange")
-                      : ((taxonomies.data ?? []).find((x) => x.code === v)
-                          ?.label_tr ?? v)
+                      : ((taxonomies.data ?? []).find((x) => x.code === v)?.label_tr ?? v)
                   }
                 </SelectValue>
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value={NO_CHANGE}>
-                  {t("reviews.correct.noChange")}
-                </SelectItem>
+                <SelectItem value={NO_CHANGE}>{t("reviews.correct.noChange")}</SelectItem>
                 {(taxonomies.data ?? []).map((tax) => (
                   <SelectItem key={tax.code} value={tax.code}>
                     {tax.label_tr}
@@ -382,25 +404,25 @@ export function CorrectReviewDialog({
               rows={2}
             />
             <p className="text-muted-foreground text-xs">
-              Gerekçe, yapay zekaya örnek olarak verilir ve benzer
-              durumlarda kararı yönlendirir.
+              Gerekçe, yapay zekaya örnek olarak verilir ve benzer durumlarda kararı yönlendirir.
             </p>
           </div>
         </div>
 
-        <DialogFooter>
-          <Button
-            variant="outline"
-            type="button"
-            onClick={() => setOpen(false)}
-          >
+        <DialogFooter className="items-center">
+          <p className="text-muted-foreground mr-auto text-xs">
+            {changedFields.length > 0
+              ? t("reviews.correct.willChange", { fields: changedFields.join(", ") })
+              : t("reviews.correct.nothingChanged")}
+          </p>
+          <Button variant="outline" type="button" onClick={() => setOpen(false)}>
             Vazgeç
           </Button>
           <Button
             type="button"
             onClick={handleSubmit}
             disabled={unchanged || correct.isPending}
-            title={unchanged ? "Karardan farklı bir değer seçin" : undefined}
+            title={unchanged ? t("reviews.correct.nothingChanged") : undefined}
           >
             {correct.isPending ? "Kaydediliyor…" : "Düzeltmeyi Kaydet"}
           </Button>
