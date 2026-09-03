@@ -320,10 +320,13 @@ export const dashboard: Bundle = {
     "dashboard.dataQuality.excluded":
       "Bu kayıtlar kök neden örneklemine hiç girmiyor; her temiz kayıt analiz isabetini artırır.",
     "dashboard.dataQuality.cta": "Temsilci dökümünü gör",
-    "dashboard.dataQuality.questionCount": "Ayrıca müşterileriniz {n} soru sordu.",
+    "dashboard.dataQuality.questionCount": "Müşterileriniz {n} soru sordu.",
     "dashboard.dataQuality.escalation":
       "{n} yorumda resmî şikâyet veya dava tehdidi var — önce bunlara bakın.",
     "dashboard.dataQuality.escalationCta": "Tehdit içeren yorumları gör",
+    "dashboard.dataQuality.escalationAria": "Şikâyet tehdidi",
+    "dashboard.dataQuality.questionsAria": "Müşteri soruları",
+    "dashboard.dataQuality.questionsCta": "Soruları gör",
 
     // --- aksayan süreçler (ana sayfa sağ ray, F1 2026-09-02) ---
     "dashboard.failingProcesses.title": "Aksayan süreçler",
@@ -832,10 +835,13 @@ export const dashboard: Bundle = {
     "dashboard.dataQuality.excluded":
       "These records never enter the root-cause sample; every clean record sharpens the analysis.",
     "dashboard.dataQuality.cta": "See the per-agent breakdown",
-    "dashboard.dataQuality.questionCount": "Also, your customers asked {n} questions.",
+    "dashboard.dataQuality.questionCount": "Your customers asked {n} questions.",
     "dashboard.dataQuality.escalation":
       "{n} reviews threaten a formal complaint or legal action — start with these.",
     "dashboard.dataQuality.escalationCta": "See the reviews with threats",
+    "dashboard.dataQuality.escalationAria": "Complaint threats",
+    "dashboard.dataQuality.questionsAria": "Customer questions",
+    "dashboard.dataQuality.questionsCta": "See the questions",
 
     // --- failing processes (home right rail, F1 2026-09-02) ---
     "dashboard.failingProcesses.title": "Processes at risk",
