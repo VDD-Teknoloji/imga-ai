@@ -50,7 +50,7 @@ _logger = logging.getLogger("imga-api.services.twitter_import")
 SEARCH_URL = "https://api.twitterapi.io/twitter/tweet/advanced_search"
 # twitterapi.io sayfa başına ~20 tweet döner; 1000 hedefi için 80 sayfa
 # üst sınır yeterli (pratikte sorgu çok daha erken tükenir).
-MAX_PAGES = 80
+MAX_PAGES = 200
 PAGE_DELAY_SECONDS = 0.3
 MIN_TEXT_LENGTH = 5
 MIN_TERM_LENGTH = 2
@@ -201,27 +201,156 @@ def _quote_term(term: str) -> str:
     return f'"{term}"'
 
 
+# --- Kök marka adı: yazar-adı gürültüsüne karşı ekli biçimler ----------
+
+#
+
+# 2026-09-03 — "Karaca" vakası: X araması bir kelimeyi YAZAR ADINDA da
+
+# eşler; yaygın soyadı olan bir marka adı tek başına sorguya girince 80
+
+# sayfa yalnız son 1-2 günü kapsıyor ve %94'ü Karaca soyadlı kişilerin
+
+# gönderisi çıkıyordu (500 istenen çekimde 11 kaldı). AI planı bu
+
+# durumu "belirsiz ad" olarak işaretliyor ama çıktı çalıştırmadan
+
+# çalıştırmaya değişiyor; dün "karaca tencere" ile başlayan liste 464
+
+# gönderi getirmişti, bugün listeye çıplak "karaca" da girdi. Karar
+
+# kod tarafında deterministik: bir pozitif terim tek kelimeyse VE başka
+
+# bir pozitif terim onunla başlıyorsa ("karaca tencere") o terim KÖK
+
+# sayılır; X sorgusuna çıplak hâli değil, yalnız gönderi METNİNDE
+
+# geçebilecek Türkçe ekli biçimleri ("karaca'dan", "karacanın", ...)
+
+# ve #etiketi girer. Yerel metin filtresi (``tweet_matches_terms``)
+
+# ise kökün kendisini aramaya devam eder — "karaca berbat" gibi eksiz
+
+# bir yorum X'ten gelirse yine kabul edilir.
+
+_VOWELS = "aeıioöuü"
+
+_BACK_VOWELS = "aıou"
+
+_VOICELESS = "çfhkpsşt"
+
+
+def _turkish_suffix_forms(word: str) -> list[str]:
+    """Ablatif/genitif/datif/lokatif/akuzatif — hem kesme işaretli hem
+
+    bitişik yazım (kullanıcılar çoğu zaman kesmeyi atlar). Ünlü uyumu
+
+    son ünlüye, ünsüz sertleşmesi son harfe göre."""
+
+    w = word.lower()
+
+    last_vowel = next((c for c in reversed(w) if c in _VOWELS), "a")
+
+    back = last_vowel in _BACK_VOWELS
+
+    rounded = last_vowel in "ouöü"
+
+    ends_vowel = w[-1] in _VOWELS
+
+    hard = w[-1] in _VOICELESS
+
+    a = "a" if back else "e"
+
+    i = ("u" if back else "ü") if rounded else ("ı" if back else "i")
+
+    d = "t" if hard else "d"
+
+    suffixes = [
+        f"{d}{a}n",  # -dan / -den / -tan / -ten
+        (f"n{i}n" if ends_vowel else f"{i}n"),  # -nın / -ın
+        (f"y{a}" if ends_vowel else a),  # -ya / -a
+        f"{d}{a}",  # -da / -de
+        (f"y{i}" if ends_vowel else i),  # -yı / -ı
+    ]
+
+    forms: list[str] = []
+
+    for suffix in suffixes:
+        forms.append(f"{word}'{suffix}")
+
+        forms.append(f"{word}{suffix}")
+
+    return forms
+
+
+def root_terms(positive: tuple[str, ...]) -> set[str]:
+    """Tek kelimelik ve başka bir pozitif terimin öneki olan terimler."""
+
+    lowered = [t.lower() for t in positive]
+
+    roots: set[str] = set()
+
+    for t in positive:
+        tl = t.lower()
+
+        if " " in tl or tl.startswith(("@", "#")):
+            continue
+
+        if any(o != tl and o.startswith(tl + " ") for o in lowered):
+            roots.add(t)
+
+    return roots
+
+
+def expand_root_term(term: str) -> list[str]:
+    """X sorgusu için kökün yerine geçen tırnaklı biçimler + #etiket."""
+
+    return [f'"{form}"' for form in _turkish_suffix_forms(term)] + [f"#{term.lower()}"]
+
+
 def build_search_query(term: str, exclude_handle: str | None) -> str:
     """Site ile aynı sorgu dili: terim tırnaklı, Türkçe, RT'siz; resmi
     hesap verilmişse onun kendi paylaşımları hariç (müşteri sesi değil).
 
     Birden çok pozitif terim OR grubuna alınır, negatif terimler ``-``
-    ile düşülür. Tek terim → eski çıktıyla birebir aynı."""
+    ile düşülür. Tek terim → eski çıktıyla birebir aynı. Kök marka
+    adı (bkz. ``root_terms``) sorguya çıplak girmez; ekli biçimleri
+    girer — sorgu uzunluk sınırını aşarsa önce bitişik yazımlar, sonra
+    negatifler düşer."""
     terms = parse_search_terms(term)
     handle = (exclude_handle or "").lstrip("@").strip()
-    positives = [_quote_term(t) for t in terms.positive] or [_quote_term(term.strip())]
-    head = positives[0] if len(positives) == 1 else "(" + " OR ".join(positives) + ")"
+    roots = root_terms(terms.positive)
+    positives: list[str] = []
+    root_forms: list[str] = []
+    for t in terms.positive:
+        if t in roots:
+            root_forms.extend(expand_root_term(t))
+        else:
+            positives.append(_quote_term(t))
+    if not positives and not root_forms:
+        positives = [_quote_term(term.strip())]
     negatives = [f"-{_quote_term(t)}" for t in terms.negative]
     tail = [f"-from:{handle}"] if handle else []
     tail.append("lang:tr -filter:retweets")
 
-    def _join(negs: list[str]) -> str:
+    def _join(pos: list[str], negs: list[str]) -> str:
+        head = pos[0] if len(pos) == 1 else "(" + " OR ".join(pos) + ")"
         return " ".join([head, *negs, *tail])
 
-    query = _join(negatives)
+    all_pos = positives + root_forms
+    query = _join(all_pos, negatives)
+    # Sınır aşımı: önce kesme işaretsiz kök biçimleri (en az katkı),
+    # sonra negatifler; pozitif çekirdek asla düşmez.
+    while len(query) > MAX_QUERY_LENGTH and any(
+        f.startswith('"') and "'" not in f for f in root_forms
+    ):
+        idx = max(i for i, f in enumerate(root_forms) if f.startswith('"') and "'" not in f)
+        root_forms.pop(idx)
+        all_pos = positives + root_forms
+        query = _join(all_pos, negatives)
     while len(query) > MAX_QUERY_LENGTH and negatives:
         negatives.pop()
-        query = _join(negatives)
+        query = _join(all_pos, negatives)
     return query
 
 

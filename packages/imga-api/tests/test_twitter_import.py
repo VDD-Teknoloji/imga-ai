@@ -39,16 +39,19 @@ from imga_api.services import AuditService, UserService
 from imga_api.services.llm_credentials import NoCredentialsError
 from imga_api.services.twitter_brand_service import BrandSearchPlan, RelevanceVerdict
 from imga_api.services.twitter_import import (
+    MAX_QUERY_LENGTH,
     SearchTerms,
     TwitterFetchProgress,
     TwitterFetchResult,
     TwitterTweet,
+    _turkish_suffix_forms,
     build_search_query,
     clean_tweet_text,
     fetch_tweets,
     is_collab_hashtag,
     parse_search_terms,
     parse_tweet_created_at,
+    root_terms,
     tweet_matches_terms,
     tweet_url_from_item,
 )
@@ -136,6 +139,49 @@ def test_build_search_query_multi_term_or_group_and_negatives() -> None:
         '("karaca tencere" OR @karacaonline) -"cem karaca" '
         "-from:karacaonline lang:tr -filter:retweets"
     )
+
+
+def test_build_search_query_root_brand_term_is_replaced_by_suffixed_forms() -> None:
+    # "Karaca" vakası (2026-09-03): çıplak kök X'te yazar adlarını
+    # eşleyip aramayı boğar; sorguya yalnız metinde geçen ekli biçimler
+    # girer, ürün birleşimleri ve @hesap aynen kalır.
+    q = build_search_query("karaca, karaca tencere, @karacaonline, -cem karaca", "karacaonline")
+    assert '"karaca" OR' not in q and '("karaca"' not in q
+    assert '"karaca tencere"' in q and "@karacaonline" in q
+    for form in (
+        '"karaca\'dan"',
+        '"karacadan"',
+        '"karaca\'nın"',
+        '"karaca\'ya"',
+        '"karaca\'da"',
+        '"karaca\'yı"',
+        "#karaca",
+    ):
+        assert form in q, form
+    assert q.endswith('-"cem karaca" -from:karacaonline lang:tr -filter:retweets')
+    assert len(q) <= MAX_QUERY_LENGTH
+
+
+def test_build_search_query_single_bare_term_is_unchanged() -> None:
+    # Kök tespiti başka bir pozitif terim ister — tek başına "karaca"
+    # (kullanıcı bilinçli yazdıysa) eski davranışıyla kalır.
+    assert build_search_query("karaca", None) == '"karaca" lang:tr -filter:retweets'
+
+
+def test_turkish_suffix_forms_vowel_harmony_and_hardening() -> None:
+    assert "karaca'dan" in _turkish_suffix_forms("karaca")
+    assert "karaca'nın" in _turkish_suffix_forms("karaca")
+    assert "beko'dan" in _turkish_suffix_forms("beko") and "beko'nun" in _turkish_suffix_forms(
+        "beko"
+    )
+    forms = _turkish_suffix_forms("market")
+    assert "market'ten" in forms and "market'in" in forms and "market'e" in forms
+
+
+def test_root_terms_requires_single_word_prefix_of_another_positive() -> None:
+    assert root_terms(("karaca", "karaca home", "@karacaonline")) == {"karaca"}
+    assert root_terms(("navlungo", "@navlungo")) == set()
+    assert root_terms(("karaca home", "karaca tencere")) == set()
 
 
 # --- birim: alaka filtresi + bağlantı --------------------------------
