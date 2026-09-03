@@ -73,19 +73,38 @@ const TONE_CLASSES: Readonly<Record<Tone, { bg: string; fg: string; badge: strin
   },
 };
 
-/** "Negatif Yorum Oranı" arttıysa bu İYİ bir haber değildir — ham
- *  `direction` her zaman ham sayının yönünü taşır, ton bunu metriğe
- *  göre TERS çevirir. Diğer üç metrikte yön = ton. */
+/** Ton, ham farktan (current - previous) türetilir; sunucunun
+ *  `direction`/`change_pct` alanı YÜZDE üzerinden hesaplanıyor ve
+ *  negatif tabanlı metriklerde yanıltıyor: ortalama duygu -0.10'dan
+ *  -0.28'e düşünce yüzde +198 çıkıyor ve "yukarı" görünüyor, oysa
+ *  kötüleşme. "Negatif Yorum Oranı"nda düşük iyi, diğerlerinde yüksek
+ *  iyi. */
+function kpiDelta(kpi: BriefingKpiChange): number {
+  return kpi.current - kpi.previous;
+}
+
 function toneForKpi(kpi: BriefingKpiChange): Tone {
-  if (kpi.direction === "flat") return "neutral";
-  const isNegativeMetric = metricKey(kpi.metric) === "negative";
-  const rawUp = kpi.direction === "up";
-  const good = isNegativeMetric ? !rawUp : rawUp;
+  const delta = kpiDelta(kpi);
+  if (Math.abs(delta) < 1e-9) return "neutral";
+  const lowerIsBetter = metricKey(kpi.metric) === "negative";
+  const good = lowerIsBetter ? delta < 0 : delta > 0;
   return good ? "positive" : "negative";
 }
 
-function arrowFor(direction: BriefingKpiChange["direction"]): string {
-  return direction === "up" ? "↑" : direction === "down" ? "↓" : "→";
+function arrowFor(kpi: BriefingKpiChange): string {
+  const delta = kpiDelta(kpi);
+  return Math.abs(delta) < 1e-9 ? "→" : delta > 0 ? "↑" : "↓";
+}
+
+/** Duygu skoru [-1, 1] aralığında; sıfır civarı/negatif tabanda yüzde
+ *  anlamsız — fark PUAN olarak gösterilir. Diğer metriklerde yüzde. */
+function formatChange(kpi: BriefingKpiChange): string {
+  const delta = kpiDelta(kpi);
+  if (metricKey(kpi.metric) === "sentiment") {
+    return `${delta >= 0 ? "+" : ""}${delta.toFixed(2)}`;
+  }
+  const pct = kpi.change_pct ?? 0;
+  return `${pct >= 0 ? "+" : ""}${pct.toFixed(1)}%`;
 }
 
 /** Yorum sayısı bir tam sayıdır — eski sürüm tüm metrikleri aynı
@@ -121,8 +140,7 @@ function KpiTile({ kpi, index }: { kpi: BriefingKpiChange; index: number }) {
       <p className={`text-xs font-medium tabular-nums ${cls.badge}`}>
         {hasChange ? (
           <>
-            {arrowFor(kpi.direction)} {(kpi.change_pct ?? 0) >= 0 ? "+" : ""}
-            {(kpi.change_pct ?? 0).toFixed(1)}%
+            {arrowFor(kpi)} {formatChange(kpi)}
           </>
         ) : (
           <span className="italic">{kpi.change_label ?? t("briefing.kpi.newLabel")}</span>
