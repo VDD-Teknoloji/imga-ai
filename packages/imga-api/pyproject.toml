@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "imga-api"
-version = "0.1.0"
+version = "0.1.1"
 description = "FastAPI HTTP wrapper around imga-core."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -100,6 +100,10 @@ python_version = "3.11"
 strict = true
 disallow_untyped_defs = true
 warn_unused_ignores = true
+# Pre-commit supplies explicit changed files; --all-files still checks every
+# source. Resolve sibling package types without checking unrelated imports.
+follow_imports = "silent"
+mypy_path = "$MYPY_CONFIG_FILE_DIR/../imga-core/src,$MYPY_CONFIG_FILE_DIR/../imga-db/src"
 
 [[tool.mypy.overrides]]
 module = [

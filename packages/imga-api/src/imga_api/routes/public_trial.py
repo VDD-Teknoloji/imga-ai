@@ -28,7 +28,7 @@ from __future__ import annotations
 import hmac
 import logging
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Literal
 from uuid import UUID
 
 from fastapi import (
@@ -41,6 +41,7 @@ from fastapi import (
     UploadFile,
     status,
 )
+from imga_core import AnalysisPipeline
 from pydantic import BaseModel
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -60,8 +61,6 @@ from imga_api.services.trial_analysis_service import (
     temp_upload_dir,
 )
 
-from imga_core import AnalysisPipeline
-
 _logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/public/trial", tags=["Public Trial"])
@@ -70,12 +69,22 @@ router = APIRouter(prefix="/public/trial", tags=["Public Trial"])
 # upstream; we re-check here so a misconfigured client (or someone
 # probing directly) doesn't drag the server through a 100 MB CSV.
 TRIAL_MAX_FILE_BYTES = 1 * 1024 * 1024
+TrialSource = Literal["excel", "twitter", "google_play", "app_store"]
+
+
+def _cached_source(file_name: str | None) -> str:
+    # Older cached uploads have arbitrary filenames and belong to excel.
+    for source in ("twitter", "google_play", "app_store"):
+        if file_name == f"trial-{source}.csv":
+            return source
+    return "excel"
 
 
 class TrialAnalyzeResponse(BaseModel):
     """On-the-wire shape consumed by the imga.ai marketing trial
     dashboard. Mirrors the marketing repo's TrialResults type 1:1."""
 
+    source: TrialSource = "excel"
     sentiment_distribution: dict[str, int]
     top_categories: list[dict[str, object]]
     sample_reviews: list[dict[str, object]]
@@ -127,8 +136,9 @@ def _require_trial_api_key(
         "CSV/XLSX. Runs the production analysis pipeline against "
         "the (capped) row set and returns a teaser payload. "
         "Idempotency: a second call from the same X-Trial-User-Email "
-        "within 24h returns the cached aggregate without re-running "
-        "the pipeline. RLS-isolated to the singleton trial tenant; "
+        "for the same X-Trial-Source within 24h returns the cached aggregate "
+        "without re-running the pipeline. A source change replaces the cache. "
+        "RLS-isolated to the singleton trial tenant; "
         "no rows reach the live reviews/tickets/strategic_reports "
         "tables."
     ),
@@ -139,8 +149,7 @@ def _require_trial_api_key(
         },
         status.HTTP_422_UNPROCESSABLE_ENTITY: {
             "description": (
-                f"More than {TRIAL_ROW_CAP} rows, empty file, or no "
-                "review-text column detected."
+                f"More than {TRIAL_ROW_CAP} rows, empty file, or no " "review-text column detected."
             )
         },
         status.HTTP_503_SERVICE_UNAVAILABLE: {
@@ -156,6 +165,7 @@ async def analyze_trial(
     pipeline: Annotated[AnalysisPipeline, Depends(get_pipeline)],
     x_trial_user_id: Annotated[str | None, Header()] = None,
     x_trial_user_email: Annotated[str | None, Header()] = None,
+    x_trial_source: Annotated[TrialSource, Header()] = "excel",
 ) -> TrialAnalyzeResponse:
     if not x_trial_user_email or "@" not in x_trial_user_email:
         # Marketing always sends this header; missing is a coding bug
@@ -205,20 +215,34 @@ async def analyze_trial(
         {"t": str(TRIAL_TENANT_ID)},
     )
 
+    # Serialize requests per email so concurrent source changes cannot return
+    # another source's result or race the existing UNIQUE(email) constraint.
+    await admin_session.execute(
+        text("SELECT pg_advisory_xact_lock(hashtextextended(:email, 0))"),
+        {"email": email},
+    )
+
     # Lazy GC — drop any rows whose 24h window has lapsed. Keeps the
     # table self-cleaning without a worker.
     deleted = await gc_expired(admin_session)
     if deleted:
         _logger.info("trial gc deleted %d expired rows", deleted)
 
-    # Idempotency: same email within the TTL → return cached.
+    # Idempotency: same email and current source within TTL → return cached.
     cached = await get_cached_analysis(admin_session, email=email)
-    if cached is not None:
+    if cached is not None and _cached_source(cached.file_name) == x_trial_source:
         _logger.info(
             "trial idempotent hit email=%s request_id=%s",
-            email, cached.request_id,
+            email,
+            cached.request_id,
         )
-        return TrialAnalyzeResponse(**serialize_for_response(cached))
+        return TrialAnalyzeResponse(**serialize_for_response(cached), source=x_trial_source)
+
+    # Keep the current schema/24h retention: only the latest source is cached
+    # here. The marketing DB retains one successful result per source.
+    if cached is not None:
+        await admin_session.delete(cached)
+        await admin_session.flush()
 
     # Stream + size-cap. Read into a temp file so the existing
     # parsers (which take Path) can consume it.
@@ -239,8 +263,7 @@ async def analyze_trial(
                     raise HTTPException(
                         status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
                         detail=(
-                            f"dosya boyutu {TRIAL_MAX_FILE_BYTES // 1024} "
-                            "KB sınırını aşıyor"
+                            f"dosya boyutu {TRIAL_MAX_FILE_BYTES // 1024} " "KB sınırını aşıyor"
                         ),
                     )
                 out.write(chunk)
@@ -250,7 +273,7 @@ async def analyze_trial(
                 admin_session,
                 pipeline=pipeline,
                 file_path=file_path,
-                file_name=safe_name,
+                file_name=f"trial-{x_trial_source}.csv",
                 email=email,
                 trial_user_id=trial_user_id,
             )
@@ -270,4 +293,4 @@ async def analyze_trial(
                 detail=str(exc),
             ) from exc
 
-    return TrialAnalyzeResponse(**serialize_for_response(row))
+    return TrialAnalyzeResponse(**serialize_for_response(row), source=x_trial_source)
