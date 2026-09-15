@@ -240,3 +240,7 @@ class Review(Base, TimestampMixin, SoftDeleteMixin):
     # kolonlarından ya da twitterapi.io'dan gelir). Şema sabit değil;
     # ileride başka kaynak türleri farklı anahtarlarla aynı kolona yazar.
     source_meta: Mapped[dict[str, object] | None] = mapped_column(JSONB(), nullable=True)
+    # Canonical tenant CRM ID, never inferred from a name or social handle.
+    customer_external_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    analysis_profile: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    analysis_language: Mapped[str | None] = mapped_column(String(16), nullable=True)

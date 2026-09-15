@@ -22,11 +22,12 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { useAnalyze } from "@/hooks/use-analyze";
 import { useCategories } from "@/hooks/use-categories";
 import { useManualPromoteReview } from "@/hooks/use-reviews";
-import { ApiError } from "@/lib/api-client";
+import { ApiError, formatApiErrorMessage } from "@/lib/api-client";
 import { useTranslation } from "@/lib/i18n/use-translation";
 import type { ReviewDecision, TenantAnalyzeResponse } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -65,6 +66,7 @@ export default function AnalyzePage() {
 function AnalyzePageInner() {
   const { t } = useTranslation();
   const [text, setText] = useState("");
+  const [customerId, setCustomerId] = useState("");
   // Sprint 8.3.5 — optional NPS, kept as string in state so an empty
   // input round-trips without coercing to 0. Validated to 0..10 below;
   // the backend re-validates on its side.
@@ -88,15 +90,15 @@ function AnalyzePageInner() {
       }
     }
     analyze.mutate(
-      { text: trimmed, nps_score: npsScore },
+      { text: trimmed, nps_score: npsScore, customer_external_id: customerId.trim() || undefined },
       {
         onSuccess: (data) => {
           setResult(data);
         },
         onError: (err) => {
           if (err instanceof ApiError) {
-            if (err.status === 422) {
-              toast.error(t("analyze.manual.textTooLong"));
+            if (err.status === 422 || err.status === 503) {
+              toast.error(formatApiErrorMessage(err, t("analyze.manual.analyzeFailed")));
               return;
             }
             if (err.status === 403) {
@@ -113,6 +115,7 @@ function AnalyzePageInner() {
   function reset() {
     setText("");
     setNpsInput("");
+    setCustomerId("");
     setResult(null);
   }
 
@@ -135,9 +138,14 @@ function AnalyzePageInner() {
           balonu yerine handleSubmit'teki TR toast çalışsın. */}
       <form onSubmit={handleSubmit} noValidate className="space-y-3">
         <div className="space-y-2">
+          <Label htmlFor="analyze-customer">{t("intel.externalId")}</Label>
+          <Input id="analyze-customer" value={customerId} onChange={(event) => setCustomerId(event.target.value)} maxLength={128} disabled={analyze.isPending} />
+        </div>
+        <div className="space-y-2">
           <Label htmlFor="analyze-text">{t("analyze.manual.textLabel")}</Label>
           <Textarea
             id="analyze-text"
+            dir="auto"
             value={text}
             onChange={(e) => setText(e.target.value)}
             placeholder={t("analyze.manual.textPlaceholder")}

@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from imga_core.analyzers.base import AnalyzerPrediction, SentimentAnalyzer
 from imga_core.classifiers.base import CategoryClassifier
@@ -16,7 +16,8 @@ from imga_core.config import (
     SENTIMENT_NEGATIVE_THRESHOLD,
     SENTIMENT_POSITIVE_THRESHOLD,
 )
-from imga_core.models import AnalysisResult, CategoryClassification, OverrideHit
+from imga_core.language_policy import has_arabic_script
+from imga_core.models import AnalysisResult, CategoryClassification, OverrideHit, SentimentLabel
 from imga_core.overrides import (
     KnowledgeBase,
     SLAParams,
@@ -76,9 +77,9 @@ class AnalysisPipeline:
         self,
         texts: list[str],
         *,
-        engine: "GeminiUnifiedEngine",
+        engine: GeminiUnifiedEngine,
         available_categories: list[str],
-        few_shot: tuple["FewShotExample", ...] = (),
+        few_shot: tuple[FewShotExample, ...] = (),
         stats_sink: dict[str, int] | None = None,
         perspective_options: PerspectiveOptions | None = None,
         perspective_sink: list[str | None] | None = None,
@@ -120,7 +121,8 @@ class AnalysisPipeline:
 
         pre_overrides: list[OverrideHit | None] = [None] * n
         for i, text in enumerate(normalized):
-            pre_overrides[i] = self._pre_bert_lookup(text)
+            if getattr(engine, "analysis_profile", "tr") != "mena" and not has_arabic_script(text):
+                pre_overrides[i] = self._pre_bert_lookup(text)
 
         predictions, stats = await engine.classify_unified_batch_async(
             normalized,
@@ -144,12 +146,27 @@ class AnalysisPipeline:
         results: list[AnalysisResult] = []
         for i, text in enumerate(normalized):
             unified = predictions[i]
+            multilingual = getattr(engine, "analysis_profile", "tr") == "mena" or has_arabic_script(
+                text
+            )
             categorization = CategoryClassification(
                 primary=unified.category,
                 primary_confidence=unified.category_confidence,
                 method="llm",
-                requires_manual_review=unified.category_confidence < 0.3,
+                requires_manual_review=unified.category_confidence < (0.6 if multilingual else 0.3),
             )
+            if multilingual:
+                results.append(
+                    AnalysisResult(
+                        text=text,
+                        analysis_profile="mena",
+                        analysis_language=unified.language,
+                        sentiment_label=cast(SentimentLabel, unified.sentiment_label),
+                        sentiment_score=unified.sentiment_score,
+                        categorization=categorization,
+                    )
+                )
+                continue
             results.append(
                 self._build_result(
                     text,
@@ -197,9 +214,7 @@ class AnalysisPipeline:
             return []
 
         normalized = [t if isinstance(t, str) else "" for t in texts]
-        active_classifier = (
-            classifier if classifier is not None else self.classifier
-        )
+        active_classifier = classifier if classifier is not None else self.classifier
 
         pre_overrides: list[OverrideHit | None] = [None] * n
         bert_indices: list[int] = []
@@ -214,9 +229,7 @@ class AnalysisPipeline:
             if not bert_indices:
                 return {}
             batch_inputs = [normalized[i] for i in bert_indices]
-            preds = await asyncio.to_thread(
-                self.analyzer.analyze_batch, batch_inputs
-            )
+            preds = await asyncio.to_thread(self.analyzer.analyze_batch, batch_inputs)
             return dict(zip(bert_indices, preds, strict=True))
 
         async def _run_classifier() -> list[CategoryClassification | None]:
@@ -229,9 +242,7 @@ class AnalysisPipeline:
             # (98-row test went 161s -> ~25s). Keyword-only and
             # other classifiers fall through to the sync path via
             # to_thread (unchanged from R1's analyze_batch_async).
-            async_batch = getattr(
-                active_classifier, "classify_batch_async", None
-            )
+            async_batch = getattr(active_classifier, "classify_batch_async", None)
             if async_batch is not None and asyncio.iscoroutinefunction(async_batch):
                 # Sprint 9.5.5 A — classify_batch_async now returns
                 # BatchClassificationResult (a dataclass envelope
@@ -247,24 +258,16 @@ class AnalysisPipeline:
                 # /analyze single-review route).
                 result = await async_batch(normalized)
                 if classifier_stats_sink is not None:
-                    classifier_stats_sink["llm_total_input_tokens"] = (
-                        result.llm_total_input_tokens
-                    )
+                    classifier_stats_sink["llm_total_input_tokens"] = result.llm_total_input_tokens
                     classifier_stats_sink["llm_total_output_tokens"] = (
                         result.llm_total_output_tokens
                     )
-                    classifier_stats_sink["llm_duration_ms"] = (
-                        result.llm_duration_ms
-                    )
+                    classifier_stats_sink["llm_duration_ms"] = result.llm_duration_ms
                 return list(result.classifications)
-            sync_result = await asyncio.to_thread(
-                active_classifier.classify_batch, normalized
-            )
+            sync_result = await asyncio.to_thread(active_classifier.classify_batch, normalized)
             return list(sync_result)
 
-        bert_predictions, categorizations = await asyncio.gather(
-            _run_bert(), _run_classifier()
-        )
+        bert_predictions, categorizations = await asyncio.gather(_run_bert(), _run_classifier())
 
         results: list[AnalysisResult] = []
         for i, text in enumerate(normalized):
@@ -377,10 +380,12 @@ class AnalysisPipeline:
                     score = t2_hit.score
                     label = _label_from_score(score)
 
-        customer = (self.rules.classify_customer(text) if self.rules else None) or \
-            classify_customer_perspective(text)
-        company = (self.rules.classify_company(text) if self.rules else None) or \
-            classify_company_perspective(text)
+        customer = (
+            self.rules.classify_customer(text) if self.rules else None
+        ) or classify_customer_perspective(text)
+        company = (
+            self.rules.classify_company(text) if self.rules else None
+        ) or classify_company_perspective(text)
 
         return AnalysisResult(
             text=text,

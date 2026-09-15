@@ -6,9 +6,10 @@ import logging
 import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from typing import Annotated
+from typing import Annotated, cast
 
 from cachetools import TTLCache
+from fastapi import APIRouter as _LegacyAPIRouter
 from fastapi import Depends, FastAPI
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
@@ -20,6 +21,7 @@ from imga_core import (
     HybridClassifier,
 )
 from imga_core.metrics import calculate_executive_metrics, is_alert_state
+from starlette.types import ExceptionHandler
 
 from imga_api import __version__
 from imga_api.dependencies import (
@@ -28,6 +30,7 @@ from imga_api.dependencies import (
     get_pipeline,
     get_settings,
 )
+from imga_api.logging_config import configure_logging
 from imga_api.middleware import RequestIDMiddleware, register_error_handlers
 from imga_api.routes import auth as auth_routes
 from imga_api.routes import invitations as public_invitation_routes
@@ -56,6 +59,7 @@ from imga_api.routes import (
     tenant_executive_briefings as tenant_executive_briefings_routes,
 )
 from imga_api.routes import tenant_insights as tenant_insights_routes
+from imga_api.routes import tenant_intelligence as tenant_intelligence_routes
 from imga_api.routes import tenant_kpi_goals as tenant_kpi_goals_routes
 from imga_api.routes import tenant_llm_audit as tenant_llm_audit_routes
 from imga_api.routes import tenant_llm_credentials as tenant_llm_credentials_routes
@@ -139,8 +143,6 @@ def _parse_cors_origins() -> list[str]:
 # arq) also picks up imga_core / imga_api INFO messages — without
 # this, the HybridClassifier batch summary + rotator key usage
 # logs dropped silently in production.
-from imga_api.logging_config import configure_logging
-
 configure_logging()
 log = logging.getLogger("imga-api")
 
@@ -225,9 +227,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             rows = (
                 await session.execute(
                     select(AnalyzeBatchJob.file_path).where(
-                        AnalyzeBatchJob.status.in_(
-                            ("queued", "processing", "failed")
-                        )
+                        AnalyzeBatchJob.status.in_(("queued", "processing", "failed"))
                     )
                 )
             ).scalars()
@@ -400,9 +400,12 @@ app.add_middleware(
 # middleware) so its order relative to others doesn't matter.
 app.add_middleware(RequestIDMiddleware)
 register_error_handlers(app)
-app.add_exception_handler(PartnerApiError, partner_api_exception_handler)
+# The exception-class registry guarantees these narrower handler argument types.
+app.add_exception_handler(PartnerApiError, cast(ExceptionHandler, partner_api_exception_handler))
 # /v1 doğrulama (422) → AnalyzeError(400); /v1 dışı yollar varsayılana devreder.
-app.add_exception_handler(RequestValidationError, v1_validation_exception_handler)
+app.add_exception_handler(
+    RequestValidationError, cast(ExceptionHandler, v1_validation_exception_handler)
+)
 
 app.include_router(auth_routes.router)
 app.include_router(v1_admin_tokens_routes.router)
@@ -464,6 +467,7 @@ app.include_router(tenant_business_dimensions_routes.router)
 app.include_router(tenant_prompt_templates_routes.router)
 # Migration 0046 — operasyonel facts modülü (SLA/CSAT/efor/tazmin/teslimat).
 app.include_router(tenant_operations_routes.router)
+app.include_router(tenant_intelligence_routes.router)
 
 
 @app.get(
@@ -493,8 +497,6 @@ def health(
 # behind a default-off env flag so production servers 404 these
 # paths until an integration explicitly opts in. The tenant-scoped
 # /tenants/me/analyze stays unconditionally registered above.
-from fastapi import APIRouter as _LegacyAPIRouter
-
 _legacy_router = _LegacyAPIRouter()
 
 

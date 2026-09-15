@@ -61,6 +61,7 @@ from imga_api.llm.prompts.root_cause_v1 import (
 )
 from imga_api.services.analytics_service import UNMATCHED_PERSPECTIVE_SENTINEL
 from imga_api.services.category_codes import valid_primary_codes
+from imga_api.services.company_intelligence import context_directive, tenant_context_fingerprint
 from imga_api.services.llm_credentials import (
     NoCredentialsError,
     load_active_llm_keys,
@@ -340,7 +341,12 @@ class RootCauseService:
     ) -> dict[str, Any] | None:
         """Cache → DB sırasıyla en son üretilmiş analizi döndür.
         Hiç üretilmemişse None (route 404'e çevirir)."""
-        cache_key = self._cache_key(primary_category, perspective_code, date_from, date_to)
+        fingerprint = await tenant_context_fingerprint(self._session, self._tenant_id)
+        cache_key = (
+            self._cache_key(primary_category, perspective_code, date_from, date_to)
+            + ":"
+            + fingerprint
+        )
         cached = await self._cache_get(cache_key)
         if cached is not None:
             return cached
@@ -367,6 +373,8 @@ class RootCauseService:
         row = (await self._session.execute(stmt)).scalar_one_or_none()
         if row is None:
             return None
+        if row.payload.get("company_context_fingerprint", "legacy") != fingerprint:
+            return None
         return _serialise(row)
 
     # ------------------------------------------------------------------
@@ -392,7 +400,12 @@ class RootCauseService:
                 f"yok: {', '.join(sorted(valid_codes))}"
             )
 
-        cache_key = self._cache_key(primary_category, perspective_code, date_from, date_to)
+        fingerprint = await tenant_context_fingerprint(self._session, self._tenant_id)
+        cache_key = (
+            self._cache_key(primary_category, perspective_code, date_from, date_to)
+            + ":"
+            + fingerprint
+        )
         if not force_refresh:
             cached = await self._cache_get(cache_key)
             if cached is not None:
@@ -457,11 +470,13 @@ class RootCauseService:
         user_prompt = selection.user_prompt
         language = await self._tenant_language()
         terminology = await self._tenant_terminology()
+        tenant = await self._session.get(Tenant, self._tenant_id)
         system_prompt = (
             selection.system_prompt
             + language_directive(language)
             + terminology_directive(terminology)
             + playbook_directive(primary_category)
+            + context_directive(tenant.settings if tenant else None)
         )
 
         failed_invalid_key_ids: list[UUID] = []
@@ -564,6 +579,7 @@ class RootCauseService:
         if failed_invalid_key_ids:
             await mark_keys_failed(self._session, failed_invalid_key_ids)
 
+        payload["company_context_fingerprint"] = fingerprint
         row = RootCauseAnalysis(
             tenant_id=self._tenant_id,
             primary_category_code=primary_category,

@@ -20,6 +20,7 @@ from imga_db.models.email_outbox import (
 )
 from imga_db.models.executive_briefing import ExecutiveBriefing
 from imga_db.models.executive_snapshot import ExecutiveSnapshot
+from imga_db.models.intelligence import CustomerAccount, CustomerObservation, IntelligenceRevision
 from imga_db.models.invitation import Invitation
 from imga_db.models.llm_call_audit import LlmCallAudit
 from imga_db.models.metric_definition import MetricDefinition
@@ -84,6 +85,8 @@ __all__ = [
     "CancellationReason",
     "Category",
     "CategoryTaxonomy",
+    "CustomerAccount",
+    "CustomerObservation",
     "DataPurgeAudit",
     "DecisionAuditLog",
     "EmailOutbox",
@@ -91,6 +94,7 @@ __all__ = [
     "EmailOutboxStatus",
     "ExecutiveBriefing",
     "ExecutiveSnapshot",
+    "IntelligenceRevision",
     "Invitation",
     "LlmCallAudit",
     "MetricDefinition",

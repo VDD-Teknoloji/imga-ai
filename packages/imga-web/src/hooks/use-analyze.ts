@@ -24,18 +24,20 @@ export interface AnalyzeInput {
    *  doesn't capture it; the backend ignores undefined and only
    *  persists when present. */
   nps_score?: number;
+  customer_external_id?: string;
 }
 
 export function useAnalyze() {
   const qc = useQueryClient();
   return useMutation<TenantAnalyzeResponse, Error, AnalyzeInput>({
-    mutationFn: async ({ text, nps_score }) => {
+    mutationFn: async ({ text, nps_score, customer_external_id }) => {
       return apiRequest<TenantAnalyzeResponse>("/tenants/me/analyze", {
         method: "POST",
-        body: { text, nps_score },
+        body: { text, nps_score, customer_external_id },
       });
     },
     onSuccess: (data) => {
+      void qc.invalidateQueries({ queryKey: ["intelligence"] });
       if (data.decision === "create" || data.decision === "skipped_dedup") {
         qc.invalidateQueries({ queryKey: ["tickets-list"] });
         qc.invalidateQueries({ queryKey: ["tickets-infinite"] });

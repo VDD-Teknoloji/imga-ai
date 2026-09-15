@@ -84,6 +84,9 @@ export const NAV_SECTIONS: ReadonlyArray<NavSection> = [
       { label: "shell.nav.actionItems", href: "/action-items", icon: ListChecks },
       { label: "shell.nav.trendAlerts", href: "/trend-alerts", icon: Bell },
       { label: "shell.nav.strategy", href: "/strategy", icon: Compass },
+      { label: "intel.prd", href: "/prd", icon: ScrollText },
+      { label: "intel.company", href: "/company", icon: Building2 },
+      { label: "intel.churn", href: "/churn", icon: Gauge },
     ],
   },
   // Analitik — analyst persona's daily surfaces. Madde 3 not'u:

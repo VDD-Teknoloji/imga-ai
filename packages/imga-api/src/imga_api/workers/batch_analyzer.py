@@ -50,6 +50,7 @@ from imga_core import (
     KeywordCategoryClassifier,
 )
 from imga_core.categorizers import TaxonomyEntry, apply_company_heuristic
+from imga_core.language_policy import has_arabic_script
 from imga_core.llm import LLMProvider, RotatingGeminiProvider
 from imga_core.llm.unified_classifier import (
     FewShotExample,
@@ -66,6 +67,7 @@ from imga_db.models import (
     Review,
     ReviewDecision,
     ReviewFact,
+    Tenant,
     TenantBusinessDimension,
     TenantCategory,
     TenantFactMapping,
@@ -79,10 +81,12 @@ from imga_api.services.batch_service import (
     BatchAnalyzeService,
     BatchProgress,
 )
+from imga_api.services.company_intelligence import analysis_profile as configured_analysis_profile
 from imga_api.services.data_quality import classify_data_quality, detect_content_type
 from imga_api.services.fact_parsing import build_fact_row
 from imga_api.services.review_service import ReviewService
 from imga_api.services.root_cause_autogen import mark_enqueued
+from imga_api.services.strategic_constants import terminology_directive
 from imga_api.services.tenant_config_service import TenantConfigService
 from imga_api.services.ticket_service import TicketService
 from imga_api.settings import BatchSettings
@@ -477,6 +481,17 @@ async def _run_job(
     tenant_classifier = await _build_tenant_classifier(tenant_id, context)
     # Sprint 11.0 — birleşik LLM bağlamı (motor + düzeltme deposu).
     unified_ctx = await _build_unified_context(tenant_id, context)
+    async with context.app_session_factory() as language_session, language_session.begin():
+        await set_current_tenant(language_session, tenant_id)
+        language_tenant = await language_session.get(Tenant, tenant_id)
+        mena_required = (
+            configured_analysis_profile(language_tenant.settings if language_tenant else None)
+            == "mena"
+        )
+    if mena_required and unified_ctx is None:
+        raise BertFallbackDisabledError(
+            "MENA analizi için aktif çok dilli LLM gerekli; Türkçe BERT yedeği kullanılamaz."
+        )
 
     # 2026-08-10 — BERT yedeği kapatılabilir (prod: kapalı). 21k'lık
     # vakada parse reddi her chunk'ı BERT'e düşürüp worker'ı OOM'a
@@ -1030,7 +1045,11 @@ async def _process_chunk(
                         experience_sink=unified_experiences,
                     )
                 except Exception as exc:
-                    if not _bert_fallback_enabled():
+                    if (
+                        not _bert_fallback_enabled()
+                        or getattr(unified_ctx.engine, "analysis_profile", "tr") == "mena"
+                        or any(has_arabic_script(text) for text in texts)
+                    ):
                         # BERT yedeği kapalı: sessiz kalite düşüşü yerine
                         # işi net gerekçeyle durdur. Checkpoint'e kadar
                         # işlenen satırlar kalıcı — Yeniden Dene kaldığı
@@ -1048,6 +1067,10 @@ async def _process_chunk(
                     unified_perspectives = []
                     unified_experiences = []
             if unified_analyses is None:
+                if any(has_arabic_script(text) for text in texts):
+                    raise BertFallbackDisabledError(
+                        "Arapça/Urduca veri için çok dilli LLM gerekli; Türkçe BERT yedeği kullanılamaz."
+                    )
                 analyses = await pipeline.analyze_batch_async(
                     texts,
                     classifier=classifier_override,
@@ -1058,6 +1081,10 @@ async def _process_chunk(
             # Düzeltme katmanları — insan kararı her yolu ezer
             # (birebir + anlamsal).
             if unified_ctx is not None:
+                if getattr(unified_ctx.engine, "analysis_profile", "tr") == "mena" or any(
+                    has_arabic_script(text) for text in texts
+                ):
+                    semantic_hits = {}
                 analyses, correction_overrides = _apply_corrections(
                     analyses, texts, unified_ctx, semantic_hits
                 )
@@ -1265,7 +1292,9 @@ async def _process_chunk(
             # batch dedup dalı (aşağıda, row_quality_flag hesaplanmadan
             # ÖNCE `continue` eder) da ona ihtiyaç duyar — bu yüzden
             # burada, text_hash ile aynı anda, koşulsuz hesaplanır.
-            content_type = detect_content_type(parsed.text)
+            content_type = (
+                None if analysis.analysis_profile == "mena" else detect_content_type(parsed.text)
+            )
 
             # Sprint 8.3.5.6. Compute the heuristic perspective once per
             # row, reused below for whichever insertion path fires. The
@@ -1309,6 +1338,8 @@ async def _process_chunk(
             elif llm_perspective is not None and (llm_perspective in taxonomy_snapshot.labels):
                 perspective_code = llm_perspective
                 perspective_label = taxonomy_snapshot.labels[llm_perspective]
+            elif analysis.analysis_profile == "mena":
+                perspective_code, perspective_label = None, None
             else:
                 perspective_hit = apply_company_heuristic(
                     parsed.text, taxonomy=taxonomy_snapshot.heuristic_entries
@@ -1368,6 +1399,9 @@ async def _process_chunk(
                     source_url=parsed.source_url,
                     content_type=content_type,
                     source_meta=parsed.source_meta,
+                    customer_external_id=parsed.customer_external_id,
+                    analysis_profile=analysis.analysis_profile,
+                    analysis_language=analysis.analysis_language,
                 )
                 app_session.add(review)
                 if parsed.facts:
@@ -1402,7 +1436,9 @@ async def _process_chunk(
             # 'informational'/'meaningless' damgalayıp insan kararını
             # analitikten sessizce düşürebilirdi.
             row_quality_flag = (
-                None if correction_override is not None else classify_data_quality(parsed.text)
+                None
+                if correction_override is not None or analysis.analysis_profile == "mena"
+                else classify_data_quality(parsed.text)
             )
 
             if auto_create:
@@ -1481,6 +1517,7 @@ async def _process_chunk(
                         source_url=parsed.source_url,
                         content_type=content_type,
                         source_meta=parsed.source_meta,
+                        customer_external_id=parsed.customer_external_id,
                     )
                 )
                 if result.decision == ReviewDecision.CREATE:
@@ -1534,6 +1571,9 @@ async def _process_chunk(
                     source_url=parsed.source_url,
                     content_type=content_type,
                     source_meta=parsed.source_meta,
+                    customer_external_id=parsed.customer_external_id,
+                    analysis_profile=analysis.analysis_profile,
+                    analysis_language=analysis.analysis_language,
                 )
                 app_session.add(review)
                 if parsed.facts:
@@ -1893,6 +1933,7 @@ async def _build_unified_context(
             await set_current_tenant(session, tenant_id)
             selection = await load_active_llm_keys(session, tenant_id)
             # Embedding API'si Gemini'ye özgü — kazanan sağlayıcı
+            tenant_row = await session.get(Tenant, tenant_id)
             # OpenRouter olsa bile RAG embedding'leri Gemini anahtarı
             # ister; yoksa boş liste (embed yolu sessizce atlanır).
             embedding_keys = await load_active_gemini_keys(session, tenant_id)
@@ -1953,6 +1994,8 @@ async def _build_unified_context(
         concurrency=max(1, context.settings.llm_concurrency // 2),
         system_prompt=system_prompt_override,
         provider=selection.provider,
+        analysis_profile=configured_analysis_profile(tenant_row.settings if tenant_row else None),
+        terminology=terminology_directive(tenant_row.terminology if tenant_row else None),
     )
     log.info(
         "batch worker: unified classifier active (model=%s, keys=%d, corrections=%d)",

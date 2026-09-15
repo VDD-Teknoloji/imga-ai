@@ -44,9 +44,9 @@ try:
 except ImportError:  # pragma: no cover — exercised only when the
     # optional [gemini] extra isn't installed; the per-instance
     # constructor below re-raises with the install hint.
-    _genai_module = None  # type: ignore[assignment]
-    _genai_errors = None  # type: ignore[assignment]
-    _genai_types = None  # type: ignore[assignment]
+    _genai_module = None
+    _genai_errors = None
+    _genai_types = None
 
 from imga_core.llm.base import LLMProvider, LLMProviderError
 from imga_core.llm.errors import (
@@ -94,8 +94,7 @@ def _build_client(api_key: str, timeout_seconds: float) -> Any:
     """
     if _genai_module is None:
         raise ImportError(
-            "google-genai is not installed. "
-            "Install with: pip install 'imga-core[gemini]'"
+            "google-genai is not installed. " "Install with: pip install 'imga-core[gemini]'"
         )
     return _genai_module.Client(
         api_key=api_key,
@@ -128,8 +127,7 @@ class GeminiProvider(LLMProvider):
             raise ValueError("Gemini API key is required")
         if _genai_module is None:
             raise ImportError(
-                "google-genai is not installed. "
-                "Install with: pip install 'imga-core[gemini]'"
+                "google-genai is not installed. " "Install with: pip install 'imga-core[gemini]'"
             )
 
         self._api_key = api_key
@@ -460,11 +458,7 @@ class GeminiProvider(LLMProvider):
                 contents=user_prompt,
                 config=config,
             )
-            stream = (
-                await maybe_stream
-                if inspect.isawaitable(maybe_stream)
-                else maybe_stream
-            )
+            stream = await maybe_stream if inspect.isawaitable(maybe_stream) else maybe_stream
             async for chunk in stream:
                 delta = getattr(chunk, "text", None)
                 usage = self._extract_usage_metadata(chunk)
@@ -501,10 +495,9 @@ class GeminiProvider(LLMProvider):
                     last_error = mapped
                     if attempt + 1 >= _TRANSIENT_RETRY_ATTEMPTS:
                         raise
-                    delay = _TRANSIENT_RETRY_BASE_SECONDS * (2 ** attempt)
+                    delay = _TRANSIENT_RETRY_BASE_SECONDS * (2**attempt)
                     _logger.warning(
-                        "Gemini transient error (attempt %d/%d); "
-                        "retrying in %.1fs",
+                        "Gemini transient error (attempt %d/%d); " "retrying in %.1fs",
                         attempt + 1,
                         _TRANSIENT_RETRY_ATTEMPTS,
                         delay,
@@ -543,12 +536,7 @@ class GeminiProvider(LLMProvider):
         # (preserves behaviour with TaskGroup / generic transport
         # errors that don't carry .code).
         text = str(exc).lower()
-        if (
-            "429" in text
-            or "rate limit" in text
-            or "resource_exhausted" in text
-            or "quota" in text
-        ):
+        if "429" in text or "rate limit" in text or "resource_exhausted" in text or "quota" in text:
             raise RateLimitError() from exc
         if (
             "401" in text
@@ -592,11 +580,10 @@ class GeminiProvider(LLMProvider):
             )
         if name in {"SAFETY", "RECITATION"}:
             _logger.error(
-                "Gemini response blocked: finish_reason=%s", name,
+                "Gemini response blocked: finish_reason=%s",
+                name,
             )
-            raise LLMResponseBlockedError(
-                f"Gemini yanıtı engellendi ({name})."
-            )
+            raise LLMResponseBlockedError(f"Gemini yanıtı engellendi ({name}).")
         _logger.warning(
             "Gemini finish_reason=%s (unhandled); falling through to parse",
             name,
@@ -617,17 +604,11 @@ class GeminiProvider(LLMProvider):
                 try:
                     data = json.loads(cleaned[start : end + 1])
                 except json.JSONDecodeError as exc:
-                    raise MalformedResponseError(
-                        f"Gemini returned non-JSON text: {raw!r}"
-                    ) from exc
+                    raise MalformedResponseError(f"Gemini returned non-JSON text: {raw!r}") from exc
             else:
-                raise MalformedResponseError(
-                    f"Gemini returned non-JSON text: {raw!r}"
-                ) from None
+                raise MalformedResponseError(f"Gemini returned non-JSON text: {raw!r}") from None
         if not isinstance(data, dict):
-            raise MalformedResponseError(
-                f"Expected JSON object, got {type(data).__name__}"
-            )
+            raise MalformedResponseError(f"Expected JSON object, got {type(data).__name__}")
         return cast(dict[str, Any], data)
 
     @staticmethod

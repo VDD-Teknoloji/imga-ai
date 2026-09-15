@@ -55,6 +55,7 @@ from imga_api.llm.prompts.okr_v1 import (
     OKR_SYSTEM_PROMPT,
     render_okr_user_prompt,
 )
+from imga_api.services.company_intelligence import context_directive
 from imga_api.services.llm_credentials import (
     NoCredentialsError,
     load_active_llm_keys,
@@ -133,13 +134,9 @@ class OkrService:
 
         # 2. Credentials → rotator. Same path as SwotService; shared
         # helper means the "no creds" UI flow is identical.
-        key_selection = await load_active_llm_keys(
-            self._session, self._tenant_id
-        )
+        key_selection = await load_active_llm_keys(self._session, self._tenant_id)
         if key_selection is None:
-            raise NoCredentialsError(
-                "Tenant has no active LLM API keys configured"
-            )
+            raise NoCredentialsError("Tenant has no active LLM API keys configured")
         keys = key_selection.keys
         provider_name = key_selection.provider
         model_name = resolve_model_name(provider_name, key_selection.model)
@@ -167,6 +164,7 @@ class OkrService:
             selection.system_prompt
             + language_directive(getattr(_tenant, "language", "tr"))
             + terminology_directive(getattr(_tenant, "terminology", None))
+            + context_directive(getattr(_tenant, "settings", None))
         )
 
         # 4. LLM call with rotation.
@@ -217,9 +215,7 @@ class OkrService:
         try:
             async with auditor:
                 try:
-                    (response, token_usage), key_used = (
-                        await rotator.call_with_rotation(_call)
-                    )
+                    (response, token_usage), key_used = await rotator.call_with_rotation(_call)
                 except AllKeysExhaustedError as exc:
                     auditor.record_failure(
                         error_type="all_keys_exhausted",
@@ -239,12 +235,8 @@ class OkrService:
                     )
                     raise
                 auditor.record_success(
-                    input_tokens=(
-                        token_usage.get("input") if token_usage else None
-                    ),
-                    output_tokens=(
-                        token_usage.get("output") if token_usage else None
-                    ),
+                    input_tokens=(token_usage.get("input") if token_usage else None),
+                    output_tokens=(token_usage.get("output") if token_usage else None),
                 )
         except AllKeysExhaustedError:
             await mark_keys_failed(self._session, failed_invalid_key_ids)
@@ -271,7 +263,11 @@ class OkrService:
 
         _logger.info(
             "OKR generated tenant=%s source_swot=%s key_id=%s key_label=%s duration_ms=%d",
-            self._tenant_id, source.id, key_used.id, key_used.label, duration_ms,
+            self._tenant_id,
+            source.id,
+            key_used.id,
+            key_used.label,
+            duration_ms,
         )
         return report_dict
 
@@ -279,9 +275,7 @@ class OkrService:
     # Private helpers
     # ------------------------------------------------------------------
 
-    async def _load_source_swot(
-        self, source_report_id: UUID
-    ) -> StrategicReport:
+    async def _load_source_swot(self, source_report_id: UUID) -> StrategicReport:
         """Fetch + assert the source row is a SWOT for THIS tenant.
 
         RLS already restricts to tenant-owned rows; the explicit
@@ -297,9 +291,7 @@ class OkrService:
         )
         row = (await self._session.execute(stmt)).scalar_one_or_none()
         if row is None:
-            raise SourceReportNotFoundError(
-                f"SWOT report {source_report_id} not found for tenant"
-            )
+            raise SourceReportNotFoundError(f"SWOT report {source_report_id} not found for tenant")
         return row
 
     @staticmethod
@@ -336,42 +328,39 @@ class OkrService:
     def _validate_okr_response(payload: dict[str, Any]) -> dict[str, Any]:
         """Three-layer validation, mirroring SwotService:
 
-          * **Top-level required (strict):** missing ``objectives``
-            means the row is unrenderable; reject.
-          * **Madde-düzeyi normalizasyon:** strict:false OpenRouter
-            yolunda key_results / rationale gibi madde-içi alanlar
-            eksik gelebilir; normalize edilmiş kopya döner (key_results
-            → [], metin alanları → ""), persist onu kullanır.
-          * **Per-objective counts (permissive):** the 2-4 / 2-4 spec
-            used to live in the response_schema as ``minItems`` /
-            ``maxItems`` until the Gemini SDK crashed on those keys
-            (8.3.6.6 round-1 production). It now lives in the system
-            prompt + this soft check: out-of-range counts log a
-            warning but the row gets persisted regardless.
+        * **Top-level required (strict):** missing ``objectives``
+          means the row is unrenderable; reject.
+        * **Madde-düzeyi normalizasyon:** strict:false OpenRouter
+          yolunda key_results / rationale gibi madde-içi alanlar
+          eksik gelebilir; normalize edilmiş kopya döner (key_results
+          → [], metin alanları → ""), persist onu kullanır.
+        * **Per-objective counts (permissive):** the 2-4 / 2-4 spec
+          used to live in the response_schema as ``minItems`` /
+          ``maxItems`` until the Gemini SDK crashed on those keys
+          (8.3.6.6 round-1 production). It now lives in the system
+          prompt + this soft check: out-of-range counts log a
+          warning but the row gets persisted regardless.
         """
         required = OKR_RESPONSE_SCHEMA["required"]
         missing = [k for k in required if k not in payload]
         if missing:
-            raise OkrResponseInvalidError(
-                f"OKR response missing required fields: {missing}"
-            )
+            raise OkrResponseInvalidError(f"OKR response missing required fields: {missing}")
 
         payload = normalize_okr_payload(payload)
 
         objectives = payload["objectives"]
         if not (2 <= len(objectives) <= 4):
             _logger.warning(
-                "OKR response has %d objectives, expected 2-4 — "
-                "persisting anyway",
+                "OKR response has %d objectives, expected 2-4 — " "persisting anyway",
                 len(objectives),
             )
         for idx, obj in enumerate(objectives):
             krs = obj["key_results"]
             if not (2 <= len(krs) <= 4):
                 _logger.warning(
-                    "OKR objective[%d] has %d key_results, expected 2-4 — "
-                    "persisting anyway",
-                    idx, len(krs),
+                    "OKR objective[%d] has %d key_results, expected 2-4 — " "persisting anyway",
+                    idx,
+                    len(krs),
                 )
         return payload
 
@@ -411,21 +400,15 @@ class OkrService:
             "id": str(report_id),
             "tenant_id": str(self._tenant_id),
             "report_type": "okr",
-            "date_from": (
-                source.date_from.isoformat() if source.date_from else None
-            ),
-            "date_to": (
-                source.date_to.isoformat() if source.date_to else None
-            ),
+            "date_from": (source.date_from.isoformat() if source.date_from else None),
+            "date_to": (source.date_to.isoformat() if source.date_to else None),
             "input_stats": dict(source.input_stats),
             "output_payload": response,
             "source_report_id": str(source.id),
             "model_name": model_name,
             "token_usage": token_usage,
             "generation_duration_ms": duration_ms,
-            "created_by_user_id": (
-                str(self._user_id) if self._user_id is not None else None
-            ),
+            "created_by_user_id": (str(self._user_id) if self._user_id is not None else None),
         }
 
 

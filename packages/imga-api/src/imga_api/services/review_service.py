@@ -200,11 +200,11 @@ class ReviewService:
         perspective_label_tr: str | None
         if perspective_override is not None:
             perspective_code, perspective_label_tr = perspective_override
+        elif analysis.analysis_profile == "mena":
+            perspective_code, perspective_label_tr = None, None
         else:
-            perspective_code, perspective_label_tr = (
-                await self._compute_company_perspective(
-                    tenant_id=tenant_id, text=text
-                )
+            perspective_code, perspective_label_tr = await self._compute_company_perspective(
+                tenant_id=tenant_id, text=text
             )
 
         # --- decision tree (order matters; see module docstring) ---
@@ -215,6 +215,13 @@ class ReviewService:
         if primary_code == "belirsiz":
             decision = ReviewDecision.SKIPPED_BELIRSIZ
             decision_reason = "primary_category_belirsiz"
+        elif (
+            analysis.analysis_profile == "mena"
+            and analysis.categorization is not None
+            and analysis.categorization.requires_manual_review
+        ):
+            decision = ReviewDecision.SKIPPED_THRESHOLD
+            decision_reason = "multilingual_manual_review_required"
         elif automation_mode == AutomationMode.MANUAL:
             decision = ReviewDecision.SKIPPED_MODE
             decision_reason = "manual_mode"
@@ -264,6 +271,8 @@ class ReviewService:
         review = Review(
             tenant_id=tenant_id,
             text=text,
+            analysis_profile=analysis.analysis_profile,
+            analysis_language=analysis.analysis_language,
             text_hash=text_hash,
             sentiment_label=analysis.sentiment_label,
             sentiment_score=float(analysis.sentiment_score),
@@ -511,9 +520,7 @@ class ReviewService:
         )
         cat_id = (await self._session.execute(stmt)).scalar_one_or_none()
         if cat_id is None:
-            raise CategoryNotConfiguredError(
-                f"category {code!r} is not configured for this tenant"
-            )
+            raise CategoryNotConfiguredError(f"category {code!r} is not configured for this tenant")
         return cat_id
 
 

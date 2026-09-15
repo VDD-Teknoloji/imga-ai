@@ -16,6 +16,7 @@ import { compare } from "./dictionaries/compare";
 import { core } from "./dictionaries/core";
 import { dashboard } from "./dictionaries/dashboard";
 import { insights } from "./dictionaries/insights";
+import { intelligence } from "./dictionaries/intelligence";
 import { rootCause } from "./dictionaries/root-cause";
 import { settings } from "./dictionaries/settings";
 import { shell } from "./dictionaries/shell";
@@ -31,6 +32,7 @@ const MODULES: readonly Bundle[] = [
   tickets,
   analyze,
   insights,
+  intelligence,
   compare,
   settings,
   admin,
