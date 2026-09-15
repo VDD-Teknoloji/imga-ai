@@ -61,9 +61,7 @@ _logger = logging.getLogger(__name__)
 # root_cause_service ile ayni eslem — ham kategori kodu ("belirsiz",
 # eski BERT kodlari) LLM prompt'una sizip brifingde kod adiyla
 # alintilaniyordu.
-_CATEGORY_LABELS: dict[str, str] = {
-    c.code: c.name for c in DEFAULT_GLOBAL_CATEGORIES
-}
+_CATEGORY_LABELS: dict[str, str] = {c.code: c.name for c in DEFAULT_GLOBAL_CATEGORIES}
 
 CACHE_TTL_SECONDS = 12 * 3600
 # Sprint 9.5.4 — Gemini 3 ailesine cutover. Recent history:
@@ -153,9 +151,7 @@ class ExecutiveBriefingService:
         force_refresh: bool = False,
     ) -> dict[str, Any]:
         if period not in _PERIOD_DAYS:
-            raise ValueError(
-                f"period must be one of {sorted(_PERIOD_DAYS)}"
-            )
+            raise ValueError(f"period must be one of {sorted(_PERIOD_DAYS)}")
 
         # Resolve the date window. If the caller didn't pin one,
         # use the trailing N days ending today.
@@ -164,7 +160,13 @@ class ExecutiveBriefingService:
         if date_from is None:
             date_from = date_to - timedelta(days=_PERIOD_DAYS[period])
 
+        from imga_api.services.company_intelligence import (
+            context_directive,
+            tenant_context_fingerprint,
+        )
+
         cache_key = self._cache_key(period, date_from, date_to, batch_id)
+        cache_key += ":" + await tenant_context_fingerprint(self._session, self._tenant_id)
         if not force_refresh:
             cached = await self._cache_get(cache_key)
             if cached is not None:
@@ -228,13 +230,9 @@ class ExecutiveBriefingService:
 
         # Credentials → rotator. Kazanan saglayici + model kurum
         # kimlik kayitlarindan gelir (OpenRouter entegrasyonu).
-        key_selection = await load_active_llm_keys(
-            self._session, self._tenant_id
-        )
+        key_selection = await load_active_llm_keys(self._session, self._tenant_id)
         if key_selection is None:
-            raise NoCredentialsError(
-                "Tenant has no active LLM API keys configured"
-            )
+            raise NoCredentialsError("Tenant has no active LLM API keys configured")
         keys = key_selection.keys
         rotator = GeminiKeyRotator(keys)
         provider_name = key_selection.provider
@@ -249,9 +247,7 @@ class ExecutiveBriefingService:
             template_key="briefing",
             variables=prompt_ctx,
             default_system_prompt=EXECUTIVE_BRIEFING_SYSTEM_PROMPT,
-            default_user_prompt=lambda: render_executive_briefing_user_prompt(
-                prompt_ctx
-            ),
+            default_user_prompt=lambda: render_executive_briefing_user_prompt(prompt_ctx),
         )
         user_prompt = selection.user_prompt
         # Sprint 12 i18n — kurum dili 'en' ise İngilizce çıktı yönergesi.
@@ -260,6 +256,7 @@ class ExecutiveBriefingService:
             selection.system_prompt
             + language_directive(getattr(tenant, "language", "tr"))
             + terminology_directive(getattr(tenant, "terminology", None))
+            + context_directive(getattr(tenant, "settings", None))
         )
         failed_invalid_key_ids: list[UUID] = []
 
@@ -301,9 +298,7 @@ class ExecutiveBriefingService:
             actor_user_id=self._user_id,
             related_entity_type="executive_briefing",
         )
-        auditor = LLMCallAuditor(
-            self._session, audit_ctx, prompt=user_prompt
-        )
+        auditor = LLMCallAuditor(self._session, audit_ctx, prompt=user_prompt)
         start = time.monotonic()
         try:
             async with auditor:
@@ -321,9 +316,7 @@ class ExecutiveBriefingService:
                 # or _classify_exception(exc_val)`` and keeps our
                 # explicit value.
                 try:
-                    (response, token_usage), key_used = (
-                        await rotator.call_with_rotation(_call)
-                    )
+                    (response, token_usage), key_used = await rotator.call_with_rotation(_call)
                 except AllKeysExhaustedError as exc:
                     auditor.record_failure(
                         error_type="all_keys_exhausted",
@@ -351,12 +344,8 @@ class ExecutiveBriefingService:
                         error_message=f"{type(exc).__name__}: {exc}"[:1024],
                     )
                     raise
-                input_tokens = (
-                    token_usage.get("input") if token_usage else None
-                )
-                output_tokens = (
-                    token_usage.get("output") if token_usage else None
-                )
+                input_tokens = token_usage.get("input") if token_usage else None
+                output_tokens = token_usage.get("output") if token_usage else None
                 auditor.record_success(
                     input_tokens=input_tokens,
                     output_tokens=output_tokens,
@@ -397,7 +386,9 @@ class ExecutiveBriefingService:
         await self._cache_set(cache_key, report_dict)
         _logger.info(
             "executive briefing generated tenant=%s key_id=%s duration_ms=%d",
-            self._tenant_id, key_used.id, duration_ms,
+            self._tenant_id,
+            key_used.id,
+            duration_ms,
         )
         return report_dict
 
@@ -476,9 +467,7 @@ class ExecutiveBriefingService:
         cat_rows = (await self._session.execute(cat_stmt)).all()
         top_categories = [
             {
-                "label": _CATEGORY_LABELS.get(
-                    r.primary_category, r.primary_category
-                ),
+                "label": _CATEGORY_LABELS.get(r.primary_category, r.primary_category),
                 "count": int(r.cnt),
             }
             for r in cat_rows
@@ -489,9 +478,7 @@ class ExecutiveBriefingService:
             nps_score=nps_summary.score,
             nps_coverage_percent=nps_summary.coverage_percent,
             nps_bearing_count=nps_summary.total_count,
-            avg_sentiment=(
-                float(agg.sent_avg) if agg.sent_avg is not None else None
-            ),
+            avg_sentiment=(float(agg.sent_avg) if agg.sent_avg is not None else None),
             negative_share=share,
             top_categories=top_categories,
         )
@@ -506,7 +493,8 @@ class ExecutiveBriefingService:
             )
 
     async def _collect_snapshot_context(
-        self, period: str,
+        self,
+        period: str,
     ) -> dict[str, Any] | None:
         """Sprint 9.2 C — read today's snapshot or compute it cold.
 
@@ -633,7 +621,9 @@ class ExecutiveBriefingService:
                 )
 
                 content_text = json.dumps(
-                    top_actions, sort_keys=True, ensure_ascii=False,
+                    top_actions,
+                    sort_keys=True,
+                    ensure_ascii=False,
                 )
                 extractor = ActionExtractionService(self._session)
                 action_item_ids = await extractor.extract(
@@ -697,9 +687,7 @@ class ExecutiveBriefingService:
         if raw is None:
             return None
         try:
-            data = json.loads(
-                raw.decode("utf-8") if isinstance(raw, bytes) else raw
-            )
+            data = json.loads(raw.decode("utf-8") if isinstance(raw, bytes) else raw)
             return data if isinstance(data, dict) else None
         except (ValueError, TypeError):
             return None

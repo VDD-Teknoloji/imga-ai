@@ -25,6 +25,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import math
 import time
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
@@ -34,6 +35,7 @@ from imga_core.config import (
     LABEL_NEUTRAL,
     LABEL_POSITIVE,
 )
+from imga_core.language_policy import MENA_DIRECTIVE, has_arabic_script
 from imga_core.llm.base import LLMProviderError
 from imga_core.llm.errors import (
     AllKeysExhaustedError,
@@ -88,6 +90,7 @@ class UnifiedPrediction:
     sentiment_score: float
     category: str
     category_confidence: float
+    language: str | None = None
     # Sprint 13.1 — alt kategori (kurum-perspektifi taksonomi kodu).
     # None = model bir alt kategori seçmedi ya da seçtiği kod kurumun
     # listesinde yok; çağıran taraf keyword sezgiseline düşer.
@@ -130,6 +133,7 @@ _RESPONSE_SCHEMA: dict[str, Any] = {
             # 2026-08-10 — deneyim türü; ayni "required disinda,
             # nullable yok" disiplini (p ile ayni sebep).
             "e": {"type": "string"},
+            "l": {"type": "string", "enum": ["ar", "ur", "en", "tr", "other", "und"]},
         },
     },
 }
@@ -175,8 +179,15 @@ def _build_prompt(
     system_prompt: str | None = None,
     perspective_options: PerspectiveOptions | None = None,
     category_descriptions: dict[str, str] | None = None,
+    analysis_profile: str = "tr",
+    terminology: str = "",
 ) -> str:
     parts: list[str] = [system_prompt or UNIFIED_SYSTEM_PROMPT]
+    multilingual = analysis_profile == "mena" or any(has_arabic_script(text) for text in texts)
+    if multilingual:
+        parts.append(MENA_DIRECTIVE)
+        if terminology:
+            parts.append(terminology)
     if category_descriptions:
         # 2026-08-10 — çıplak kod listesi yerine tanımlı liste:
         # gold4 taban çizgisinde kategori %76,4 / belirsiz %14,8'in
@@ -215,10 +226,17 @@ def _build_prompt(
     parts.append("\nYorumlar:")
     for i, text in enumerate(texts):
         single_line = " ".join(text.split())
-        parts.append(f"{i}: {single_line[:600]}")
+        if multilingual:
+            if len(single_line) > 6000:
+                raise LLMProviderError(
+                    "MENA input exceeds 6000 characters; split the message explicitly."
+                )
+            parts.append(json.dumps({"i": i, "text": single_line}, ensure_ascii=False))
+        else:
+            parts.append(f"{i}: {single_line[:600]}")
     parts.append(
-        "\nJSON dizisi döndür; her öğe {\"i\", \"s\", \"sc\", \"c\", \"cc\"} "
-        "alanlarını taşımalı, uygunsa \"p\" (alt kategori) ve \"e\" "
+        '\nJSON dizisi döndür; her öğe {"i", "s", "sc", "c", "cc"} '
+        'alanlarını taşımalı, uygunsa "p" (alt kategori) ve "e" '
         "(deneyim: dijital|operasyonel) alanlarını da ekle."
     )
     return "\n".join(parts)
@@ -255,6 +273,8 @@ class GeminiUnifiedEngine:
         # şema ve parse sağlayıcı-nötr; yalnız ham üretim çağrısı
         # dallanır (_generate_sync).
         provider: str = "gemini",
+        analysis_profile: str = "tr",
+        terminology: str = "",
     ) -> None:
         if not keys:
             raise ValueError("GeminiUnifiedEngine requires at least one key")
@@ -264,10 +284,13 @@ class GeminiUnifiedEngine:
         self._concurrency = max(1, concurrency)
         self._system_prompt = system_prompt
         self._provider = provider
+        self.analysis_profile = analysis_profile
+        self._mena_semaphore = asyncio.Semaphore(max(1, min(concurrency, 3)))
+        self._terminology = terminology
+        if analysis_profile == "mena":
+            self._call_batch_size = min(self._call_batch_size, 10)
         self._hard_timeout = (
-            _HARD_TIMEOUT_SECONDS_OPENROUTER
-            if provider == "openrouter"
-            else _HARD_TIMEOUT_SECONDS
+            _HARD_TIMEOUT_SECONDS_OPENROUTER if provider == "openrouter" else _HARD_TIMEOUT_SECONDS
         )
 
     @property
@@ -297,7 +320,11 @@ class GeminiUnifiedEngine:
 
         stats = UnifiedBatchStats()
         started = time.monotonic()
-        semaphore = asyncio.Semaphore(self._concurrency)
+        multilingual = self.analysis_profile == "mena" or any(
+            has_arabic_script(text) for text in texts
+        )
+        semaphore = self._mena_semaphore if multilingual else asyncio.Semaphore(self._concurrency)
+        call_size = min(self._call_batch_size, 10) if multilingual else self._call_batch_size
         results: dict[int, UnifiedPrediction] = {}
 
         async def _one_call(offset: int, chunk: list[str]) -> None:
@@ -314,10 +341,16 @@ class GeminiUnifiedEngine:
                 results[offset + local_idx] = prediction
 
         tasks = [
-            _one_call(offset, texts[offset : offset + self._call_batch_size])
-            for offset in range(0, len(texts), self._call_batch_size)
+            asyncio.create_task(_one_call(offset, texts[offset : offset + call_size]))
+            for offset in range(0, len(texts), call_size)
         ]
-        await asyncio.gather(*tasks)
+        try:
+            await asyncio.gather(*tasks)
+        except BaseException:
+            for task in tasks:
+                task.cancel()
+            await asyncio.gather(*tasks, return_exceptions=True)
+            raise
 
         stats.duration_ms = int((time.monotonic() - started) * 1000)
 
@@ -325,6 +358,8 @@ class GeminiUnifiedEngine:
         for i, _ in enumerate(texts):
             prediction = results.get(i)
             if prediction is None:
+                if multilingual:
+                    raise LLMProviderError("MENA classification omitted an input row")
                 # Model bu index'i atladıysa nötr/belirsiz ile doldur —
                 # satır kaybetmek yok; düşük güven manuel inceleme
                 # bayrağını zaten tetikler.
@@ -353,6 +388,8 @@ class GeminiUnifiedEngine:
             self._system_prompt,
             perspective_options,
             category_descriptions,
+            self.analysis_profile,
+            self._terminology,
         )
 
         async def _operation(api_key: str) -> dict[int, UnifiedPrediction]:
@@ -386,9 +423,7 @@ class GeminiUnifiedEngine:
         attempts = len(_ROTATION_RETRY_DELAYS) + 1
         for attempt in range(attempts):
             try:
-                result, winning_key = await self._rotator.call_with_rotation(
-                    _operation
-                )
+                result, winning_key = await self._rotator.call_with_rotation(_operation)
                 break
             except AllKeysExhaustedError:
                 if attempt == attempts - 1:
@@ -439,18 +474,51 @@ class GeminiUnifiedEngine:
                     data = json.loads(cleaned[start : end + 1])
                 except json.JSONDecodeError:
                     raise LLMProviderError(
-                        f"{self._provider} unified returned non-JSON: "
-                        f"{raw[:200]!r}"
+                        f"{self._provider} unified returned non-JSON: " f"{raw[:200]!r}"
                     ) from exc
             else:
                 raise LLMProviderError(
-                    f"{self._provider} unified returned non-JSON: "
-                    f"{raw[:200]!r}"
+                    f"{self._provider} unified returned non-JSON: " f"{raw[:200]!r}"
                 ) from exc
         if not isinstance(data, list):
-            raise LLMProviderError(
-                f"Expected JSON array, got {type(data).__name__}"
-            )
+            raise LLMProviderError(f"Expected JSON array, got {type(data).__name__}")
+
+        multilingual = self.analysis_profile == "mena" or any(
+            has_arabic_script(text) for text in chunk
+        )
+        if multilingual:
+            seen: set[int] = set()
+            for entry in data:
+                if not isinstance(entry, dict):
+                    raise LLMProviderError("MENA response contains a non-object row")
+                idx = entry.get("i")
+                if type(idx) is not int or idx in seen or not 0 <= idx < len(chunk):
+                    raise LLMProviderError("MENA response has invalid or duplicate row indices")
+                seen.add(idx)
+                if (
+                    entry.get("s") not in _VALID_LABELS
+                    or entry.get("c") not in available_categories
+                ):
+                    raise LLMProviderError("MENA response contains invalid classification codes")
+                if entry.get("l") not in ("ar", "ur", "en", "tr", "other", "und"):
+                    raise LLMProviderError("MENA response must identify each row's language")
+                for key, low, high in (("sc", -1, 1), ("cc", 0, 1)):
+                    value = entry.get(key)
+                    if (
+                        not isinstance(value, int | float)
+                        or isinstance(value, bool)
+                        or not math.isfinite(value)
+                        or not low <= value <= high
+                    ):
+                        raise LLMProviderError("MENA response contains invalid scores")
+                if (
+                    (entry["s"] == LABEL_NEUTRAL and abs(entry["sc"]) > 0.05)
+                    or (entry["s"] == LABEL_NEGATIVE and entry["sc"] >= 0)
+                    or (entry["s"] == LABEL_POSITIVE and entry["sc"] <= 0)
+                ):
+                    raise LLMProviderError("MENA sentiment label and score disagree")
+            if len(seen) != len(chunk):
+                raise LLMProviderError("MENA response omitted input rows")
 
         valid_categories = set(available_categories)
         # Alt kategori kodu YALNIZCA seçilen ana kategorinin listesinden
@@ -485,6 +553,8 @@ class GeminiUnifiedEngine:
             except (TypeError, ValueError):
                 confidence = 0.0
             raw_perspective = entry.get("p")
+            if multilingual and entry.get("l") in {"und", "other"}:
+                confidence = min(confidence, 0.3)
             perspective: str | None = None
             if isinstance(raw_perspective, str) and raw_perspective.strip():
                 candidate = raw_perspective.strip()
@@ -501,13 +571,12 @@ class GeminiUnifiedEngine:
                 sentiment_score=score,
                 category=category,
                 category_confidence=confidence,
+                language=entry.get("l") if isinstance(entry.get("l"), str) else None,
                 perspective_code=perspective,
                 experience_type=experience,
             )
         if not parsed:
-            raise LLMProviderError(
-                "Gemini unified response contained no usable entries"
-            )
+            raise LLMProviderError("Gemini unified response contained no usable entries")
         return parsed
 
     def _generate_raw_gemini(
@@ -519,7 +588,16 @@ class GeminiUnifiedEngine:
         from google import genai
         from google.genai import types as genai_types
 
-        client = genai.Client(api_key=api_key)
+        mena = self.analysis_profile == "mena" or MENA_DIRECTIVE in prompt
+        client = genai.Client(
+            api_key=api_key,
+            http_options=genai_types.HttpOptions(
+                timeout=45_000,
+                retry_options=genai_types.HttpRetryOptions(attempts=1),
+            )
+            if mena
+            else None,
+        )
         try:
             response = client.models.generate_content(
                 model=self._model_name,
@@ -533,16 +611,14 @@ class GeminiUnifiedEngine:
         except Exception as exc:
             stats.failed_calls += 1
             raise _map_sdk_error(exc) from exc
+        finally:
+            client.close()
 
         stats.calls += 1
         usage = getattr(response, "usage_metadata", None)
         if usage is not None:
-            stats.input_tokens += int(
-                getattr(usage, "prompt_token_count", 0) or 0
-            )
-            stats.output_tokens += int(
-                getattr(usage, "candidates_token_count", 0) or 0
-            )
+            stats.input_tokens += int(getattr(usage, "prompt_token_count", 0) or 0)
+            stats.output_tokens += int(getattr(usage, "candidates_token_count", 0) or 0)
 
         raw = getattr(response, "text", None)
         if not raw:
@@ -590,7 +666,8 @@ class GeminiUnifiedEngine:
         try:
             # Transport zaman asimi asyncio emniyet aginin (240s) hemen
             # altinda — 40s'lik eski deger agi anlamsizlastiriyordu.
-            with httpx.Client(timeout=httpx.Timeout(230.0)) as client:
+            mena = self.analysis_profile == "mena" or MENA_DIRECTIVE in prompt
+            with httpx.Client(timeout=httpx.Timeout(45.0 if mena else 230.0)) as client:
                 resp = client.post(
                     f"{OPENROUTER_BASE_URL}/chat/completions",
                     headers=_attribution_headers(api_key),
@@ -603,9 +680,7 @@ class GeminiUnifiedEngine:
             raise
         except Exception as exc:
             stats.failed_calls += 1
-            raise LLMProviderError(
-                f"OpenRouter unified call failed: {exc}"
-            ) from exc
+            raise LLMProviderError(f"OpenRouter unified call failed: {exc}") from exc
 
         stats.calls += 1
         usage = _extract_usage(body)

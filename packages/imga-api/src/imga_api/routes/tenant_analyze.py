@@ -61,12 +61,13 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from imga_core import AnalysisPipeline, AnalysisResult
+from imga_core.language_policy import has_arabic_script
 from imga_core.llm.unified_classifier import (
     FewShotExample,
     GeminiUnifiedEngine,
     PerspectiveOptions,
 )
-from imga_db.models import Review, ReviewCorrection, UserTenantRole
+from imga_db.models import Review, ReviewCorrection, Tenant, UserTenantRole
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
 from sqlalchemy import update as sa_update
@@ -79,12 +80,15 @@ from imga_api.services import (
     CategoryNotConfiguredError,
     ReviewService,
 )
+from imga_api.services.company_intelligence import analysis_profile as configured_analysis_profile
 from imga_api.services.executive_briefing_service import DEFAULT_MODEL_NAME
+from imga_api.services.intelligence_schemas import ExternalId
 from imga_api.services.llm_audit_service import (
     CALL_TYPE_CLASSIFICATION,
     LLMCallAuditor,
     LLMCallContext,
 )
+from imga_api.services.strategic_constants import terminology_directive
 from imga_api.workers.batch_analyzer import normalize_experience_type
 
 if TYPE_CHECKING:
@@ -94,17 +98,21 @@ log = logging.getLogger("imga-api.routes.tenant_analyze")
 
 router = APIRouter(prefix="/tenants/me", tags=["Analyze"])
 
-_AnyMember = Depends(require_role(
-    UserTenantRole.TENANT_ADMIN,
-    UserTenantRole.ANALYST,
-    UserTenantRole.VIEWER,
-))
+_AnyMember = Depends(
+    require_role(
+        UserTenantRole.TENANT_ADMIN,
+        UserTenantRole.ANALYST,
+        UserTenantRole.VIEWER,
+    )
+)
 # Sprint 13 yetki denetimi: analiz reviews'a satır yazar ve auto-ticket
 # açabilir — salt-okuma viewer'ın işi değil.
-_WriteMember = Depends(require_role(
-    UserTenantRole.TENANT_ADMIN,
-    UserTenantRole.ANALYST,
-))
+_WriteMember = Depends(
+    require_role(
+        UserTenantRole.TENANT_ADMIN,
+        UserTenantRole.ANALYST,
+    )
+)
 
 
 # --- request / response models -----------------------------------------
@@ -137,6 +145,7 @@ class TenantAnalyzeRequest(BaseModel):
     product_line: str | None = Field(default=None, max_length=128)
     channel: str | None = Field(default=None, max_length=64)
     customer_tier: str | None = Field(default=None, max_length=64)
+    customer_external_id: ExternalId | None = None
 
 
 class TenantAnalyzeResponse(BaseModel):
@@ -219,9 +228,7 @@ def _resolve_experience_and_perspective(
     ``perspective_override`` ``None`` ise çağıran kendi heuristiğini/
     ``NULL``'ı uygular; dolu ise onun ÖNÜNE geçer."""
     correction_perspective = (
-        correction_decision.perspective_code
-        if correction_decision is not None
-        else None
+        correction_decision.perspective_code if correction_decision is not None else None
     )
     perspective_override: tuple[str, str] | None = None
     if correction_perspective is not None:
@@ -229,10 +236,7 @@ def _resolve_experience_and_perspective(
             correction_perspective,
             perspective_labels.get(correction_perspective, correction_perspective),
         )
-    elif (
-        llm_perspective_code is not None
-        and llm_perspective_code in perspective_labels
-    ):
+    elif llm_perspective_code is not None and llm_perspective_code in perspective_labels:
         perspective_override = (
             llm_perspective_code,
             perspective_labels[llm_perspective_code],
@@ -240,8 +244,7 @@ def _resolve_experience_and_perspective(
 
     experience_source = (
         correction_decision.experience_type
-        if correction_decision is not None
-        and correction_decision.experience_type is not None
+        if correction_decision is not None and correction_decision.experience_type is not None
         else llm_experience_type
     )
     experience_type = normalize_experience_type(experience_source)
@@ -315,9 +318,7 @@ async def _build_manual_unified_context(
             )
             return None
         embedding_keys = await load_active_gemini_keys(session, tenant_id)
-        category_snapshot = await _load_tenant_category_snapshot(
-            session, tenant_id
-        )
+        category_snapshot = await _load_tenant_category_snapshot(session, tenant_id)
         taxonomy_snapshot = await _load_taxonomy_payload(session, tenant_id)
         # /settings/prompts override'ı — batch worker'la aynı, kendi
         # try'ında: override OPSİYONEL, şablon sorgusu patlarsa
@@ -351,11 +352,14 @@ async def _build_manual_unified_context(
     else:
         unified_model = selection.model or _unified_model_name()
 
+    tenant = await session.get(Tenant, tenant_id)
     engine = GeminiUnifiedEngine(
         selection.keys,
         model_name=unified_model,
         system_prompt=system_prompt_override,
         provider=selection.provider,
+        analysis_profile=configured_analysis_profile(tenant.settings if tenant else None),
+        terminology=terminology_directive(tenant.terminology if tenant else None),
     )
     return _ManualUnifiedContext(
         engine=engine,
@@ -392,8 +396,7 @@ async def _load_recent_correction_examples(
         )
     ).all()
     return [
-        CorrectionExample(text=t, sentiment_label=s, category=c, reason=r)
-        for t, s, c, r in rows
+        CorrectionExample(text=t, sentiment_label=s, category=c, reason=r) for t, s, c, r in rows
     ]
 
 
@@ -417,6 +420,8 @@ async def _classify_manual_analysis(
     pipeline: AnalysisPipeline,
     unified: _ManualUnifiedContext | None,
     few_shot: tuple[FewShotExample, ...],
+    *,
+    allow_classic: bool = True,
 ) -> tuple[AnalysisResult, bool, str, str, str | None, str | None]:
     """Sınıflandırma: birleşik motor mevcutsa öncelik onun (few-shot
     enjeksiyonu YALNIZ bu yoldan mümkün — ``HybridClassifier``'ın
@@ -469,14 +474,21 @@ async def _classify_manual_analysis(
             )
         except Exception as exc:
             log.warning(
-                "manual analyze: unified classify failed; falling back "
-                "to classic pipeline: %s",
+                "manual analyze: unified classify failed; falling back " "to classic pipeline: %s",
                 exc,
             )
+    if (
+        not allow_classic
+        or has_arabic_script(text)
+        or (unified is not None and getattr(unified.engine, "analysis_profile", "tr") == "mena")
+    ):
+        raise HTTPException(
+            503,
+            "MENA analizi tamamlanamadı. Çok dilli model/anahtar yapılandırmasını kontrol edin; Türkçe BERT yedeği kullanılmadı.",
+        )
     analysis = await asyncio.to_thread(pipeline.analyze, text)
     llm_used = (
-        analysis.categorization is not None
-        and analysis.categorization.llm_result is not None
+        analysis.categorization is not None and analysis.categorization.llm_result is not None
     )
     return analysis, llm_used, DEFAULT_MODEL_NAME, "gemini", None, None
 
@@ -536,6 +548,16 @@ async def tenant_analyze(
         await bind_tenant(app_session, current)
 
         unified = await _build_manual_unified_context(app_session, tenant_id)
+        tenant_row = await app_session.get(Tenant, tenant_id)
+        multilingual = (
+            has_arabic_script(body.text)
+            or configured_analysis_profile(tenant_row.settings if tenant_row else None) == "mena"
+        )
+        if multilingual and len(body.text.strip()) > 6000:
+            raise HTTPException(
+                422,
+                "MENA analizinde yorum en çok 6000 karakter olabilir; metin otomatik kısaltılmaz.",
+            )
         embedding_keys: list[Any]
         if unified is not None:
             embedding_keys = unified.embedding_keys
@@ -544,9 +566,7 @@ async def tenant_analyze(
                 load_active_gemini_keys,
             )
 
-            embedding_keys = await load_active_gemini_keys(
-                app_session, tenant_id
-            )
+            embedding_keys = await load_active_gemini_keys(app_session, tenant_id)
 
         from imga_api.services.correction_store import latest_exact_correction
 
@@ -558,9 +578,7 @@ async def tenant_analyze(
         # bir DB okuması eklenmesin).
         recent: list[CorrectionExample] = []
         if unified is not None:
-            recent = await _load_recent_correction_examples(
-                app_session, tenant_id
-            )
+            recent = await _load_recent_correction_examples(app_session, tenant_id)
 
     # --- Faz 2 (transaction DIŞINDA): TEK embed çağrısı — hem few-shot
     # anlamsal örnekleri hem düzeltme anlamsal araması metnin AYNI
@@ -592,13 +610,9 @@ async def tenant_analyze(
             )
 
             if recent:
-                semantic_examples = await nearest_corrections(
-                    app_session, tenant_id, vector
-                )
+                semantic_examples = await nearest_corrections(app_session, tenant_id, vector)
             if exact is None:
-                semantic_decision = await semantic_override_lookup(
-                    app_session, tenant_id, vector
-                )
+                semantic_decision = await semantic_override_lookup(app_session, tenant_id, vector)
 
     from imga_api.services.correction_store import merge_few_shot
 
@@ -626,12 +640,14 @@ async def tenant_analyze(
         audit_provider,
         llm_perspective_code,
         llm_experience_type,
-    ) = await _classify_manual_analysis(body.text, pipeline, unified, few_shot)
+    ) = await _classify_manual_analysis(
+        body.text, pipeline, unified, few_shot, allow_classic=not multilingual
+    )
     classify_duration_ms = int((time.monotonic() - classify_started) * 1000)
 
     # --- Bellek-içi (I/O YOK): birebir > anlamsal düzeltme önceliği.
     analysis, correction_decision = _apply_correction_priority(
-        analysis, exact=exact, semantic=semantic_decision
+        analysis, exact=exact, semantic=None if multilingual else semantic_decision
     )
 
     # --- Faz 5 (AYRI yazma transaction'ı): retroaktif audit satırı +
@@ -662,15 +678,10 @@ async def tenant_analyze(
         perspective_labels: dict[str, str] = {}
         if unified is not None:
             perspective_labels = unified.perspective_labels
-        elif (
-            correction_decision is not None
-            and correction_decision.perspective_code is not None
-        ):
+        elif correction_decision is not None and correction_decision.perspective_code is not None:
             from imga_api.workers.batch_analyzer import _load_taxonomy_payload
 
-            perspective_labels = (
-                await _load_taxonomy_payload(app_session, tenant_id)
-            ).labels
+            perspective_labels = (await _load_taxonomy_payload(app_session, tenant_id)).labels
 
         experience_type, perspective_override = _resolve_experience_and_perspective(
             correction_decision=correction_decision,
@@ -710,6 +721,7 @@ async def tenant_analyze(
                 body.product_line,
                 body.channel,
                 body.customer_tier,
+                body.customer_external_id,
                 experience_type,
             )
         ):
@@ -721,6 +733,7 @@ async def tenant_analyze(
                     product_line=body.product_line,
                     channel=body.channel,
                     customer_tier=body.customer_tier,
+                    customer_external_id=body.customer_external_id,
                     experience_type=experience_type,
                 )
             )

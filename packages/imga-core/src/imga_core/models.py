@@ -10,8 +10,13 @@ SentimentLabel = Literal["NEGATIF", "NÖTR", "POZITIF"]
 # Sprint 11.0 — "user_correction_kb": tenant duzeltme sozlugunden
 # (review_corrections, birebir text_hash eslesmesi) gelen insan karari.
 OverrideLayer = Literal[
-    "knowledge_base", "critical", "tier1", "sla", "tier2",
-    "user_correction_kb", "user_correction_semantic"
+    "knowledge_base",
+    "critical",
+    "tier1",
+    "sla",
+    "tier2",
+    "user_correction_kb",
+    "user_correction_semantic",
 ]
 RiskClass = Literal["NEGATIF", "NÖTR", "POZITIF"]
 ClassificationMethod = Literal["keyword", "llm", "ensemble"]
@@ -101,6 +106,8 @@ class AnalysisResult(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     text: str
+    analysis_profile: Literal["tr", "mena"] = "tr"
+    analysis_language: str | None = None
     sentiment_label: SentimentLabel
     sentiment_score: float = Field(..., ge=-1.0, le=1.0)
     overrides_applied: list[OverrideHit] = Field(default_factory=list)

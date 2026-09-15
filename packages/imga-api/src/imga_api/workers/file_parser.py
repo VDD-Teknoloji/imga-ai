@@ -162,6 +162,37 @@ class ParsedRow:
     facts: dict[str, str] = field(default_factory=dict)
     source_url: str | None = None
     source_meta: dict[str, int] | None = None
+    customer_external_id: str | None = None
+
+
+_CUSTOMER_ID_HEADERS = {
+    "customer_id",
+    "customer_external_id",
+    "musteri_id",
+    "müşteri_id",
+    "معرف_العميل",
+    "کسٹمر_آئی_ڈی",
+}
+
+
+def _customer_id(header: list[Any], row: Any) -> str | None:
+    matches = [
+        i for i, cell in enumerate(header) if str(cell).strip().lower() in _CUSTOMER_ID_HEADERS
+    ]
+    if len(matches) > 1:
+        raise FileParseError(
+            "Birden fazla müşteri kimliği kolonu var; tek bir kanonik kimlik kolonu bırakın."
+        )
+    if not matches or matches[0] >= len(row) or row[matches[0]] is None:
+        return None
+    value = str(row[matches[0]]).strip()
+    if not value:
+        return None
+    if len(value) > 128 or any(char.isspace() or char in "/\\" for char in value):
+        raise FileParseError(
+            "Müşteri kimliği en çok 128 karakter olmalı; boşluk ve yol ayırıcı içeremez."
+        )
+    return value
 
 
 # Kaynak bağlantısı kolonu — şablon dışı ama "Twitter'dan Çek" CSV'si
@@ -398,6 +429,9 @@ def _resolve_columns(
                 fact_idx_by_key[fact_key] = norm_header.index(target)
 
     reserved_idx = {text_idx}
+    reserved_idx.update(
+        i for i, name in enumerate(header) if name.strip().lower() in _CUSTOMER_ID_HEADERS
+    )
     if source_idx is not None:
         reserved_idx.add(source_idx)
     if nps_idx is not None:
@@ -666,6 +700,7 @@ def _iter_csv(
                 facts=facts,
                 source_url=source_url,
                 source_meta=source_meta,
+                customer_external_id=_customer_id(header, row),
             )
 
 
@@ -764,6 +799,7 @@ def _iter_xlsx(
                 facts=facts,
                 source_url=source_url,
                 source_meta=source_meta,
+                customer_external_id=_customer_id(header, row),
             )
     finally:
         workbook.close()

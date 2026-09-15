@@ -77,6 +77,13 @@ def language_directive(language: str | None) -> str:
     Kurum dili 'en' ise güçlü bir "yalnız İngilizce" talimatı döndürür; 'tr' veya
     None ise boş (promptlar zaten Türkçe). System prompt'un içeriğini yeniden
     yazmadan, dil-üstü bir katman olarak çalışır — DB-override promptlar dahil."""
+    if language in {"ar", "ur"}:
+        name = "Modern Standard Arabic" if language == "ar" else "Urdu in Urdu script"
+        return (
+            f"\n\nOUTPUT LANGUAGE: Write all narrative fields in professional {name}. "
+            "Preserve schema keys, enum values, category codes, identifiers, dates and amounts. "
+            "Do not translate quoted original evidence."
+        )
     if language == "en":
         return (
             "\n\nIMPORTANT — OUTPUT LANGUAGE: Respond ONLY in English. Every "

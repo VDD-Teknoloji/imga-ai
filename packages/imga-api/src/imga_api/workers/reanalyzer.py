@@ -523,6 +523,8 @@ async def _process_reanalysis_chunk(
     # kendi tahmini onun üzerine YAZILIYORDU. Artık aşağıdaki döngü
     # correction_overrides'ı tüketir; batch_analyzer._process_chunk
     # (satır ~1154-1197) davranışıyla birebir parite.
+    if any(analysis.analysis_profile == "mena" for analysis in analyses):
+        semantic_hits = {}
     analyses, correction_overrides = _apply_corrections(analyses, texts, unified_ctx, semantic_hits)
 
     model_name = str(unified_ctx.engine.model_name)
@@ -539,6 +541,8 @@ async def _process_reanalysis_chunk(
                 continue
             analysis = analyses[index]
             review.sentiment_label = analysis.sentiment_label
+            review.analysis_profile = analysis.analysis_profile
+            review.analysis_language = analysis.analysis_language
             review.sentiment_score = float(analysis.sentiment_score)
             if analysis.categorization is not None:
                 review.primary_category = analysis.categorization.primary
@@ -560,6 +564,8 @@ async def _process_reanalysis_chunk(
                 review.company_perspective_code = correction_perspective
             elif llm_perspective is not None and llm_perspective in taxonomy_labels:
                 review.company_perspective_code = llm_perspective
+            elif analysis.analysis_profile == "mena":
+                review.company_perspective_code = None
             review.experience_type = normalize_experience_type(
                 correction_override.experience_type
                 if correction_override is not None
@@ -576,7 +582,9 @@ async def _process_reanalysis_chunk(
             # eski bayrağı temizler).
             if review.quality_flag != "duplicate":
                 review.quality_flag = (
-                    None if correction_override is not None else classify_data_quality(review.text)
+                    None
+                    if correction_override is not None or analysis.analysis_profile == "mena"
+                    else classify_data_quality(review.text)
                 )
             # Migration 0049 — content_type quality_flag'in İKİ guard'ına
             # (yukarıdaki 'duplicate' korunumu VE düzeltme eşleşen
@@ -585,7 +593,9 @@ async def _process_reanalysis_chunk(
             # bir satır da, insan tarafından düzeltilmiş bir satır da
             # hâlâ soru biçiminde yazılmış olabilir — her iki durumda da
             # koşulsuz yeniden hesaplanır.
-            review.content_type = detect_content_type(review.text)
+            review.content_type = (
+                None if analysis.analysis_profile == "mena" else detect_content_type(review.text)
+            )
             # JSONB listesi MutableList değil — yerinde append ORM'e
             # görünmez, satır kirli sayılmaz ve UPDATE hiç çıkmaz.
             # Yeni liste ATANIR.

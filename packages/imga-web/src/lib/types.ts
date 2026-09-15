@@ -287,6 +287,8 @@ export type ReviewDecision =
 
 export interface AnalysisResult {
   text: string;
+  analysis_profile?: "tr" | "mena";
+  analysis_language?: string | null;
   sentiment_label: "POZITIF" | "NEGATIF" | "NÖTR";
   sentiment_score: number;
   summary: string | null;

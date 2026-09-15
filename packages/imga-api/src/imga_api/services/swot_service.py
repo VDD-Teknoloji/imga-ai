@@ -147,31 +147,36 @@ class SwotService:
         """
         # 1. Stats
         stats = await StatsAggregator(self._session, self._tenant_id).collect(
-            date_from=date_from, date_to=date_to, batch_id=batch_id,
+            date_from=date_from,
+            date_to=date_to,
+            batch_id=batch_id,
         )
 
         # 2/3. Cache key + lookup. Cache miss / Redis down both fall
         # through to the slow path; ``force_refresh`` skips the lookup
         # but still writes on the way out.
+        from imga_api.services.company_intelligence import (
+            context_directive,
+            tenant_context_fingerprint,
+        )
+
         cache_key = self._cache_key(stats, date_from, date_to, batch_id)
+        cache_key += ":" + await tenant_context_fingerprint(self._session, self._tenant_id)
         if not force_refresh:
             cached = await self._cache_get(cache_key)
             if cached is not None:
                 _logger.info(
                     "SWOT cache hit tenant=%s key=%s",
-                    self._tenant_id, cache_key,
+                    self._tenant_id,
+                    cache_key,
                 )
                 return cached
 
         # 4. Credentials → rotator. Kazanan sağlayıcı + model kurum
         # kimlik kayıtlarından gelir (OpenRouter entegrasyonu).
-        key_selection = await load_active_llm_keys(
-            self._session, self._tenant_id
-        )
+        key_selection = await load_active_llm_keys(self._session, self._tenant_id)
         if key_selection is None:
-            raise NoCredentialsError(
-                "Tenant has no active LLM API keys configured"
-            )
+            raise NoCredentialsError("Tenant has no active LLM API keys configured")
         keys = key_selection.keys
         rotator = GeminiKeyRotator(keys)
         provider_name = key_selection.provider
@@ -204,6 +209,7 @@ class SwotService:
             selection.system_prompt
             + language_directive(stats.language)
             + terminology_directive(getattr(_tenant, "terminology", None))
+            + context_directive(getattr(_tenant, "settings", None))
         )
 
         # 6. LLM call with rotation. ``failed_key_ids`` accumulates the
@@ -263,9 +269,7 @@ class SwotService:
         try:
             async with auditor:
                 try:
-                    (response, token_usage), key_used = (
-                        await rotator.call_with_rotation(_call)
-                    )
+                    (response, token_usage), key_used = await rotator.call_with_rotation(_call)
                 except AllKeysExhaustedError as exc:
                     auditor.record_failure(
                         error_type="all_keys_exhausted",
@@ -291,12 +295,8 @@ class SwotService:
                     )
                     raise
                 auditor.record_success(
-                    input_tokens=(
-                        token_usage.get("input") if token_usage else None
-                    ),
-                    output_tokens=(
-                        token_usage.get("output") if token_usage else None
-                    ),
+                    input_tokens=(token_usage.get("input") if token_usage else None),
+                    output_tokens=(token_usage.get("output") if token_usage else None),
                 )
         except AllKeysExhaustedError:
             # Mark every key we identified as InvalidKey before re-raising.
@@ -332,7 +332,10 @@ class SwotService:
 
         _logger.info(
             "SWOT generated tenant=%s key_id=%s key_label=%s duration_ms=%d",
-            self._tenant_id, key_used.id, key_used.label, duration_ms,
+            self._tenant_id,
+            key_used.id,
+            key_used.label,
+            duration_ms,
         )
         return report_dict
 
@@ -354,10 +357,7 @@ class SwotService:
         # state. ``"all"`` keeps the legacy key shape stable for
         # tenants who never use batch scope.
         bid = str(batch_id) if batch_id is not None else "all"
-        return (
-            f"{CACHE_KEY_PREFIX}:{self._tenant_id}:{df}:{dt}:"
-            f"{bid}:{stats.stats_hash()}"
-        )
+        return f"{CACHE_KEY_PREFIX}:{self._tenant_id}:{df}:{dt}:" f"{bid}:{stats.stats_hash()}"
 
     async def _cache_get(self, key: str) -> dict[str, Any] | None:
         """Best-effort Redis lookup. Any exception → None (treat as
@@ -376,9 +376,9 @@ class SwotService:
             return _from_json(raw)
         except (ValueError, TypeError) as exc:
             _logger.warning(
-                "SWOT cache holds malformed payload at %s (%s); "
-                "treating as miss",
-                key, exc,
+                "SWOT cache holds malformed payload at %s (%s); " "treating as miss",
+                key,
+                exc,
             )
             return None
 
@@ -397,9 +397,7 @@ class SwotService:
         """Adapt the snapshot to the Jinja template's expected key
         shape (mostly 1:1 plus the resolved Türkçe labels)."""
         return {
-            "industry_label": industry_label(
-                stats.industry, stats.industry_other_text
-            ),
+            "industry_label": industry_label(stats.industry, stats.industry_other_text),
             "industry_other_text": stats.industry_other_text,
             "company_size_label": company_size_label(stats.company_size),
             "business_description": stats.business_description,
@@ -446,9 +444,7 @@ class SwotService:
         required = SWOT_RESPONSE_SCHEMA["required"]
         missing = [k for k in required if k not in payload]
         if missing:
-            raise SwotResponseInvalidError(
-                f"SWOT response missing required fields: {missing}"
-            )
+            raise SwotResponseInvalidError(f"SWOT response missing required fields: {missing}")
 
         payload = normalize_swot_payload(payload)
 
@@ -456,9 +452,9 @@ class SwotService:
             items = payload[section]
             if not (2 <= len(items) <= 6):
                 _logger.warning(
-                    "SWOT response %s has %d items, expected 2-6 — "
-                    "persisting anyway",
-                    section, len(items),
+                    "SWOT response %s has %d items, expected 2-6 — " "persisting anyway",
+                    section,
+                    len(items),
                 )
 
         recs = payload["strategic_recommendations"]
@@ -508,9 +504,7 @@ class SwotService:
             "model_name": model_name,
             "token_usage": token_usage,
             "generation_duration_ms": duration_ms,
-            "created_by_user_id": (
-                str(self._user_id) if self._user_id is not None else None
-            ),
+            "created_by_user_id": (str(self._user_id) if self._user_id is not None else None),
         }
 
 
