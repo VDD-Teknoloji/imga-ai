@@ -5,7 +5,16 @@ import { useQueryClient } from "@tanstack/react-query";
 import { ChevronLeft, ChevronRight, Download, Plus, Save, Trash2, Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
+import {
+  BAND_ORDER,
+  BAND_TEXT,
+  CriticalCustomersView,
+  CustomerTreemapView,
+  CustomerTreeView,
+  type SizeBy,
+} from "@/components/intelligence/customer-views";
 import { Choice, ErrorMessage, Field, Loading, Workspace } from "@/components/intelligence/fields";
+import { JourneyStageBadge } from "@/components/journey-stage-badge";
 import {
   downloadIntelligence,
   INTELLIGENCE_API,
@@ -17,21 +26,29 @@ import { useRoleFlags } from "@/hooks/use-role-flags";
 import { useTranslation } from "@/lib/i18n/use-translation";
 import { apiRequest } from "@/lib/api-client";
 import type {
+  CriticalCustomers,
   CustomerList,
+  CustomerMap,
   CustomerProfile,
   CustomerRecord,
   RiskBand,
 } from "@/lib/intelligence-types";
+import { journeyLabelKey } from "@/lib/journey";
 
-const bands: RiskBand[] = ["critical", "high", "watch", "low", "unknown", "inactive"];
-const bandStyles: Record<RiskBand, string> = {
-  critical: "text-red-700 dark:text-red-400",
-  high: "text-amber-700 dark:text-amber-400",
-  watch: "text-sky-700 dark:text-sky-400",
-  low: "text-emerald-700 dark:text-emerald-400",
-  unknown: "text-muted-foreground",
-  inactive: "text-muted-foreground",
+const bands: RiskBand[] = BAND_ORDER;
+const bandStyles: Record<RiskBand, string> = BAND_TEXT;
+// 2026-10-14 — görünüm sekmesi URL'de (?view=), url-state-patterns.md.
+const VIEWS = ["list", "critical", "map", "tree"] as const;
+type View = (typeof VIEWS)[number];
+const VIEW_LABEL_KEYS: Record<View, string> = {
+  list: "intel.viewList",
+  critical: "intel.viewCritical",
+  map: "intel.viewMap",
+  tree: "intel.viewTree",
 };
+function isView(value: string | null): value is View {
+  return value !== null && (VIEWS as readonly string[]).includes(value);
+}
 function newCustomer(): CustomerProfile {
   return {
     external_id: "",
@@ -78,9 +95,25 @@ function ChurnPage() {
   const band = bands.includes(params.get("band") as RiskBand) ? params.get("band")! : "all";
   const rawPage = Number(params.get("page") ?? "1");
   const page = Number.isSafeInteger(rawPage) && rawPage > 0 ? rawPage : 1;
+  const view: View = isView(params.get("view")) ? (params.get("view") as View) : "list";
+  const sizeBy: SizeBy = params.get("size") === "revenue" ? "revenue" : "score";
   const query = useIntelligenceQuery<CustomerList>(
     `/customers?${new URLSearchParams({ search, band, page: String(page) })}`,
+    view === "list",
   );
+  const critical = useIntelligenceQuery<CriticalCustomers>(
+    "/customers/critical?limit=100",
+    view === "critical",
+  );
+  const customerMap = useIntelligenceQuery<CustomerMap>(
+    "/customers/map",
+    view === "map" || view === "tree",
+  );
+  // Harita/ağaçta bir müşteriye tıklamak listeyi o kimliğe süzer; editör
+  // listedeki tam kayıt (revision + risk) üzerinden açılır.
+  function selectCustomer(externalId: string) {
+    change({ view: "", search: externalId, band: "", page: "" });
+  }
   const [editing, setEditing] = useState<CustomerRecord | "new" | null>(null);
   const [error, setError] = useState<unknown>(null);
   const [notice, setNotice] = useState("");
@@ -150,120 +183,180 @@ function ChurnPage() {
         )
       }
     >
-      <ErrorMessage error={error || query.error} />
+      <ErrorMessage error={error || query.error || critical.error || customerMap.error} />
       {notice && (
         <p role="status" className="text-sm text-emerald-700">
           {notice}
         </p>
       )}
       <p className="text-muted-foreground text-sm">{t("intel.rules")}</p>
-      <div className="grid grid-cols-3 gap-4 border-y py-4 lg:grid-cols-6">
-        {bands.map((value) => (
-          <div key={value}>
-            <p className={`text-sm ${bandStyles[value]}`}>{t(`intel.${value}`)}</p>
-            <p className="mt-1 text-2xl font-semibold tabular-nums">
-              {query.data?.counts[value] ?? 0}
-            </p>
-          </div>
+      <nav aria-label={t("intel.view")} className="flex flex-wrap gap-2 border-b pb-3">
+        {VIEWS.map((value) => (
+          <Button
+            key={value}
+            type="button"
+            size="sm"
+            variant={view === value ? "default" : "outline"}
+            aria-pressed={view === value}
+            onClick={() => change({ view: value === "list" ? "" : value, page: "" })}
+          >
+            {t(VIEW_LABEL_KEYS[value])}
+          </Button>
         ))}
-      </div>
-      <div className="grid items-end gap-4 md:grid-cols-[minmax(0,1fr)_200px]">
-        <Field
-          label={t("intel.search")}
-          value={search}
-          maxLength={128}
-          onChange={(value) => change({ search: value, page: "" }, true)}
+      </nav>
+      {view === "critical" ? (
+        <CriticalCustomersView
+          data={critical.data}
+          isLoading={critical.isLoading}
+          onOpen={(record) => setEditing(record)}
         />
-        <Choice
-          label={t("intel.band")}
-          value={band}
-          options={["all", ...bands].map((value) => ({ value, label: t(`intel.${value}`) }))}
-          onChange={(value) => change({ band: value === "all" ? "" : value, page: "" })}
+      ) : null}
+      {view === "map" ? (
+        <CustomerTreemapView
+          data={customerMap.data}
+          isLoading={customerMap.isLoading}
+          sizeBy={sizeBy}
+          onSizeByChange={(value) => change({ size: value === "score" ? "" : value }, true)}
+          onSelect={selectCustomer}
         />
-      </div>
-      {query.isLoading ? (
-        <Loading />
-      ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[680px] text-left text-sm">
-            <thead>
-              <tr className="text-muted-foreground border-b">
-                {["name", "riskScore", "dataStatus", "owner", "followUp", "outcome"].map((key) => (
-                  <th key={key} scope="col" className="px-2 py-3 font-medium">
-                    {t(`intel.${key}`)}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {query.data?.items.map((item) => (
-                <tr key={item.profile.external_id} className="hover:bg-muted/40 border-b">
-                  <td className="max-w-64 px-2 py-3">
-                    <button
-                      className="w-full text-left font-medium break-words underline-offset-4 hover:underline"
-                      dir="auto"
-                      onClick={() => setEditing(item)}
-                    >
-                      {item.profile.name}
-                    </button>
-                    <p className="text-muted-foreground text-xs break-all">
-                      {item.profile.external_id} · {item.profile.segment}
-                    </p>
-                  </td>
-                  <td className={`px-2 py-3 ${bandStyles[item.risk.band]}`}>
-                    <strong>{item.risk.score ?? "-"}</strong>
-                    <p className="text-xs">{t(`intel.${item.risk.band}`)}</p>
-                  </td>
-                  <td className="px-2 py-3">
-                    {t(`intel.${item.risk.data_status}`)}
-                    <p className="text-muted-foreground text-xs">{item.profile.observed_on}</p>
-                  </td>
-                  <td className="max-w-48 px-2 py-3 break-words">{item.profile.owner || "-"}</td>
-                  <td className="px-2 py-3">{item.profile.follow_up_on || "-"}</td>
-                  <td className="px-2 py-3">{t(`intel.${item.profile.outcome}`)}</td>
-                </tr>
-              ))}
-              {!query.data?.items.length && (
-                <tr>
-                  <td colSpan={6} className="text-muted-foreground py-12 text-center">
-                    {t("intel.empty")}
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      )}
-      <footer className="text-muted-foreground flex flex-wrap items-center justify-between gap-3 text-sm">
-        <span>
-          {t("intel.capacity")}: {query.data?.account_count ?? 0} / {query.data?.capacity ?? 5000}
-        </span>
-        <div className="flex items-center gap-3">
-          <Button
-            size="icon"
-            variant="outline"
-            aria-label={t("intel.previous")}
-            title={t("intel.previous")}
-            disabled={page <= 1}
-            onClick={() => change({ page: String(page - 1) })}
-          >
-            <ChevronLeft />
-          </Button>
-          <span>
-            {page} / {Math.max(1, Math.ceil((query.data?.total ?? 0) / 25))}
-          </span>
-          <Button
-            size="icon"
-            variant="outline"
-            aria-label={t("intel.next")}
-            title={t("intel.next")}
-            disabled={!query.data || page * 25 >= query.data.total}
-            onClick={() => change({ page: String(page + 1) })}
-          >
-            <ChevronRight />
-          </Button>
-        </div>
-      </footer>
+      ) : null}
+      {view === "tree" ? (
+        <CustomerTreeView
+          data={customerMap.data}
+          isLoading={customerMap.isLoading}
+          onSelect={selectCustomer}
+        />
+      ) : null}
+      {view === "list" ? (
+        <>
+          <div className="grid grid-cols-3 gap-4 border-y py-4 lg:grid-cols-6">
+            {bands.map((value) => (
+              <div key={value}>
+                <p className={`text-sm ${bandStyles[value]}`}>{t(`intel.${value}`)}</p>
+                <p className="mt-1 text-2xl font-semibold tabular-nums">
+                  {query.data?.counts[value] ?? 0}
+                </p>
+              </div>
+            ))}
+          </div>
+          <div className="grid items-end gap-4 md:grid-cols-[minmax(0,1fr)_200px]">
+            <Field
+              label={t("intel.search")}
+              value={search}
+              maxLength={128}
+              onChange={(value) => change({ search: value, page: "" }, true)}
+            />
+            <Choice
+              label={t("intel.band")}
+              value={band}
+              options={["all", ...bands].map((value) => ({ value, label: t(`intel.${value}`) }))}
+              onChange={(value) => change({ band: value === "all" ? "" : value, page: "" })}
+            />
+          </div>
+          {query.isLoading ? (
+            <Loading />
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[680px] text-left text-sm">
+                <thead>
+                  <tr className="text-muted-foreground border-b">
+                    {[
+                      "name",
+                      "riskScore",
+                      "stage",
+                      "dataStatus",
+                      "owner",
+                      "followUp",
+                      "outcome",
+                    ].map((key) => (
+                      <th key={key} scope="col" className="px-2 py-3 font-medium">
+                        {t(`intel.${key}`)}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {query.data?.items.map((item) => (
+                    <tr key={item.profile.external_id} className="hover:bg-muted/40 border-b">
+                      <td className="max-w-64 px-2 py-3">
+                        <button
+                          className="w-full text-left font-medium break-words underline-offset-4 hover:underline"
+                          dir="auto"
+                          onClick={() => setEditing(item)}
+                        >
+                          {item.profile.name}
+                        </button>
+                        <p className="text-muted-foreground text-xs break-all">
+                          {item.profile.external_id} · {item.profile.segment}
+                        </p>
+                      </td>
+                      <td className={`px-2 py-3 ${bandStyles[item.risk.band]}`}>
+                        <strong>{item.risk.score ?? "-"}</strong>
+                        <p className="text-xs">{t(`intel.${item.risk.band}`)}</p>
+                      </td>
+                      <td className="px-2 py-3">
+                        <JourneyStageBadge stage={item.journey?.latest_stage} showUnassigned />
+                        {item.journey && item.journey.churn_intent > 0 ? (
+                          <p className="text-sentiment-negative mt-1 text-xs">
+                            {t("intel.churnIntentCount", { count: item.journey.churn_intent })}
+                          </p>
+                        ) : null}
+                      </td>
+                      <td className="px-2 py-3">
+                        {t(`intel.${item.risk.data_status}`)}
+                        <p className="text-muted-foreground text-xs">{item.profile.observed_on}</p>
+                      </td>
+                      <td className="max-w-48 px-2 py-3 break-words">
+                        {item.profile.owner || "-"}
+                      </td>
+                      <td className="px-2 py-3">{item.profile.follow_up_on || "-"}</td>
+                      <td className="px-2 py-3">{t(`intel.${item.profile.outcome}`)}</td>
+                    </tr>
+                  ))}
+                  {!query.data?.items.length && (
+                    <tr>
+                      <td colSpan={7} className="text-muted-foreground py-12 text-center">
+                        {t("intel.empty")}
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          )}
+          <footer className="text-muted-foreground flex flex-wrap items-center justify-between gap-3 text-sm">
+            <span>
+              {t("intel.capacity")}: {query.data?.account_count ?? 0} /{" "}
+              {query.data?.capacity ?? 5000}
+            </span>
+            <div className="flex items-center gap-3">
+              <Button
+                size="icon"
+                variant="outline"
+                aria-label={t("intel.previous")}
+                title={t("intel.previous")}
+                disabled={page <= 1}
+                onClick={() => change({ page: String(page - 1) })}
+              >
+                <ChevronLeft />
+              </Button>
+              <span>
+                {page} / {Math.max(1, Math.ceil((query.data?.total ?? 0) / 25))}
+              </span>
+              <Button
+                size="icon"
+                variant="outline"
+                aria-label={t("intel.next")}
+                title={t("intel.next")}
+                disabled={!query.data || page * 25 >= query.data.total}
+                onClick={() => change({ page: String(page + 1) })}
+              >
+                <ChevronRight />
+              </Button>
+            </div>
+          </footer>
+        </>
+      ) : null}
       {editing && (
         <CustomerEditor
           key={editing === "new" ? "new" : editing.profile.external_id}
@@ -351,6 +444,19 @@ function CustomerEditor({ initial, close }: { initial: CustomerRecord | null; cl
               </strong>
               <span>{t(`intel.${initial.risk.data_status}`)}</span>
               <span className="text-muted-foreground">{initial.risk.as_of}</span>
+            </div>
+            <div className="flex flex-wrap items-center gap-2 text-sm">
+              <span className="text-muted-foreground">{t("intel.stage")}:</span>
+              <JourneyStageBadge stage={initial.journey?.latest_stage} showUnassigned />
+              {initial.journey && Object.keys(initial.journey.stages).length > 0 ? (
+                <span className="text-muted-foreground text-xs">
+                  {t("intel.stageDistribution")}:{" "}
+                  {Object.entries(initial.journey.stages)
+                    .sort((a, b) => b[1] - a[1])
+                    .map(([stage, count]) => `${t(journeyLabelKey(stage))} ${count}`)
+                    .join(" · ")}
+                </span>
+              ) : null}
             </div>
             <h3 className="font-medium">{t("intel.signals")}</h3>
             {!initial.risk.signals.length && <p>{t("intel.noSignals")}</p>}

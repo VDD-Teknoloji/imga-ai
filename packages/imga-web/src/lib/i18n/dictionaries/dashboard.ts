@@ -343,6 +343,18 @@ export const dashboard: Bundle = {
 
     // --- deneyim dağılımı kartları ---
     "dashboard.experience.title": "Deneyim Dağılımı",
+
+    // --- müşteri yolculuğu hunisi (2026-10-14, migration 0052) ---
+    "dashboard.journey.title": "Müşteri Yolculuğu Hunisi",
+    "dashboard.journey.infoAria": "Yolculuk aşaması nasıl belirlenir?",
+    "dashboard.journey.info":
+      "Her yorum için analiz sırasında yazarın markayla ilişkisinde bulunduğu nokta belirlenir: keşif ve değerlendirme (henüz müşteri değil), satın alma, teslimat/başlangıç, kullanım, destek, sadakat/yenileme ve ayrılma riski. Aşama kategoriden türetilmez; model yorumun kendisinden okur. Aşaması belirlenemeyen yorumlar yüzdelere girmez.",
+    "dashboard.journey.prospects": "Satın alma öncesi",
+    "dashboard.journey.churnRisk": "Ayrılma riski",
+    "dashboard.journey.negativeShare": "{count} olumsuz",
+    "dashboard.journey.viewReviews": "Bu aşamadaki yorumları gör",
+    "dashboard.journey.empty": "Bu aralıkta aşaması belirlenmiş yorum yok.",
+    "dashboard.journey.unassignedNote": "{count} yorumda aşama atanmamış; yeniden analizle atanır.",
     "dashboard.experience.infoAria": "Deneyim dağılımı nasıl hesaplanır?",
     "dashboard.experience.info":
       "Deneyim tipi her yorum için analiz sırasında belirlenir: dijital kanallardaki sorunlar (uygulama, site, online ödeme) dijital; fiziksel süreçler (kargo, iade, ürün, mağaza) operasyonel sayılır. Bu bilgiyi taşımayan eski yorumlar kategorilerine göre yaklaşık olarak yerleştirilir; hiçbirine giremeyenler yüzdelere dahil edilmez.",
@@ -860,6 +872,19 @@ export const dashboard: Bundle = {
 
     // --- experience breakdown cards ---
     "dashboard.experience.title": "Experience Breakdown",
+
+    // --- customer journey funnel (2026-10-14, migration 0052) ---
+    "dashboard.journey.title": "Customer Journey Funnel",
+    "dashboard.journey.infoAria": "How is the journey stage determined?",
+    "dashboard.journey.info":
+      "During analysis each review is placed at the point of the author's relationship with the brand: discovery and consideration (not yet a customer), purchase, delivery/onboarding, usage, support, loyalty/renewal and churn risk. The stage is not derived from the category; the model reads it from the review itself. Reviews without a stage are excluded from percentages.",
+    "dashboard.journey.prospects": "Pre-purchase",
+    "dashboard.journey.churnRisk": "Churn risk",
+    "dashboard.journey.negativeShare": "{count} negative",
+    "dashboard.journey.viewReviews": "View reviews at this stage",
+    "dashboard.journey.empty": "No reviews with an assigned stage in this range.",
+    "dashboard.journey.unassignedNote":
+      "{count} reviews have no stage yet; re-analysis assigns it.",
     "dashboard.experience.infoAria": "How is the experience breakdown calculated?",
     "dashboard.experience.info":
       "The experience type is decided per review during analysis: problems in digital channels (app, website, online payment) count as digital; physical processes (shipping, returns, product, store) count as operational. Older reviews without this information are placed approximately by their category; reviews that fit neither are excluded from the percentages.",

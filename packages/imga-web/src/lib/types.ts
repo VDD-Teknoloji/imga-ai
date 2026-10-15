@@ -316,6 +316,9 @@ export interface TenantAnalyzeResponse {
   // AnalysisResult.company_perspective (legacy free-text field).
   company_perspective_code: string | null;
   company_perspective_label_tr: string | null;
+  // 2026-10-14 — birleşik motorun yolculuk aşaması kararı; klasik yolda
+  // ya da model alan üretmediyse null.
+  journey_stage?: string | null;
 }
 
 // --- Tenant directory (mirrors routes/tenant_directory.py:TenantMemberView) -
@@ -391,13 +394,7 @@ export type ReviewSourceType = "manual" | "batch" | "api";
 // escalation > request > question > suggestion > thanks. Order below
 // is the canonical DISPLAY order (risk first) — shared by the /reviews
 // filter dropdown, the summary panel's chip row, and the list badge.
-export const CONTENT_TYPES = [
-  "escalation",
-  "request",
-  "question",
-  "suggestion",
-  "thanks",
-] as const;
+export const CONTENT_TYPES = ["escalation", "request", "question", "suggestion", "thanks"] as const;
 export type ContentType = (typeof CONTENT_TYPES)[number];
 
 // Sprint 8.3.4 — rule layer codes, plus the Sprint 11 correction
@@ -468,6 +465,9 @@ export interface ReviewListItem {
   // İçerik türü — tek değer, NULL = normal yorum (bkz. CONTENT_TYPES
   // yukarıda). Liste kartında rozet, /reviews/summary panelinde chip.
   content_type?: ContentType | null;
+  // 2026-10-14 (migration 0052) — müşteri yolculuğu aşaması kodu
+  // (lib/journey.ts JOURNEY_STAGES) ya da null = atanmamış.
+  journey_stage?: string | null;
 }
 
 export interface ReviewListResponse {
@@ -520,6 +520,8 @@ export interface ReviewDetail {
   // — kaynağa göre alt küme gelir (bkz. reviews/[id]/page.tsx engagement
   // chip satırı). null/absent = kart hiç gösterilmez.
   source_meta?: Record<string, number> | null;
+  // 2026-10-14 (migration 0052) — yolculuk aşaması; detay kartında satır.
+  journey_stage?: string | null;
 }
 
 export type NpsCategory = "detractor" | "passive" | "promoter";
@@ -570,6 +572,9 @@ export interface ReviewListFilters {
    *  reviews.content_type. NOT a quality flag — combinable with
    *  quality_flags (a review can be both a question and negative). */
   content_types?: string[];
+  /** 2026-10-14 (migration 0052) — CSV of lib/journey.ts
+   *  JOURNEY_FILTER_VALUES ("atanmamis" = journey_stage IS NULL). */
+  journey_stages?: string[];
   limit?: number;
   offset?: number;
   order_by?: "created_at" | "sentiment_score";
@@ -1062,11 +1067,7 @@ export interface TaxonomyReorderRequest {
 }
 
 export type SlaPriority = "low" | "normal" | "high" | "urgent";
-export type SlaActionType =
-  | "warn_only"
-  | "create_ticket"
-  | "escalate"
-  | "notify_email";
+export type SlaActionType = "warn_only" | "create_ticket" | "escalate" | "notify_email";
 
 export const SLA_ACTION_LABELS: Record<SlaActionType, string> = {
   warn_only: "Uyarı (yalnızca kaydet)",
@@ -1075,9 +1076,7 @@ export const SLA_ACTION_LABELS: Record<SlaActionType, string> = {
   notify_email: "E-posta gönder",
 };
 
-export const SLA_ACTION_AVAILABLE_NOW: ReadonlySet<SlaActionType> = new Set([
-  "warn_only",
-]);
+export const SLA_ACTION_AVAILABLE_NOW: ReadonlySet<SlaActionType> = new Set(["warn_only"]);
 
 export interface SlaRule {
   id: string;
@@ -1382,11 +1381,7 @@ export interface ActionItem {
   archived_by: string | null;
 }
 
-export type ActionItemActorType =
-  | "user"
-  | "system"
-  | "llm_extraction"
-  | "briefing_pipeline";
+export type ActionItemActorType = "user" | "system" | "llm_extraction" | "briefing_pipeline";
 
 export type ActionItemEventType =
   | "created"

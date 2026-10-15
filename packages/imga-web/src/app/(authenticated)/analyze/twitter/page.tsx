@@ -28,6 +28,7 @@ import { Suspense, useEffect, useRef, useState, type FormEvent } from "react";
 import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
 
+import { JourneyFunnelCard } from "@/components/dashboard/journey-funnel-card";
 import { XLogo } from "@/components/icons/x-logo";
 import { RequireRole } from "@/components/auth/require-role";
 import { Button } from "@/components/ui/button";
@@ -44,6 +45,7 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { useTwitterPlanMutation, type TwitterPlanResult } from "@/hooks/use-batch-uploads";
+import { useJourneyDistribution } from "@/hooks/use-journey";
 import {
   buildTwitterImportSummary,
   clearTwitterFetchJobMemo,
@@ -246,6 +248,10 @@ function TwitterImportPageInner() {
 
   const pending = importMutation.isPending;
   const planning = planMutation.isPending;
+  // 2026-10-14 — daha önce çekilmiş Twitter yorumlarının yolculuk
+  // aşaması hunisi (source=twitter). Çekim sürerken gizli: iş bitince
+  // /analyze/upload'a geçilir, tekrar gelişte güncel sayılar görünür.
+  const twitterJourney = useJourneyDistribution({ sources: ["twitter"] }, !jobId);
 
   return (
     <main className="mx-auto w-full max-w-3xl space-y-6 px-4 py-8">
@@ -262,6 +268,17 @@ function TwitterImportPageInner() {
         </h1>
         <p className="text-muted-foreground text-sm">{t("analyze.twitter.subtitle")}</p>
       </header>
+
+      {!jobId ? (
+        <JourneyFunnelCard
+          data={twitterJourney.data}
+          isLoading={twitterJourney.isLoading}
+          title={t("analyze.twitter.journeyTitle")}
+          description={t("analyze.twitter.journeyHelp")}
+          drilldownParams={{ sources: "twitter" }}
+          hideWhenEmpty={false}
+        />
+      ) : null}
 
       {jobId ? (
         <TwitterFetchProgressCard jobId={jobId} onContinue={handleContinue} onRetry={handleRetry} />

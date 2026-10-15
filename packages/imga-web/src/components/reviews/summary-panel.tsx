@@ -32,6 +32,7 @@ import {
 import type { ReviewListFiltersExt } from "@/hooks/use-reviews";
 import { useTranslation } from "@/lib/i18n/use-translation";
 import { sentimentScoreBucket, type SentimentScoreBucket } from "@/lib/sentiment-score";
+import { JOURNEY_STAGES, journeyLabelKey } from "@/lib/journey";
 import { CONTENT_TYPES, type CategoryView, type ContentType } from "@/lib/types";
 
 const CARD_CLASS = "bg-card ring-foreground/5 rounded-2xl p-4 ring-1";
@@ -41,12 +42,12 @@ const SENTIMENT_ORDER = ["NEGATIF", "NÖTR", "POZITIF"] as const;
 const SENTIMENT_LABEL_KEYS: Record<string, string> = {
   NEGATIF: "reviews.sentiment.negatif",
   POZITIF: "reviews.sentiment.pozitif",
-  "NÖTR": "reviews.sentiment.notr",
+  NÖTR: "reviews.sentiment.notr",
 };
 
 const SENTIMENT_BAR_CLASS: Record<string, string> = {
   NEGATIF: "bg-sentiment-negative",
-  "NÖTR": "bg-sentiment-neutral",
+  NÖTR: "bg-sentiment-neutral",
   POZITIF: "bg-sentiment-positive",
 };
 
@@ -162,6 +163,7 @@ function SummaryBlocks({
       <HeadlineBlock data={data} />
       <SentimentBarBlock sentiment={data.sentiment} total={data.total} />
       <ContentTypesBlock contentTypes={data.content_types} />
+      <JourneyStagesBlock journeyStages={data.journey_stages} />
       <EnteredByBlock rows={data.entered_by} />
       <QualityLineBlock quality={data.quality} />
       <TopQuestionsBlock topQuestions={data.top_questions} questionCount={data.question_count} />
@@ -183,7 +185,9 @@ function HeadlineBlock({ data }: { data: ReviewSummaryResponse }) {
   const bucket =
     data.avg_sentiment_score !== null ? sentimentScoreBucket(data.avg_sentiment_score) : null;
   const lowData = data.total < LOW_HEADLINE_TOTAL;
-  const verdictText = bucket ? t(`reviews.scoreLabel.${bucket}`) : t("reviews.summary.headline.noScore");
+  const verdictText = bucket
+    ? t(`reviews.scoreLabel.${bucket}`)
+    : t("reviews.summary.headline.noScore");
   const verdictClass = lowData
     ? "text-muted-foreground text-lg font-semibold italic"
     : `text-lg font-semibold ${bucket ? (VERDICT_COLOR_CLASS[bucket] ?? "") : ""}`.trim();
@@ -257,17 +261,66 @@ function SentimentBarBlock({
   );
 }
 
+/** 2026-10-14 (migration 0052) — yolculuk aşaması hunisi, kompakt: huni
+ *  sırasında sıfır olmayan kovalar + oran çubuğu. Atanmamış satırlar
+ *  paydaya girmez; varsa altta tek satır not. Tümü sıfırsa blok gizli.
+ *  Panel salt-okunur; filtre sayfa üstü JourneyStageFilterDropdown'da. */
+function JourneyStagesBlock({
+  journeyStages,
+}: {
+  journeyStages: Record<string, number> | undefined;
+}) {
+  const { t } = useTranslation();
+  const counts = journeyStages ?? {};
+  const entries = JOURNEY_STAGES.map((stage) => ({ stage, count: counts[stage] ?? 0 })).filter(
+    (e) => e.count > 0,
+  );
+  const unassigned = counts.atanmamis ?? 0;
+  if (entries.length === 0 && unassigned === 0) return null;
+  const total = entries.reduce((acc, e) => acc + e.count, 0);
+  const max = Math.max(1, ...entries.map((e) => e.count));
+  return (
+    <div className={CARD_CLASS}>
+      <h3 className="text-sm font-medium">{t("reviews.summary.journey.title")}</h3>
+      <ul className="mt-2 space-y-1.5">
+        {entries.map(({ stage, count }) => (
+          <li key={stage} className="flex items-center gap-2 text-xs">
+            <span className="w-28 shrink-0 truncate">{t(journeyLabelKey(stage))}</span>
+            <span className="bg-muted/60 relative h-2 min-w-0 flex-1 overflow-hidden rounded-sm">
+              <span
+                className={`absolute inset-y-0 left-0 rounded-sm ${
+                  stage === "ayrilma" ? "bg-sentiment-negative/80" : "bg-primary/70"
+                }`}
+                style={{ width: `${Math.max((count / max) * 100, 2)}%` }}
+                aria-hidden
+              />
+            </span>
+            <span className="w-20 shrink-0 text-right tabular-nums">
+              {count.toLocaleString("tr-TR")}
+              <span className="text-muted-foreground">
+                {" "}
+                · {total === 0 ? 0 : Math.round((count / total) * 100)}%
+              </span>
+            </span>
+          </li>
+        ))}
+      </ul>
+      {unassigned > 0 && (
+        <p className="text-muted-foreground mt-2 text-xs">
+          {t("reviews.summary.journey.unassigned", { count: unassigned.toLocaleString("tr-TR") })}
+        </p>
+      )}
+    </div>
+  );
+}
+
 /** (b.5) — CONTENT_TYPES sırasında (risk önce) sıfır olmayan kovalar
  *  kompakt chip satırı. Tümü sıfırsa blok TAMAMEN gizlenir — diğer
  *  bloklarla aynı "boşsa gizlen" konvansiyonu. Escalation>0 iken chip
  *  satırının altına tek satırlık bir yönlendirme eklenir; chip'e
  *  tıklama YOK — filtreleme sayfa üstü ContentTypeFilterDropdown'ın
  *  işi, panel salt-okunur bir özet. */
-function ContentTypesBlock({
-  contentTypes,
-}: {
-  contentTypes: Record<string, number> | undefined;
-}) {
+function ContentTypesBlock({ contentTypes }: { contentTypes: Record<string, number> | undefined }) {
   const { t } = useTranslation();
   // Backend rollout window (bkz. use-review-summary.ts alan yorumu) —
   // eski bir api yanıtı bu alanı hiç taşımayabilir; boş harita gibi davran.
@@ -488,7 +541,9 @@ function EnteredByBlock({ rows }: { rows: ReviewSummaryEnteredBy[] }) {
                   </td>
                   <td
                     className={`py-1.5 text-right tabular-nums ${
-                      warn ? "font-medium text-amber-700 dark:text-amber-400" : "text-muted-foreground"
+                      warn
+                        ? "font-medium text-amber-700 dark:text-amber-400"
+                        : "text-muted-foreground"
                     }`}
                   >
                     {r.flagged.toLocaleString("tr-TR")}
@@ -532,7 +587,10 @@ function TopQuestionsBlock({
       </div>
       <ul className="mt-2 space-y-1.5">
         {topQuestions.map((q) => (
-          <li key={`${q.text}-${q.count}`} className="flex items-start justify-between gap-2 text-xs">
+          <li
+            key={`${q.text}-${q.count}`}
+            className="flex items-start justify-between gap-2 text-xs"
+          >
             <span className="text-foreground/90 min-w-0 [overflow-wrap:anywhere]">
               {truncate(q.text, 80)}
             </span>
@@ -567,7 +625,9 @@ function QualityLineBlock({ quality }: { quality: ReviewSummaryQuality }) {
         {nonZero
           .map(([key, count]) => {
             const label =
-              key === "clean" ? t("reviews.summary.quality.clean") : t(QUALITY_FLAG_LABEL_KEYS[key]!);
+              key === "clean"
+                ? t("reviews.summary.quality.clean")
+                : t(QUALITY_FLAG_LABEL_KEYS[key]!);
             return `${label}: ${count.toLocaleString("tr-TR")}`;
           })
           .join(" · ")}

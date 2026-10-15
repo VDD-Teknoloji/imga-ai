@@ -117,10 +117,10 @@ export function useCorrectReview() {
   const queryClient = useQueryClient();
   return useMutation<CorrectReviewResponse, Error, CorrectReviewPayload>({
     mutationFn: async ({ reviewId, ...body }) =>
-      apiRequest<CorrectReviewResponse>(
-        `/tenants/me/reviews/${reviewId}/correct`,
-        { method: "POST", body },
-      ),
+      apiRequest<CorrectReviewResponse>(`/tenants/me/reviews/${reviewId}/correct`, {
+        method: "POST",
+        body,
+      }),
     onSuccess: (_data, { reviewId }) => {
       queryClient.invalidateQueries({ queryKey: ["review-detail", reviewId] });
       queryClient.invalidateQueries({ queryKey: ["reviews"] });
@@ -230,6 +230,11 @@ export function buildReviewFilterParams(filters: ReviewListFiltersExt): URLSearc
   // include_flagged'i devre dışı bırakmaz.
   if (filters.content_types?.length) {
     params.set("content_types", filters.content_types.join(","));
+  }
+  // 2026-10-14 (migration 0052) — yolculuk aşaması çoklu seçim; içerik
+  // türü gibi kalite bayrağından bağımsız.
+  if (filters.journey_stages?.length) {
+    params.set("journey_stages", filters.journey_stages.join(","));
   }
   return params;
 }

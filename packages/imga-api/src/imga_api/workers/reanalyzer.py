@@ -45,6 +45,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
+from imga_core.journey import normalize_journey_stage
 from imga_db import set_current_tenant
 from imga_db.models import BatchJobStatus, Review
 from sqlalchemy import (
@@ -502,6 +503,7 @@ async def _process_reanalysis_chunk(
     few_shot, semantic_hits = await _few_shot_for_chunk(unified_ctx, texts, context, tenant_id)
     perspectives: list[str | None] = []
     experiences: list[str | None] = []
+    journeys: list[str | None] = []
     stats_sink: dict[str, int] = {}
     analyses: list[AnalysisResult] = await context.pipeline.analyze_batch_unified_async(
         texts,
@@ -513,6 +515,7 @@ async def _process_reanalysis_chunk(
         perspective_sink=perspectives,
         category_descriptions=unified_ctx.category_descriptions,
         experience_sink=experiences,
+        journey_sink=journeys,
     )
     # 2026-08-18 adversarial inceleme FX1 (b) — ``_apply_corrections``
     # (analyses, correction_overrides) tuple'ı döner (bkz.
@@ -571,6 +574,9 @@ async def _process_reanalysis_chunk(
                 if correction_override is not None
                 and correction_override.experience_type is not None
                 else (experiences[index] if index < len(experiences) else None)
+            )
+            review.journey_stage = normalize_journey_stage(
+                journeys[index] if index < len(journeys) else None
             )
             # 2026-08-18 adversarial inceleme FX1 (a) — quality_flag
             # backfill. 'duplicate' bayrağı yalnız yükleme işçisinin

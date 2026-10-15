@@ -35,6 +35,11 @@ from imga_core.config import (
     LABEL_NEUTRAL,
     LABEL_POSITIVE,
 )
+from imga_core.journey import (
+    JOURNEY_STAGE_CODES_INLINE,
+    JOURNEY_STAGE_RULE,
+    normalize_journey_stage,
+)
 from imga_core.language_policy import MENA_DIRECTIVE, has_arabic_script
 from imga_core.llm.base import LLMProviderError
 from imga_core.llm.errors import (
@@ -101,6 +106,10 @@ class UnifiedPrediction:
     # deneyim dijital). None = model alan üretmedi / geçersiz değer;
     # tüketici taraf kategori-eşleme yedeğine düşebilir.
     experience_type: str | None = None
+    # 2026-10-14 — müşteri yolculuğu aşaması (bkz. imga_core.journey).
+    # Kategori/duygudan türetilmez; model yazarın markayla ilişkisinde
+    # bulunduğu noktayı değerlendirir. None = alan yok / geçersiz kod.
+    journey_stage: str | None = None
 
 
 @dataclass(slots=True)
@@ -147,7 +156,7 @@ _RESPONSE_SCHEMA: dict[str, Any] = {
 # .764 (.148) / .728 / .000. Degistirmeden once scripts/eval_classifier.py
 # ile olc — bu sabit /settings/prompts tenant override yuzeyinde de
 # gorunur.
-UNIFIED_SYSTEM_PROMPT = """Sen Türkçe müşteri mesajlarını sınıflandıran kıdemli bir analistsin. Her mesaj için: s (POZITIF|NEGATIF|NÖTR), sc (-1..1), c (verilen listeden bir kod), cc (0..1); uygunsa p (YALNIZ seçilen c'nin alt listesinden, uymuyorsa yazma) ve e ("dijital"|"operasyonel").
+UNIFIED_SYSTEM_PROMPT = """Sen Türkçe müşteri mesajlarını sınıflandıran kıdemli bir analistsin. Her mesaj için: s (POZITIF|NEGATIF|NÖTR), sc (-1..1), c (verilen listeden bir kod), cc (0..1); uygunsa p (YALNIZ seçilen c'nin alt listesinden, uymuyorsa yazma), e ("dijital"|"operasyonel") ve j (yolculuk aşaması).
 
 KURALLAR
 - NEGATIF = sorun/gecikme/kayıp/tutarsızlık RAPORU; nazik dil bunu örtmez, ironi NEGATIF'tir. POZITIF = mesajın ÖZÜ memnuniyet/teşekkür (kibar "teşekkürler" kapanışı yetmez). NÖTR = duygu içermeyen her şey: bilgi/belge talebi, durum sorusu, otomatik bildirim, doğrulama/OTP e-postası. Çözülmüş sorun bildirimi NÖTR; açık teşekkür varsa POZITIF.
@@ -155,15 +164,15 @@ KURALLAR
 - Konusu OLAN mesaj "belirsiz" OLAMAZ; soru ve otomatik bildirim de konusunun kategorisine gider. Emin değilsen en yakın kod + düşük cc. Sınır: paket kargoya verilmeden önceki aşamalar (onay, hazırlık, iptal/iade) sipariş süreci; taşıma/teslimat/dağıtım kargodur.
 - e: sorun/etkileşim EKRANDA ise dijital (uygulama, site, takip ekranı, online ödeme, giriş/hesap); fiziksel dünya (paket, kurye, depo, teslimat, çağrı merkezi) ve taşıyıcı bildirimleri/durum soruları operasyoneldir. İkisine de oturmuyorsa e'yi HİÇ yazma. Kategori ≠ deneyim.
 
-ÖRNEKLER (özet → s / sc / c / e; kod adları örnek — daima kurumun verilen listesinden seç)
-- "Siparişinizi doğrulamak için kodunuz: 4821" → NÖTR / 0.0 / siparis_sureci / dijital
-- "Paketiniz dağıtıma çıktı" → NÖTR / 0.0 / kargo / operasyonel
-- "X iline teslimat yapıyor musunuz?" → NÖTR / 0.0 / kargo / operasyonel
-- "Uygulamada teslim edildi görünüyor ama paket elimde yok" → NEGATIF / -0.5 / kargo / dijital
-- "Merhaba, kargom 5 gündür kımıldamıyor, ilgilenirseniz sevinirim, teşekkürler" → NEGATIF / -0.4 / kargo / operasyonel
-- "Ödemeyi aldınız ama sipariş hâlâ 'hazırlanıyor', kargoya verilmedi" → NEGATIF / -0.4 / siparis_sureci / operasyonel
-- "Uygulama girişte sürekli çöküyor, takip yapamıyorum" → NEGATIF / -0.5 / teknik_destek / dijital
-- "Müşteri temsilciniz harikaydı, çok teşekkür ederim!" → POZITIF / 0.8 / musteri_hizmetleri / operasyonel
+ÖRNEKLER (özet → s / sc / c / e / j; kod adları örnek — daima kurumun verilen listesinden seç)
+- "Siparişinizi doğrulamak için kodunuz: 4821" → NÖTR / 0.0 / siparis_sureci / dijital / satin_alma
+- "Paketiniz dağıtıma çıktı" → NÖTR / 0.0 / kargo / operasyonel / teslimat
+- "X iline teslimat yapıyor musunuz?" → NÖTR / 0.0 / kargo / operasyonel / degerlendirme
+- "Uygulamada teslim edildi görünüyor ama paket elimde yok" → NEGATIF / -0.5 / kargo / dijital / teslimat
+- "Merhaba, kargom 5 gündür kımıldamıyor, ilgilenirseniz sevinirim, teşekkürler" → NEGATIF / -0.4 / kargo / operasyonel / teslimat
+- "Ödemeyi aldınız ama sipariş hâlâ 'hazırlanıyor', kargoya verilmedi" → NEGATIF / -0.4 / siparis_sureci / operasyonel / satin_alma
+- "Uygulama girişte sürekli çöküyor, takip yapamıyorum" → NEGATIF / -0.5 / teknik_destek / dijital / kullanim
+- "Müşteri temsilciniz harikaydı, çok teşekkür ederim!" → POZITIF / 0.8 / musteri_hizmetleri / operasyonel / destek
 
 ÇIKTI: Yalnızca JSON dizisi döndür; markdown çiti veya açıklama yazma. Her girdi için tam bir öğe üret; i alanı girdi numarasıyla eşleşsin.
 """
@@ -223,6 +232,9 @@ def _build_prompt(
                 f"kategori={example.category}{reason}"
             )
 
+    # Kurum istemi varsayılanı tamamen değiştirebilir; aşama tanımları bu
+    # yüzden her zaman eklenen kuyrukta (bkz. imga_core.journey).
+    parts.append("\n" + JOURNEY_STAGE_RULE)
     parts.append("\nYorumlar:")
     for i, text in enumerate(texts):
         single_line = " ".join(text.split())
@@ -236,8 +248,9 @@ def _build_prompt(
             parts.append(f"{i}: {single_line[:600]}")
     parts.append(
         '\nJSON dizisi döndür; her öğe {"i", "s", "sc", "c", "cc"} '
-        'alanlarını taşımalı, uygunsa "p" (alt kategori) ve "e" '
-        "(deneyim: dijital|operasyonel) alanlarını da ekle."
+        'alanlarını taşımalı, uygunsa "p" (alt kategori), "e" '
+        '(deneyim: dijital|operasyonel) ve "j" (yolculuk aşaması: '
+        f"{JOURNEY_STAGE_CODES_INLINE}) alanlarını da ekle."
     )
     return "\n".join(parts)
 
@@ -474,11 +487,11 @@ class GeminiUnifiedEngine:
                     data = json.loads(cleaned[start : end + 1])
                 except json.JSONDecodeError:
                     raise LLMProviderError(
-                        f"{self._provider} unified returned non-JSON: " f"{raw[:200]!r}"
+                        f"{self._provider} unified returned non-JSON: {raw[:200]!r}"
                     ) from exc
             else:
                 raise LLMProviderError(
-                    f"{self._provider} unified returned non-JSON: " f"{raw[:200]!r}"
+                    f"{self._provider} unified returned non-JSON: {raw[:200]!r}"
                 ) from exc
         if not isinstance(data, list):
             raise LLMProviderError(f"Expected JSON array, got {type(data).__name__}")
@@ -574,6 +587,7 @@ class GeminiUnifiedEngine:
                 language=entry.get("l") if isinstance(entry.get("l"), str) else None,
                 perspective_code=perspective,
                 experience_type=experience,
+                journey_stage=normalize_journey_stage(entry.get("j")),
             )
         if not parsed:
             raise LLMProviderError("Gemini unified response contained no usable entries")

@@ -22,6 +22,7 @@ from zoneinfo import ZoneInfo
 
 from imga_core.categories.taxonomy import FALLBACK_CATEGORY_CODE
 from imga_core.config import CRISIS_SCORE_THRESHOLD, LABEL_NEGATIVE
+from imga_core.journey import JOURNEY_STAGES
 from imga_db.models import Category, CategoryTaxonomy, Review, Ticket, TicketState
 from sqlalchemy import and_, case, func, literal, null, or_, select, text
 from sqlalchemy.dialects.postgresql import JSONB
@@ -49,6 +50,10 @@ class AnalyticsFilters:
     category_ids: tuple[UUID, ...] = ()
     source_types: tuple[str, ...] = ()  # "manual" | "batch"
     batch_job_id: UUID | None = None
+    # 2026-10-14 — ``Review.source`` değerleri (ör. "twitter"), büyük/
+    # küçük harf ve boşluk katlanarak eşlenir; Twitter çekimi gibi tek
+    # bir kaynağın dağılımını okumak için.
+    sources: tuple[str, ...] = ()
     # 2026-08-18 — WS2 veri kalitesi. False (varsayılan) = quality_flag
     # IS NULL satırlarla sınırlı (duplicate/empty/informational/
     # meaningless dışlanır); dashboard metrikleri temiz veriden okunur.
@@ -248,6 +253,28 @@ class CompanyPerspectiveDistRow:
 class ExperienceBucket:
     total: int
     negatif: int
+
+
+@dataclass(frozen=True, slots=True)
+class JourneyStageRow:
+    stage: str
+    total: int
+    negatif: int
+
+
+@dataclass(frozen=True, slots=True)
+class JourneyDistribution:
+    """2026-10-14 — müşteri yolculuğu aşaması dağılımı (migration 0052).
+
+    ``stages`` huni sırasında (imga_core.journey.JOURNEY_STAGES) her kod
+    için bir satır taşır — boş kova da 0 ile gelir. ``atanmamis`` =
+    ``journey_stage IS NULL`` (klasik yol / modelin alan üretmediği
+    satır); kategori yedeği YOK, çünkü aşama kategoriden türetilemez.
+    ``total`` yalnız atanmış satırların toplamıdır (yüzde paydası)."""
+
+    total: int
+    stages: list[JourneyStageRow]
+    atanmamis: ExperienceBucket
 
 
 @dataclass(frozen=True, slots=True)
@@ -1469,6 +1496,55 @@ class AnalyticsService:
             atanmamis=buckets["atanmamis"],
         )
 
+    async def journey_distribution(
+        self,
+        *,
+        tenant_id: UUID,
+        filters: AnalyticsFilters,
+    ) -> JourneyDistribution:
+        """Yolculuk aşaması dağılımı (+ aşama başına negatif sayısı).
+
+        Filtre zarfı ``experience_distribution`` ile aynı; ek olarak
+        ``filters.sources`` ile tek bir kaynağa (ör. Twitter çekimi)
+        daraltılabilir. NULL satırlar ``atanmamis`` kovasına gider ve
+        yüzde paydasına girmez."""
+        stmt = (
+            select(
+                Review.journey_stage.label("stage"),
+                func.count().label("total"),
+                func.count(case((Review.sentiment_label == LABEL_NEGATIVE, 1))).label("negatif"),
+            )
+            .select_from(Review)
+            .where(Review.tenant_id == tenant_id)
+            .where(Review.deleted_at.is_(None))
+            .group_by(Review.journey_stage)
+        )
+        stmt = self._apply_review_filters(stmt, filters)
+        rows = (await self._session.execute(stmt)).all()
+
+        counts: dict[str, tuple[int, int]] = dict.fromkeys(JOURNEY_STAGES, (0, 0))
+        unassigned_total = 0
+        unassigned_negatif = 0
+        for row in rows:
+            total = int(row.total or 0)
+            negatif = int(row.negatif or 0)
+            if row.stage in counts:
+                prev = counts[row.stage]
+                counts[row.stage] = (prev[0] + total, prev[1] + negatif)
+            else:
+                # NULL ya da CHECK'i atlatmış beklenmedik değer.
+                unassigned_total += total
+                unassigned_negatif += negatif
+        stages = [
+            JourneyStageRow(stage=code, total=counts[code][0], negatif=counts[code][1])
+            for code in JOURNEY_STAGES
+        ]
+        return JourneyDistribution(
+            total=sum(row.total for row in stages),
+            stages=stages,
+            atanmamis=ExperienceBucket(total=unassigned_total, negatif=unassigned_negatif),
+        )
+
     # ------------------------------------------------------------------
     # 14. Period comparison (WS4, Sprint 2026-08-18)
     # ------------------------------------------------------------------
@@ -1658,6 +1734,12 @@ class AnalyticsService:
                 wanted.append(Review.batch_job_id.is_(None))
             if wanted:
                 stmt = stmt.where(or_(*wanted))
+        if filters.sources:
+            # review_list_service._folded_in ile aynı katlama: büyük/küçük
+            # harf + kenar boşluğu farkları aynı kaynağa sayılır.
+            lowered = tuple(s.strip().lower() for s in filters.sources if s.strip())
+            if lowered:
+                stmt = stmt.where(func.lower(func.trim(Review.source)).in_(lowered))
         return stmt
 
     def _apply_ticket_filters(self, stmt: Any, filters: AnalyticsFilters) -> Any:

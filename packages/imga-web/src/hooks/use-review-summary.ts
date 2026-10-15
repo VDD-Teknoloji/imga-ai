@@ -81,6 +81,9 @@ export interface ReviewSummaryResponse {
    *  UI change, so it can briefly be absent from an old api response.
    *  question_count above stays for backward compat. */
   content_types?: Record<string, number>;
+  /** 2026-10-14 (migration 0052) — yolculuk aşaması kovaları (her kod +
+   *  "atanmamis"); rollout penceresinde eski yanıtta bulunmayabilir. */
+  journey_stages?: Record<string, number>;
   top_questions: ReviewSummaryTopQuestion[];
   entered_by: ReviewSummaryEnteredBy[];
   daily: ReviewSummaryDaily[];
@@ -103,7 +106,6 @@ export function useReviewSummary(filters: ReviewListFiltersExt) {
   const qs = buildReviewFilterParams(filters).toString();
   return useQuery<ReviewSummaryResponse>({
     queryKey: ["reviews-summary", qs],
-    queryFn: async () =>
-      apiRequest<ReviewSummaryResponse>(`/tenants/me/reviews/summary?${qs}`),
+    queryFn: async () => apiRequest<ReviewSummaryResponse>(`/tenants/me/reviews/summary?${qs}`),
   });
 }

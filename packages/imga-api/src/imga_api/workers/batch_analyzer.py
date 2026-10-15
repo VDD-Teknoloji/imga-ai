@@ -50,6 +50,7 @@ from imga_core import (
     KeywordCategoryClassifier,
 )
 from imga_core.categorizers import TaxonomyEntry, apply_company_heuristic
+from imga_core.journey import normalize_journey_stage
 from imga_core.language_policy import has_arabic_script
 from imga_core.llm import LLMProvider, RotatingGeminiProvider
 from imga_core.llm.unified_classifier import (
@@ -991,6 +992,7 @@ async def _process_chunk(
     semantic_hits: dict[int, Any] = {}
     unified_perspectives: list[str | None] = []
     unified_experiences: list[str | None] = []
+    unified_journeys: list[str | None] = []
     # 2026-08-18 (migration 0042, B3 sözleşme notu) — satır başına
     # UYGULANAN insan düzeltmesi (None = düzeltme yok). experience_type
     # / perspective_code AnalysisResult'a giremediği için
@@ -1043,6 +1045,7 @@ async def _process_chunk(
                         perspective_sink=unified_perspectives,
                         category_descriptions=unified_ctx.category_descriptions,
                         experience_sink=unified_experiences,
+                        journey_sink=unified_journeys,
                     )
                 except Exception as exc:
                     if (
@@ -1066,6 +1069,7 @@ async def _process_chunk(
                     unified_analyses = None
                     unified_perspectives = []
                     unified_experiences = []
+                    unified_journeys = []
             if unified_analyses is None:
                 if any(has_arabic_script(text) for text in texts):
                     raise BertFallbackDisabledError(
@@ -1325,6 +1329,11 @@ async def _process_chunk(
                     unified_experiences[row_index] if row_index < len(unified_experiences) else None
                 )
             )
+            # 2026-10-14 — yolculuk aşaması yalnız modelden gelir; düzeltme
+            # KB'si bu alanı taşımaz (bkz. imga_core.journey).
+            journey_stage = normalize_journey_stage(
+                unified_journeys[row_index] if row_index < len(unified_journeys) else None
+            )
             perspective_code: str | None
             perspective_label: str | None
             correction_perspective = (
@@ -1390,6 +1399,7 @@ async def _process_chunk(
                     nps_score=parsed.nps_score,
                     company_perspective_code=perspective_code,
                     experience_type=experience_type,
+                    journey_stage=journey_stage,
                     business_segment=parsed.business_segment,
                     product_line=parsed.product_line,
                     channel=parsed.channel,
@@ -1511,6 +1521,7 @@ async def _process_chunk(
                     .values(
                         batch_job_id=job_id,
                         experience_type=experience_type,
+                        journey_stage=journey_stage,
                         quality_flag=final_quality_flag,
                         entered_by=parsed.entered_by,
                         source=parsed.source,
@@ -1562,6 +1573,7 @@ async def _process_chunk(
                     nps_score=parsed.nps_score,
                     company_perspective_code=perspective_code,
                     experience_type=experience_type,
+                    journey_stage=journey_stage,
                     business_segment=parsed.business_segment,
                     product_line=parsed.product_line,
                     channel=parsed.channel,

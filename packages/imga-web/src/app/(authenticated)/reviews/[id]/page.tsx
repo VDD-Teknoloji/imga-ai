@@ -26,6 +26,7 @@ import { useReanalyzeReview } from "@/hooks/use-reanalyze";
 import { useRoleFlags } from "@/hooks/use-role-flags";
 import { useManualPromoteReview, useReviewDetail, type ReviewFacts } from "@/hooks/use-reviews";
 import { ApiError } from "@/lib/api-client";
+import { JourneyStageBadge } from "@/components/journey-stage-badge";
 import { effectiveExperience, type ExperienceType } from "@/lib/experience";
 import { useTranslation } from "@/lib/i18n/use-translation";
 import { NPS_CATEGORY_LABELS, type ReviewDecision } from "@/lib/types";
@@ -60,7 +61,7 @@ const PROMOTABLE_DECISIONS: ReadonlySet<ReviewDecision> = new Set([
 const SENTIMENT_LABEL_KEYS: Record<string, string> = {
   NEGATIF: "reviews.sentiment.negatif",
   POZITIF: "reviews.sentiment.pozitif",
-  "NÖTR": "reviews.sentiment.notr",
+  NÖTR: "reviews.sentiment.notr",
 };
 
 // 2026-09-01 — Twitter bağlantısı: source_meta'daki bilinen sayaç
@@ -194,9 +195,7 @@ function ReviewDetailInner() {
       )}
 
       {detail.error && (
-        <p className="text-destructive p-6 text-sm">
-          {t("reviews.detail.notFound")}
-        </p>
+        <p className="text-destructive p-6 text-sm">{t("reviews.detail.notFound")}</p>
       )}
 
       {detail.data && (
@@ -211,9 +210,7 @@ function ReviewDetailInner() {
             </CardHeader>
             <CardContent className="space-y-4">
               <div>
-                <p className="text-muted-foreground text-xs">
-                  {t("reviews.detail.date")}
-                </p>
+                <p className="text-muted-foreground text-xs">{t("reviews.detail.date")}</p>
                 <p className="text-sm">
                   {new Date(detail.data.review_date).toLocaleString("tr-TR")}
                   {" — "}
@@ -247,9 +244,7 @@ function ReviewDetailInner() {
               </div>
 
               <div>
-                <p className="text-muted-foreground text-xs">
-                  {t("reviews.detail.text")}
-                </p>
+                <p className="text-muted-foreground text-xs">{t("reviews.detail.text")}</p>
                 <p className="text-sm whitespace-pre-wrap">{detail.data.text}</p>
               </div>
             </CardContent>
@@ -257,9 +252,7 @@ function ReviewDetailInner() {
 
           <Card>
             <CardHeader className="flex flex-row items-center justify-between gap-3 space-y-0">
-              <CardTitle className="text-base">
-                {t("reviews.detail.analysis")}
-              </CardTitle>
+              <CardTitle className="text-base">{t("reviews.detail.analysis")}</CardTitle>
               <div className="flex items-center gap-2">
                 {/* F2 (2026-09-01) — satır bazlı yeniden analiz. Uç
                     _TenantAdmin'e kapalı (maliyetli iş), bu yüzden düğme
@@ -316,25 +309,17 @@ function ReviewDetailInner() {
                 <Stat
                   label={t("reviews.detail.confidence")}
                   value={t("reviews.detail.percentValue", {
-                    value: (
-                      detail.data.categorization.primary_confidence * 100
-                    ).toFixed(0),
+                    value: (detail.data.categorization.primary_confidence * 100).toFixed(0),
                   })}
                 />
               </div>
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <div>
-                  <p className="text-muted-foreground text-xs">
-                    {t("reviews.detail.category")}
-                  </p>
-                  <p className="text-sm">
-                    {categoryLabelFor(detail.data.categorization.primary)}
-                  </p>
+                  <p className="text-muted-foreground text-xs">{t("reviews.detail.category")}</p>
+                  <p className="text-sm">{categoryLabelFor(detail.data.categorization.primary)}</p>
                 </div>
                 <div>
-                  <p className="text-muted-foreground text-xs">
-                    {t("reviews.detail.experience")}
-                  </p>
+                  <p className="text-muted-foreground text-xs">{t("reviews.detail.experience")}</p>
                   <p className="text-sm">
                     {experienceLabel(
                       effectiveExperience(
@@ -344,15 +329,19 @@ function ReviewDetailInner() {
                     )}
                   </p>
                 </div>
+                <div>
+                  <p className="text-muted-foreground text-xs">{t("reviews.detail.journey")}</p>
+                  <p className="text-sm">
+                    <JourneyStageBadge stage={detail.data.journey_stage} showUnassigned />
+                  </p>
+                </div>
               </div>
             </CardContent>
           </Card>
 
           <Card>
             <CardHeader>
-              <CardTitle className="text-base">
-                {t("reviews.detail.companyPerspective")}
-              </CardTitle>
+              <CardTitle className="text-base">{t("reviews.detail.companyPerspective")}</CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
               <div>
@@ -397,9 +386,7 @@ function ReviewDetailInner() {
           {detail.data.facts != null && (
             <Card>
               <CardHeader>
-                <CardTitle className="text-base">
-                  {t("reviews.detail.operationalInfo")}
-                </CardTitle>
+                <CardTitle className="text-base">{t("reviews.detail.operationalInfo")}</CardTitle>
               </CardHeader>
               <CardContent>
                 <OperationalFactsGrid facts={detail.data.facts} t={t} />
@@ -409,9 +396,7 @@ function ReviewDetailInner() {
 
           <Card>
             <CardHeader>
-              <CardTitle className="text-base">
-                {t("reviews.detail.ruleLayers")}
-              </CardTitle>
+              <CardTitle className="text-base">{t("reviews.detail.ruleLayers")}</CardTitle>
             </CardHeader>
             <CardContent>
               <OverrideStack hits={detail.data.overrides_applied} />
@@ -420,9 +405,7 @@ function ReviewDetailInner() {
 
           <Card>
             <CardHeader>
-              <CardTitle className="text-base">
-                {t("reviews.detail.decision")}
-              </CardTitle>
+              <CardTitle className="text-base">{t("reviews.detail.decision")}</CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
               <div className="flex items-center gap-2">
@@ -484,10 +467,7 @@ function ReviewDetailInner() {
                 <AlertDialogCancel disabled={reanalyze.isPending}>
                   {t("common.cancel")}
                 </AlertDialogCancel>
-                <AlertDialogAction
-                  onClick={handleReanalyzeConfirm}
-                  disabled={reanalyze.isPending}
-                >
+                <AlertDialogAction onClick={handleReanalyzeConfirm} disabled={reanalyze.isPending}>
                   {t("reviews.detail.reanalyze")}
                 </AlertDialogAction>
               </AlertDialogFooter>
@@ -511,9 +491,7 @@ function EngagementChips({
 }) {
   const { t } = useTranslation();
   if (!sourceMeta) return null;
-  const chips = ENGAGEMENT_FIELDS.filter(
-    ({ key }) => sourceMeta[key] !== undefined,
-  ).map(
+  const chips = ENGAGEMENT_FIELDS.filter(({ key }) => sourceMeta[key] !== undefined).map(
     ({ key, labelKey }) => `${t(labelKey)} ${sourceMeta[key]!.toLocaleString("tr-TR")}`,
   );
   if (chips.length === 0) return null;
@@ -544,10 +522,7 @@ function Stat({
 
 type Translate = (key: string, vars?: Record<string, string | number>) => string;
 
-function slaStatusLabel(
-  status: "within" | "violated" | null,
-  t: Translate,
-): string | null {
+function slaStatusLabel(status: "within" | "violated" | null, t: Translate): string | null {
   if (status === "within") return t("reviews.detail.facts.slaWithin");
   if (status === "violated") return t("reviews.detail.facts.slaViolated");
   return null;

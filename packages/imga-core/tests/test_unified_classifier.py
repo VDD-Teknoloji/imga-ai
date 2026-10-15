@@ -53,9 +53,7 @@ def test_build_prompt_includes_few_shot_and_categories() -> None:
 
 @pytest.mark.asyncio
 async def test_engine_preserves_order_and_fills_missing(monkeypatch) -> None:
-    engine = GeminiUnifiedEngine(
-        _keys(), model_name="test-model", call_batch_size=2
-    )
+    engine = GeminiUnifiedEngine(_keys(), model_name="test-model", call_batch_size=2)
 
     def fake_generate(api_key, prompt, chunk, categories, stats, options=None):
         stats.calls += 1
@@ -72,8 +70,10 @@ async def test_engine_preserves_order_and_fills_missing(monkeypatch) -> None:
             )
         if not out:
             out[0] = UnifiedPrediction(
-                sentiment_label="NÖTR", sentiment_score=0.0,
-                category="belirsiz", category_confidence=0.0,
+                sentiment_label="NÖTR",
+                sentiment_score=0.0,
+                category="belirsiz",
+                category_confidence=0.0,
             )
         return out
 
@@ -156,9 +156,7 @@ async def test_pipeline_unified_path_pre_override_wins() -> None:
     )
     assert len(results) == 2
     assert results[0].sentiment_label == "NEGATIF"
-    assert any(
-        hit.layer == "critical" for hit in results[0].overrides_applied
-    )
+    assert any(hit.layer == "critical" for hit in results[0].overrides_applied)
     # Kategori her iki satırda da unified'dan akar.
     assert results[0].categorization is not None
     assert results[0].categorization.primary == "urun_kalitesi"
@@ -201,8 +199,12 @@ def _parse_with_raw(raw: str, options=None):
     stats = UnifiedBatchStats()
     engine._generate_raw_gemini = lambda api_key, prompt, s: raw  # type: ignore[method-assign]
     return engine._generate_sync(
-        "key", "prompt", ["metin"], ["kargo", "faturalama", "belirsiz"],
-        stats, options,
+        "key",
+        "prompt",
+        ["metin"],
+        ["kargo", "faturalama", "belirsiz"],
+        stats,
+        options,
     )
 
 
@@ -223,8 +225,7 @@ def test_parse_missing_or_null_perspective_is_none() -> None:
     assert without[0].perspective_code is None
 
     explicit_null = _parse_with_raw(
-        '[{"i": 0, "s": "NEGATIF", "sc": -0.7, "c": "kargo", "cc": 0.9, '
-        '"p": null}]',
+        '[{"i": 0, "s": "NEGATIF", "sc": -0.7, "c": "kargo", "cc": 0.9, "p": null}]',
         _OPTIONS,
     )
     assert explicit_null[0].perspective_code is None
@@ -234,15 +235,13 @@ def test_parse_rejects_code_outside_selected_main_category() -> None:
     # invoice_request faturalama'ya ait; ana kategori kargo geldiği için
     # kabul edilmez — çağıran keyword sezgiseline düşer.
     cross = _parse_with_raw(
-        '[{"i": 0, "s": "NEGATIF", "sc": -0.7, "c": "kargo", "cc": 0.9, '
-        '"p": "invoice_request"}]',
+        '[{"i": 0, "s": "NEGATIF", "sc": -0.7, "c": "kargo", "cc": 0.9, "p": "invoice_request"}]',
         _OPTIONS,
     )
     assert cross[0].perspective_code is None
 
     unknown = _parse_with_raw(
-        '[{"i": 0, "s": "NEGATIF", "sc": -0.7, "c": "kargo", "cc": 0.9, '
-        '"p": "uydurma_kod"}]',
+        '[{"i": 0, "s": "NEGATIF", "sc": -0.7, "c": "kargo", "cc": 0.9, "p": "uydurma_kod"}]',
         _OPTIONS,
     )
     assert unknown[0].perspective_code is None
@@ -287,8 +286,7 @@ def test_parse_accepts_markdown_fenced_json() -> None:
 
 def test_parse_accepts_json_with_leading_prose() -> None:
     parsed = _parse_with_raw(
-        'Iste sonuclar:\n[{"i": 0, "s": "POZITIF", "sc": 0.8, '
-        '"c": "kargo", "cc": 0.9}]',
+        'Iste sonuclar:\n[{"i": 0, "s": "POZITIF", "sc": 0.8, "c": "kargo", "cc": 0.9}]',
         _OPTIONS,
     )
     assert parsed[0].sentiment_label == "POZITIF"
@@ -307,9 +305,7 @@ def test_hard_timeout_is_provider_aware() -> None:
     """45 sn Gemini-flash'a gore ayarliydi; GLM 5.2 uzun paketlerde
     asiyor ve tek-anahtarli rotasyon aninda tukeniyordu (21k vakasi)."""
     gemini = GeminiUnifiedEngine(_keys(), model_name="m")
-    openrouter = GeminiUnifiedEngine(
-        _keys(), model_name="m", provider="openrouter"
-    )
+    openrouter = GeminiUnifiedEngine(_keys(), model_name="m", provider="openrouter")
     assert gemini._hard_timeout == 45.0
     assert openrouter._hard_timeout == 240.0
 
@@ -322,9 +318,7 @@ async def test_rotation_exhaustion_is_retried_before_giving_up(
     tek-anahtarli rotasyonu tuketip isi olduruyordu. Chunk 3 denemeye
     kadar ayni anahtarla tekrar denenir; kalici kesinti yine yukari
     firlar."""
-    engine = GeminiUnifiedEngine(
-        _keys(), model_name="m", provider="openrouter", call_batch_size=4
-    )
+    engine = GeminiUnifiedEngine(_keys(), model_name="m", provider="openrouter", call_batch_size=4)
     calls = {"n": 0}
 
     def flaky(api_key, prompt, chunk, categories, stats, options=None):
@@ -377,9 +371,7 @@ async def test_rotation_exhaustion_raises_after_final_attempt(
     monkeypatch.setattr(uc.asyncio, "sleep", no_sleep)
 
     with pytest.raises(AllKeysExhaustedError):
-        await engine.classify_unified_batch_async(
-            ["metin"], available_categories=["kargo"]
-        )
+        await engine.classify_unified_batch_async(["metin"], available_categories=["kargo"])
 
 
 def test_openrouter_payload_bounds_max_tokens(monkeypatch) -> None:
@@ -407,8 +399,10 @@ def test_openrouter_payload_bounds_max_tokens(monkeypatch) -> None:
         def __init__(self, *a, **k): ...
         def __enter__(self):
             return self
+
         def __exit__(self, *a):
             return False
+
         def post(self, url, headers=None, json=None):
             captured.update(json or {})
             return _FakeResp()
@@ -420,9 +414,7 @@ def test_openrouter_payload_bounds_max_tokens(monkeypatch) -> None:
         UnifiedBatchStats,
     )
 
-    engine = GeminiUnifiedEngine(
-        _keys(), model_name="m", provider="openrouter"
-    )
+    engine = GeminiUnifiedEngine(_keys(), model_name="m", provider="openrouter")
     import contextlib
 
     with contextlib.suppress(Exception):
@@ -430,3 +422,57 @@ def test_openrouter_payload_bounds_max_tokens(monkeypatch) -> None:
         engine._generate_raw_openrouter("k", "p", UnifiedBatchStats())
     assert captured.get("max_tokens") == _OPENROUTER_MAX_OUTPUT_TOKENS
     assert captured["max_tokens"] <= 16384
+
+
+# --- 2026-10-14 — müşteri yolculuğu aşaması ("j") ---------------------------
+
+
+def test_build_prompt_requests_journey_stage_codes() -> None:
+    from imga_core.journey import JOURNEY_STAGES
+    from imga_core.llm.unified_classifier import _build_prompt
+
+    prompt = _build_prompt(["metin"], ["kargo"], ())
+    # Sistem istemi kurum bazında değiştirilebilir; kod listesi sabit
+    # kuyrukta da bulunmalı ki özel istemde bile alan istensin.
+    tail = prompt.rsplit("JSON dizisi", 1)[-1]
+    assert '"j"' in tail
+    for code in JOURNEY_STAGES:
+        assert code in tail
+    # Kurum istemi (prompt_templates) varsayılanı BÜTÜNÜYLE değiştirir —
+    # aşama tanımları ve kodlar yine de istemde olmalı.
+    custom = _build_prompt(["metin"], ["kargo"], (), system_prompt="Sadece JSON üret.")
+    assert "Sadece JSON üret." in custom
+    assert "j (yolculuk aşaması)" in custom
+    assert "ayrilma = iptal" in custom
+    assert "Belirlenemiyorsa j'yi HİÇ yazma." in custom
+    assert custom.index("j (yolculuk aşaması)") < custom.index("Yorumlar:")
+
+
+def test_parse_threads_valid_journey_stage() -> None:
+    parsed = _parse_with_raw(
+        '[{"i": 0, "s": "NEGATIF", "sc": -0.7, "c": "kargo", "cc": 0.9, "j": "Teslimat"}]'
+    )
+    assert parsed[0].journey_stage == "teslimat"
+
+
+def test_parse_unknown_or_missing_journey_stage_is_none() -> None:
+    unknown = _parse_with_raw(
+        '[{"i": 0, "s": "NEGATIF", "sc": -0.7, "c": "kargo", "cc": 0.9, "j": "onboarding"}]'
+    )
+    assert unknown[0].journey_stage is None
+    missing = _parse_with_raw('[{"i": 0, "s": "NEGATIF", "sc": -0.7, "c": "kargo", "cc": 0.9}]')
+    assert missing[0].journey_stage is None
+    explicit_null = _parse_with_raw(
+        '[{"i": 0, "s": "NEGATIF", "sc": -0.7, "c": "kargo", "cc": 0.9, "j": null}]'
+    )
+    assert explicit_null[0].journey_stage is None
+
+
+def test_normalize_journey_stage_contract() -> None:
+    from imga_core.journey import JOURNEY_STAGES, normalize_journey_stage
+
+    assert normalize_journey_stage(" AYRILMA ") == "ayrilma"
+    assert normalize_journey_stage(None) is None
+    assert normalize_journey_stage(3) is None
+    assert normalize_journey_stage("kesif ") == "kesif"
+    assert len(JOURNEY_STAGES) == len(set(JOURNEY_STAGES)) == 8

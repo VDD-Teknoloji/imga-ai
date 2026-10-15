@@ -125,6 +125,8 @@ class ReviewItemResponse(BaseModel):
     # "operasyonel"). NULL = birleşik yol koşmamış eski satır; UI
     # kategori eşlemesine düşer.
     experience_type: str | None = None
+    # 2026-10-14 (migration 0052) — yolculuk aşaması kodu ya da NULL.
+    journey_stage: str | None = None
     # 2026-08-26 (migration 0047) — kaynaktaki kalıcı bağlantı (tweet
     # URL'si vb.). NULL = kaynakta bağlantı yok.
     source_url: str | None = None
@@ -214,6 +216,9 @@ class ReviewSummaryResponse(BaseModel):
     # B3 — NEGATİF + engagement (like+retweet+reply) >=
     # VIRAL_ENGAGEMENT_THRESHOLD count (review_list_service.py).
     viral_negative_count: int = 0
+    # 2026-10-14 (migration 0052) — yolculuk aşaması kovaları (her kod +
+    # ``atanmamis``), summary-panel huni çipleri bunu okur.
+    journey_stages: dict[str, int] = {}
 
 
 class SentimentBlock(BaseModel):
@@ -282,6 +287,7 @@ class ReviewDetailResponse(BaseModel):
     nps_score: int | None = None
     nps_category: str | None = None
     experience_type: str | None = None
+    journey_stage: str | None = None
     facts: ReviewFactsBlock | None = None
     source_url: str | None = None
     # "question" | "suggestion" | "thanks" | "request" | "escalation" |
@@ -414,6 +420,13 @@ async def list_reviews(
         default=None,
         description="CSV: question,suggestion,thanks,request,escalation",
     ),
+    journey_stages: str | None = Query(
+        default=None,
+        description=(
+            "CSV: kesif,degerlendirme,satin_alma,teslimat,kullanim,destek,"
+            "sadakat,ayrilma,atanmamis (atanmamis = henüz aşama atanmamış)"
+        ),
+    ),
     limit: int = Query(default=100, ge=1, le=500),
     offset: int = Query(default=0, ge=0),
     order_by: Literal["created_at", "sentiment_score", "engagement"] = "created_at",
@@ -444,6 +457,7 @@ async def list_reviews(
         quality_flags=_split_csv(quality_flags),
         include_flagged=include_flagged,
         content_types=_split_csv(content_types),
+        journey_stages=_split_csv(journey_stages),
         order_by=order_by,
         order=order,
     )
@@ -645,6 +659,13 @@ async def review_summary(
         default=None,
         description="CSV: question,suggestion,thanks,request,escalation",
     ),
+    journey_stages: str | None = Query(
+        default=None,
+        description=(
+            "CSV: kesif,degerlendirme,satin_alma,teslimat,kullanim,destek,"
+            "sadakat,ayrilma,atanmamis (atanmamis = henüz aşama atanmamış)"
+        ),
+    ),
 ) -> ReviewSummaryResponse:
     # NOTE: this route MUST stay registered before GET /{review_id} —
     # Starlette matches path patterns in registration order and
@@ -676,6 +697,7 @@ async def review_summary(
         quality_flags=_split_csv(quality_flags),
         include_flagged=include_flagged,
         content_types=_split_csv(content_types),
+        journey_stages=_split_csv(journey_stages),
     )
     async with app_session.begin():
         await bind_tenant(app_session, current)
@@ -769,6 +791,7 @@ async def get_review(
             nps_score=review.nps_score,
             nps_category=review.nps_category,
             experience_type=review.experience_type,
+            journey_stage=review.journey_stage,
             facts=facts_block,
             source_url=review.source_url,
             content_type=review.content_type,
@@ -1153,6 +1176,7 @@ def _to_item_response(item: ReviewListItem) -> ReviewItemResponse:
         experience_type=item.experience_type,
         source_url=item.source_url,
         content_type=item.content_type,
+        journey_stage=item.journey_stage,
     )
 
 
@@ -1182,6 +1206,7 @@ def _to_summary_response(summary: ReviewSummary) -> ReviewSummaryResponse:
         ),
         question_count=summary.question_count,
         content_types=summary.content_types,
+        journey_stages=summary.journey_stages,
         top_questions=[TopQuestionItem(text=q.text, count=q.count) for q in summary.top_questions],
         entered_by=[
             EnteredByCountItem(

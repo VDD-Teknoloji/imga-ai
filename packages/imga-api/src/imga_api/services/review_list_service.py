@@ -7,11 +7,12 @@ ticket list filter pattern.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Literal
 from uuid import UUID
 
+from imga_core.journey import JOURNEY_STAGES
 from imga_db.models import CategoryTaxonomy, Review
 from sqlalchemy import Integer, and_, case, cast, desc, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -96,6 +97,10 @@ class ReviewListFilters:
     # 0050) widened from just "question" to five: question, suggestion,
     # thanks, request, escalation. Empty tuple disables the filter.
     content_types: tuple[str, ...] = ()
+    # 2026-10-14 (migration 0052) — CSV of Review.journey_stage codes
+    # (imga_core.journey.JOURNEY_STAGES); the literal ``atanmamis`` selects
+    # rows whose stage is NULL (not yet classified / classic path).
+    journey_stages: tuple[str, ...] = ()
     order_by: OrderField = "created_at"
     order: OrderDir = "desc"
 
@@ -142,6 +147,9 @@ class ReviewListItem:
     # "request" | "escalation" | None, migration 0050). NULL = normal
     # yorum.
     content_type: str | None = None
+    # 2026-10-14 (migration 0052) — müşteri yolculuğu aşaması kodu
+    # (imga_core.journey.JOURNEY_STAGES) ya da NULL.
+    journey_stage: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -246,6 +254,9 @@ class ReviewSummary:
     # Defaults to 0 so callers built before this field existed still
     # construct without it.
     viral_negative_count: int = 0
+    # 2026-10-14 (migration 0052) — yolculuk aşaması kovaları; her kod 0
+    # ile başlar, ``atanmamis`` = journey_stage IS NULL satırlar.
+    journey_stages: dict[str, int] = field(default_factory=dict)
 
 
 def _folded_in(
@@ -370,6 +381,14 @@ class ReviewListService:
         # W2-A — content_type filter (CSV, currently just "question").
         if filters.content_types:
             conditions.append(Review.content_type.in_(filters.content_types))
+        if filters.journey_stages:
+            stage_codes = tuple(s for s in filters.journey_stages if s != "atanmamis")
+            stage_conditions = []
+            if stage_codes:
+                stage_conditions.append(Review.journey_stage.in_(stage_codes))
+            if "atanmamis" in filters.journey_stages:
+                stage_conditions.append(Review.journey_stage.is_(None))
+            conditions.append(or_(*stage_conditions))
         return conditions
 
     async def list_reviews(
@@ -460,6 +479,7 @@ class ReviewListService:
                 experience_type=r.Review.experience_type,
                 source_url=r.Review.source_url,
                 content_type=r.Review.content_type,
+                journey_stage=r.Review.journey_stage,
             )
             for r in rows
         ]
@@ -671,6 +691,21 @@ class ReviewListService:
             if ctype is not None:
                 content_type_counts[ctype] = int(cnt)
 
+        # Query J — 2026-10-14 (migration 0052) yolculuk aşaması kovaları.
+        # Huni sırası imga_core.journey.JOURNEY_STAGES'ten; NULL satırlar
+        # (sınıflandırılmamış / klasik yol) ``atanmamis`` anahtarına
+        # düşer ki panel "yeniden analizle atanır" notunu besleyebilsin.
+        journey_counts: dict[str, int] = dict.fromkeys(JOURNEY_STAGES, 0)
+        journey_counts["atanmamis"] = 0
+        journey_stmt = (
+            select(Review.journey_stage, func.count())
+            .where(where_clause)
+            .group_by(Review.journey_stage)
+        )
+        for stage, cnt in (await self._session.execute(journey_stmt)).all():
+            key = stage if stage in journey_counts else "atanmamis"
+            journey_counts[key] += int(cnt)
+
         return ReviewSummary(
             total=total,
             sentiment=sentiment_counts,
@@ -686,6 +721,7 @@ class ReviewListService:
             daily=daily,
             ticket_linked=int(headline.ticket_linked or 0),
             viral_negative_count=int(headline.viral_negative or 0),
+            journey_stages=journey_counts,
         )
 
     async def dimension_values(

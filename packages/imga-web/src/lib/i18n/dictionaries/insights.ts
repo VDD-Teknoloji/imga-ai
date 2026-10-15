@@ -330,6 +330,23 @@ export const insights: Bundle = {
     "reviews.experience.dijital": "Dijital",
     "reviews.experience.operasyonel": "Operasyonel",
 
+    // --- 2026-10-14 (migration 0052) — müşteri yolculuğu aşaması ---
+    "reviews.journey.kesif": "Keşif",
+    "reviews.journey.degerlendirme": "Değerlendirme",
+    "reviews.journey.satin_alma": "Satın alma",
+    "reviews.journey.teslimat": "Teslimat / Başlangıç",
+    "reviews.journey.kullanim": "Kullanım",
+    "reviews.journey.destek": "Destek",
+    "reviews.journey.sadakat": "Sadakat / Yenileme",
+    "reviews.journey.ayrilma": "Ayrılma riski",
+    "reviews.journey.atanmamis": "Aşama atanmamış",
+    "reviews.filter.journeyStages": "Yolculuk aşaması",
+    "reviews.filter.journeyStagesSelected": "Aşama ({count})",
+    "reviews.summary.journey.title": "Müşteri yolculuğu aşamaları",
+    "reviews.summary.journey.unassigned":
+      "{count} yorumda aşama atanmamış; yeniden analizle atanır.",
+    "reviews.detail.journey": "Yolculuk aşaması",
+
     // --- Skor kova etiketleri (canlı) — lib/sentiment-score.ts ile
     // birlikte kullanılır: hem /reviews/[id] ana "Skor" kutusunda hem
     // "Kararı Düzelt" dialogundaki canlı etikette.
@@ -350,7 +367,8 @@ export const insights: Bundle = {
     "reviews.correct.experienceLabel": "Deneyim",
     "reviews.correct.subcategoryLabel": "Alt kategori (şirket perspektifi)",
     "reviews.correct.noChange": "— (değiştirme)",
-    "reviews.correct.description": "Yalnız değiştirmek istediğiniz alanı düzenleyin; diğerleri olduğu gibi kalır. Düzeltme bu yorumu anında günceller ve benzer yorumlara örnek olur.",
+    "reviews.correct.description":
+      "Yalnız değiştirmek istediğiniz alanı düzenleyin; diğerleri olduğu gibi kalır. Düzeltme bu yorumu anında günceller ve benzer yorumlara örnek olur.",
     "reviews.correct.field.sentiment": "Duygu",
     "reviews.correct.field.category": "Kategori",
     "reviews.correct.current": "Mevcut: {value}",
@@ -832,6 +850,23 @@ export const insights: Bundle = {
     "reviews.experience.dijital": "Digital",
     "reviews.experience.operasyonel": "Operational",
 
+    // --- 2026-10-14 (migration 0052) — customer journey stage ---
+    "reviews.journey.kesif": "Discovery",
+    "reviews.journey.degerlendirme": "Consideration",
+    "reviews.journey.satin_alma": "Purchase",
+    "reviews.journey.teslimat": "Delivery / Onboarding",
+    "reviews.journey.kullanim": "Usage",
+    "reviews.journey.destek": "Support",
+    "reviews.journey.sadakat": "Loyalty / Renewal",
+    "reviews.journey.ayrilma": "Churn risk",
+    "reviews.journey.atanmamis": "Stage not assigned",
+    "reviews.filter.journeyStages": "Journey stage",
+    "reviews.filter.journeyStagesSelected": "Stage ({count})",
+    "reviews.summary.journey.title": "Customer journey stages",
+    "reviews.summary.journey.unassigned":
+      "{count} reviews have no stage yet; re-analysis assigns it.",
+    "reviews.detail.journey": "Journey stage",
+
     // --- Score bucket labels (live) — used together with
     // lib/sentiment-score.ts: both in /reviews/[id]'s main "Score" tile
     // and the live label in the "Correct the decision" dialog.
@@ -852,7 +887,8 @@ export const insights: Bundle = {
     "reviews.correct.experienceLabel": "Experience",
     "reviews.correct.subcategoryLabel": "Subcategory (company perspective)",
     "reviews.correct.noChange": "— (no change)",
-    "reviews.correct.description": "Edit only the field you want to change; the rest stays as it is. The correction updates this review immediately and teaches similar reviews.",
+    "reviews.correct.description":
+      "Edit only the field you want to change; the rest stays as it is. The correction updates this review immediately and teaches similar reviews.",
     "reviews.correct.field.sentiment": "Sentiment",
     "reviews.correct.field.category": "Category",
     "reviews.correct.current": "Current: {value}",

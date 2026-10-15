@@ -10,6 +10,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile
 from fastapi.responses import PlainTextResponse
+from imga_core.journey import JOURNEY_STAGES
 from imga_db.models import (
     CustomerAccount,
     CustomerObservation,
@@ -223,8 +224,26 @@ async def company_diagnostics(
         return result
 
 
+def _linked_review_conditions(tenant_id: UUID, now: datetime) -> list[Any]:
+    return [
+        Review.tenant_id == tenant_id,
+        Review.deleted_at.is_(None),
+        Review.quality_flag.is_(None),
+        Review.customer_external_id.is_not(None),
+        or_(
+            Review.analysis_profile.is_(None),
+            Review.analysis_profile != "mena",
+            (Review.primary_confidence >= 0.6)
+            & Review.analysis_language.in_(["ar", "ur", "tr", "en"]),
+        ),
+        Review.review_date < now,
+    ]
+
+
 async def _review_signals(session: AsyncSession, tenant_id: UUID) -> dict[str, ReviewSignals]:
     now = datetime.now(UTC)
+    base = _linked_review_conditions(tenant_id, now)
+    window = Review.review_date >= now - timedelta(days=30)
     rows = (
         await session.execute(
             select(
@@ -233,33 +252,103 @@ async def _review_signals(session: AsyncSession, tenant_id: UUID) -> dict[str, R
                 func.count().filter(Review.sentiment_label == "NEGATIF"),
                 func.count().filter(ReviewFact.sla_resolution_status == "violated"),
                 func.count().filter(Review.nps_score <= 6),
+                func.count().filter(Review.journey_stage == "ayrilma"),
             )
             .select_from(Review)
             .outerjoin(
                 ReviewFact,
                 (ReviewFact.review_id == Review.id) & (ReviewFact.tenant_id == Review.tenant_id),
             )
-            .where(
-                Review.tenant_id == tenant_id,
-                Review.deleted_at.is_(None),
-                Review.quality_flag.is_(None),
-                Review.customer_external_id.is_not(None),
-                Review.review_date >= now - timedelta(days=30),
-                or_(
-                    Review.analysis_profile.is_(None),
-                    Review.analysis_profile != "mena",
-                    (Review.primary_confidence >= 0.6)
-                    & Review.analysis_language.in_(["ar", "ur", "tr", "en"]),
-                ),
-                Review.review_date < now,
-            )
+            .where(*base, window)
             .group_by(Review.customer_external_id)
         )
     ).all()
-    return {
-        str(key): ReviewSignals(total=total, negative=negative, sla_violations=sla, low_nps=nps)
-        for key, total, negative, sla, nps in rows
+    # 2026-10-14 — son 30 günün aşama dağılımı (huni) müşteri başına.
+    stage_rows = (
+        await session.execute(
+            select(Review.customer_external_id, Review.journey_stage, func.count())
+            .where(*base, window, Review.journey_stage.is_not(None))
+            .group_by(Review.customer_external_id, Review.journey_stage)
+        )
+    ).all()
+    stages: dict[str, dict[str, int]] = {}
+    for key, stage, count in stage_rows:
+        stages.setdefault(str(key), {})[str(stage)] = int(count)
+    # Son bilinen aşama pencere dışına da bakar: 30 gün sessiz kalan
+    # müşterinin en son hangi noktada görüldüğü hâlâ anlamlı.
+    latest_rows = (
+        await session.execute(
+            select(Review.customer_external_id, Review.journey_stage)
+            .distinct(Review.customer_external_id)
+            .where(*base, Review.journey_stage.is_not(None))
+            .order_by(Review.customer_external_id, Review.review_date.desc())
+        )
+    ).all()
+    latest = {str(key): str(stage) for key, stage in latest_rows}
+    signals = {
+        str(key): ReviewSignals(
+            total=total,
+            negative=negative,
+            sla_violations=sla,
+            low_nps=nps,
+            churn_intent=intent,
+            latest_stage=latest.get(str(key)),
+            stages=stages.get(str(key), {}),
+        )
+        for key, total, negative, sla, nps, intent in rows
     }
+    for key, stage in latest.items():
+        signals.setdefault(key, ReviewSignals(latest_stage=stage))
+    return signals
+
+
+async def _scored_customers(session: AsyncSession, current: CurrentUser) -> list[dict[str, Any]]:
+    """Her müşteri hesabını güncel yorum sinyalleriyle puanlar; liste,
+    kritik-100 ve harita uçları aynı yüklemeyi paylaşır (5000 satır bir
+    kez okunur)."""
+    rows = (
+        (
+            await session.execute(
+                select(CustomerAccount)
+                .where(CustomerAccount.tenant_id == _tenant(current))
+                .limit(MAX_CUSTOMERS + 1)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    if len(rows) > MAX_CUSTOMERS:
+        raise HTTPException(
+            422,
+            "Bu çalışma alanı en çok 5000 müşteri destekler; bölümlenmiş değerlendirme gerekli.",
+        )
+    signals = await _review_signals(session, _tenant(current))
+    now = datetime.now(UTC).date()
+    items: list[dict[str, Any]] = []
+    for row in rows:
+        profile = CustomerProfile.model_validate(row.profile)
+        signal = signals.get(row.external_id, ReviewSignals())
+        risk = score_customer(profile, signal, as_of=now)
+        items.append(
+            {
+                "revision": row.revision,
+                "profile": row.profile,
+                "risk": risk.model_dump(mode="json"),
+                "journey": {
+                    "latest_stage": signal.latest_stage,
+                    "stages": signal.stages,
+                    "churn_intent": signal.churn_intent,
+                },
+            }
+        )
+    items.sort(
+        key=lambda item: (
+            -(item["risk"]["score"] if item["risk"]["score"] is not None else -1),
+            -item["journey"]["churn_intent"],
+            item["profile"]["external_id"],
+        )
+    )
+    return items
 
 
 @router.get("/customers")
@@ -273,51 +362,19 @@ async def list_customers(
 ) -> dict[str, Any]:
     async with session.begin():
         await bind_tenant(session, current)
-        rows = (
-            (
-                await session.execute(
-                    select(CustomerAccount)
-                    .where(CustomerAccount.tenant_id == _tenant(current))
-                    .limit(MAX_CUSTOMERS + 1)
-                )
-            )
-            .scalars()
-            .all()
-        )
-        if len(rows) > MAX_CUSTOMERS:
-            raise HTTPException(
-                422,
-                "Bu çalışma alanı en çok 5000 müşteri destekler; bölümlenmiş değerlendirme gerekli.",
-            )
-        signals = await _review_signals(session, _tenant(current))
-        now = datetime.now(UTC).date()
-        items: list[dict[str, Any]] = []
+        scored = await _scored_customers(session, current)
         counts: dict[str, int] = {}
-        for row in rows:
-            profile = CustomerProfile.model_validate(row.profile)
-            risk = score_customer(profile, signals.get(row.external_id, ReviewSignals()), as_of=now)
-            counts[risk.band] = counts.get(risk.band, 0) + 1
-            if band != "all" and risk.band != band:
+        items: list[dict[str, Any]] = []
+        needle = search.casefold()
+        for item in scored:
+            counts[item["risk"]["band"]] = counts.get(item["risk"]["band"], 0) + 1
+            if band != "all" and item["risk"]["band"] != band:
                 continue
-            if (
-                search
-                and search.casefold()
-                not in f"{profile.external_id} {profile.name} {profile.segment}".casefold()
-            ):
+            profile = item["profile"]
+            haystack = f"{profile['external_id']} {profile['name']} {profile['segment']}"
+            if needle and needle not in haystack.casefold():
                 continue
-            items.append(
-                {
-                    "revision": row.revision,
-                    "profile": row.profile,
-                    "risk": risk.model_dump(mode="json"),
-                }
-            )
-        items.sort(
-            key=lambda item: (
-                -(item["risk"]["score"] if item["risk"]["score"] is not None else -1),
-                item["profile"]["external_id"],
-            )
-        )
+            items.append(item)
         total = len(items)
         return {
             "items": items[(page - 1) * page_size : page * page_size],
@@ -325,11 +382,99 @@ async def list_customers(
             "page": page,
             "page_size": page_size,
             "counts": counts,
-            "account_count": len(rows),
+            "account_count": len(scored),
             "capacity": MAX_CUSTOMERS,
             "method": "rules-v1",
             "is_probability": False,
         }
+
+
+@router.get("/customers/critical")
+async def critical_customers(
+    current: Annotated[CurrentUser, _Reader],
+    session: Session,
+    limit: int = Query(default=100, ge=1, le=500),
+) -> dict[str, Any]:
+    """En kritik N müşteri: yalnız yeterli veriyle puanlanmış hesaplar,
+    puan → ayrılma niyeti → kimlik sırasıyla. Yetersiz/eski/pasif
+    hesaplar listeye GİRMEZ; sayıları ayrıca döner ki "veri yok" ile
+    "risk yok" karışmasın."""
+    async with session.begin():
+        await bind_tenant(session, current)
+        scored = await _scored_customers(session, current)
+    ranked = [item for item in scored if item["risk"]["score"] is not None]
+    excluded: dict[str, int] = {}
+    for item in scored:
+        if item["risk"]["score"] is None:
+            status = item["risk"]["data_status"]
+            excluded[status] = excluded.get(status, 0) + 1
+    bands: dict[str, int] = {}
+    for item in ranked[:limit]:
+        bands[item["risk"]["band"]] = bands.get(item["risk"]["band"], 0) + 1
+    return {
+        "items": ranked[:limit],
+        "limit": limit,
+        "ranked_total": len(ranked),
+        "excluded": excluded,
+        "bands": bands,
+        "account_count": len(scored),
+        "as_of": datetime.now(UTC).date().isoformat(),
+        "method": "rules-v1",
+        "is_probability": False,
+    }
+
+
+@router.get("/customers/map")
+async def customer_map(
+    current: Annotated[CurrentUser, _Reader],
+    session: Session,
+    limit: int = Query(default=1000, ge=1, le=MAX_CUSTOMERS),
+) -> dict[str, Any]:
+    """Harita/ağaç görünümleri için düz düğüm listesi: segment → müşteri
+    (ağaç haritası) ve yolculuk aşaması → risk bandı → müşteri (ağaç)
+    istemci tarafında bu tek yükten kurulur. Puan sırasına göre ilk
+    ``limit`` hesap; büyüklük için gelir yoksa puan kullanılır."""
+    async with session.begin():
+        await bind_tenant(session, current)
+        scored = await _scored_customers(session, current)
+    nodes: list[dict[str, Any]] = []
+    for item in scored[:limit]:
+        profile = item["profile"]
+        risk = item["risk"]
+        review_signals = risk.get("review_signals") or {}
+        nodes.append(
+            {
+                "external_id": profile["external_id"],
+                "name": profile["name"],
+                "segment": profile.get("segment") or "",
+                "lifecycle": profile.get("lifecycle"),
+                "owner": profile.get("owner") or "",
+                "outcome": profile.get("outcome"),
+                "band": risk["band"],
+                "score": risk["score"],
+                "data_status": risk["data_status"],
+                "stage": item["journey"]["latest_stage"],
+                "churn_intent": item["journey"]["churn_intent"],
+                "annual_revenue": profile.get("annual_revenue"),
+                "currency": profile.get("currency"),
+                "reviews_30d": int(review_signals.get("total") or 0),
+                "negative_30d": int(review_signals.get("negative") or 0),
+            }
+        )
+    stage_counts: dict[str, int] = dict.fromkeys(JOURNEY_STAGES, 0)
+    stage_counts["atanmamis"] = 0
+    for node in nodes:
+        stage_counts[node["stage"] or "atanmamis"] += 1
+    return {
+        "nodes": nodes,
+        "stages": list(JOURNEY_STAGES),
+        "stage_counts": stage_counts,
+        "account_count": len(scored),
+        "truncated": len(scored) > limit,
+        "as_of": datetime.now(UTC).date().isoformat(),
+        "method": "rules-v1",
+        "is_probability": False,
+    }
 
 
 async def _save_customer(

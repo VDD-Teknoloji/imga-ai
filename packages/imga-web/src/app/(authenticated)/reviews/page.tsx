@@ -17,6 +17,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 
+import { JourneyStageBadge } from "@/components/journey-stage-badge";
 import { BatchFilterDropdown } from "@/components/reviews/batch-filter-dropdown";
 import { SummaryPanel } from "@/components/reviews/summary-panel";
 import {
@@ -53,6 +54,7 @@ import {
 import { useCompanyTaxonomies } from "@/hooks/use-taxonomies";
 import { ApiError } from "@/lib/api-client";
 import { useTranslation } from "@/lib/i18n/use-translation";
+import { JOURNEY_FILTER_VALUES, journeyLabelKey } from "@/lib/journey";
 import { sourceLinkLabelKey } from "@/lib/source-link";
 import {
   CONTENT_TYPES,
@@ -71,20 +73,19 @@ const SOURCE_LABEL_KEYS: Record<ReviewSourceType, string> = {
 const SENTIMENT_LABEL_KEYS: Record<string, string> = {
   NEGATIF: "reviews.sentiment.negatif",
   POZITIF: "reviews.sentiment.pozitif",
-  "NÖTR": "reviews.sentiment.notr",
+  NÖTR: "reviews.sentiment.notr",
 };
 
 const SENTIMENT_ACCENT: Record<string, string> = {
   NEGATIF: "border-l-red-400",
   POZITIF: "border-l-emerald-400",
-  "NÖTR": "border-l-zinc-300",
+  NÖTR: "border-l-zinc-300",
 };
 
 const SENTIMENT_CHIP: Record<string, string> = {
   NEGATIF: "bg-red-50 text-red-700 dark:bg-red-950/40 dark:text-red-300",
-  POZITIF:
-    "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300",
-  "NÖTR": "bg-zinc-100 text-zinc-600 dark:bg-zinc-900 dark:text-zinc-300",
+  POZITIF: "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300",
+  NÖTR: "bg-zinc-100 text-zinc-600 dark:bg-zinc-900 dark:text-zinc-300",
 };
 
 const DATE_FORMATTER = new Intl.DateTimeFormat("tr-TR", {
@@ -260,6 +261,7 @@ function readFiltersFromParams(params: URLSearchParams): ReviewListFiltersExt {
   const decisionsRaw = params.get("decisions");
   const qualityFlagsRaw = params.get("quality_flags");
   const contentTypesRaw = params.get("content_types");
+  const journeyStagesRaw = params.get("journey_stages");
   const sourceTypes = sourceRaw
     ? (sourceRaw.split(",").filter(Boolean) as ReviewSourceType[])
     : undefined;
@@ -284,14 +286,10 @@ function readFiltersFromParams(params: URLSearchParams): ReviewListFiltersExt {
     date_to: params.get("date_to") ?? undefined,
     sentiment_labels: sentimentRaw?.split(",").filter(Boolean),
     source_types: sourceTypes,
-    decisions: decisionsRaw?.split(",").filter(Boolean) as
-      | ReviewDecision[]
-      | undefined,
+    decisions: decisionsRaw?.split(",").filter(Boolean) as ReviewDecision[] | undefined,
     perspective_codes: perspectiveRaw?.split(",").filter(Boolean),
     primary_categories: primaryCatsRaw?.split(",").filter(Boolean),
-    has_ticket: params.has("has_ticket")
-      ? params.get("has_ticket") === "true"
-      : undefined,
+    has_ticket: params.has("has_ticket") ? params.get("has_ticket") === "true" : undefined,
     batch_job_id: params.get("batch_job_id") ?? undefined,
     hour_of_day: _int("hour_of_day"),
     day_of_week: _int("day_of_week"),
@@ -305,6 +303,8 @@ function readFiltersFromParams(params: URLSearchParams): ReviewListFiltersExt {
     // İçerik türü çoklu-seçim filtresi (bkz. CONTENT_TYPE_LABEL_KEYS) —
     // diğer CSV filtrelerle aynı desen.
     content_types: contentTypesRaw?.split(",").filter(Boolean),
+    // 2026-10-14 (migration 0052) — yolculuk aşaması çoklu seçim.
+    journey_stages: journeyStagesRaw?.split(",").filter(Boolean),
     // F1 (2026-09-02) — sıralama; geçersiz/eksik değer undefined'a
     // düşer (backend "created_at" varsayılanını kullanır).
     order_by: isOrderByValue(orderByRaw) ? orderByRaw : undefined,
@@ -326,14 +326,8 @@ function filtersEq(a: ReviewListFiltersExt, b: ReviewListFiltersExt): boolean {
     a.date_from === b.date_from &&
     a.date_to === b.date_to &&
     arrEq(a.sentiment_labels, b.sentiment_labels) &&
-    arrEq(
-      a.source_types as string[] | undefined,
-      b.source_types as string[] | undefined,
-    ) &&
-    arrEq(
-      a.decisions as string[] | undefined,
-      b.decisions as string[] | undefined,
-    ) &&
+    arrEq(a.source_types as string[] | undefined, b.source_types as string[] | undefined) &&
+    arrEq(a.decisions as string[] | undefined, b.decisions as string[] | undefined) &&
     arrEq(a.perspective_codes, b.perspective_codes) &&
     arrEq(a.primary_categories, b.primary_categories) &&
     a.has_ticket === b.has_ticket &&
@@ -346,6 +340,7 @@ function filtersEq(a: ReviewListFiltersExt, b: ReviewListFiltersExt): boolean {
     arrEq(a.quality_flags, b.quality_flags) &&
     a.include_flagged === b.include_flagged &&
     arrEq(a.content_types, b.content_types) &&
+    arrEq(a.journey_stages, b.journey_stages) &&
     a.order_by === b.order_by &&
     DIMENSION_FILTER_CONFIGS.every((cfg) => arrEq(a[cfg.filterKey], b[cfg.filterKey]))
   );
@@ -365,9 +360,7 @@ function ReviewsPageInner() {
 
   // URL → state mirror for back/forward, deep-link, F5 hydration race.
   useEffect(() => {
-    const fromUrl = readFiltersFromParams(
-      new URLSearchParams(searchParams.toString()),
-    );
+    const fromUrl = readFiltersFromParams(new URLSearchParams(searchParams.toString()));
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setFilters((prev) => (filtersEq(prev, fromUrl) ? prev : fromUrl));
   }, [searchParams]);
@@ -422,6 +415,9 @@ function ReviewsPageInner() {
       }
       if (next.content_types?.length) {
         params.set("content_types", next.content_types.join(","));
+      }
+      if (next.journey_stages?.length) {
+        params.set("journey_stages", next.journey_stages.join(","));
       }
       // F1 (2026-09-02) — sıralama; "created_at" backend varsayılanı,
       // URL'i kirletmemek için yalnız varsayılan-dışı yazılır.
@@ -506,9 +502,7 @@ function ReviewsPageInner() {
           {t("reviews.list.title")}
         </h1>
         <p className="text-muted-foreground text-sm">
-          {filters.batch_job_id
-            ? t("reviews.list.subtitleBatch")
-            : t("reviews.list.subtitleAll")}{" "}
+          {filters.batch_job_id ? t("reviews.list.subtitleBatch") : t("reviews.list.subtitleAll")}{" "}
           {total > 0 && (
             <span className="text-foreground/70 font-medium tabular-nums">
               {t("reviews.list.recordCount", {
@@ -564,6 +558,12 @@ function ReviewsPageInner() {
                 applyFilters({ ...filters, content_types: next.length > 0 ? next : undefined })
               }
             />
+            <JourneyStageFilterDropdown
+              selected={filters.journey_stages ?? []}
+              onApply={(next) =>
+                applyFilters({ ...filters, journey_stages: next.length > 0 ? next : undefined })
+              }
+            />
             {DIMENSION_FILTER_CONFIGS.map((cfg) => (
               <DimensionFilterDropdown
                 key={cfg.field}
@@ -591,9 +591,7 @@ function ReviewsPageInner() {
             />
             <BatchFilterDropdown
               selected={filters.batch_job_id}
-              onChange={(next) =>
-                applyFilters({ ...filters, batch_job_id: next ?? undefined })
-              }
+              onChange={(next) => applyFilters({ ...filters, batch_job_id: next ?? undefined })}
               inline
             />
             {/* Yeniden analiz uçları _TenantAdmin — düğmeyi analiste
@@ -626,9 +624,7 @@ function ReviewsPageInner() {
           ) : items.length === 0 ? (
             <div className="bg-card ring-foreground/5 rounded-3xl p-10 text-center ring-1">
               <p className="text-base font-medium">{t("reviews.list.emptyTitle")}</p>
-              <p className="text-muted-foreground mt-1 text-sm">
-                {t("reviews.list.emptyHint")}
-              </p>
+              <p className="text-muted-foreground mt-1 text-sm">{t("reviews.list.emptyHint")}</p>
             </div>
           ) : (
             <ul className="space-y-2.5">
@@ -647,9 +643,7 @@ function ReviewsPageInner() {
                 onClick={() => reviews.fetchNextPage()}
                 disabled={reviews.isFetchingNextPage}
               >
-                {reviews.isFetchingNextPage
-                  ? t("common.loading")
-                  : t("reviews.list.loadMore")}
+                {reviews.isFetchingNextPage ? t("common.loading") : t("reviews.list.loadMore")}
               </Button>
             </div>
           )}
@@ -665,9 +659,7 @@ function ReviewsPageInner() {
       <AlertDialog open={reanalyzeBatchOpen} onOpenChange={setReanalyzeBatchOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>
-              {t("analyze.history.reanalyze.confirmTitle")}
-            </AlertDialogTitle>
+            <AlertDialogTitle>{t("analyze.history.reanalyze.confirmTitle")}</AlertDialogTitle>
             <AlertDialogDescription>
               {t("analyze.history.reanalyze.confirmDesc", { count: total })}
             </AlertDialogDescription>
@@ -695,20 +687,13 @@ function ReviewsPageInner() {
  *  renk şeridinde; kategori/tarih/kaynak ikincil. Tıklama → detay.
  *  listQuery: aktif filtre query-string'i detay URL'ine taşınır ki
  *  "Listeye dön" filtreleri geri getirebilsin. */
-function ReviewRow({
-  review: r,
-  listQuery,
-}: {
-  review: ReviewListItem;
-  listQuery: string;
-}) {
+function ReviewRow({ review: r, listQuery }: { review: ReviewListItem; listQuery: string }) {
   const { t } = useTranslation();
   // Ham BERT kodu (kargo_teslimat) yerine kurum sözlüğündeki etiket;
   // sorgu tek anahtar altında cache'lenir, satır başına maliyet yok.
   const categories = useCategories();
   const categoryLabel =
-    categories.data?.find((c) => c.code === r.primary_category)?.label_tr ??
-    r.primary_category;
+    categories.data?.find((c) => c.code === r.primary_category)?.label_tr ?? r.primary_category;
   const perspective =
     r.company_perspective_label_tr ??
     (r.company_perspective_code ? t("reviews.review.removed") : null);
@@ -740,16 +725,13 @@ function ReviewRow({
                 : r.content_type}
             </span>
           )}
+          <JourneyStageBadge stage={r.journey_stage} />
           <span className="font-medium">{categoryLabel}</span>
           {perspective && <span>{perspective}</span>}
-          <span className="tabular-nums">
-            {DATE_FORMATTER.format(new Date(r.review_date))}
-          </span>
+          <span className="tabular-nums">{DATE_FORMATTER.format(new Date(r.review_date))}</span>
           <span>{t(SOURCE_LABEL_KEYS[r.source_type])}</span>
           {r.ticket_id && (
-            <span className="text-primary font-medium">
-              {t("reviews.review.hasTicket")}
-            </span>
+            <span className="text-primary font-medium">{t("reviews.review.hasTicket")}</span>
           )}
           {r.override_count > 0 && (
             <span className="text-amber-700 dark:text-amber-400">
@@ -795,10 +777,18 @@ const DOW_LABEL_KEYS: Record<number, string> = {
   6: "reviews.dow.6",
 };
 const MONTH_LABEL_KEYS: Record<number, string> = {
-  1: "reviews.month.1", 2: "reviews.month.2", 3: "reviews.month.3",
-  4: "reviews.month.4", 5: "reviews.month.5", 6: "reviews.month.6",
-  7: "reviews.month.7", 8: "reviews.month.8", 9: "reviews.month.9",
-  10: "reviews.month.10", 11: "reviews.month.11", 12: "reviews.month.12",
+  1: "reviews.month.1",
+  2: "reviews.month.2",
+  3: "reviews.month.3",
+  4: "reviews.month.4",
+  5: "reviews.month.5",
+  6: "reviews.month.6",
+  7: "reviews.month.7",
+  8: "reviews.month.8",
+  9: "reviews.month.9",
+  10: "reviews.month.10",
+  11: "reviews.month.11",
+  12: "reviews.month.12",
 };
 
 /** Aktif filtrelerin özet rozetleri. Her rozetin "×"i YALNIZ o
@@ -844,9 +834,7 @@ function FilterPills({
   if (filters.source_types?.length) {
     pills.push({
       label: t("reviews.pill.source", {
-        value: filters.source_types
-          .map((s) => t(SOURCE_LABEL_KEYS[s]))
-          .join(", "),
+        value: filters.source_types.map((s) => t(SOURCE_LABEL_KEYS[s])).join(", "),
       }),
       remove: () => onApply({ ...filters, source_types: undefined }),
     });
@@ -865,9 +853,7 @@ function FilterPills({
     const flag = filters.quality_flags[0]!;
     pills.push({
       label: t("reviews.pill.quality", {
-        value: QUALITY_FLAG_LABEL_KEYS[flag]
-          ? t(QUALITY_FLAG_LABEL_KEYS[flag]!)
-          : flag,
+        value: QUALITY_FLAG_LABEL_KEYS[flag] ? t(QUALITY_FLAG_LABEL_KEYS[flag]!) : flag,
       }),
       remove: () => onApply({ ...filters, quality_flags: undefined }),
     });
@@ -888,14 +874,22 @@ function FilterPills({
       },
     });
   }
+  for (const stage of filters.journey_stages ?? []) {
+    pills.push({
+      label: t(journeyLabelKey(stage)),
+      remove: () => {
+        const remaining = (filters.journey_stages ?? []).filter((s) => s !== stage);
+        onApply({ ...filters, journey_stages: remaining.length > 0 ? remaining : undefined });
+      },
+    });
+  }
   if (filters.date_from || filters.date_to) {
     pills.push({
       label: t("reviews.pill.dateRange", {
         from: filters.date_from ?? "…",
         to: filters.date_to ?? "…",
       }),
-      remove: () =>
-        onApply({ ...filters, date_from: undefined, date_to: undefined }),
+      remove: () => onApply({ ...filters, date_from: undefined, date_to: undefined }),
     });
   }
   if (filters.hour_of_day !== undefined) {
@@ -992,23 +986,16 @@ function PerspectiveFilterDropdown({
       />
       {/* Sprint 8.3.5.6 round-1 — DropdownMenuLabel removed (Base UI
           requires GroupLabel inside a Menu.Group, else error #31). */}
-      <DropdownMenuContent
-        align="start"
-        className="max-h-80 w-64 overflow-y-auto"
-      >
+      <DropdownMenuContent align="start" className="max-h-80 w-64 overflow-y-auto">
         <DropdownMenuCheckboxItem
           checked={selected.includes(UNMATCHED_SENTINEL)}
           onCheckedChange={() => toggle(UNMATCHED_SENTINEL)}
         >
-          <span className="text-muted-foreground italic">
-            {t("reviews.perspFilter.unmatched")}
-          </span>
+          <span className="text-muted-foreground italic">{t("reviews.perspFilter.unmatched")}</span>
         </DropdownMenuCheckboxItem>
         <DropdownMenuSeparator />
         {taxonomies.isLoading ? (
-          <div className="text-muted-foreground px-2 py-1.5 text-xs">
-            {t("common.loading")}
-          </div>
+          <div className="text-muted-foreground px-2 py-1.5 text-xs">{t("common.loading")}</div>
         ) : items.length === 0 ? (
           <div className="text-muted-foreground px-2 py-1.5 text-xs">
             {t("reviews.perspFilter.noTaxonomy")}
@@ -1027,10 +1014,7 @@ function PerspectiveFilterDropdown({
         {selected.length > 0 ? (
           <>
             <DropdownMenuSeparator />
-            <DropdownMenuItem
-              onClick={() => onApply([])}
-              className="text-muted-foreground text-xs"
-            >
+            <DropdownMenuItem onClick={() => onApply([])} className="text-muted-foreground text-xs">
               {t("reviews.perspFilter.clearAll")}
             </DropdownMenuItem>
           </>
@@ -1090,10 +1074,7 @@ function SentimentFilterDropdown({
         {selected.length > 0 ? (
           <>
             <DropdownMenuSeparator />
-            <DropdownMenuItem
-              onClick={() => onApply([])}
-              className="text-muted-foreground text-xs"
-            >
+            <DropdownMenuItem onClick={() => onApply([])} className="text-muted-foreground text-xs">
               {t("reviews.perspFilter.clearAll")}
             </DropdownMenuItem>
           </>
@@ -1152,10 +1133,7 @@ function DecisionsFilterDropdown({
         {selected.length > 0 ? (
           <>
             <DropdownMenuSeparator />
-            <DropdownMenuItem
-              onClick={() => onApply([])}
-              className="text-muted-foreground text-xs"
-            >
+            <DropdownMenuItem onClick={() => onApply([])} className="text-muted-foreground text-xs">
               {t("reviews.perspFilter.clearAll")}
             </DropdownMenuItem>
           </>
@@ -1313,10 +1291,68 @@ function ContentTypeFilterDropdown({
         {selected.length > 0 ? (
           <>
             <DropdownMenuSeparator />
-            <DropdownMenuItem
-              onClick={() => onApply([])}
-              className="text-muted-foreground text-xs"
-            >
+            <DropdownMenuItem onClick={() => onApply([])} className="text-muted-foreground text-xs">
+              {t("reviews.perspFilter.clearAll")}
+            </DropdownMenuItem>
+          </>
+        ) : null}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+/** 2026-10-14 (migration 0052) — yolculuk aşaması filtresi.
+ *  ContentTypeFilterDropdown ile aynı controlled çoklu-seçim deseni;
+ *  seçenekler huni sırasında + "atanmamış" (journey_stage IS NULL). */
+function JourneyStageFilterDropdown({
+  selected,
+  onApply,
+}: {
+  selected: string[];
+  onApply: (next: string[]) => void;
+}) {
+  const { t } = useTranslation();
+
+  const toggle = useCallback(
+    (value: string) => {
+      const next = selected.includes(value)
+        ? selected.filter((v) => v !== value)
+        : [...selected, value];
+      onApply(next);
+    },
+    [selected, onApply],
+  );
+
+  const triggerLabel =
+    selected.length === 0
+      ? t("reviews.filter.journeyStages")
+      : t("reviews.filter.journeyStagesSelected", { count: selected.length });
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger
+        render={
+          <Button variant="outline" size="sm" className="gap-1">
+            {triggerLabel}
+            <ChevronDown className="size-4" aria-hidden />
+          </Button>
+        }
+      />
+      <DropdownMenuContent align="start" className="w-60">
+        {JOURNEY_FILTER_VALUES.map((value) => (
+          <DropdownMenuCheckboxItem
+            key={value}
+            checked={selected.includes(value)}
+            onCheckedChange={() => toggle(value)}
+            className={value === "atanmamis" ? "text-muted-foreground" : undefined}
+          >
+            {t(journeyLabelKey(value))}
+          </DropdownMenuCheckboxItem>
+        ))}
+        {selected.length > 0 ? (
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onClick={() => onApply([])} className="text-muted-foreground text-xs">
               {t("reviews.perspFilter.clearAll")}
             </DropdownMenuItem>
           </>
@@ -1389,10 +1425,7 @@ function DimensionFilterDropdown({
         {selected.length > 0 ? (
           <>
             <DropdownMenuSeparator />
-            <DropdownMenuItem
-              onClick={() => onApply([])}
-              className="text-muted-foreground text-xs"
-            >
+            <DropdownMenuItem onClick={() => onApply([])} className="text-muted-foreground text-xs">
               {t("reviews.perspFilter.clearAll")}
             </DropdownMenuItem>
           </>

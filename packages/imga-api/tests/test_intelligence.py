@@ -8,6 +8,8 @@ from typing import Any
 import pytest
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
+from pydantic import ValidationError
+
 from imga_api.routes.tenant_analyze import _classify_manual_analysis
 from imga_api.routes.tenant_intelligence import parse_customer_csv
 from imga_api.services.churn_scoring import score_customer
@@ -25,7 +27,6 @@ from imga_api.services.intelligence_schemas import (
 )
 from imga_api.services.prd_service import interview, starter_document
 from imga_api.workers.file_parser import FileParseError, iter_rows
-from pydantic import ValidationError
 
 TODAY = datetime.now(UTC).date()
 BASE = "/tenants/me/intelligence"
@@ -395,13 +396,14 @@ async def test_3000_customer_csv_import(e2e_client: TestClient, e2e_seed: Any) -
 async def test_manual_and_batch_build_published_mena_context(
     e2e_seed: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    from imga_core.llm.key_rotation import GeminiKey
+    from imga_db import create_engine, create_session_factory, set_current_tenant
+    from imga_db.models import Tenant
+
     from imga_api.routes.tenant_analyze import _build_manual_unified_context
     from imga_api.services import llm_credentials
     from imga_api.services.llm_credentials import LlmKeySelection
     from imga_api.workers.batch_analyzer import _build_unified_context
-    from imga_core.llm.key_rotation import GeminiKey
-    from imga_db import create_engine, create_session_factory, set_current_tenant
-    from imga_db.models import Tenant
 
     async def keys(*args: Any) -> LlmKeySelection:
         return LlmKeySelection(
@@ -429,3 +431,129 @@ async def test_manual_and_batch_build_published_mena_context(
             assert manual is not None and manual.engine.analysis_profile == "mena"
     finally:
         await engine.dispose()
+
+
+# --- 2026-10-14 — yolculuk aşaması + ayrılma niyeti sinyali -------------------
+
+
+def test_churn_intent_signal_is_its_own_domain() -> None:
+    signals = ReviewSignals(total=1, negative=1, churn_intent=1, latest_stage="ayrilma")
+    # Tek yorum "linked_review_history" alanı için yetmez (>=3), ama açık
+    # ayrılma niyeti kendi alanı sayılır: overdue + intent = 2 alan.
+    result = score_customer(customer(overdue_invoices=0), signals, as_of=TODAY)
+    assert result.data_status == "sufficient"
+    assert result.score == 25 and result.band == "watch"
+    intent = next(s for s in result.signals if s.code == "churn_intent")
+    assert "ayrılma" in intent.evidence and "ayrilma" in intent.evidence
+    assert "linked_review_history" in result.missing
+    # CRM iptal talebi (60) niyet ifadesinden (25) her zaman ağır basar.
+    assert (
+        next(
+            s.points
+            for s in score_customer(
+                customer(cancellation_requested=True), ReviewSignals(), as_of=TODAY
+            ).signals
+            if s.code == "cancellation"
+        )
+        > intent.points
+    )
+
+
+def test_review_signals_replays_legacy_history_payload() -> None:
+    legacy = ReviewSignals.model_validate(
+        {"total": 4, "negative": 2, "sla_violations": 0, "low_nps": 1}
+    )
+    assert legacy.churn_intent == 0 and legacy.latest_stage is None and legacy.stages == {}
+    assert ReviewSignals().model_dump()["churn_intent"] == 0
+
+
+@pytest.mark.asyncio
+async def test_customer_journey_critical_list_and_map(
+    e2e_client: TestClient, e2e_seed: Any
+) -> None:
+    from imga_core import review_text_hash
+    from imga_db import create_engine, create_session_factory
+    from imga_db.models import Review
+    from sqlalchemy import text
+
+    client = e2e_client
+    login(client, e2e_seed)
+    tenant_id = e2e_seed.acme_tenant_id
+    sufficient = customer(
+        external_id="C1", name="Kritik A.Ş.", segment="Kurumsal", overdue_invoices=0
+    )
+    thin = customer(external_id="C2", name="Veri Yok Ltd.", segment="KOBİ")
+    for profile in (sufficient, thin):
+        response = client.put(
+            BASE + f"/customers/{profile.external_id}",
+            json={"expected_revision": 0, "profile": profile.model_dump(mode="json")},
+        )
+        assert response.status_code == 200, response.text
+
+    engine = create_engine("admin")
+    try:
+        async with create_session_factory(engine)() as session, session.begin():
+            await session.execute(
+                text("SELECT set_config('app.current_tenant_id', :t, true)"),
+                {"t": str(tenant_id)},
+            )
+            now = datetime.now(UTC)
+            for idx, (stage, label, when) in enumerate(
+                (
+                    ("teslimat", "NEGATIF", now - timedelta(days=20)),
+                    ("ayrilma", "NEGATIF", now - timedelta(days=2)),
+                )
+            ):
+                body = f"C1 yorumu {idx}: {stage}"
+                session.add(
+                    Review(
+                        tenant_id=tenant_id,
+                        text=body,
+                        text_hash=review_text_hash(body),
+                        sentiment_label=label,
+                        sentiment_score=-0.6,
+                        primary_category="kargo",
+                        primary_confidence=0.9,
+                        automation_mode="semi_auto",
+                        decision="skipped_threshold",
+                        analyzed_at=when,
+                        review_date=when,
+                        customer_external_id="C1",
+                        journey_stage=stage,
+                    )
+                )
+    finally:
+        await engine.dispose()
+
+    listed = client.get(BASE + "/customers").json()
+    by_id = {item["profile"]["external_id"]: item for item in listed["items"]}
+    assert by_id["C1"]["journey"] == {
+        "latest_stage": "ayrilma",
+        "stages": {"teslimat": 1, "ayrilma": 1},
+        "churn_intent": 1,
+    }
+    assert by_id["C1"]["risk"]["band"] == "watch"
+    assert any(s["code"] == "churn_intent" for s in by_id["C1"]["risk"]["signals"])
+    assert by_id["C2"]["journey"]["latest_stage"] is None
+    assert by_id["C2"]["risk"]["score"] is None
+
+    critical = client.get(BASE + "/customers/critical?limit=100").json()
+    assert [item["profile"]["external_id"] for item in critical["items"]] == ["C1"]
+    assert critical["ranked_total"] == 1 and critical["account_count"] == 2
+    assert critical["excluded"] == {"insufficient": 1}
+    assert critical["bands"] == {"watch": 1}
+    assert critical["is_probability"] is False
+
+    mapped = client.get(BASE + "/customers/map").json()
+    assert mapped["stages"][-1] == "ayrilma" and len(mapped["stages"]) == 8
+    nodes = {node["external_id"]: node for node in mapped["nodes"]}
+    assert nodes["C1"]["stage"] == "ayrilma" and nodes["C1"]["segment"] == "Kurumsal"
+    assert nodes["C1"]["negative_30d"] == 2 and nodes["C1"]["reviews_30d"] == 2
+    assert nodes["C2"]["stage"] is None and nodes["C2"]["score"] is None
+    assert mapped["stage_counts"]["ayrilma"] == 1 and mapped["stage_counts"]["atanmamis"] == 1
+    assert mapped["truncated"] is False
+
+    # Başka kurum hiçbir düğümü görmez (RLS + tenant filtresi).
+    login(client, e2e_seed, "bob", "beta")
+    assert client.get(BASE + "/customers/map").json()["nodes"] == []
+    assert client.get(BASE + "/customers/critical").json()["items"] == []

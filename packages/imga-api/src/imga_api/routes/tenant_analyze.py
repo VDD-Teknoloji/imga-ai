@@ -61,6 +61,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from imga_core import AnalysisPipeline, AnalysisResult
+from imga_core.journey import normalize_journey_stage
 from imga_core.language_policy import has_arabic_script
 from imga_core.llm.unified_classifier import (
     FewShotExample,
@@ -168,6 +169,10 @@ class TenantAnalyzeResponse(BaseModel):
     # None when the heuristic didn't fire / taxonomy is empty.
     company_perspective_code: str | None = None
     company_perspective_label_tr: str | None = None
+    # 2026-10-14 — birleşik motorun yolculuk aşaması kararı
+    # (imga_core.journey.JOURNEY_STAGES); klasik yolda ya da model alan
+    # üretmediyse None.
+    journey_stage: str | None = None
 
 
 def _apply_correction_priority(
@@ -422,7 +427,7 @@ async def _classify_manual_analysis(
     few_shot: tuple[FewShotExample, ...],
     *,
     allow_classic: bool = True,
-) -> tuple[AnalysisResult, bool, str, str, str | None, str | None]:
+) -> tuple[AnalysisResult, bool, str, str, str | None, str | None, str | None]:
     """Sınıflandırma: birleşik motor mevcutsa öncelik onun (few-shot
     enjeksiyonu YALNIZ bu yoldan mümkün — ``HybridClassifier``'ın
     klasik yolu few-shot desteklemiyor, bkz. rag-mimari.md §2); motor
@@ -443,6 +448,7 @@ async def _classify_manual_analysis(
     if unified is not None:
         perspective_sink: list[str | None] = []
         experience_sink: list[str | None] = []
+        journey_sink: list[str | None] = []
         try:
             results = await asyncio.wait_for(
                 pipeline.analyze_batch_unified_async(
@@ -454,6 +460,7 @@ async def _classify_manual_analysis(
                     category_descriptions=unified.category_descriptions,
                     perspective_sink=perspective_sink,
                     experience_sink=experience_sink,
+                    journey_sink=journey_sink,
                 ),
                 timeout=_MANUAL_UNIFIED_TIMEOUT_SECONDS,
             )
@@ -464,6 +471,7 @@ async def _classify_manual_analysis(
                 unified.engine.provider,
                 perspective_sink[0] if perspective_sink else None,
                 experience_sink[0] if experience_sink else None,
+                journey_sink[0] if journey_sink else None,
             )
         except TimeoutError:
             log.warning(
@@ -490,7 +498,7 @@ async def _classify_manual_analysis(
     llm_used = (
         analysis.categorization is not None and analysis.categorization.llm_result is not None
     )
-    return analysis, llm_used, DEFAULT_MODEL_NAME, "gemini", None, None
+    return analysis, llm_used, DEFAULT_MODEL_NAME, "gemini", None, None, None
 
 
 def _require_active_tenant(current: CurrentUser) -> UUID:
@@ -640,6 +648,7 @@ async def tenant_analyze(
         audit_provider,
         llm_perspective_code,
         llm_experience_type,
+        llm_journey_stage,
     ) = await _classify_manual_analysis(
         body.text, pipeline, unified, few_shot, allow_classic=not multilingual
     )
@@ -689,6 +698,7 @@ async def tenant_analyze(
             llm_experience_type=llm_experience_type,
             perspective_labels=perspective_labels,
         )
+        journey_stage = normalize_journey_stage(llm_journey_stage)
 
         try:
             result = await reviews.record_and_decide(
@@ -723,6 +733,7 @@ async def tenant_analyze(
                 body.customer_tier,
                 body.customer_external_id,
                 experience_type,
+                journey_stage,
             )
         ):
             await app_session.execute(
@@ -735,6 +746,7 @@ async def tenant_analyze(
                     customer_tier=body.customer_tier,
                     customer_external_id=body.customer_external_id,
                     experience_type=experience_type,
+                    journey_stage=journey_stage,
                 )
             )
 
@@ -747,4 +759,5 @@ async def tenant_analyze(
         analysis=analysis,
         company_perspective_code=result.company_perspective_code,
         company_perspective_label_tr=result.company_perspective_label_tr,
+        journey_stage=journey_stage,
     )

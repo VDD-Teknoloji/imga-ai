@@ -154,6 +154,7 @@ def _fake_unified(
     experience: str | None = "dijital",
     perspective: str | None = None,
     overrides: list[OverrideHit] | None = None,
+    journey: str | None = "kullanim",
 ) -> Any:
     """``AnalysisPipeline.analyze_batch_unified_async`` yerine gecen
     sahte.
@@ -174,6 +175,7 @@ def _fake_unified(
         perspective_sink: list[str | None] | None = None,
         category_descriptions: dict[str, str] | None = None,
         experience_sink: list[str | None] | None = None,
+        journey_sink: list[str | None] | None = None,
     ) -> list[AnalysisResult]:
         if perspective_sink is not None:
             perspective_sink.clear()
@@ -181,6 +183,9 @@ def _fake_unified(
         if experience_sink is not None:
             experience_sink.clear()
             experience_sink.extend([experience] * len(texts))
+        if journey_sink is not None:
+            journey_sink.clear()
+            journey_sink.extend([journey] * len(texts))
         if stats_sink is not None:
             stats_sink["llm_calls"] = 1
         return [
@@ -448,7 +453,7 @@ async def test_experience_type_persisted_from_unified_prediction(
     monkeypatch.setattr(
         AnalysisPipeline,
         "analyze_batch_unified_async",
-        _fake_unified(experience="operasyonel", category="iade"),
+        _fake_unified(experience="operasyonel", category="iade", journey="teslimat"),
     )
 
     token = login_token(batch_client, user.email, pw, tid)
@@ -468,7 +473,7 @@ async def test_experience_type_persisted_from_unified_prediction(
     async with admin_session.begin():
         rows = (
             await admin_session.execute(
-                select(Review.experience_type, Review.primary_category).where(
+                select(Review.experience_type, Review.primary_category, Review.journey_stage).where(
                     Review.tenant_id == tid
                 )
             )
@@ -476,6 +481,8 @@ async def test_experience_type_persisted_from_unified_prediction(
     assert len(rows) == 2
     assert {row.experience_type for row in rows} == {"operasyonel"}
     assert {row.primary_category for row in rows} == {"iade"}
+    # 2026-10-14 (migration 0052) — yolculuk asamasi ayni yoldan kalici olur.
+    assert {row.journey_stage for row in rows} == {"teslimat"}
 
 
 @pytest.mark.asyncio

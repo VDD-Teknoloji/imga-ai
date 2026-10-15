@@ -217,6 +217,23 @@ class ExperienceDistributionResponse(BaseModel):
     atanmamis: ExperienceBucketResponse
 
 
+class JourneyStageRowResponse(BaseModel):
+    stage: str
+    total: int
+    negatif: int
+
+
+class JourneyDistributionResponse(BaseModel):
+    """2026-10-14 (migration 0052) — müşteri yolculuğu aşaması huni
+    dağılımı. ``stages`` huni sırasında ve her kod için dolu (0 dahil);
+    ``atanmamis`` = henüz aşama atanmamış satırlar, ``total`` paydasına
+    girmez."""
+
+    total: int
+    stages: list[JourneyStageRowResponse]
+    atanmamis: ExperienceBucketResponse
+
+
 # --- WS4 — dönem karşılaştırma (2026-08-18) ------------------------------
 
 
@@ -282,6 +299,7 @@ def _build_filters(
     source_types: str | None = None,
     batch_job_id: UUID | None = None,
     include_flagged: bool = False,
+    sources: str | None = None,
 ) -> AnalyticsFilters:
     return AnalyticsFilters(
         date_from=date_from,
@@ -291,6 +309,7 @@ def _build_filters(
         source_types=_split_csv(source_types),
         batch_job_id=batch_job_id,
         include_flagged=include_flagged,
+        sources=_split_csv(sources),
     )
 
 
@@ -372,6 +391,46 @@ async def experience_distribution(
     return ExperienceDistributionResponse(
         dijital=ExperienceBucketResponse(**asdict(result.dijital)),
         operasyonel=ExperienceBucketResponse(**asdict(result.operasyonel)),
+        atanmamis=ExperienceBucketResponse(**asdict(result.atanmamis)),
+    )
+
+
+@router.get(
+    "/journey-distribution",
+    response_model=JourneyDistributionResponse,
+    summary="Müşteri yolculuğu aşaması dağılımı (huni).",
+    description=(
+        "2026-10-14 (migration 0052) — yorum başına LLM kararı olan "
+        "``reviews.journey_stage`` kovaları, huni sırasında. Kategori "
+        "yedeği YOK; aşaması olmayan satırlar ``atanmamis`` olarak ayrı "
+        "sayılır ve yeniden analizle dolar. ``sources`` (CSV, ör. "
+        "``twitter``) ile tek kaynağa, ``batch_job_id`` ile tek yüklemeye "
+        "daraltılabilir. Tüm kurum üyelerine açık."
+    ),
+)
+async def journey_distribution(
+    current: Annotated[CurrentUser, _AnyMember],
+    app_session: Annotated[AsyncSession, Depends(get_app_session)],
+    date_from: datetime | None = None,
+    date_to: datetime | None = None,
+    source_types: str | None = None,
+    sources: str | None = Query(default=None, description="CSV: Review.source değerleri"),
+    batch_job_id: UUID | None = None,
+    include_flagged: bool = Query(default=False, description=_INCLUDE_FLAGGED_DESC),
+) -> JourneyDistributionResponse:
+    tenant_id = _require_active_tenant(current)
+    filters = _build_filters(
+        date_from, date_to, source_types=source_types, batch_job_id=batch_job_id,
+        include_flagged=include_flagged, sources=sources,
+    )
+    async with app_session.begin():
+        await bind_tenant(app_session, current)
+        result = await AnalyticsService(app_session).journey_distribution(
+            tenant_id=tenant_id, filters=filters
+        )
+    return JourneyDistributionResponse(
+        total=result.total,
+        stages=[JourneyStageRowResponse(**asdict(row)) for row in result.stages],
         atanmamis=ExperienceBucketResponse(**asdict(result.atanmamis)),
     )
 

@@ -633,9 +633,7 @@ def test_apply_corrections_patches_matching_rows() -> None:
     # tuple'ı döner (WS2/batch_analyzer.py imza genişlemesi); bu test
     # yalnız yeni imzaya uyarlanır, mevcut assertion'lar değişmez +
     # ikinci elemanı da doğrular (aşağıda).
-    patched, overrides = _apply_corrections(
-        analyses, [corrected_text, other_text], ctx
-    )
+    patched, overrides = _apply_corrections(analyses, [corrected_text, other_text], ctx)
 
     assert patched[0].sentiment_label == "NEGATIF"
     assert patched[0].sentiment_score == -0.9
@@ -695,9 +693,7 @@ def test_apply_corrections_overrides_carry_experience_and_perspective() -> None:
         overrides_applied=[],
         categorization=CategoryClassification(primary="kargo", primary_confidence=0.6),
     )
-    _patched, overrides = _apply_corrections(
-        [analysis], [corrected_text], ctx
-    )
+    _patched, overrides = _apply_corrections([analysis], [corrected_text], ctx)
     assert overrides[0] is not None
     assert overrides[0].experience_type == "operasyonel"
     assert overrides[0].perspective_code == "shipment_not_arrived"
@@ -914,12 +910,8 @@ async def test_manual_analyze_corrections_exact_patch(
             text("SELECT set_config('app.current_tenant_id', :t, true)"),
             {"t": str(tid)},
         )
-        exact = await latest_exact_correction(
-            admin_session, tid, review_text_hash(corrected_text)
-        )
-    patched, decision = _apply_correction_priority(
-        analysis, exact=exact, semantic=None
-    )
+        exact = await latest_exact_correction(admin_session, tid, review_text_hash(corrected_text))
+    patched, decision = _apply_correction_priority(analysis, exact=exact, semantic=None)
     assert patched.sentiment_label == "NEGATIF"
     assert patched.categorization is not None
     assert patched.categorization.primary == "iade"
@@ -988,12 +980,8 @@ async def test_manual_analyze_corrections_exact_patch_applies_new_score(
             text("SELECT set_config('app.current_tenant_id', :t, true)"),
             {"t": str(tid)},
         )
-        exact = await latest_exact_correction(
-            admin_session, tid, review_text_hash(corrected_text)
-        )
-    patched, decision = _apply_correction_priority(
-        analysis, exact=exact, semantic=None
-    )
+        exact = await latest_exact_correction(admin_session, tid, review_text_hash(corrected_text))
+    patched, decision = _apply_correction_priority(analysis, exact=exact, semantic=None)
     assert patched.sentiment_label == "NEGATIF"
     # SCORE_FOR_LABEL["NEGATIF"] (-0.9) DEĞİL — kayıtlı new_score.
     assert patched.sentiment_score == -0.2
@@ -1041,9 +1029,7 @@ async def test_manual_analyze_corrections_semantic_works_without_tenant_keys(
 
     _user, tid, _pw = semi_auto_tenant
     corrected_text = "Fallback anahtar testi icin yorum metni burada."
-    review_id = await _seed_review(
-        admin_session, tenant_id=tid, text_value=corrected_text
-    )
+    review_id = await _seed_review(admin_session, tenant_id=tid, text_value=corrected_text)
     target_vector = [0.0] * 768
     target_vector[10] = 1.0
     async with admin_session.begin():
@@ -1091,9 +1077,7 @@ async def test_manual_analyze_corrections_semantic_works_without_tenant_keys(
             text("SELECT set_config('app.current_tenant_id', :t, true)"),
             {"t": str(tid)},
         )
-        exact = await latest_exact_correction(
-            admin_session, tid, review_text_hash(corrected_text)
-        )
+        exact = await latest_exact_correction(admin_session, tid, review_text_hash(corrected_text))
     assert exact is None
 
     # Faz 2 — route'un yaptığı gibi boş ``embedding_keys`` ile.
@@ -1106,9 +1090,7 @@ async def test_manual_analyze_corrections_semantic_works_without_tenant_keys(
         )
         semantic_decision = await semantic_override_lookup(admin_session, tid, vector)
 
-    patched, decision = _apply_correction_priority(
-        analysis, exact=None, semantic=semantic_decision
-    )
+    patched, decision = _apply_correction_priority(analysis, exact=None, semantic=semantic_decision)
 
     # Erken çıkış kaldırıldı: embed_text boş keys ile de ÇAĞRILDI.
     assert embed_calls == [[]]
@@ -1211,10 +1193,7 @@ def test_apply_correction_priority_exact_beats_semantic() -> None:
     )
     assert only_semantic_decision is semantic
     assert only_semantic_patched.sentiment_label == "NÖTR"
-    assert (
-        only_semantic_patched.overrides_applied[-1].layer
-        == "user_correction_semantic"
-    )
+    assert only_semantic_patched.overrides_applied[-1].layer == "user_correction_semantic"
 
     neither_patched, neither_decision = _apply_correction_priority(
         analysis, exact=None, semantic=None
@@ -1304,6 +1283,7 @@ async def test_classify_manual_analysis_falls_back_to_classic_without_unified() 
         _provider,
         llm_perspective,
         llm_experience,
+        _llm_journey,
     ) = await _classify_manual_analysis("test metni", pipeline, None, ())
     assert llm_used is False
     assert analysis.text == "test metni"
@@ -1380,9 +1360,7 @@ async def test_classify_manual_analysis_uses_unified_engine_with_few_shot() -> N
         embedding_keys=[],
     )
     few_shot = (
-        FewShotExample(
-            text="ornek", sentiment_label="NEGATIF", category="kargo", reason=None
-        ),
+        FewShotExample(text="ornek", sentiment_label="NEGATIF", category="kargo", reason=None),
     )
     (
         analysis,
@@ -1391,9 +1369,8 @@ async def test_classify_manual_analysis_uses_unified_engine_with_few_shot() -> N
         provider,
         llm_perspective,
         llm_experience,
-    ) = await _classify_manual_analysis(
-        "kargom gelmedi", pipeline, unified, few_shot
-    )
+        _llm_journey,
+    ) = await _classify_manual_analysis("kargom gelmedi", pipeline, unified, few_shot)
     assert llm_used is True
     assert model_name == "fake-unified-model"
     assert provider == "gemini"
@@ -1436,9 +1413,7 @@ async def test_classify_manual_analysis_timeout_falls_back_to_classic(
     # modül seviyesinde okunur (fonksiyon gövdesinde, parametre
     # varsayılanı DEĞİL) diye monkeypatch işe yarıyor (bkz. modülün
     # kendi yorum notu).
-    monkeypatch.setattr(
-        tenant_analyze_module, "_MANUAL_UNIFIED_TIMEOUT_SECONDS", 0.05
-    )
+    monkeypatch.setattr(tenant_analyze_module, "_MANUAL_UNIFIED_TIMEOUT_SECONDS", 0.05)
 
     class _SlowEngine:
         model_name = "slow-unified-model"
@@ -1490,6 +1465,7 @@ async def test_classify_manual_analysis_timeout_falls_back_to_classic(
         provider,
         llm_perspective,
         llm_experience,
+        _llm_journey,
     ) = await _classify_manual_analysis("kargom gelmedi", pipeline, unified, ())
     # Motorun sonucu (NEGATIF/kargo) DEĞİL — klasik yolun sonucu.
     assert llm_used is False
@@ -1537,9 +1513,7 @@ async def test_few_shot_for_chunk_embeds_full_chunk_not_first_64(
     target_vector = [0.0] * 768
     target_vector[5] = 1.0
     corrected_text = "Kayitli duzeltme metni tam burada duruyor."
-    review_id = await _seed_review(
-        admin_session, tenant_id=tid, text_value=corrected_text
-    )
+    review_id = await _seed_review(admin_session, tenant_id=tid, text_value=corrected_text)
     async with admin_session.begin():
         await admin_session.execute(
             text("SELECT set_config('app.current_tenant_id', :t, true)"),
@@ -1565,9 +1539,7 @@ async def test_few_shot_for_chunk_embeds_full_chunk_not_first_64(
     # Eski kodun ASLA embed etmediği ilk satır (0-index'te 64).
     target_index = 64
 
-    async def _stub_embed_texts(
-        batch_texts: list[str], _keys: object
-    ) -> list[list[float]]:
+    async def _stub_embed_texts(batch_texts: list[str], _keys: object) -> list[list[float]]:
         vectors = []
         for t in batch_texts:
             if texts.index(t) == target_index:
@@ -1608,9 +1580,7 @@ async def test_few_shot_for_chunk_embeds_full_chunk_not_first_64(
             store=store,
             keys=[],
         )
-        _few_shot, semantic_hits = await _few_shot_for_chunk(
-            unified_ctx, texts, context, tid
-        )
+        _few_shot, semantic_hits = await _few_shot_for_chunk(unified_ctx, texts, context, tid)
     finally:
         await context.dispose()
 

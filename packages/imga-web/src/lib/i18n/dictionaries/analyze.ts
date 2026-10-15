@@ -143,6 +143,11 @@ export const analyze: Bundle = {
     // --- Twitter'dan Çek (analyze/twitter/page.tsx) ---
     "analyze.twitter.back": "Toplu Yükleme",
     "analyze.twitter.title": "Twitter'dan Çek",
+    "analyze.twitter.journeyTitle": "Twitter yorumlarında müşteri aşaması",
+    "analyze.twitter.journeyHelp":
+      "Daha önce çekilen gönderilerin yazarları markayla ilişkinin hangi noktasında? Gönderiler yazar kimliği taşımaz (KVKK); aşama gönderi metninden, yorum başına belirlenir. Satırlar arşivde o aşamadaki Twitter yorumlarını açar.",
+    "analyze.manual.journey": "Yolculuk aşaması",
+    "analyze.manual.journeyNone": "Belirlenemedi",
     "analyze.twitter.subtitle":
       "X/Twitter'da markanız hakkında yazılan Türkçe gönderileri çekin; metinler toplu yükleme ile aynı boru hattında analiz edilir.",
     "analyze.twitter.formTitle": "Arama",
@@ -452,6 +457,11 @@ export const analyze: Bundle = {
     // --- Import from Twitter (analyze/twitter/page.tsx) ---
     "analyze.twitter.back": "Bulk Upload",
     "analyze.twitter.title": "Import from Twitter",
+    "analyze.twitter.journeyTitle": "Customer stage in Twitter posts",
+    "analyze.twitter.journeyHelp":
+      "Where in the relationship are the authors of previously fetched posts? Posts carry no author identity (KVKK); the stage is read per post from its text. Rows open the Twitter reviews at that stage in the archive.",
+    "analyze.manual.journey": "Journey stage",
+    "analyze.manual.journeyNone": "Not determined",
     "analyze.twitter.subtitle":
       "Pull Turkish posts about your brand from X/Twitter; the texts run through the same pipeline as bulk uploads.",
     "analyze.twitter.formTitle": "Search",

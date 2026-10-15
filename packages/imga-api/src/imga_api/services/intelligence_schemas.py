@@ -179,6 +179,12 @@ class ReviewSignals(Contract):
     negative: int = 0
     sla_violations: int = 0
     low_nps: int = 0
+    # 2026-10-14 (migration 0052) — yolculuk aşaması sinyalleri. Eski
+    # gözlem geçmişi (customer_observations.risk) bu anahtarları
+    # taşımaz; varsayılanlar tekrar oynatmayı kırmaz.
+    churn_intent: int = 0
+    latest_stage: str | None = None
+    stages: dict[str, int] = Field(default_factory=dict)
 
 
 class RiskSignal(Contract):

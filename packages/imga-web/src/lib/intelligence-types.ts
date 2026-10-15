@@ -97,11 +97,56 @@ export interface CustomerRisk {
   signals: { code: string; points: number; evidence: string; recommendation: string }[];
   review_signals: { total: number; negative: number; sla_violations: number; low_nps: number };
 }
+/** 2026-10-14 — müşteriye bağlı yorumlardan okunan yolculuk bilgisi.
+ *  `latest_stage` pencere dışına da bakar (son bilinen nokta); `stages`
+ *  ve `churn_intent` son 30 gün. Eski gözlem geçmişinde bulunmaz. */
+export interface CustomerJourney {
+  latest_stage: string | null;
+  stages: Record<string, number>;
+  churn_intent: number;
+}
 export interface CustomerRecord {
   revision: number;
   profile: CustomerProfile;
   risk: CustomerRisk;
   created_at?: string;
+  journey?: CustomerJourney;
+}
+export interface CriticalCustomers {
+  items: CustomerRecord[];
+  limit: number;
+  ranked_total: number;
+  excluded: Record<string, number>;
+  bands: Partial<Record<RiskBand, number>>;
+  account_count: number;
+  as_of: string;
+  method: string;
+  is_probability: boolean;
+}
+export interface CustomerMapNode {
+  external_id: string;
+  name: string;
+  segment: string;
+  lifecycle: string | null;
+  owner: string;
+  outcome: string | null;
+  band: RiskBand;
+  score: number | null;
+  data_status: string;
+  stage: string | null;
+  churn_intent: number;
+  annual_revenue: string | null;
+  currency: string | null;
+  reviews_30d: number;
+  negative_30d: number;
+}
+export interface CustomerMap {
+  nodes: CustomerMapNode[];
+  stages: string[];
+  stage_counts: Record<string, number>;
+  account_count: number;
+  truncated: boolean;
+  as_of: string;
 }
 export interface CustomerList {
   items: CustomerRecord[];

@@ -132,6 +132,21 @@ def score_customer(
             )
     else:
         missing.append("linked_review_history")
+    # 2026-10-14 — yorumda AÇIKÇA yazılmış ayrılma niyeti (journey_stage =
+    # ayrilma). CRM iptal talebinden (60 puan) ayrı ve daha düşük ağırlıklı:
+    # niyet ifadesi henüz işlem değildir; yine de tek yorum bile doğrudan
+    # kanıt olduğu için kendi alanı sayılır.
+    if reviews.churn_intent >= 1:
+        domains += 1
+        stage_note = f" Son bilinen aşama: {reviews.latest_stage}." if reviews.latest_stage else ""
+        add(
+            "churn_intent",
+            25,
+            f"Son 30 günde {reviews.churn_intent} yorumda ayrılma/iptal niyeti ifade edildi."
+            + stage_note,
+            "Hesap sorumlusu 48 saat içinde ulaşsın; niyeti CRM'de doğrulayın, "
+            "otomatik indirim teklif etmeyin.",
+        )
     points = min(100, sum(signal.points for signal in signals))
     if profile.renewal_on and 0 <= (profile.renewal_on - as_of).days <= 30 and points > 0:
         add(

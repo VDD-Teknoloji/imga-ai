@@ -41,7 +41,7 @@ Arama, risk filtresi ve sayfalama; risk dağılımı; müşteri kartı; CSV şab
 
 Müşteri verisi elle veya UTF-8 CSV ile girilir. İlk sürümde müşteri hesabı aktarımı XLSX değildir; yorum yükleme tarafındaki mevcut CSV/XLSX yolu korunmuştur. Kurum başına 5.000 müşteri, dosya başına 5 MiB sınırı vardır. Hatalı, yinelenen veya eski tarihli gözlem içeren aktarım tamamen reddedilir; kısmi başarı yoktur. 3.000 satırlık aktarım için mevcut kayıtlar topluca okunur, hesap ve geçmiş kayıtları 500 satırlık veritabanı paketleriyle tek transaction içinde yazılır.
 
-Skor `rules-v1` yöntemidir; 0-100 öncelik puanı, yüzde olasılık değildir. Yetersiz, eski ve aktif olmayan veri için ayrı durumlar vardır. Bilinmeyen finansal/aktivite verisi sıfıra çevrilmez. Açık ilişki iptal talebi yorumdan çıkarılmaz, CRM gözleminden gelir.
+Skor `rules-v1` yöntemidir; 0-100 öncelik puanı, yüzde olasılık değildir. Yetersiz, eski ve aktif olmayan veri için ayrı durumlar vardır. Bilinmeyen finansal/aktivite verisi sıfıra çevrilmez. Açık ilişki iptal talebi yorumdan çıkarılmaz, CRM gözleminden gelir. Yorumdan gelen tek sinyal, 14 Ekim 2026 eklemesiyle, metinde AÇIKÇA yazılmış ayrılma niyetidir (`journey_stage = ayrilma`, 25 puan, kendi veri alanı); CRM iptal talebi (60 puan) her zaman daha ağırdır.
 
 Formlarda Arapça/Urduca metin için otomatik metin yönü kullanılır. Yeni ekranların arayüz metinleri mevcut Türkçe/İngilizce sözlüklere bağlanmıştır. Sekme, filtre ve sayfalama URL durumuna bağlıdır; geri/ileri ve yenileme davranışı korunur.
 
@@ -156,3 +156,32 @@ Bu çalışma üretime dağıtılmadı, mevcut üretim anahtarlarını değişti
 4. Olay bazlı süreç verisi ve yeterli örneklemle daha güçlü anomali analizi. Mevcut kategori eşlemesi süreç izi yerine geçmez.
 5. Dağıtık sağlayıcı kota kontrolü, iş başına maliyet bütçesi ve gerçek worker bellek profili. İş içi 3 çağrı sınırı tek başına bütün worker'ları sınırlamaz.
 6. Ülke ve müşteri sözleşmesine göre veri işleme yeri, saklama, silme ve sağlayıcı şartları. Mevcut müşteri silme tüm platform için KVKK/PDPL silme işlemi değildir.
+
+## 7. Ek — 14 Ekim 2026: Müşteri yolculuğu aşaması, en kritik 100 ve harita/ağaç
+
+### Yolculuk aşaması (migration 0052)
+
+Her yorum için birleşik motor, yazarın markayla ilişkisinde bulunduğu noktayı ayrı bir alan (`j`) olarak verir; `reviews.journey_stage` kolonuna yazılır. Huni sırası ve tek kaynak `imga_core.journey.JOURNEY_STAGES`: `kesif`, `degerlendirme`, `satin_alma`, `teslimat`, `kullanim`, `destek`, `sadakat`, `ayrilma`. Aşama kategoriden ya da duygudan türetilmez; model alan üretmezse NULL kalır ve hiçbir yedek kural uygulanmaz ("atanmamış"). Yazım yolları `experience_type` ile birebir aynıdır: toplu yükleme (`batch_analyzer`), yeniden analiz (`reanalyzer`) ve manuel analiz (`tenant_analyze`). Twitter çekimi aynı toplu yoldan geçer; ancak gönderiler yazar kimliği taşımadığı için (KVKK) aşama müşteri başına değil yorum başına tutulur ve Twitter verisi `source = twitter` filtresiyle okunur.
+
+Okuma yüzeyleri:
+
+| Yüzey | Uç | Davranış |
+|---|---|---|
+| Panel hunisi | `GET /tenants/me/analytics/journey-distribution` | Huni sırasında her kod (0 dahil), aşama başına olumsuz sayısı, `atanmamis` ayrı; `sources`, `batch_job_id`, tarih ve `include_flagged` filtreleri |
+| Twitter sayfası | aynı uç, `sources=twitter` | Daha önce çekilmiş gönderilerin aşama dağılımı; satırlar arşive derin bağlantı |
+| Analiz arşivi | `GET /tenants/me/reviews?journey_stages=...` | Çoklu seçim filtresi, `atanmamis` = NULL; liste rozeti, detay satırı, özet panelinde kompakt huni (`journey_stages` sayaçları) |
+| Manuel analiz | `POST /tenants/me/analyze` | Yanıtta `journey_stage`; sonuç kartında rozet |
+
+### Churn: en kritik 100, harita ve ağaç
+
+`ReviewSignals` üç alan kazandı: `churn_intent` (son 30 günde `ayrilma` aşamalı yorum sayısı), `latest_stage` (pencere dışına da bakan son bilinen aşama) ve `stages` (30 günlük aşama dağılımı). Eski gözlem geçmişi bu anahtarları taşımaz; varsayılanlar tekrar oynatmayı kırmaz.
+
+| Uç | İçerik |
+|---|---|
+| `GET /customers` | Her kayıtta `journey {latest_stage, stages, churn_intent}` |
+| `GET /customers/critical?limit=100` | Yalnız yeterli veriyle puanlanmış hesaplar, puan → ayrılma niyeti → kimlik sırasıyla; `excluded` yetersiz/eski/pasif sayıları, `bands` dağılımı |
+| `GET /customers/map?limit=1000` | Harita/ağaç için düz düğüm listesi: segment, bant, puan, aşama, gelir, 30 günlük yorum/olumsuz sayısı |
+
+`/churn` sayfası dört görünüm taşır (`?view=`): Liste (aşama sütunu eklendi), En kritik 100, Harita (segment → müşteri ağaç haritası; renk risk bandı, büyüklük puan ya da gelir — `?size=revenue`) ve Ağaç (yolculuk aşaması → risk bandı → müşteri). Harita/ağaçta bir müşteriye tıklamak listeyi o kimliğe süzer; editör listedeki tam kayıt üzerinden açılır. Puan hâlâ `rules-v1` öncelik puanıdır, olasılık değildir; "veri yok" ile "risk yok" her görünümde ayrı tutulur.
+
+Testler: `tests-core/test_unified_classifier.py` (istem + ayrıştırma), `tests/test_journey_stage.py` (liste/özet/detay/huni, kaynak filtresi), `tests/test_intelligence.py` (niyet sinyali, geçmiş uyumu, kritik liste, harita, kurum izolasyonu), `tests/test_reanalysis.py` (toplu yolda kalıcılık).

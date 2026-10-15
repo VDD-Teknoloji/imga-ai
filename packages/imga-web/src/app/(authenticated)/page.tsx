@@ -51,6 +51,7 @@ import { DataSourceStrip } from "@/components/dashboard/data-source-strip";
 import { ExecutiveHero } from "@/components/dashboard/executive-hero";
 import { ExperienceBreakdownCards } from "@/components/dashboard/experience-breakdown-cards";
 import { FailingProcessesCard } from "@/components/dashboard/failing-processes-card";
+import { JourneyFunnelCard } from "@/components/dashboard/journey-funnel-card";
 import { QuickLinks } from "@/components/dashboard/quick-links";
 import { RootCauseCards } from "@/components/dashboard/root-cause-cards";
 import {
@@ -67,6 +68,7 @@ import {
 } from "@/hooks/use-analytics";
 import { useExecutiveOverview, type ExecutiveOverview } from "@/hooks/use-executive-overview";
 import { useExperienceDistribution } from "@/hooks/use-experience";
+import { useJourneyDistribution } from "@/hooks/use-journey";
 import { useReviewSummary } from "@/hooks/use-review-summary";
 import { useRoleFlags } from "@/hooks/use-role-flags";
 import { useAuthStore } from "@/lib/auth-store";
@@ -226,6 +228,14 @@ function DashboardInner() {
     date_to: filters.date_to,
     include_flagged: includeFlagged || undefined,
   });
+  // 2026-10-14 (migration 0052) — yolculuk hunisi; experience'tan farklı
+  // olarak uç batch_job_id'yi de kabul eder, yükleme filtresi işler.
+  const journey = useJourneyDistribution({
+    date_from: filters.date_from,
+    date_to: filters.date_to,
+    batch_job_id: filters.batch_job_id,
+    include_flagged: includeFlagged || undefined,
+  });
   // F1 (2026-09-02) — DataQualityCoach + FailingProcessesCard'ın ikisi
   // de aynı /reviews/summary verisini kullanıyor; tek çağrı burada,
   // aşağı prop olarak akar (iki ayrı hook çağrısı aynı queryKey'i
@@ -336,6 +346,16 @@ function DashboardInner() {
 
           <div className="rise-in" style={{ animationDelay: "180ms" }}>
             <ExperienceBreakdownCards data={experience.data} isLoading={experience.isLoading} />
+          </div>
+
+          <div className="rise-in" style={{ animationDelay: "240ms" }}>
+            <JourneyFunnelCard
+              data={journey.data}
+              isLoading={journey.isLoading}
+              drilldownParams={
+                filters.batch_job_id ? { batch_job_id: filters.batch_job_id } : undefined
+              }
+            />
           </div>
         </div>
 

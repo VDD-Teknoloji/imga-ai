@@ -18,6 +18,7 @@ import { toast } from "sonner";
 
 import { RequireRole } from "@/components/auth/require-role";
 import { OverrideStack, overrideLayerLabel } from "@/components/reviews/override-display";
+import { JourneyStageBadge } from "@/components/journey-stage-badge";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -45,7 +46,7 @@ const TEXT_MAX_LENGTH = 10_000;
 const SENTIMENT_LABEL_KEYS: Record<string, string> = {
   NEGATIF: "reviews.sentiment.negatif",
   POZITIF: "reviews.sentiment.pozitif",
-  "NÖTR": "reviews.sentiment.notr",
+  NÖTR: "reviews.sentiment.notr",
 };
 
 export default function AnalyzePage() {
@@ -129,9 +130,7 @@ function AnalyzePageInner() {
         <h1 className="text-2xl font-semibold tracking-tight md:text-3xl">
           {t("analyze.manual.title")}
         </h1>
-        <p className="text-muted-foreground text-sm">
-          {t("analyze.manual.subtitle")}
-        </p>
+        <p className="text-muted-foreground text-sm">{t("analyze.manual.subtitle")}</p>
       </header>
 
       {/* noValidate — HATA-07: tarayıcının kendi dilindeki min/max
@@ -139,7 +138,13 @@ function AnalyzePageInner() {
       <form onSubmit={handleSubmit} noValidate className="space-y-3">
         <div className="space-y-2">
           <Label htmlFor="analyze-customer">{t("intel.externalId")}</Label>
-          <Input id="analyze-customer" value={customerId} onChange={(event) => setCustomerId(event.target.value)} maxLength={128} disabled={analyze.isPending} />
+          <Input
+            id="analyze-customer"
+            value={customerId}
+            onChange={(event) => setCustomerId(event.target.value)}
+            maxLength={128}
+            disabled={analyze.isPending}
+          />
         </div>
         <div className="space-y-2">
           <Label htmlFor="analyze-text">{t("analyze.manual.textLabel")}</Label>
@@ -289,8 +294,7 @@ function AnalysisSummary({ result }: { result: TenantAnalyzeResponse }) {
   const sentimentKey = SENTIMENT_LABEL_KEYS[a.sentiment_label];
   const categoryCode = a.categorization?.primary ?? "belirsiz";
   const categoryLabel =
-    categories.data?.find((c) => c.code === categoryCode)?.label_tr ??
-    categoryCode;
+    categories.data?.find((c) => c.code === categoryCode)?.label_tr ?? categoryCode;
   const confidencePct =
     a.categorization != null ? Math.round(a.categorization.primary_confidence * 100) : null;
 
@@ -324,11 +328,22 @@ function AnalysisSummary({ result }: { result: TenantAnalyzeResponse }) {
         </Metric>
         <Metric label={t("analyze.manual.companyPerspective")}>
           {result.company_perspective_code === null ? (
-            <span className="text-muted-foreground text-sm italic">{t("analyze.manual.noMatch")}</span>
+            <span className="text-muted-foreground text-sm italic">
+              {t("analyze.manual.noMatch")}
+            </span>
           ) : (
             <Badge variant="outline" className="px-2 py-0.5">
               {result.company_perspective_label_tr ?? result.company_perspective_code}
             </Badge>
+          )}
+        </Metric>
+        <Metric label={t("analyze.manual.journey")}>
+          {result.journey_stage ? (
+            <JourneyStageBadge stage={result.journey_stage} />
+          ) : (
+            <span className="text-muted-foreground text-sm italic">
+              {t("analyze.manual.journeyNone")}
+            </span>
           )}
         </Metric>
         {a.sla_detected ? (
@@ -501,9 +516,7 @@ function DecisionCard({
             )}
             {t("analyze.manual.promoteAnyway")}
           </Button>
-          <span className="text-muted-foreground text-xs">
-            {t("analyze.manual.promoteHint")}
-          </span>
+          <span className="text-muted-foreground text-xs">{t("analyze.manual.promoteHint")}</span>
         </CardContent>
       ) : null}
     </Card>

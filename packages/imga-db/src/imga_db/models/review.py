@@ -244,3 +244,7 @@ class Review(Base, TimestampMixin, SoftDeleteMixin):
     customer_external_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
     analysis_profile: Mapped[str | None] = mapped_column(String(16), nullable=True)
     analysis_language: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    # Migration 0052 — müşteri yolculuğu aşaması, yorum başına LLM kararı
+    # (imga_core.journey.JOURNEY_STAGES). NULL = model alan üretmedi ya da
+    # satır birleşik yoldan geçmedi; kategoriden türetilmez.
+    journey_stage: Mapped[str | None] = mapped_column(String(16), nullable=True)
