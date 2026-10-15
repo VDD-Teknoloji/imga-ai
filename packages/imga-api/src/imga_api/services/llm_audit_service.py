@@ -71,6 +71,8 @@ CALL_TYPE_ONBOARDING_SUGGEST = "onboarding_suggest"
 # planı + gönderi başına alaka hakemi (services/twitter_brand_service).
 CALL_TYPE_TWITTER_KEYWORDS = "twitter_keywords"
 CALL_TYPE_TWITTER_RELEVANCE = "twitter_relevance"
+# 2026-10-15 (migration 0053) — veri asistanı soru-cevap çağrısı.
+CALL_TYPE_ASSISTANT = "assistant"
 
 ERROR_TIMEOUT = "timeout"
 ERROR_RATE_LIMIT = "rate_limit"

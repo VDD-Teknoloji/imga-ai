@@ -39,6 +39,7 @@ from imga_api.routes import public_trial as public_trial_routes
 from imga_api.routes import tenant_action_items as tenant_action_items_routes
 from imga_api.routes import tenant_analytics as tenant_analytics_routes
 from imga_api.routes import tenant_analyze as tenant_analyze_routes
+from imga_api.routes import tenant_assistant as tenant_assistant_routes
 from imga_api.routes import tenant_batch as tenant_batch_routes
 from imga_api.routes import (
     tenant_batch_progress as tenant_batch_progress_routes,
@@ -468,6 +469,8 @@ app.include_router(tenant_prompt_templates_routes.router)
 # Migration 0046 — operasyonel facts modülü (SLA/CSAT/efor/tazmin/teslimat).
 app.include_router(tenant_operations_routes.router)
 app.include_router(tenant_intelligence_routes.router)
+# 2026-10-15 — veri asistanı (migration 0053: assistant call_type).
+app.include_router(tenant_assistant_routes.router)
 
 
 @app.get(

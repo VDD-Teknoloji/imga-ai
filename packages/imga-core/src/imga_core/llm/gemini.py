@@ -369,6 +369,31 @@ class GeminiProvider(LLMProvider):
             max_output_tokens=max_output_tokens,
         )
 
+    async def generate_assistant_answer(
+        self,
+        *,
+        api_key: str,
+        system_prompt: str,
+        user_prompt: str,
+        response_schema: dict[str, Any],
+        model_name: str = "gemini-3-flash-preview",
+        # 2026-10-15 — veri asistanı: rakamlar kanıt paketinden gelir,
+        # düşük sıcaklık sayı/alıntı uydurmayı azaltır.
+        temperature: float = 0.2,
+        top_p: float = 0.9,
+        max_output_tokens: int = 4096,
+    ) -> tuple[dict[str, Any], dict[str, int] | None]:
+        return await self._generate_structured(
+            api_key=api_key,
+            system_prompt=system_prompt,
+            user_prompt=user_prompt,
+            response_schema=response_schema,
+            model_name=model_name,
+            temperature=temperature,
+            top_p=top_p,
+            max_output_tokens=max_output_tokens,
+        )
+
     async def _generate_structured(
         self,
         *,

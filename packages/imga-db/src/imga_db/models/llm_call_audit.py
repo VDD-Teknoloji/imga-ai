@@ -43,7 +43,7 @@ class LlmCallAudit(Base):
             "call_type IN ('classification', 'briefing', "
             "'strategic_report', 'action_extraction', 'okr', "
             "'root_cause', 'quality_report', 'onboarding_suggest', "
-            "'twitter_keywords', 'twitter_relevance')",
+            "'twitter_keywords', 'twitter_relevance', 'assistant')",
             name="ck_llm_call_audit_call_type",
         ),
     )

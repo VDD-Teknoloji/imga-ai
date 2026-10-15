@@ -185,3 +185,17 @@ Okuma yüzeyleri:
 `/churn` sayfası dört görünüm taşır (`?view=`): Liste (aşama sütunu eklendi), En kritik 100, Harita (segment → müşteri ağaç haritası; renk risk bandı, büyüklük puan ya da gelir — `?size=revenue`) ve Ağaç (yolculuk aşaması → risk bandı → müşteri). Harita/ağaçta bir müşteriye tıklamak listeyi o kimliğe süzer; editör listedeki tam kayıt üzerinden açılır. Puan hâlâ `rules-v1` öncelik puanıdır, olasılık değildir; "veri yok" ile "risk yok" her görünümde ayrı tutulur.
 
 Testler: `tests-core/test_unified_classifier.py` (istem + ayrıştırma), `tests/test_journey_stage.py` (liste/özet/detay/huni, kaynak filtresi), `tests/test_intelligence.py` (niyet sinyali, geçmiş uyumu, kritik liste, harita, kurum izolasyonu), `tests/test_reanalysis.py` (toplu yolda kalıcılık).
+
+## 8. Ek — 15 Ekim 2026: Veri Asistanı (`/assistant`)
+
+Kurum verisine soru-cevap: "Son 1 ayda iadeler neden arttı?" gibi bir soru, sorulan dönem ile hemen önceki eşit dönemin SQL kanıt paketine çevrilir; model yalnız bu paketi yorumlar.
+
+| Adım | Davranış |
+|---|---|
+| Kapsam | `parse_question`: dönem ("son N gün/hafta/ay", "geçen ay", "bu ay"…; varsayılan 30 gün), odak kategori (kurumun geçerli kodları + eş anlamlılar + özel kategori etiketi), yolculuk aşaması eş anlamlıları, duygu ipucu. Saf fonksiyon, test edilir. |
+| Kanıt | Dönem başına: toplam, duygu, kategori (olumsuz dahil), aşama, içerik türü; odak varsa alt konular (taksonomi etiketi), kanal/segment/kaynak, bilet bağı; artan/azalan konular; aşama farkı; en yeni 8 odak alıntısı (KVKK maskesi, 240 karakter, `/reviews/[id]` bağlantısı). Bayraklı satırlar hariç. |
+| LLM | `POST /tenants/me/assistant/ask`; sağlayıcı seçimi SWOT/kök neden ile aynı (`load_active_llm_keys` → platform yedeği), `prompt_templates` anahtarı `data_assistant` ile süper-admin istem üzerine yazabilir, `llm_call_audit.call_type = assistant` (migration 0053). JSON şema: answer, highlights, follow_ups, data_gaps. |
+| Yedek | Anahtar yok / çağrı başarısız → kural tabanlı Türkçe özet (`llm_used=false`, `data_gaps` içinde açık uyarı). Rakamlar her iki yolda da aynı kanıt paketinden gelir. |
+| Arayüz | Sohbet, örnek sorular (`GET /suggestions`: en çok artan konu + sabit kalıplar), devam soruları, katlanır kanıt kartı (dönem, odak, artan/azalan konular, aşamalar, alıntılar, listeye derin bağlantı). Son soru `?q=` ile URL'de. Tüm kurum üyeleri kullanabilir. |
+
+Sınırlar: tek kurum verisi; yorum yazarları kimliksiz (Twitter) olduğundan müşteri bazlı sayım yapılmaz; "neden" yanıtı korelasyondur, model kanıt paketinde olmayan sayı üretmemesi için şemaya bağlanmıştır. Testler: `tests/test_data_assistant.py`.

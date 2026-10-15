@@ -1,6 +1,7 @@
 import {
   ArrowLeftRight,
   Bell,
+  Bot,
   Building2,
   ClipboardList,
   Code2,
@@ -96,6 +97,8 @@ export const NAV_SECTIONS: ReadonlyArray<NavSection> = [
   {
     heading: "shell.nav.section.analytics",
     items: [
+      // 2026-10-15 — veri asistanı: soruya kanıtlı yanıt (/assistant).
+      { label: "assistant.nav", href: "/assistant", icon: Bot },
       { label: "shell.nav.insights", href: "/insights", icon: TrendingUp },
       // WS4 (2026-08-18) — dönem karşılaştırma, İçgörüler'in yanında.
       { label: "shell.nav.compare", href: "/compare", icon: ArrowLeftRight },

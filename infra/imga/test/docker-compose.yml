@@ -234,6 +234,7 @@ services:
           tests/test_sse_streaming.py \
           tests/test_intelligence.py \
           tests/test_journey_stage.py \
+          tests/test_data_assistant.py \
           tests/contract/test_error_envelope.py \
           tests/contract/test_response_envelope.py \
           tests-core/test_key_rotation.py \
