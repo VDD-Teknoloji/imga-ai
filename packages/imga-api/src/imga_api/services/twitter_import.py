@@ -452,6 +452,7 @@ async def fetch_tweets(
     count: int,
     exclude_handle: str | None = None,
     on_page: Callable[[TwitterFetchProgress], Awaitable[None]] | None = None,
+    max_pages: int = MAX_PAGES,
 ) -> TwitterFetchResult:
     """En yeni tweetlerden ``count`` temiz metin + tarih + bağlantı topla.
 
@@ -488,7 +489,7 @@ async def fetch_tweets(
     newest_at: datetime | None = None
 
     async with httpx.AsyncClient(timeout=httpx.Timeout(25.0)) as client:
-        while len(tweets) < count and pages < MAX_PAGES:
+        while len(tweets) < count and pages < max_pages:
             params: dict[str, str] = {"query": query, "queryType": "Latest"}
             if cursor:
                 params["cursor"] = cursor

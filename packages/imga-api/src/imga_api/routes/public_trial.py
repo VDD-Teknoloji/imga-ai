@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import hmac
 import logging
+import os
 from pathlib import Path
 from typing import Annotated, Literal
 from uuid import UUID
@@ -48,6 +49,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from imga_api.db_deps import get_admin_session
 from imga_api.dependencies import get_pipeline
+from imga_api.routes.public_trial_twitter import router as twitter_router
 from imga_api.services.trial_analysis_service import (
     TRIAL_ROW_CAP,
     TRIAL_TENANT_ID,
@@ -149,7 +151,7 @@ def _require_trial_api_key(
         },
         status.HTTP_422_UNPROCESSABLE_ENTITY: {
             "description": (
-                f"More than {TRIAL_ROW_CAP} rows, empty file, or no " "review-text column detected."
+                f"More than {TRIAL_ROW_CAP} rows, empty file, or no review-text column detected."
             )
         },
         status.HTTP_503_SERVICE_UNAVAILABLE: {
@@ -166,6 +168,7 @@ async def analyze_trial(
     x_trial_user_id: Annotated[str | None, Header()] = None,
     x_trial_user_email: Annotated[str | None, Header()] = None,
     x_trial_source: Annotated[TrialSource, Header()] = "excel",
+    x_trial_refresh: Annotated[bool, Header()] = False,
 ) -> TrialAnalyzeResponse:
     if not x_trial_user_email or "@" not in x_trial_user_email:
         # Marketing always sends this header; missing is a coding bug
@@ -175,6 +178,13 @@ async def analyze_trial(
             detail="X-Trial-User-Email header required",
         )
     email = x_trial_user_email.lower().strip()
+    allowed = {
+        value.strip().lower()
+        for value in os.getenv("IMGA_TRIAL_ADMIN_EMAILS", "").split(",")
+        if value.strip()
+    }
+    if x_trial_refresh and email not in allowed:
+        raise HTTPException(status_code=403, detail="demo_admin_required")
 
     trial_user_id: UUID | None = None
     if x_trial_user_id:
@@ -230,7 +240,11 @@ async def analyze_trial(
 
     # Idempotency: same email and current source within TTL → return cached.
     cached = await get_cached_analysis(admin_session, email=email)
-    if cached is not None and _cached_source(cached.file_name) == x_trial_source:
+    if (
+        cached is not None
+        and _cached_source(cached.file_name) == x_trial_source
+        and not x_trial_refresh
+    ):
         _logger.info(
             "trial idempotent hit email=%s request_id=%s",
             email,
@@ -262,9 +276,7 @@ async def analyze_trial(
                 if written > TRIAL_MAX_FILE_BYTES:
                     raise HTTPException(
                         status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-                        detail=(
-                            f"dosya boyutu {TRIAL_MAX_FILE_BYTES // 1024} " "KB sınırını aşıyor"
-                        ),
+                        detail=(f"dosya boyutu {TRIAL_MAX_FILE_BYTES // 1024} KB sınırını aşıyor"),
                     )
                 out.write(chunk)
 
@@ -294,3 +306,6 @@ async def analyze_trial(
             ) from exc
 
     return TrialAnalyzeResponse(**serialize_for_response(row), source=x_trial_source)
+
+
+router.include_router(twitter_router, dependencies=[Depends(_require_trial_api_key)])
