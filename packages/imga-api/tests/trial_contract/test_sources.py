@@ -69,10 +69,14 @@ def source_client(tmp_path: Path) -> Iterator[tuple[TestClient, str]]:
     asyncio.run(cleanup())
 
 
-def send(client: TestClient, email: str, source: str | None, rows: list[str]) -> Response:
+def send(
+    client: TestClient, email: str, source: str | None, rows: list[str], *, refresh: bool = False
+) -> Response:
     headers = {"Authorization": f"Bearer {KEY}", "X-Trial-User-Email": email}
     if source is not None:
         headers["X-Trial-Source"] = source
+    if refresh:
+        headers["X-Trial-Refresh"] = "true"
     return client.post(
         "/public/trial/analyze",
         headers=headers,
@@ -133,3 +137,29 @@ def test_missing_bearer_is_rejected(source_client: tuple[TestClient, str]) -> No
         files={"file": ("comments.csv", b"yorum\ntest", "text/csv")},
     )
     assert response.status_code == 401
+
+
+def test_admin_refresh_produces_fresh_results(
+    source_client: tuple[TestClient, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    client, email = source_client
+    monkeypatch.setenv("IMGA_TRIAL_ADMIN_EMAILS", f" {email.upper()} ")
+    first = send(client, email, "twitter", ["Çok kötü"] * 2, refresh=True)
+    second = send(client, email, "twitter", ["Çok güzel"] * 3, refresh=True)
+    assert first.status_code == second.status_code == 200
+    assert first.json()["request_id"] != second.json()["request_id"]
+    assert second.json()["sentiment_distribution"] == {"POZITIF": 3, "NEGATIF": 0, "NÖTR": 0}
+
+
+def test_unauthorized_refresh_cannot_replace_cached_results(
+    source_client: tuple[TestClient, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    client, email = source_client
+    monkeypatch.setenv("IMGA_TRIAL_ADMIN_EMAILS", "admin@example.com")
+    first = send(client, email, "excel", ["Çok güzel"])
+    rejected = send(client, email, "excel", ["Çok kötü"], refresh=True)
+    assert rejected.status_code == 403
+    assert (
+        send(client, email, "excel", ["Farklı veri"]).json()["request_id"]
+        == first.json()["request_id"]
+    )
